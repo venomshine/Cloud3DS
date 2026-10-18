@@ -4,7 +4,6 @@
  *
  * Software libre bajo la GNU General Public License v3 con términos adicionales
  * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
- * Interfaz basada en Gemi3DS de VENOMSHiNE - https://github.com/venomshine/Gemi3DS
  */
 // Cloud3DS - motor gráfico
 #include "gfx.h"
@@ -277,7 +276,7 @@ void draw_cloud(float cx, float cy, float r, float alpha) {
 }
 void draw_sparkle_mono(float cx, float cy, float r, float rot, u32 c) { sparkle_impl(cx, cy, r, rot, 1, false, c); }
 
-// barra "cargando" con brillo que se desplaza (estilo Gemini)
+// barra «cargando» con un brillo que se desplaza
 void draw_shimmer_bar(float x, float y, float w, float h, float phase) {
     u32 a = col_alpha(col_hex(0x4796E3), 0.55f), b = col_alpha(col_hex(0x9177C7), 0.25f), c = col_alpha(T.surface2, 0.6f);
     float p = phase - floorf(phase);
@@ -389,7 +388,7 @@ float glyph_w(u32 cp, float scale) {
     return w * scale;
 }
 
-// ajuste entre un número y la letra siguiente («Gemi3DS» en vez de «Gemi3 DS»):
+// ajuste entre un número y la letra siguiente («Cloud3DS» en vez de «Cloud3 DS»):
 // algunas fuentes dan a los dígitos un ancho fijo con mucho aire a la derecha
 static float glyph_left(u32 cp) {
     charWidthInfo_s *wi = C2D_FontGetCharWidthInfo(NULL, C2D_FontGlyphIndexFromCodePoint(NULL, cp));

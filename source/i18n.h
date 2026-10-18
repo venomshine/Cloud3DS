@@ -4,7 +4,6 @@
  *
  * Software libre bajo la GNU General Public License v3 con términos adicionales
  * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
- * Interfaz basada en Gemi3DS de VENOMSHiNE - https://github.com/venomshine/Gemi3DS
  */
 // Cloud3DS - idiomas de la interfaz (español, inglés, japonés)
 #pragma once

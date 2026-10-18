@@ -8,9 +8,6 @@ Cloud3DS es software libre: puedes redistribuirlo y/o modificarlo bajo los térm
 Se distribuye con la esperanza de que sea útil, pero **SIN NINGUNA GARANTÍA**; ni siquiera la garantía implícita
 de COMERCIABILIDAD o IDONEIDAD PARA UN PROPÓSITO PARTICULAR. Consulta la GNU General Public License para más detalles.
 
-La interfaz de la consola (motor gráfico, componentes e íconos) está basada en
-[Gemi3DS](https://github.com/venomshine/Gemi3DS), del mismo autor.
-
 ## Términos adicionales (sección 7 de la GPL-3.0)
 
 Conforme a la sección 7 de la GNU GPL v3, se añaden estos términos a todo el código de Cloud3DS:
@@ -48,4 +45,4 @@ Cloud3DS is free software licensed under the **GNU GPL v3** (see [LICENSE](LICEN
 in its README/documentation and in the app's credits or About screen, if it has one;
 (c) the origin must not be misrepresented, and modified versions must be clearly marked as such;
 (e) no rights are granted to use the names "Cloud3DS" or "VENOMSHiNE" to promote derivative works.
-The console interface is based on Gemi3DS by the same author. Third-party code in `lib/` keeps its own license.
+Third-party code in `lib/` keeps its own license.

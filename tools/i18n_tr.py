@@ -144,7 +144,6 @@ TR = {
     'Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!': ('If you like Cloud3DS, buy me a coffee. It helps a lot!', 'Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!'),
     'Escanéalo con tu teléfono': ('Scan it with your phone', 'スマホで読み取ってください'),
     'v%s · hecho por %s': ('v%s · made by %s', 'v%s · 制作: %s'),
-    'Interfaz basada en Gemi3DS': ('Interface based on Gemi3DS', 'インターフェースはGemi3DSがベース'),
     'Toca para expulsarlo: tendrá que volver a escanear el QR o escribir el PIN.': ('Tap to remove it: it will need to scan the QR code or enter the PIN again.', 'タップで解除。再びQRコードかPINが必要になります。'),
     'Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada.': ("With “Read-only”, devices can view and download, but can't upload, rename or delete anything.", '「読み取り専用」では閲覧とダウンロードのみで、アップロード・名前変更・削除はできません。'),
     'Antes de borrar o cambiar Nintendo 3DS, luma/payloads, boot.firm y otras carpetas importantes, la web pide confirmación.': ('Before deleting or changing Nintendo 3DS, luma/payloads, boot.firm and other important folders, the web page asks first.', 'Nintendo 3DS、luma/payloads、boot.firmなど重要なフォルダを削除・変更する前に確認します。'),
@@ -169,4 +168,7 @@ TR = {
     "Elige uno para ver su QR arriba": ("Pick one to see its QR code above", "選ぶと上画面にQRを表示"),
     "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
     "Escanéalo con tu móvil": ("Scan it with your phone", "スマホで読み取ってください"),
+    "Qué es y para qué sirve": ("What it is and what it's for", "このアプリについて"),
+    "Software libre · licencia GPL-3.0": ("Free software · GPL-3.0 license", "フリーソフトウェア · GPL-3.0"),
+    "No deja borrar Nintendo 3DS, 3ds, luma…": ("Keeps Nintendo 3DS, 3ds, luma… safe from deletion", "Nintendo 3DS、3ds、lumaなどを削除不可に"),
 }

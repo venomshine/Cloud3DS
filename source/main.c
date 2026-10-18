@@ -4,7 +4,6 @@
  *
  * Software libre bajo la GNU General Public License v3 con términos adicionales
  * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
- * Interfaz basada en Gemi3DS de VENOMSHiNE - https://github.com/venomshine/Gemi3DS
  */
 // Cloud3DS - bucle principal e interfaz de la consola
 #include "app.h"
@@ -48,7 +47,7 @@
 enum { TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
 enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_ABOUT, SET_EXIT, SET_COUNT };
-enum { AB_GITHUB, AB_DISCORD, AB_KOFI, AB_VERSION, AB_COUNT };
+enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
 enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR };
 
 typedef struct {
@@ -421,11 +420,12 @@ static void about_card(void)
 		const char *desc[3] = {_("Código, novedades y nuevas versiones de mis proyectos."),
 		                       _("Únete a la comunidad: dudas, ideas y avisos de actualizaciones."),
 		                       _("Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!")};
-		draw_qr(LINKS[sel], QR_X, QR_Y, QR_S, 1);
-		text_draw(NAMES[sel], COL_X, QR_Y + 2, 0.66f, T.text);
-		text_wrap_lines(desc[sel], COL_W, 0.42f, 5, COL_X, QR_Y + 30, T.text2, true);
+		int k = sel - AB_GITHUB;
+		draw_qr(LINKS[k], QR_X, QR_Y, QR_S, 1);
+		text_draw(NAMES[k], COL_X, QR_Y + 2, 0.66f, T.text);
+		text_wrap_lines(desc[k], COL_W, 0.42f, 5, COL_X, QR_Y + 30, T.text2, true);
 		text_draw_clip(_("Escanéalo con tu móvil"), COL_X, QR_Y + 120, COL_W, TS_SUB, T.text3);
-		text_wrap_lines(LINKS[sel] + 8, COL_W, TS_SUB, 3, COL_X, QR_Y + 136, T.accent, true);
+		text_wrap_lines(LINKS[k] + 8, COL_W, TS_SUB, 3, COL_X, QR_Y + 136, T.accent, true);
 	} else {
 		draw_cloud(QR_X + QR_S / 2 - 6, QR_Y + 62, 34, 1);
 		float w = text_width(APP_NAME, 0.9f);
@@ -435,7 +435,7 @@ static void about_card(void)
 		float vw = text_width(vb, TS_SUB);
 		text_draw_clip(vb, QR_X + (QR_S - fminf(vw, QR_S)) / 2, QR_Y + 136, QR_S, TS_SUB, T.text2);
 		text_wrap_lines(_(ABOUT_TEXT), COL_W, 0.42f, 10, COL_X, QR_Y + 2, T.text2, true);
-		text_draw_clip(_("Interfaz basada en Gemi3DS"), COL_X, QR_Y + QR_S - 12, COL_W, TS_SUB, T.text3);
+		text_draw_clip(_("Software libre · licencia GPL-3.0"), COL_X, QR_Y + QR_S - 12, COL_W, TS_SUB, T.text3);
 	}
 }
 
@@ -741,7 +741,7 @@ static void settings_action(int i)
 		break;
 	case SET_ABOUT:
 		U.page = PAGE_ABOUT;
-		U.list[TAB_COUNT + 1].sel = AB_DISCORD;
+		U.list[TAB_COUNT + 1].sel = AB_APP;
 		U.list[TAB_COUNT + 1].off = U.list[TAB_COUNT + 1].target = 0;
 		break;
 	case SET_EXIT:
@@ -864,11 +864,11 @@ static void settings_about(void)
 	tab_header(_("Acerca de Cloud3DS"), true);
 	const float RH = 40;
 	list_update(l, AB_COUNT, RH);
-	static const IconId IC[AB_COUNT] = {IC_CODE, IC_CHAT, IC_HEART, IC_CLOUD};
-	const u32 COL[AB_COUNT] = {col_hex(0x6E7681), col_hex(0x5865F2), col_hex(0xFF5E5B), T.accent};
-	const char *title[AB_COUNT] = {"GitHub", "Discord", "Ko-fi", "Cloud3DS " APP_VERSION};
-	const char *sub[AB_COUNT] = {_("Código y nuevas versiones"), _("Únete a la comunidad"), _("Invítame a un café"),
-	                             _("Gracias por usarlo")};
+	static const IconId IC[AB_COUNT] = {IC_CLOUD, IC_CODE, IC_CHAT, IC_HEART};
+	const u32 COL[AB_COUNT] = {T.accent, col_hex(0x6E7681), col_hex(0x5865F2), col_hex(0xFF5E5B)};
+	const char *title[AB_COUNT] = {"Cloud3DS " APP_VERSION, "GitHub", "Discord", "Ko-fi"};
+	const char *sub[AB_COUNT] = {_("Qué es y para qué sirve"), _("Código y nuevas versiones"), _("Únete a la comunidad"),
+	                             _("Invítame a un café")};
 	for (int i = 0; i < AB_COUNT; i++) {
 		float y = VIEW_Y + i * RH - l->off;
 		row(l, i, y, RH);
@@ -876,7 +876,7 @@ static void settings_about(void)
 		text_draw_clip(title[i], 50, y + 5, 230, TS_BODY, T.text);
 		text_draw_clip(sub[i], 50, y + 22, 230, TS_SUB, T.text3);
 		if (i == l->sel)
-			draw_icon(IC_QR, BOT_W - 26, y + RH / 2, 15, T.accent);
+			draw_icon(i == AB_APP ? IC_INFO : IC_QR, BOT_W - 26, y + RH / 2, 15, T.accent);
 	}
 }
 
