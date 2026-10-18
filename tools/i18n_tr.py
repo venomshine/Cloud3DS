@@ -170,5 +170,5 @@ TR = {
     "Escanéalo con tu móvil": ("Scan it with your phone", "スマホで読み取ってください"),
     "Qué es y para qué sirve": ("What it is and what it's for", "このアプリについて"),
     "Software libre · licencia GPL-3.0": ("Free software · GPL-3.0 license", "フリーソフトウェア · GPL-3.0"),
-    "No deja borrar Nintendo 3DS, 3ds, luma…": ("Keeps Nintendo 3DS, 3ds, luma… safe from deletion", "Nintendo 3DS、3ds、lumaなどを削除不可に"),
+    "No deja borrar Nintendo 3DS, 3ds, luma…": ("Can't delete Nintendo 3DS, 3ds, luma…", "Nintendo 3DS、3ds、lumaなどを削除不可に"),
 }

@@ -65,7 +65,7 @@ static const TrEntry TR_TAB[] = {
 	{"Solo lectura", "Read-only", "読み取り専用"},
 	{"Solo se podrá ver y descargar", "Devices can only view and download", "閲覧とダウンロードのみ"},
 	{"Proteger carpetas del sistema", "Protect system folders", "システムフォルダを保護"},
-	{"No deja borrar Nintendo 3DS, 3ds, luma…", "Keeps Nintendo 3DS, 3ds, luma… safe from deletion", "Nintendo 3DS、3ds、lumaなどを削除不可に"},
+	{"No deja borrar Nintendo 3DS, 3ds, luma…", "Can't delete Nintendo 3DS, 3ds, luma…", "Nintendo 3DS、3ds、lumaなどを削除不可に"},
 	{"PIN nuevo", "New PIN", "新しいPIN"},
 	{"Invalida el QR y el PIN actuales", "Invalidates the current QR and PIN", "現在のQRとPINを無効にします"},
 	{"Idioma", "Language", "言語"},
