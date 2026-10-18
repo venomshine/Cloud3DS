@@ -62,7 +62,9 @@ def icon():
     S = 4
     w = 48 * S
     im = bg(w, w)
-    paste_cloud(im, w / 2 - 1.5 * S, w / 2 + 1 * S, 17 * S)
+    # la nube no es simétrica: se centra su caja real (-0.8r..0.9r, -0.74r..0.5r)
+    r = 17 * S
+    paste_cloud(im, w / 2 - 0.05 * r, w / 2 + 0.12 * r, r)
     mask = Image.new("L", (w, w), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, w - 1], radius=11 * S, fill=255)
     out = Image.new("RGBA", (w, w), (0, 0, 0, 0))
