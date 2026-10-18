@@ -76,7 +76,7 @@ export APP_ICON := $(TOPDIR)/$(ICON)
 export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 
-.PHONY: all clean web
+.PHONY: all clean web cia
 
 #---------------------------------------------------------------------------------
 # La página web se sirve comprimida desde romfs
@@ -92,6 +92,10 @@ $(ROMFS)/web/index.html.gz: web/index.html
 
 $(BUILD):
 	@mkdir -p $@
+
+# .cia con banner y sonido (necesita bannertool y makerom en el PATH)
+cia: all
+	@tools/build_cia.sh
 
 ifneq ($(DEPSDIR),$(BUILD))
 $(DEPSDIR):
