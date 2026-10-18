@@ -65,6 +65,8 @@ static struct {
 	float t_ro, t_prot;          // animación de los interruptores
 	int dlg_arg;
 	bool quit;
+	float splash;                // segundos de presentación (-1 = terminada)
+	float fade;                  // fundido de la presentación a la app (1 -> 0)
 	bool lid_off;
 } U;
 
@@ -429,9 +431,44 @@ static void about_card(void)
 	}
 }
 
+// ------------------------------------------------------------ presentación
+static void splash_top(float alpha)
+{
+	float t = U.splash >= 0 ? U.splash : 2.0f;
+	float a = ease_out_cubic(t / 0.9f);
+	// halo con los colores de la marca
+	for (int i = 0; i < 6; i++) {
+		float r = 30 + i * 22 * a;
+		draw_circle(200, 98, r, col_alpha(brand_grad(i / 6.0f + t * 0.2f), 0.05f * a * alpha));
+	}
+	float sc = ease_out_back(clampf(t / 0.8f, 0, 1));
+	if (sc > 0.01f)
+		draw_cloud(196, 96, 44 * sc, alpha);
+	float ta = clampf((t - 0.5f) / 0.5f, 0, 1) * alpha;
+	float w = text_width(APP_NAME, 1.1f);
+	text_draw_grad(APP_NAME, 200 - w / 2, 150 + (1 - ta) * 10, 1.1f, t * 0.3f, ta);
+	text_draw_center(_("Tu nube local"), 200, 190, 0.5f, col_alpha(T.text3, ta));
+}
+
+static void splash_bot(float alpha)
+{
+	float t = U.splash >= 0 ? U.splash : 2.0f;
+	float ta = clampf((t - 0.7f) / 0.4f, 0, 1) * alpha;
+	for (int i = 0; i < 3; i++) {
+		float ph = sinf(g_time * 6 - i * 0.7f) * 0.5f + 0.5f;
+		draw_circle(148 + i * 12, 112, 3 + ph * 1.5f, col_alpha(brand_grad(i / 3.0f), ta * (0.4f + ph * 0.6f)));
+	}
+	text_draw_center("v" APP_VERSION, 160, 200, TS_SUB, col_alpha(T.text3, ta));
+	text_draw_center(_("hecho por VENOMSHiNE"), 160, 214, TS_SUB, col_alpha(T.text3, ta));
+}
+
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
+	if (U.splash >= 0) {
+		splash_top(1);
+		return;
+	}
 	draw_header();
 	if (U.tab == TAB_SETTINGS && U.page == PAGE_ABOUT) {
 		about_card();
@@ -462,6 +499,10 @@ static void draw_top(void)
 		draw_status();
 	}
 	toast_draw_top();
+	if (U.fade > 0) {
+		draw_rect(0, 0, TOP_W, SCR_H, col_alpha(T.bg, U.fade));
+		splash_top(U.fade);
+	}
 }
 
 // ------------------------------------------------------------ pantalla inferior
@@ -853,6 +894,10 @@ static void draw_tabbar(void)
 static void draw_bottom(void)
 {
 	gfx_target(g_bot, T.bg);
+	if (U.splash >= 0) {
+		splash_bot(1);
+		return;
+	}
 	if (U.tab == TAB_ACTIVITY)
 		tab_activity();
 	else if (U.tab == TAB_DEVICES)
@@ -865,6 +910,10 @@ static void draw_bottom(void)
 		settings_main();
 	draw_tabbar();
 	dialog_draw();
+	if (U.fade > 0) {
+		draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, U.fade));
+		splash_bot(U.fade);
+	}
 }
 
 // ------------------------------------------------------------ lógica
@@ -948,6 +997,17 @@ static void ask_exit(void)
 
 static void update(void)
 {
+	// presentación: unos 2 s, o hasta pulsar algo (a partir de medio segundo)
+	if (U.splash >= 0) {
+		U.splash += g_dt;
+		if (U.splash > 2.0f || (U.splash > 0.5f && ((g_kdown & ~KEY_TOUCH) || g_touch.down))) {
+			U.splash = -1;
+			U.fade = 1;
+		}
+		return;
+	}
+	if (U.fade > 0)
+		U.fade = fmaxf(0, U.fade - g_dt * 3.5f);
 	if (g_kdown & ~KEY_TOUCH)
 		U.buttons = true;
 	if (g_touch.down)
@@ -1025,6 +1085,7 @@ int main(void)
 	hidSetRepeatParameters(18, 5);
 
 	server_start();
+	U.splash = 0;
 
 	u64 last_save = util_ms();
 	while (aptMainLoop() && !U.quit) {
