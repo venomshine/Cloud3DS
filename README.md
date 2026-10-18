@@ -1,86 +1,141 @@
-<p align="center"><img src="cia/banner.png" width="384" alt="Cloud3DS"></p>
+# Cloud3DS
 
-<h1 align="center">Cloud3DS</h1>
-<p align="center"><b>Tu nube local para Nintendo 3DS.</b><br>
-Maneja la tarjeta SD de tu consola desde el móvil o el PC: escanea un QR y listo. Sin apps, sin cables y sin configurar nada.</p>
+**Tu nube local para Nintendo 3DS.** Maneja la tarjeta SD de tu consola desde el móvil o el PC: escanea un QR y listo. Sin apps, sin cables y sin configurar nada; una alternativa a FTPD pensada para que cualquiera la use.
 
-<p align="center">
-<img src="docs/c_idle.png" width="400" alt="Pantalla de la consola con el QR">
-<img src="docs/c_upload.png" width="400" alt="Subida en curso vista en la consola">
-</p>
+*English below · [Read in English](#english)*
+
+<a href='https://ko-fi.com/W3A028X2KV' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
 
 <p align="center">
-<img src="docs/r_web_home.png" width="190" alt="Inicio en el móvil">
-<img src="docs/r_web_grid.png" width="190" alt="Capturas en cuadrícula">
-<img src="docs/r_web_upload.png" width="190" alt="Subidas con progreso">
-<img src="docs/r_web_viewer.png" width="190" alt="Visor de fotos">
+  <img src="docs/inicio.png" width="260" alt="Pantalla de inicio con el QR, la dirección y el PIN">
+  <img src="docs/subida.png" width="260" alt="Subida en curso vista en la consola">
+  <img src="docs/actividad.png" width="260" alt="Actividad">
+</p>
+<p align="center">
+  <img src="docs/dispositivos.png" width="260" alt="Dispositivos conectados">
+  <img src="docs/ajustes.png" width="260" alt="Ajustes">
+  <img src="docs/acerca.png" width="260" alt="Acerca de, con el QR del Discord">
+</p>
+<p align="center">
+  <img src="docs/web-movil.png" width="200" alt="Capturas en el móvil">
+  <img src="docs/web-subidas.png" width="200" alt="Subidas desde el móvil">
+  <img src="docs/web-pc.png" width="430" alt="Cloud3DS en el navegador del PC">
 </p>
 
-## ¿Por qué no FTPD?
+## Descargar e instalar
 
-FTPD funciona, pero hay que instalar un cliente FTP, escribir la IP y el puerto a mano y leer texto plano en la consola. Cloud3DS hace lo mismo y más, desde **cualquier navegador**:
+<img src="docs/qr-cia.png" width="170" align="right" alt="QR de descarga del .cia">
 
-- **Conectar en un segundo:** escanea el QR de la consola con la cámara del móvil y se abre tu SD. En el PC escribes la dirección y el PIN de 4 cifras que aparecen en pantalla.
-- **Dispositivos recordados:** cada móvil o PC vinculado se queda guardado. Lo ves en la consola y lo puedes expulsar cuando quieras.
-- **Subir arrastrando:** archivos sueltos o carpetas enteras, con cola, velocidad y tiempo restante. Si un archivo ya existe, te pregunta si quieres reemplazarlo, conservar ambos u omitirlo.
-- **Accesos rápidos:** Capturas (Luma), Fotos (cámara), CIAs, Homebrew y Partidas (Checkpoint).
-- **Visor integrado:** fotos y capturas (deslizando entre ellas), vídeos y archivos de texto.
-- **Gestión completa:** crear carpetas, renombrar, borrar (también varios a la vez), buscar y ordenar por nombre, fecha o tamaño.
-- **Seguro por defecto:** PIN nuevo en cada arranque, bloqueo tras varios intentos fallidos, modo **solo lectura** y confirmación antes de tocar carpetas del sistema (`Nintendo 3DS`, `luma/payloads`, `boot.firm`…).
-- **Sin sorpresas:** las subidas se escriben en un temporal y solo se renombran al terminar. Si se corta la conexión, no quedan archivos a medias. Avisa si no hay espacio o si el archivo pasa de 4 GB (límite de FAT32).
-- **Puedes cerrar la tapa:** mientras transfiere, la consola no se suspende y apaga la pantalla.
-- **En la consola:** el QR, la dirección y el PIN siempre a la vista, con las transferencias en directo al lado. Actividad, dispositivos conectados (con opción de expulsarlos) y ajustes en pestañas; en «Acerca de», los QR de GitHub, Discord y Ko-fi. Tema oscuro o claro, en español, inglés y japonés.
+**Instalar sin cables con FBI (recomendado)**
+1. En la 3DS abre **FBI** → *Remote Install* → *Scan QR Code*.
+2. Escanea el código QR de la derecha. Descarga siempre la última versión del `.cia`.
+3. Cloud3DS aparece en el menú HOME.
 
-<p align="center"><img src="docs/c_activity.png" width="400" alt="Actividad"> <img src="docs/c_settings.png" width="400" alt="Acerca de"></p>
-<p align="center"><img src="docs/r_web_pc.png" width="820" alt="Cloud3DS en el navegador del PC"></p>
+**Instalar a mano**
+- **`.cia`**: descarga `Cloud3DS.cia` de la [última versión](https://github.com/venomshine/Cloud3DS/releases/latest), cópialo a la SD e instálalo con FBI.
+- **`.3dsx`**: copia `Cloud3DS.3dsx` a `sd:/3ds/` y ábrelo desde el Homebrew Launcher.
 
-## Instalar
-
-<img src="docs/install-qr.png" width="160" align="right" alt="QR de instalación">
-
-**Con FBI (sin cables):** abre FBI → *Remote Install* → *Scan QR Code* y escanea este QR. Instala siempre la última versión.
-
-**A mano:** descarga `Cloud3DS.cia` desde [Releases](https://github.com/venomshine/Cloud3DS/releases) e instálalo con FBI, o copia `Cloud3DS.3dsx` a `sdmc:/3ds/` y ábrelo desde el Homebrew Launcher.
+Necesitas una consola con homebrew (por ejemplo, con [3ds.hacks.guide](https://3ds.hacks.guide/)) y conexión Wi-Fi. Funciona en 3DS, 2DS, New 3DS y New 2DS.
 
 ## Cómo se usa
 
 1. Conecta la consola a tu Wi-Fi (o al punto de acceso de tu móvil si no tienes router) y abre **Cloud3DS**.
-2. Escanea el QR de la pantalla de arriba con el móvil, o escribe en el navegador del PC la dirección que aparece (por ejemplo `192.168.1.34`) y el PIN.
-3. Listo: navega, sube, descarga y organiza.
+2. **Desde el móvil:** escanea el QR de la pantalla de arriba con la cámara. Se abre tu SD en el navegador, sin escribir nada.
+3. **Desde el PC:** escribe en el navegador la dirección que aparece (por ejemplo `192.168.1.34`) y el **PIN** de 4 cifras.
+4. Listo: navega, sube, descarga y organiza. Cada dispositivo queda recordado; la próxima vez entra solo.
 
-El móvil o el PC tienen que estar en la **misma red** que la consola. En algunas Wi-Fi públicas los dispositivos no se pueden ver entre sí; ahí no funcionará.
+El móvil o el PC tienen que estar en **la misma red** que la consola. En algunas Wi-Fi públicas los dispositivos no se pueden ver entre sí; ahí no funcionará. Todo se queda en tu red: nada pasa por Internet.
 
-## Controles en la consola
+## Funciones
+
+- **Conectar en un segundo:** QR en la consola para el móvil y dirección + PIN para el PC. El PIN cambia en cada arranque y se bloquea tras varios intentos fallidos.
+- **Dispositivos recordados:** los ves en la consola, con quién está conectado ahora, y puedes **expulsar** a cualquiera.
+- **Explorador de la SD** en el navegador: accesos rápidos a **Capturas** (Luma), **Fotos** (cámara), **CIAs**, **Homebrew** y **Partidas** (Checkpoint); lista o cuadrícula con miniaturas; búsqueda y orden por nombre, fecha o tamaño.
+- **Subir arrastrando** archivos sueltos o carpetas enteras, con cola, progreso, velocidad y tiempo restante. Si algo ya existe, eliges **reemplazar**, **conservar ambos** u **omitir**.
+- **Descargar** archivos y ver **fotos** (deslizando entre ellas), **vídeos** y **textos** directamente en el navegador.
+- **Crear carpetas, renombrar y borrar**, también varios a la vez.
+- **Seguro por defecto:** modo **solo lectura** y confirmación antes de tocar carpetas del sistema (`Nintendo 3DS`, `luma/payloads`, `boot.firm`…).
+- **Sin sorpresas:** las subidas se escriben en un temporal y solo se guardan al terminar; si se corta la conexión, no quedan archivos a medias. Avisa si no hay espacio o si el archivo pasa de 4 GB (límite de FAT32).
+- **En la consola:** el QR, la dirección y el PIN siempre a la vista, con las transferencias en directo al lado. Pestañas de **Actividad**, **Dispositivos** y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
+- **Puedes cerrar la tapa:** mientras transfiere, la consola no se suspende y apaga la pantalla.
+- Fecha, hora, Wi-Fi y batería en la pantalla superior. Tema oscuro y claro.
+- Idiomas: **español, inglés y japonés** (o el de la consola). La web usa el idioma del móvil o del PC.
+
+## Controles
 
 | Botón | Acción |
 |---|---|
-| L / R | Cambiar de pestaña (Actividad, Dispositivos, Ajustes) |
-| Cruceta | Moverse por las listas |
-| A | Elegir |
-| B | Atrás (de Idioma o Acerca de a Ajustes) |
-| START | Salir |
+| **L / R** | Cambiar de pestaña (Actividad, Dispositivos, Ajustes) |
+| **↑ ↓** | Moverse por las listas |
+| **A** | Elegir |
+| **B** | Atrás / cancelar |
+| **START** | Salir |
 
 Todo se puede hacer también con la pantalla táctil.
 
-## Archivos en la SD
+## Errores y sugerencias
 
-`sdmc:/3ds/Cloud3DS/` guarda `config.json` (ajustes, dispositivos e historial) y `net.log` (registro de diagnóstico). Si algo falla, ese registro ayuda mucho a encontrar el problema.
+¿Algo falla o se ve raro? Abre un [issue](https://github.com/venomshine/Cloud3DS/issues) o escríbeme en [Discord](https://discord.com/invite/yVKp8JwV4e). Si algo falla en la red, el archivo `sd:/3ds/Cloud3DS/net.log` ayuda mucho a encontrar el problema. Si quieres apoyar el proyecto, invítame a un café:
 
-## Compilar
+<a href='https://ko-fi.com/W3A028X2KV' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
 
-Necesitas [devkitPro](https://devkitpro.org) con `3ds-dev`:
+## Compilar desde el código
 
-```sh
-make                      # Cloud3DS.3dsx
-tools/build_cia.sh        # Cloud3DS.cia (necesita bannertool y makerom)
+1. Instala [devkitPro](https://devkitpro.org/wiki/Getting_Started) con el paquete *3DS Development*.
+2. Compila:
+   ```
+   dkp-pacman -S 3ds-dev
+   make
+   ```
+   Se genera `Cloud3DS.3dsx`.
+3. Para el `.cia`, pon [`bannertool`](https://github.com/carstene1ns/3ds-bannertool) y [`makerom`](https://github.com/3DSGuy/Project_CTR) en el PATH y ejecuta `make cia`.
+
+```
+source/   código de la app
+  main.c          arranque, bucle principal e interfaz de la consola
+  server.c        servidor web: la página y la API de archivos
+  fsx.c           operaciones de la SD
+  state.c         estado compartido, dispositivos, historial y configuración
+  gfx.c ui.c icons.c   gráficos, componentes e íconos
+  i18n.c          idiomas (la tabla i18n_table.h se genera con tools/gen_i18n.py)
+web/      página web (se sirve comprimida desde romfs)
+lib/      cJSON, QR Code generator
+cia/      icono, banner, sonido y configuración del .cia
+tools/    traducciones, icono y banner, sonido del banner y empaquetado del .cia
+tests/    pruebas automáticas en el emulador (API, web y capturas)
 ```
 
-`tools/gen_i18n.py` regenera la tabla de traducciones a partir de `tools/i18n_tr.py`. `tools/gen_art.py` y `tools/gen_banner_wav.py` generan el icono, el banner y su sonido.
+Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python3 tools/gen_i18n.py`.
 
-## Créditos y licencias
+---
+
+## English
+
+**Your local cloud for Nintendo 3DS.** Manage your console's SD card from your phone or PC: scan a QR code and you're in. No apps, no cables, nothing to set up — an easy alternative to FTPD. The interface is available in Spanish, English and Japanese.
+
+**Install:** open **FBI** → *Remote Install* → *Scan QR Code* and scan the QR above, or download `Cloud3DS.cia` / `Cloud3DS.3dsx` from the [latest release](https://github.com/venomshine/Cloud3DS/releases/latest).
+
+**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, view photos and videos, rename and delete. Devices are remembered and can be removed from the console. Read-only mode and system-folder protection are on hand, and uploads never leave half-written files behind.
+
+**Build:** devkitPro with `3ds-dev`, then `make` (or `make cia` with bannertool and makerom).
+
+Bugs and ideas: [issues](https://github.com/venomshine/Cloud3DS/issues) or [Discord](https://discord.com/invite/yVKp8JwV4e).
+
+---
 
 Hecho por **VENOMSHiNE** · [GitHub](https://github.com/venomshine) · [Discord](https://discord.com/invite/yVKp8JwV4e) · [Ko-fi](https://ko-fi.com/venomshine)
 
-<a href="https://ko-fi.com/W3A028X2KV"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Apóyame en Ko-fi"></a>
+Cloud3DS es un proyecto no oficial y no está afiliado a Nintendo. *Cloud3DS is an unofficial project, not affiliated with Nintendo.*
 
-Cloud3DS se distribuye bajo la licencia **GPL-3.0 con términos adicionales de atribución** (sección 7): ver [LICENSE](LICENSE) y [NOTICE.md](NOTICE.md). El motor de dibujo de la consola (texto, formas e íconos) viene de [Gemi3DS](https://github.com/venomshine/Gemi3DS). Usa [libctru, citro2d y citro3d](https://github.com/devkitPro), [cJSON](https://github.com/DaveGamble/cJSON) y [QR Code generator](https://github.com/nayuki/QR-Code-generator).
+## Licencia
+
+Cloud3DS es software libre bajo la **[GNU GPL v3](LICENSE)** con términos adicionales de atribución ([NOTICE.md](NOTICE.md)):
+
+- Puedes usar, estudiar y modificar el código, pero lo que hagas con él también debe ser de código abierto bajo la GPL-3.0.
+- **Debes dar crédito visible** en tu README y en la pantalla de créditos o «Acerca de» de tu app:
+  > Basado en Cloud3DS de VENOMSHiNE — https://github.com/venomshine/Cloud3DS
+- No puedes presentarlo como tuyo, y las versiones modificadas deben indicar que lo son.
+
+*License: GNU GPL v3 with additional attribution terms — see [NOTICE.md](NOTICE.md).*
+
+El motor de dibujo de la consola (texto, formas e íconos) viene de [Gemi3DS](https://github.com/venomshine/Gemi3DS). Incluye cJSON (MIT) y QR Code generator de Project Nayuki (MIT), que conservan sus licencias.
