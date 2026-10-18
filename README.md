@@ -1,6 +1,6 @@
 # Cloud3DS
 
-**Tu nube local para Nintendo 3DS.** Maneja la tarjeta SD de tu consola desde el móvil o el PC: escanea un QR y listo. Sin apps, sin cables y sin configurar nada; una alternativa a FTPD pensada para que cualquiera la use.
+**Tu nube local para Nintendo 3DS.** Maneja la tarjeta SD de tu consola desde el móvil o el PC: escanea un QR y listo. Sin apps, sin cables y sin configurar nada. Solo Plug-and-Play.
 
 *English below · [Read in English](#english)*
 
