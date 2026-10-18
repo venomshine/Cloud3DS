@@ -8,7 +8,9 @@
 - Subidas de archivos y carpetas (botón o arrastrar y soltar) con cola, progreso, velocidad, tiempo restante y cancelación. Conflictos: reemplazar, conservar ambos u omitir.
 - Descargas con soporte de rangos (los vídeos se pueden adelantar), visor de fotos, vídeos y texto.
 - Crear carpetas, renombrar y borrar (también varios a la vez).
-- Seguridad: modo solo lectura, confirmación en carpetas del sistema, subidas atómicas (no quedan restos si se corta), avisos de falta de espacio y del límite de 4 GB de FAT32.
-- Consola: QR, dirección y PIN, transferencias en directo, actividad, dispositivos, ajustes, batería, Wi-Fi y hora. Tema oscuro y claro, en español, inglés y japonés.
+- Seguridad: modo solo lectura, subidas atómicas (no quedan restos si se corta), avisos de falta de espacio y del límite de 4 GB de FAT32.
+- Consola: presentación animada; QR, dirección y PIN siempre a la vista con las transferencias en directo al lado; pestañas de Actividad, Dispositivos y Ajustes; «Acerca de» con los QR de GitHub, Discord y Ko-fi; fecha, hora, Wi-Fi y batería. Tema oscuro y claro, en español, inglés y japonés.
+- Al expulsar un dispositivo desde la consola, su navegador muestra que lo desconectaron.
+- Carpetas del sistema protegidas (con candado en la web): no se pueden borrar ni renombrar mientras la protección esté activa.
 - No se suspende mientras transfiere y apaga la pantalla si se cierra la tapa.
 - Se distribuye como `.cia` (con banner y sonido en el menú HOME) y `.3dsx`.

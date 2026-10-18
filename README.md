@@ -17,7 +17,7 @@
   <img src="docs/acerca.png" width="260" alt="Acerca de, con el QR del Discord">
 </p>
 <p align="center">
-  <img src="docs/web-movil.png" width="200" alt="Capturas en el móvil">
+  <img src="docs/web-movil.png" width="200" alt="La SD en el móvil, con las carpetas del sistema protegidas">
   <img src="docs/web-subidas.png" width="200" alt="Subidas desde el móvil">
   <img src="docs/web-pc.png" width="430" alt="Cloud3DS en el navegador del PC">
 </p>
@@ -49,12 +49,13 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 ## Funciones
 
 - **Conectar en un segundo:** QR en la consola para el móvil y dirección + PIN para el PC. El PIN cambia en cada arranque y se bloquea tras varios intentos fallidos.
-- **Dispositivos recordados:** los ves en la consola, con quién está conectado ahora, y puedes **expulsar** a cualquiera.
+- **Dispositivos recordados:** los ves en la consola, con quién está conectado ahora, y puedes **expulsar** a cualquiera; en su navegador aparece al momento que lo desconectaron.
 - **Explorador de la SD** en el navegador: accesos rápidos a **Capturas** (Luma), **Fotos** (cámara), **CIAs**, **Homebrew** y **Partidas** (Checkpoint); lista o cuadrícula con miniaturas; búsqueda y orden por nombre, fecha o tamaño.
 - **Subir arrastrando** archivos sueltos o carpetas enteras, con cola, progreso, velocidad y tiempo restante. Si algo ya existe, eliges **reemplazar**, **conservar ambos** u **omitir**.
+- **Carpeta anterior**, ruta siempre visible y **búsqueda** que se despliega desde la lupa.
 - **Descargar** archivos y ver **fotos** (deslizando entre ellas), **vídeos** y **textos** directamente en el navegador.
 - **Crear carpetas, renombrar y borrar**, también varios a la vez.
-- **Seguro por defecto:** modo **solo lectura** y confirmación antes de tocar carpetas del sistema (`Nintendo 3DS`, `luma/payloads`, `boot.firm`…).
+- **Seguro por defecto:** modo **solo lectura** y **carpetas del sistema protegidas** (`Nintendo 3DS`, `3ds`, `luma`, `boot.firm`…): llevan un candado y no se pueden borrar ni renombrar mientras la protección esté activa.
 - **Sin sorpresas:** las subidas se escriben en un temporal y solo se guardan al terminar; si se corta la conexión, no quedan archivos a medias. Avisa si no hay espacio o si el archivo pasa de 4 GB (límite de FAT32).
 - **En la consola:** el QR, la dirección y el PIN siempre a la vista, con las transferencias en directo al lado. Pestañas de **Actividad**, **Dispositivos** y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
 - **Puedes cerrar la tapa:** mientras transfiere, la consola no se suspende y apaga la pantalla.
@@ -68,6 +69,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 | **L / R** | Cambiar de pestaña (Actividad, Dispositivos, Ajustes) |
 | **↑ ↓** | Moverse por las listas |
 | **A** | Elegir |
+| **Y** | Borrar el historial (en Actividad) |
 | **B** | Atrás / cancelar |
 | **START** | Salir |
 
@@ -138,4 +140,4 @@ Cloud3DS es software libre bajo la **[GNU GPL v3](LICENSE)** con términos adici
 
 *License: GNU GPL v3 with additional attribution terms — see [NOTICE.md](NOTICE.md).*
 
-El motor de dibujo de la consola (texto, formas e íconos) viene de [Gemi3DS](https://github.com/venomshine/Gemi3DS). Incluye cJSON (MIT) y QR Code generator de Project Nayuki (MIT), que conservan sus licencias.
+Incluye cJSON (MIT) y QR Code generator de Project Nayuki (MIT), que conservan sus licencias.
