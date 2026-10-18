@@ -65,8 +65,10 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .chip svg{width:17px;height:17px;color:var(--a)}
 .chip.on{background:var(--grad);color:#fff;border-color:transparent}
 .chip.on svg{color:#fff}
-.banner{margin-top:12px;padding:10px 14px;border-radius:12px;font-size:13.5px;display:flex;gap:10px;align-items:center}
-.banner.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:color-mix(in srgb,var(--warn) 70%,var(--text))}
+.banner{margin-top:12px;padding:9px 14px;border-radius:12px;font-size:13.5px;display:flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);color:var(--muted)}
+.banner svg{width:18px;height:18px}
+.banner.warn{border-left:3px solid var(--warn)}
+.banner.warn svg{color:var(--warn)}
 .banner.err{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
 
 .bar2{display:flex;align-items:center;gap:8px;margin:14px 0 10px;position:relative;padding-right:48px}
