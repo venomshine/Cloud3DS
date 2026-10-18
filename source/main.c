@@ -260,11 +260,23 @@ static void draw_battery(float x, float y, int pct, bool charging)
 		draw_icon(IC_BOLT, x + w / 2, y + h / 2, 9, T.bg);
 }
 
+// señal Wi-Fi: tres arcos encendidos según la intensidad (0-3); -1 = sin conexión
+static void draw_wifi(float cx, float by, int bars)
+{
+	for (int i = 0; i < 3; i++) {
+		u32 c = bars > i ? T.text2 : T.divider;
+		draw_arc(cx, by, 3.5f + i * 3.5f, 1.6f, (float)(-M_PI * 0.75), (float)(-M_PI * 0.25), c);
+	}
+	draw_circle(cx, by - 0.5f, 1.4f, bars > 0 ? T.text2 : T.divider);
+	if (bars < 0)
+		draw_line(cx - 6, by - 11, cx + 6, by + 1, 1.4f, T.danger);
+}
+
 static void draw_header(void)
 {
 	draw_cloud(18, 11, 8, 1);
 	text_draw(APP_NAME, 32, 3, 0.5f, T.text);
-	// derecha: Wi-Fi  fecha · hora  [batería] 87 %
+	// derecha: fecha · hora   [Wi-Fi] [batería] 87 %
 	float rx = TOP_W - 10;
 	bool chg = false;
 	int pct = util_battery(&chg);
@@ -273,7 +285,9 @@ static void draw_header(void)
 	text_draw_right(bp, rx, 4, TS_HDR, T.text2);
 	rx -= text_width(bp, TS_HDR) + 4;
 	draw_battery(rx - 22, 6, pct, chg);
-	rx -= 22 + 10;
+	rx -= 22 + 8;
+	draw_wifi(rx - 7, 16, V.ip ? osGetWifiStrength() : -1);
+	rx -= 14 + 10;
 	char clk[8], day[32];
 	util_fmt_now(clk, sizeof clk);
 	text_draw_right(clk, rx, 4, TS_HDR, T.text2);
@@ -282,12 +296,6 @@ static void draw_header(void)
 	rx -= 6;
 	util_fmt_today(day, sizeof day);
 	text_draw_right(day, rx, 4, TS_HDR, T.text3);
-	rx -= text_width(day, TS_HDR) + 10;
-	int bars = V.ip ? osGetWifiStrength() : 0;
-	for (int i = 0; i < 3; i++) {
-		float h = 4 + i * 3;
-		draw_rrect(rx - 13 + i * 5, 16 - h, 3, h, 1, i < bars ? T.text2 : T.divider);
-	}
 	const Xfer *xs[1];
 	if (visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING) {
 		float p = g_time * 1.2f;
