@@ -19,7 +19,6 @@
 <p align="center">
   <img src="docs/web-movil.png" width="200" alt="La SD en el móvil, con las carpetas del sistema protegidas">
   <img src="docs/web-subidas.png" width="200" alt="Subidas desde el móvil">
-  <img src="docs/web-pc.png" width="430" alt="Cloud3DS en el navegador del PC">
 </p>
 
 ## Descargar e instalar
