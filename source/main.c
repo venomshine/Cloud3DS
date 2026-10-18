@@ -591,11 +591,23 @@ static void tab_activity(void)
 {
 	List *l = cur_list();
 	tab_header(_("Actividad"), false);
+	float hx = BOT_W - 14;
+	if (V.hist_n) {
+		// borrar el historial: siempre a mano, arriba a la derecha (también con Y)
+		float cx = BOT_W - 24, cy = 16;
+		bool p = touch_in(cx - 14, cy - 14, 28, 28);
+		draw_circle(cx, cy, 12, p ? col_alpha(T.danger, 0.35f) : T.surface);
+		draw_icon(IC_TRASH, cx, cy, 14, T.danger);
+		if (!g_dialog.open && (tap(cx - 14, cy - 14, 28, 28) || (g_kdown & KEY_Y)))
+			dialog_open(DLG_CLEAR, _("¿Borrar el historial?"), _("Se borra la lista de actividad. Tus archivos no se tocan."),
+			            _("Borrar"), true);
+		hx = cx - 20;
+	}
 	if (V.stat_up || V.stat_down) {
 		char a[24], b[24];
 		util_fmt_size(a, sizeof a, V.stat_up);
 		util_fmt_size(b, sizeof b, V.stat_down);
-		float x = BOT_W - 14 - text_width(b, TS_SUB);
+		float x = hx - text_width(b, TS_SUB);
 		text_draw(b, x, 11, TS_SUB, T.text3);
 		draw_icon(IC_DOWNLOAD, x - 9, 16, 12, T.accent);
 		x -= 26 + text_width(a, TS_SUB);
@@ -604,7 +616,7 @@ static void tab_activity(void)
 	}
 	int n = V.hist_n;
 	const float RH = 40;
-	int rows = n ? n + 1 : 0;   // + «Borrar el historial»
+	int rows = n;
 	list_update(l, rows, RH);
 	if (!n) {
 		empty_state(IC_CLOUD, _("Todo listo"), _("Sube algo desde tu móvil o tu PC y aparecerá aquí."));
@@ -615,15 +627,7 @@ static void tab_activity(void)
 		float y = VIEW_Y + i * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
-		bool t = row(l, i, y, RH);
-		if (i == n) {
-			row_icon(28, y + RH / 2, IC_TRASH, T.danger);
-			text_draw(_("Borrar el historial"), 50, y + (RH - text_lineh(TS_BODY)) / 2, TS_BODY, T.danger);
-			if (t || activate(l, i))
-				dialog_open(DLG_CLEAR, _("¿Borrar el historial?"), _("Se borra la lista de actividad. Tus archivos no se tocan."),
-				            _("Borrar"), true);
-			continue;
-		}
+		row(l, i, y, RH);
 		const Event *e = ev(i);
 		char title[128], sub[140], when[24];
 		IconId ic = IC_INFO;
