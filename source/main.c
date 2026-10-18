@@ -774,7 +774,7 @@ static void settings_main(void)
 			title = _("Solo lectura"); sub = _("Solo se podrá ver y descargar"); ic = IC_LOCK; col = T.warn;
 			break;
 		case SET_PROTECT:
-			title = _("Proteger carpetas del sistema"); sub = _("Pide confirmación en Nintendo 3DS, luma…");
+			title = _("Proteger carpetas del sistema"); sub = _("No deja borrar Nintendo 3DS, 3ds, luma…");
 			ic = IC_SHIELD; col = T.danger;
 			break;
 		case SET_PIN:

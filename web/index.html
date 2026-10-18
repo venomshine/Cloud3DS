@@ -114,7 +114,9 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .tile{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);cursor:pointer;position:relative;user-select:none}
-.tile .th{aspect-ratio:4/3;display:grid;place-items:center;background:var(--card2)}
+.tile .th{aspect-ratio:4/3;display:grid;place-items:center;background:var(--card2);position:relative}
+.tile .lockb{right:8px;bottom:8px;width:22px;height:22px}
+.tile .lockb svg{width:13px;height:13px}
 .tile .th img{width:100%;height:100%;object-fit:cover}
 .tile .th svg{width:34px;height:34px;color:var(--muted)}
 .tile .th.folder svg{color:var(--warn)}
@@ -171,6 +173,14 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .act:hover{background:var(--card2)}
 .act svg{color:var(--muted)}
 .act.danger,.act.danger svg{color:var(--err)}
+.act.off{cursor:default;align-items:flex-start}
+.act.off:hover{background:none}
+.act.off svg{color:var(--warn);margin-top:2px}
+.act.off b{display:block;font-weight:500}
+.act.off small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.ic{position:relative}
+.lockb{position:absolute;right:-3px;bottom:-3px;width:17px;height:17px;border-radius:50%;background:var(--card);display:grid;place-items:center;color:var(--warn)}
+.lockb svg{width:11px;height:11px;stroke-width:2.6}
 @media (min-width:700px){
   .scrim{align-items:center}
   .sheet{border-radius:22px;padding-bottom:14px;transform:scale(.96)}
@@ -423,7 +433,8 @@ const IMG=["png","jpg","jpeg","gif","bmp","webp"],VID=["mp4","webm","m4v","mov"]
 function kind(it){if(it.d)return"folder";const e=ext(it.n);if(IMG.includes(e))return"img";if(VID.includes(e)||AUD.includes(e))return"vid";if(TXT.includes(e))return"txt";if(["cia","3dsx","firm","3ds","cxi","nds"].includes(e))return"app";return"file"}
 function validName(n){return n&&n.length<=255&&!/[\\/:*?"<>|\x00-\x1f]/.test(n)&&n!=="."&&n!==".."&&!/[. ]$/.test(n)}
 const SYS=["/nintendo 3ds","/boot.firm","/boot.3dsx","/gm9","/3ds/cloud3ds","/luma/payloads","/luma/sysmodules","/luma/titles","/luma/config.ini"];
-const isSys=p=>{p=p.toLowerCase();return p==="/luma"||SYS.some(s=>p===s||p.startsWith(s+"/"))};
+const isSys=p=>{p=p.toLowerCase();return p==="/luma"||p==="/3ds"||SYS.some(s=>p===s||p.startsWith(s+"/"))};
+const isProt=p=>!!S.info.protect&&isSys(p);
 const fileUrl=(p,dl)=>"/api/file?p="+encodeURIComponent(p)+(dl?"&dl=1":"");
 
 let toastT;
@@ -513,11 +524,13 @@ function startApp(){
 }
 async function refreshInfo(){
  try{
+  const prev=S.info.protect+"/"+S.info.readonly;
   S.info=await api("GET","info");
+  // la lista depende de la protección y del modo solo lectura: si cambian, se repinta
   $("#cname").textContent=S.info.console;
   $("#sfree").textContent=t("free",fsize(S.info.free),fsize(S.info.total));
   $("#sbar").style.width=(100-S.info.free/S.info.total*100).toFixed(1)+"%";
-  renderChrome();
+  if(prev!==S.info.protect+"/"+S.info.readonly&&!S.loading)render();else renderChrome();
  }catch(e){}
 }
 async function go(p,replace){
@@ -589,13 +602,13 @@ function render(){
  if(S.view==="grid"){
   L.innerHTML=`<div class="grid">`+a.map(it=>{const k=kind(it),p=join(S.path,it.n);
    const th=k==="img"?`<img loading="lazy" src="${fileUrl(p)}" alt="">`:svg(k==="folder"?"folder":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file");
-   return `<div class="tile${S.sel.has(it.n)?" sel":""}" data-n="${esc(it.n)}"><div class="th ${k}">${th}</div><div class="nm">${esc(it.n)}</div></div>`}).join("")+`</div>`;
+   return `<div class="tile${S.sel.has(it.n)?" sel":""}" data-n="${esc(it.n)}"><div class="th ${k}">${th}${isProt(p)?`<span class="lockb">${svg("lock")}</span>`:""}</div><div class="nm">${esc(it.n)}</div></div>`}).join("")+`</div>`;
  }else{
   L.innerHTML=`<div class="list">`+a.map(it=>{const k=kind(it);
    const sub=it.d?t("folder")+(it.t?" · "+fdate(it.t):""):fsize(it.s)+(it.t?" · "+fdate(it.t):"");
    return `<div class="row${S.sel.has(it.n)?" sel":""}" data-n="${esc(it.n)}">`+
     (selMode?`<div class="chk">${svg("check")}</div>`:"")+
-    `<div class="ic ${k}">${svg(k==="folder"?"folder":k==="img"?"img":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file")}</div>`+
+    `<div class="ic ${k}">${svg(k==="folder"?"folder":k==="img"?"img":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file")}${isProt(join(S.path,it.n))?`<span class="lockb">${svg("lock")}</span>`:""}</div>`+
     `<div class="meta"><b>${esc(it.n)}</b><span>${sub}</span></div>`+
     `<button class="more" data-more="1">${svg("dots")}</button></div>`}).join("")+`</div>`;
  }
@@ -667,7 +680,7 @@ function openSheet(it){
   <div class="meta"><b>${esc(it.n)}</b><span>${it.d?t("folder"):fsize(it.s)}${it.t?" · "+fdate(it.t):""}</span></div></div>
   ${it.d?"":(k==="img"||k==="vid"||k==="txt")?`<button class="act" data-a="view">${svg("eye")}${t("view")}</button>`:""}
   ${it.d?"":`<button class="act" data-a="dl">${svg("down")}${t("download")}</button>`}
-  ${ro?"":`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
+  ${ro?"":isProt(p)?`<div class="act off">${svg("lock")}<span><b>${t("protT")}</b><small>${t("protD")}</small></span></div>`:`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
   <button class="act" data-a="sel">${svg("selall")}${t("select")}</button>
  </div>`);
  m.el.addEventListener("click",e=>{const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
@@ -686,10 +699,12 @@ function ask({title,text,ok,danger,input,value,check}){
   const obs=new MutationObserver(()=>{if(!document.body.contains(m.el)){obs.disconnect();if(!done)res(null)}});obs.observe(document.body,{childList:true});
  });
 }
+// carpetas del sistema: con la protección activa no se tocan; sin ella, se pide confirmación
 async function sysGuard(p){
- if(!S.info.protect||!isSys(p))return {};
+ if(!isSys(p))return {};
+ if(isProt(p)){toast(t("err_protected"));return null}
  const ok=await ask({title:t("sysQ"),text:t("sysD",base(p)||"/"),ok:t("cont"),danger:true});
- return ok?{force:1}:null;
+ return ok?{}:null;
 }
 async function renameDlg(it){
  const p=join(S.path,it.n);
@@ -710,7 +725,10 @@ async function confirmDelete(list){
  const one=list.length===1;
  const ok=await ask({title:one?t("delQ",list[0].n):t("delQn",list.length),text:list.some(i=>i.d)?t("delDirD"):t("delD"),ok:t("del"),danger:true});
  if(!ok)return;
- const g=await sysGuard(join(S.path,list[0].n));if(!g)return;
+ const prot=list.filter(i=>isProt(join(S.path,i.n)));
+ if(prot.length){toast(t("err_protected"));list=list.filter(i=>!prot.includes(i));if(!list.length)return}
+ const sys=list.find(i=>isSys(join(S.path,i.n)));
+ const g=sys?await sysGuard(join(S.path,sys.n)):{};if(!g)return;
  let errs=0;
  for(const it of list){try{await api("POST","delete",{p:join(S.path,it.n),...g})}catch(e){errs++;toast(errText(e))}}
  if(!errs)toast(t("deleted"));

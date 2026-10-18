@@ -647,15 +647,25 @@ static void h_file(Conn *c)
 	}
 }
 
-static bool check_write(Conn *c, const char *p, bool sys_check)
+enum { SYS_NONE, SYS_BLOCK, SYS_CONFIRM };
+
+/* Con la protección activa, las carpetas del sistema no se pueden borrar ni
+ * renombrar (SYS_BLOCK); subir dentro de ellas pide confirmación (SYS_CONFIRM). */
+static bool check_write(Conn *c, const char *p, int sys)
 {
 	if (G.readonly) {
 		resp_err(c, 403, "readonly");
 		return false;
 	}
-	if (sys_check && G.protect_sys && fsx_is_system(p) && !qflag(c->query, "force")) {
-		resp_err(c, 403, "system");
-		return false;
+	if (sys != SYS_NONE && G.protect_sys && fsx_is_system(p)) {
+		if (sys == SYS_BLOCK) {
+			resp_err(c, 403, "protected");
+			return false;
+		}
+		if (!qflag(c->query, "force")) {
+			resp_err(c, 403, "system");
+			return false;
+		}
 	}
 	return true;
 }
@@ -667,7 +677,7 @@ static void h_mkdir(Conn *c)
 		resp_err(c, 400, "bad_path");
 		return;
 	}
-	if (!check_write(c, p, false))
+	if (!check_write(c, p, SYS_NONE))
 		return;
 	bool dir;
 	u64 sz;
@@ -693,7 +703,7 @@ static void h_rename(Conn *c)
 		resp_err(c, 400, "bad_path");
 		return;
 	}
-	if (!check_write(c, p, true))
+	if (!check_write(c, p, SYS_BLOCK))
 		return;
 	parent_of(np, sizeof np, p);
 	size_t l = strlen(np);
@@ -728,7 +738,7 @@ static void h_delete(Conn *c)
 		resp_err(c, 400, "bad_path");
 		return;
 	}
-	if (!check_write(c, p, true))
+	if (!check_write(c, p, SYS_BLOCK))
 		return;
 	if (fsx_rmrf(p) < 0) {
 		resp_err(c, 404, "not_found");
@@ -765,7 +775,7 @@ static void h_upload(Conn *c)
 	}
 	c->keepalive = false; /* si algo falla, el cuerpo sin leer obliga a cerrar */
 	parent_of(dirp, sizeof dirp, p);
-	if (!check_write(c, dirp, true))
+	if (!check_write(c, dirp, SYS_CONFIRM))
 		return;
 	if (!c->has_clen) {
 		resp_err(c, 411, "length");

@@ -226,10 +226,10 @@ bool fsx_path_ok(const char *p)
 bool fsx_is_system(const char *p)
 {
 	/* carpetas y archivos que, si se tocan, pueden dejar la consola o el homebrew sin arrancar.
-	 * /luma solo cuenta ella misma: /luma/screenshots no tiene riesgo */
+	 * /luma y /3ds solo cuentan ellas mismas: lo que hay dentro (capturas, apps) se puede gestionar */
 	static const char *const TREE[] = {"/Nintendo 3DS", "/boot.firm", "/boot.3dsx", "/gm9", "/3ds/Cloud3DS",
 	                                   "/luma/payloads", "/luma/sysmodules", "/luma/titles", "/luma/config.ini"};
-	if (strcasecmp(p, "/luma") == 0)
+	if (strcasecmp(p, "/luma") == 0 || strcasecmp(p, "/3ds") == 0)
 		return true;
 	for (size_t i = 0; i < ARRAY_LEN(TREE); i++) {
 		size_t l = strlen(TREE[i]);
