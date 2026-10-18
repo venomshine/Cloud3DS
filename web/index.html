@@ -39,6 +39,10 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
 .lmsg.err{color:var(--err)}
 .spin{width:22px;height:22px;border-radius:50%;border:3px solid var(--card2);border-top-color:var(--a);animation:rot .8s linear infinite;display:inline-block;vertical-align:middle}
 @keyframes rot{to{transform:rotate(360deg)}}
+.kick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;margin:0 auto 14px;background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
+.kick svg{width:28px;height:28px}
+#lkick b{display:block;font-size:20px;margin-bottom:6px}
+#lkick p{margin:0 0 18px;color:var(--muted);font-size:14.5px}
 .hint{margin-top:18px;font-size:13px;color:var(--muted);line-height:1.5}
 
 /* ---------- app ---------- */
@@ -232,6 +236,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
   <div class="lcard">
     <div class="logo"><svg viewBox="0 0 48 48"><path d="M15 34a8 8 0 0 1-.7-16A11 11 0 0 1 35 16.5 8.8 8.8 0 0 1 35 34z"/></svg></div>
     <h1>Cloud3DS</h1>
+    <div id="lkick" class="hide"></div>
     <div class="sub" id="lsub"></div>
     <div id="lpin">
       <div class="pin" id="pin"><input inputmode="numeric" maxlength="1" autocomplete="one-time-code"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"></div>
@@ -276,6 +281,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 /* ---------- textos ---------- */
 const L = {
 es:{
+ back:"Carpeta anterior", disc:"Desconectar", kickedT:"Te desconectaron", kickedD:"Se cerró la sesión de este dispositivo desde la consola. Para volver a entrar, escanea el QR o escribe el PIN.", err_protected:"Carpeta protegida: desactiva «Proteger carpetas del sistema» en los ajustes de la consola para cambiarla.", protT:"Protegida por la consola", protD:"No se puede renombrar ni borrar. Se puede desactivar en los ajustes de la consola.", license:"Software libre · licencia GPL-3.0",
  conn:"Conectando con tu consola…", pinAsk:"Escribe el PIN que aparece en la pantalla de arriba de tu consola.",
  hint:"¿No ves el PIN? Abre Cloud3DS en tu 3DS. El móvil o PC tiene que estar en el mismo Wi-Fi.",
  badPin:"PIN incorrecto. Revísalo en la consola.", locked:"Demasiados intentos. Espera 30 segundos.",
@@ -304,6 +310,7 @@ es:{
  today:"Hoy", yest:"Ayer", device:"Este dispositivo: %1", leave:"Hay subidas en curso. Si cierras la página se cancelarán."
 },
 en:{
+ back:"Previous folder", disc:"Disconnect", kickedT:"You were disconnected", kickedD:"This device was signed out from the console. To get back in, scan the QR code or enter the PIN.", err_protected:"Protected folder: turn off “Protect system folders” in the console settings to change it.", protT:"Protected by the console", protD:"It can't be renamed or deleted. You can turn this off in the console settings.", license:"Free software · GPL-3.0 license",
  conn:"Connecting to your console…", pinAsk:"Enter the PIN shown on your console's top screen.",
  hint:"Can't see the PIN? Open Cloud3DS on your 3DS. Your phone or PC must be on the same Wi-Fi.",
  badPin:"Wrong PIN. Check it on the console.", locked:"Too many attempts. Wait 30 seconds.",
@@ -332,6 +339,7 @@ en:{
  today:"Today", yest:"Yesterday", device:"This device: %1", leave:"Uploads are in progress. Closing the page will cancel them."
 },
 ja:{
+ back:"前のフォルダ", disc:"接続を解除", kickedT:"接続が解除されました", kickedD:"本体からこのデバイスの接続が解除されました。もう一度QRコードを読み取るかPINを入力してください。", err_protected:"保護されたフォルダです。変更するには本体の設定で「システムフォルダを保護」をオフにしてください。", protT:"本体で保護されています", protD:"名前の変更や削除はできません。本体の設定でオフにできます。", license:"フリーソフトウェア · GPL-3.0ライセンス",
  conn:"本体に接続中…", pinAsk:"本体の上画面に表示されているPINを入力してください。",
  hint:"PINが見えない場合は3DSでCloud3DSを開いてください。スマホやPCは同じWi-Fiに接続してください。",
  badPin:"PINが違います。本体で確認してください。", locked:"試行回数が多すぎます。30秒お待ちください。",
@@ -430,7 +438,7 @@ async function api(method,ep,params={},body){
  catch(e){setOffline(true);throw new ApiErr("net",0)}
  setOffline(false);
  let j={};try{j=await r.json()}catch(e){}
- if(r.status===401&&ep!=="login"){showLogin();throw new ApiErr("auth",401)}
+ if(r.status===401&&ep!=="login"){showLogin(false,j.error==="revoked");throw new ApiErr("auth",401)}
  if(!r.ok)throw new ApiErr(j.error||String(r.status),r.status);
  return j;
 }
@@ -444,6 +452,7 @@ async function boot(){
  const k=(location.hash.match(/k=([0-9a-f]+)/)||[])[1];
  if(k)history.replaceState(null,"",location.pathname);
  if(hello.authed){startApp();return}
+ if(hello.revoked&&!k){showLogin(false,true);return}
  if(k){
   showLogin(true);
   try{await api("POST","login",{}, "k="+k);startApp();return}
@@ -452,8 +461,16 @@ async function boot(){
  showLogin();
 }
 function msg(s,err){const m=$("#lmsg");m.innerHTML=s;m.classList.toggle("err",!!err)}
-function showLogin(connecting){
+function showLogin(connecting,kicked){
+ const wasApp=!$("#app").classList.contains("hide");
  $("#app").classList.add("hide");$("#fab").classList.add("hide");$("#login").classList.remove("hide");
+ clearInterval(window._ping);
+ // expulsado desde la consola: se explica en vez de volver al PIN sin más
+ if(kicked===undefined)kicked=false;
+ $("#lkick").classList.toggle("hide",!kicked);
+ $("#lkick").innerHTML=kicked?`<div class="kick">${svg("out")}</div><b>${t("kickedT")}</b><p>${t("kickedD")}</p>`:"";
+ $(".lcard .logo").classList.toggle("hide",kicked);$(".lcard h1").classList.toggle("hide",kicked);
+ if(kicked&&wasApp)Q.items.filter(i=>i.state==="run").forEach(i=>i.xhr&&i.xhr.abort());
  $("#lsub").textContent=hello.console||"Nintendo 3DS";
  $("#lpin").classList.toggle("hide",!!connecting);
  $("#lhint").textContent=connecting?"":t("hint");
@@ -492,7 +509,7 @@ function startApp(){
  const p=decodeURIComponent((location.hash.match(/^#p=(.*)$/)||[])[1]||"");
  go(p&&p.startsWith("/")?p:"/",true);
  refreshInfo();
- clearInterval(window._ping);window._ping=setInterval(()=>{if(!document.hidden)refreshInfo()},15000);
+ clearInterval(window._ping);window._ping=setInterval(()=>{if(!document.hidden)refreshInfo()},8000);
 }
 async function refreshInfo(){
  try{

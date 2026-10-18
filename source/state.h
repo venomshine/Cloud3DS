@@ -15,6 +15,7 @@
 #define MAX_XFERS    6
 #define MAX_HISTORY  60
 #define MAX_DEVICES  16
+#define MAX_REVOKED  8
 
 typedef enum { XF_UPLOAD, XF_DOWNLOAD } XferKind;
 typedef enum { XS_FREE, XS_RUNNING, XS_DONE, XS_FAILED, XS_CANCELED } XferState;
@@ -86,6 +87,8 @@ typedef struct {
 	Device dev[MAX_DEVICES];
 	u32    rev; /* cambia en cada modificación visible */
 	bool   dirty_cfg;
+	char   revoked[MAX_REVOKED][33]; /* expulsados recientes, para avisarles */
+	int    revoked_next;
 } AppState;
 
 extern AppState G;
@@ -103,6 +106,7 @@ int    xfer_active(void);
 void   event_add(EventKind k, const char *name, const char *device, u64 size);
 const Event *event_at(int i); /* 0 = más reciente */
 void   pin_regen(void);
+void   device_revoke(int i); /* expulsa y recuerda el token */
 
 /* Configuración en la SD (config.json) */
 void config_load(void);

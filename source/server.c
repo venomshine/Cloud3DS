@@ -474,13 +474,27 @@ static void h_index(Conn *c)
 	     "Content-Encoding: gzip\r\nVary: Accept-Encoding\r\n");
 }
 
+static bool revoked_token(const char *tok)
+{
+	if (strlen(tok) != 32)
+		return false;
+	bool r = false;
+	state_lock();
+	for (int i = 0; i < MAX_REVOKED; i++)
+		if (strcmp(G.revoked[i], tok) == 0)
+			r = true;
+	state_unlock();
+	return r;
+}
+
 static void h_hello(Conn *c)
 {
 	Buf b = {0};
+	bool revoked = c->dev < 0 && revoked_token(c->token); /* toma el cerrojo: antes del bloque */
 	state_lock();
 	buf_puts(&b, "{\"app\":\"Cloud3DS\",\"version\":\"" APP_VERSION "\",\"console\":");
 	buf_json_str(&b, G.console);
-	buf_printf(&b, ",\"authed\":%s}", c->dev >= 0 ? "true" : "false");
+	buf_printf(&b, ",\"authed\":%s,\"revoked\":%s}", c->dev >= 0 ? "true" : "false", revoked ? "true" : "false");
 	state_unlock();
 	resp_json(c, 200, &b);
 	free(b.p);
@@ -919,7 +933,12 @@ static void route(Conn *c, const char *body)
 		return;
 	}
 	if (c->dev < 0) {
-		resp_err(c, 401, "auth");
+		/* expulsado desde la consola: la web lo explica y se borra la cookie */
+		if (revoked_token(c->token))
+			resp(c, 401, "application/json; charset=utf-8", "{\"ok\":false,\"error\":\"revoked\"}", 30,
+			     "Set-Cookie: c3d=; Max-Age=0; Path=/; SameSite=Strict\r\n");
+		else
+			resp_err(c, 401, "auth");
 		return;
 	}
 	if (strcmp(p, "logout") == 0 && post) {

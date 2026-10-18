@@ -935,12 +935,7 @@ static void handle_dialog(int ctx, bool ok)
 		return;
 	state_lock();
 	if (ctx == DLG_REVOKE) {
-		Device *d = &G.dev[U.dlg_arg];
-		if (d->used) {
-			event_add(EV_REVOKED, "", d->name, 0);
-			d->used = false;
-			G.dirty_cfg = true;
-		}
+		device_revoke(U.dlg_arg);
 	} else if (ctx == DLG_NEWPIN) {
 		pin_regen();
 	} else if (ctx == DLG_CLEAR) {

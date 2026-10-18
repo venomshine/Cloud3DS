@@ -47,6 +47,19 @@ void pin_regen(void)
 	G.rev++;
 }
 
+void device_revoke(int i)
+{
+	Device *d = &G.dev[i];
+	if (!d->used)
+		return;
+	util_strlcpy(G.revoked[G.revoked_next], d->token, sizeof G.revoked[0]);
+	G.revoked_next = (G.revoked_next + 1) % MAX_REVOKED;
+	event_add(EV_REVOKED, "", d->name, 0);
+	d->used = false;
+	G.dirty_cfg = true;
+	G.rev++;
+}
+
 int xfer_begin(XferKind k, const char *name, const char *device, u64 total)
 {
 	/* reutiliza el hueco libre o el terminado más antiguo */
