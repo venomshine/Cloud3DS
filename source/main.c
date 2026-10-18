@@ -425,8 +425,8 @@ static void about_card(void)
 	int sel = U.list[TAB_COUNT + 1].sel;
 	if (sel >= AB_GITHUB && sel <= AB_KOFI) {
 		static const char *const NAMES[3] = {"GitHub", "Discord", "Ko-fi"};
-		const char *desc[3] = {_("Código, novedades y nuevas versiones de mis proyectos."),
-		                       _("Únete a la comunidad: dudas, ideas y avisos de actualizaciones."),
+		const char *desc[3] = {_("Código y nuevas versiones. Si algo falla, abre un issue y lo reviso."),
+		                       _("Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones."),
 		                       _("Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!")};
 		int k = sel - AB_GITHUB;
 		draw_qr(LINKS[k], QR_X, QR_Y, QR_S, 1);
@@ -442,7 +442,11 @@ static void about_card(void)
 		snprintf(vb, sizeof vb, _("v%s · hecho por %s"), APP_VERSION, "VENOMSHiNE");
 		float vw = text_width(vb, TS_SUB);
 		text_draw_clip(vb, QR_X + (QR_S - fminf(vw, QR_S)) / 2, QR_Y + 136, QR_S, TS_SUB, T.text2);
-		text_wrap_lines(_(ABOUT_TEXT), COL_W, 0.42f, 10, COL_X, QR_Y + 2, T.text2, true);
+		text_draw(_("Gracias por usar Cloud3DS"), COL_X, QR_Y + 2, TS_BODY, T.text);
+		int n = text_wrap_lines(_(ABOUT_TEXT), COL_W, 0.40f, 8, COL_X, QR_Y + 24, T.text2, true);
+		float ly = text_lineh(0.40f);
+		text_wrap_lines(_("Si encuentras algún problema, escríbeme por GitHub o Discord."), COL_W, 0.40f, 3, COL_X,
+		                QR_Y + 30 + n * ly, T.accent, true);
 		text_draw_clip(_("Software libre · licencia GPL-3.0"), COL_X, QR_Y + QR_S - 12, COL_W, TS_SUB, T.text3);
 	}
 }
@@ -906,7 +910,7 @@ static void settings_about(void)
 	static const IconId IC[AB_COUNT] = {IC_CLOUD, IC_CODE, IC_CHAT, IC_HEART};
 	const u32 COL[AB_COUNT] = {T.accent, col_hex(0x6E7681), col_hex(0x5865F2), col_hex(0xFF5E5B)};
 	const char *title[AB_COUNT] = {"Cloud3DS " APP_VERSION, "GitHub", "Discord", "Ko-fi"};
-	const char *sub[AB_COUNT] = {_("Qué es y para qué sirve"), _("Código y nuevas versiones"), _("Únete a la comunidad"),
+	const char *sub[AB_COUNT] = {_("Gracias por usar Cloud3DS"), _("Código y avisos de errores"), _("Comunidad y ayuda"),
 	                             _("Invítame a un café")};
 	for (int i = 0; i < AB_COUNT; i++) {
 		float y = VIEW_Y + i * RH - l->off;

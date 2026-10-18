@@ -1,6 +1,31 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    "Intentos de PIN fallidos": ("Failed PIN attempts", "PINの入力ミス"),
+    "Bloqueado %s · %s": ("Locked %s · %s", "%s ロック · %s"),
+    "PIN bloqueado por intentos fallidos": ("PIN locked after failed attempts", "入力ミスが多いためPINをロック"),
+    "Siempre el mismo hasta que lo cambies": ("Stays the same until you change it", "変更するまで同じです"),
+    "Elegir mi PIN": ("Choose my PIN", "PINを自分で決める"),
+    "PIN aleatorio nuevo": ("New random PIN", "ランダムな新しいPIN"),
+    "Cuatro cifras fáciles de recordar": ("Four easy-to-remember digits", "覚えやすい4桁の数字"),
+    "La consola elige uno al azar": ("The console picks one at random", "本体がランダムに決めます"),
+    "Al cambiarlo, el QR también se renueva. Los dispositivos ya vinculados siguen conectados.":
+        ("Changing it also renews the QR code. Paired devices stay connected.",
+         "変更するとQRコードも新しくなります。登録済みの端末は接続されたままです。"),
+    "PIN de 4 cifras": ("4-digit PIN", "4桁のPIN"),
+    "PIN guardado": ("PIN saved", "PINを保存しました"),
+    "Gracias por usar Cloud3DS": ("Thanks for using Cloud3DS", "Cloud3DSをご利用いただきありがとうございます"),
+    "Código y avisos de errores": ("Code and bug reports", "コードと不具合の報告"),
+    "Comunidad y ayuda": ("Community and help", "コミュニティとサポート"),
+    "Código y nuevas versiones. Si algo falla, abre un issue y lo reviso.":
+        ("Code and new versions. If something breaks, open an issue and I'll look into it.",
+         "コードと新しいバージョン。不具合があればissueを立ててください。確認します。"),
+    "Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones.":
+        ("Join the community: questions, problems, ideas and update news.",
+         "コミュニティに参加: 質問、不具合、アイデア、アップデート情報。"),
+    "Si encuentras algún problema, escríbeme por GitHub o Discord.":
+        ("Found a problem? Let me know on GitHub or Discord.",
+         "問題があれば、GitHubかDiscordで教えてください。"),
     "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
     "La cámara abre tu nube al instante. Mismo Wi-Fi que la consola.":
         ("Your camera opens your cloud instantly. Same Wi-Fi as the console.",
