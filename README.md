@@ -81,6 +81,8 @@ Se corregirán en la próxima versión:
 - **Interfaz en japonés:** en la consola, muchos textos se salen de su sitio.
 - **Flechas de transferencia invertidas:** lo que envías del PC a la consola aparece como enviado de la consola al PC, y al revés.
 - **Acceso rápido «Partidas»:** lleva a una carpeta donde no hay partidas guardadas. Hay que revisar dónde se guardan de verdad.
+- **A veces no detecta el Wi-Fi al abrir la app** (más o menos una de cada cuatro veces): se queda en «Sin conexión Wi-Fi» aunque la consola sí esté conectada. Mientras tanto, cierra y vuelve a abrir Cloud3DS.
+- **Salir no pide confirmación:** con START o con «Salir» en Ajustes la app se cierra al momento. Debería preguntar siempre, y avisar bien claro si hay algo transfiriéndose.
 
 ## Errores y sugerencias
 
@@ -128,7 +130,7 @@ Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python
 
 **Build:** devkitPro with `3ds-dev`, then `make` (or `make cia` with bannertool and makerom).
 
-**Known issues** (to be fixed in the next version): in Japanese, many texts on the console are out of place; the transfer arrows are swapped (PC → console shows as console → PC and vice versa); the «Saves» shortcut opens a folder where no save data is found.
+**Known issues** (to be fixed in the next version): in Japanese, many texts on the console are out of place; the transfer arrows are swapped (PC → console shows as console → PC and vice versa); the «Saves» shortcut opens a folder where no save data is found; sometimes (about 1 in 4 launches) the app doesn't detect Wi-Fi even though the console is connected (reopen it for now); exiting with START or «Exit» doesn't ask for confirmation, and it should, with a clear warning if a transfer is in progress.
 
 Bugs and ideas: [issues](https://github.com/venomshine/Cloud3DS/issues) or [Discord](https://discord.com/invite/yVKp8JwV4e).
 
