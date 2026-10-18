@@ -1,183 +1,517 @@
+/*
+ * Cloud3DS - tu nube local para Nintendo 3DS
+ * Copyright (C) 2026 VENOMSHiNE - https://github.com/venomshine/Cloud3DS
+ *
+ * Software libre bajo la GNU General Public License v3 con términos adicionales
+ * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
+ * Interfaz basada en Gemi3DS de VENOMSHiNE - https://github.com/venomshine/Gemi3DS
+ */
+// Cloud3DS - componentes de interfaz
 #include "ui.h"
 #include "i18n.h"
-#include "util.h"
-
-#include <math.h>
+#include "qrcodegen.h"
 #include <string.h>
+#include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
 
-Input IN;
+Touch g_touch;
+u32 g_kdown, g_kheld, g_krepeat;
+Dialog g_dialog;
 
-void input_update(void)
-{
-	hidScanInput();
-	IN.down = hidKeysDown();
-	IN.held = hidKeysHeld();
-	IN.up = hidKeysUp();
-	IN.tap_released = false;
-	IN.dx = IN.dy = 0;
-	touchPosition tp;
-	hidTouchRead(&tp);
-	bool t = IN.held & KEY_TOUCH;
-	if (t) {
-		if (!IN.touching) {
-			IN.sx = IN.tx = tp.px;
-			IN.sy = IN.ty = tp.py;
-			IN.moved = 0;
-		} else {
-			IN.dx = tp.px - IN.tx;
-			IN.dy = tp.py - IN.ty;
-			IN.tx = tp.px;
-			IN.ty = tp.py;
-			IN.moved += fabsf(IN.dx) + fabsf(IN.dy);
-		}
-		IN.used_buttons = false;
-	} else if (IN.touching) {
-		IN.tap_released = IN.moved < 10;
-	}
-	IN.touching = t;
-	if (IN.down & ~(KEY_TOUCH))
-		IN.used_buttons = true;
+// ------------------------------------------------------------ entrada
+void input_update(void) {
+    hidScanInput();
+    g_kdown = hidKeysDown();
+    g_kheld = hidKeysHeld();
+    g_krepeat = hidKeysDownRepeat();
+    touchPosition tp;
+    hidTouchRead(&tp);
+    bool held = (g_kheld & KEY_TOUCH) != 0;
+    Touch *t = &g_touch;
+    t->down = held && !t->held;
+    t->up = !held && t->held;
+    if (t->down) {
+        t->sx = t->px = t->x = tp.px; t->sy = t->py = t->y = tp.py;
+        t->drag = false; t->hold = 0; t->long_fired = false;
+    } else if (held) {
+        t->px = t->x; t->py = t->y;
+        t->x = tp.px; t->y = tp.py;
+        t->hold += g_dt;
+        if (abs(t->x - t->sx) > 6 || abs(t->y - t->sy) > 6) t->drag = true;
+    } else if (!t->up) {
+        t->px = t->x; t->py = t->y;
+    }
+    t->held = held;
 }
 
-bool ui_tap(float x, float y, float w, float h)
-{
-	return IN.tap_released && IN.sx >= x && IN.sx < x + w && IN.sy >= y && IN.sy < y + h &&
-	       IN.tx >= x && IN.tx < x + w && IN.ty >= y && IN.ty < y + h;
+static bool in_rect(int x, int y, float rx, float ry, float rw, float rh) {
+    return x >= rx && x < rx + rw && y >= ry && y < ry + rh;
 }
 
-bool ui_pressing(float x, float y, float w, float h)
-{
-	return IN.touching && IN.moved < 10 && IN.tx >= x && IN.tx < x + w && IN.ty >= y && IN.ty < y + h;
+bool touch_in(float x, float y, float w, float h) {
+    return g_touch.held && !g_touch.drag && in_rect(g_touch.x, g_touch.y, x, y, w, h) && in_rect(g_touch.sx, g_touch.sy, x, y, w, h);
 }
 
-void scroll_update(Scroll *s, int count, float row_h, float view_h, float dt)
-{
-	float max = count * row_h - view_h;
-	if (max < 0)
-		max = 0;
-	if (IN.touching && IN.moved >= 10) {
-		s->dragging = true;
-		s->target -= IN.dy;
-		s->off = s->target;
-	} else {
-		s->dragging = false;
-	}
-	if (s->target < 0)
-		s->target = 0;
-	if (s->target > max)
-		s->target = max;
-	s->off = approach(s->off, s->target, 18, dt);
-	if (s->sel >= count)
-		s->sel = count - 1;
-	if (s->sel < 0)
-		s->sel = 0;
+bool tap(float x, float y, float w, float h) {
+    return g_touch.up && !g_touch.drag && !g_touch.long_fired &&
+           in_rect(g_touch.x, g_touch.y, x, y, w, h) && in_rect(g_touch.sx, g_touch.sy, x, y, w, h);
 }
 
-void ui_toggle(float x, float y, bool on, float anim)
-{
-	float w = 38, h = 22;
-	/* apagado con contraste suficiente también sobre la fila resaltada */
-	u32 bg = gfx_mix(gfx_mix(T.card2, T.muted, 0.45f), T.accent, anim);
-	gfx_rrect(x, y, w, h, h / 2, bg);
-	float kx = x + 11 + (w - 22) * anim;
-	gfx_circle(kx, y + h / 2, 8.5f, T.on_accent);
-	(void)on;
+bool long_press(float x, float y, float w, float h) {
+    if (g_touch.held && !g_touch.drag && !g_touch.long_fired && g_touch.hold > 0.6f && in_rect(g_touch.sx, g_touch.sy, x, y, w, h)) {
+        g_touch.long_fired = true;
+        return true;
+    }
+    return false;
 }
 
-void dialog_open(Dialog *d, const char *title, const char *text, const char *ok, bool danger, int action, int arg)
-{
-	d->open = true;
-	d->anim = 0;
-	util_strlcpy(d->title, title, sizeof d->title);
-	util_strlcpy(d->text, text, sizeof d->text);
-	util_strlcpy(d->ok, ok, sizeof d->ok);
-	d->danger = danger;
-	d->action = action;
-	d->arg = arg;
+// ------------------------------------------------------------ botones
+bool ui_icon_button(IconId ic, float cx, float cy, float r, u32 fg, u32 bg) {
+    bool pressed = touch_in(cx - r, cy - r, r * 2, r * 2);
+    if (bg >> 24) draw_circle(cx, cy, r, bg);
+    if (pressed) draw_circle(cx, cy, r, col_alpha(T.text, 0.12f));
+    draw_icon(ic, cx, cy, r * 1.15f, fg);
+    return tap(cx - r, cy - r, r * 2, r * 2);
 }
 
-#define DLG_X 24
-#define DLG_W 272
-#define DLG_Y 40
-#define DLG_H 160
-
-int dialog_run(Dialog *d, float dt)
-{
-	if (!d->open)
-		return -1;
-	d->anim = approach(d->anim, 1, 14, dt);
-	float by = DLG_Y + DLG_H - 50;
-	if (IN.down & KEY_B || ui_tap(DLG_X + 14, by, 116, 36)) {
-		d->open = false;
-		return 0;
-	}
-	if (IN.down & KEY_A || ui_tap(DLG_X + DLG_W - 130, by, 116, 36)) {
-		d->open = false;
-		return 1;
-	}
-	/* tocar fuera también cancela */
-	if (IN.tap_released && !(IN.sx >= DLG_X && IN.sx < DLG_X + DLG_W && IN.sy >= DLG_Y && IN.sy < DLG_Y + DLG_H)) {
-		d->open = false;
-		return 0;
-	}
-	return -1;
+bool ui_pill_button(const char *label, int ic, float x, float y, float w, float h, u32 fg, u32 bg) {
+    label = tr(label);
+    bool pressed = touch_in(x, y, w, h);
+    float s = pressed ? 0.96f : 1.0f;
+    float cx = x + w / 2, cy = y + h / 2;
+    float W = w * s, H = h * s;
+    draw_rrect(cx - W / 2, cy - H / 2, W, H, H / 2, pressed ? col_lerp(bg, T.text, 0.12f) : bg);
+    float sc = h >= 34 ? 0.55f : 0.48f;
+    float tw = text_width(label, sc) + (ic >= 0 ? h * 0.6f + 4 : 0);
+    float tx = cx - tw / 2;
+    if (ic >= 0) {
+        draw_icon((IconId)ic, tx + h * 0.3f, cy, h * 0.55f, fg);
+        tx += h * 0.6f + 4;
+    }
+    text_draw(label, tx, cy - text_lineh(sc) / 2, sc, fg);
+    return tap(x, y, w, h);
 }
 
-void dialog_draw(Dialog *d)
-{
-	if (!d->open)
-		return;
-	float a = ease_out_cubic(d->anim);
-	gfx_rect(0, 0, BOT_W, SCR_H, gfx_alpha(0xFF000000, 0.55f * a));
-	float y = DLG_Y + (1 - a) * 18;
-	gfx_rrect(DLG_X, y + 3, DLG_W, DLG_H, 16, T.shadow);
-	gfx_rrect(DLG_X, y, DLG_W, DLG_H, 16, T.card);
-	gfx_text(DLG_X + DLG_W / 2, y + 16, 16, T.text, AL_CENTER, DLG_W - 28, d->title);
-	gfx_wrap(DLG_X + 18, y + 44, 12.5f, T.muted, AL_CENTER, DLG_W - 36, d->text, 4);
-	float by = y + DLG_H - 50;
-	bool pc = ui_pressing(DLG_X + 14, by, 116, 36), po = ui_pressing(DLG_X + DLG_W - 130, by, 116, 36);
-	gfx_rrect(DLG_X + 14, by, 116, 36, 18, pc ? T.line : T.card2);
-	gfx_text(DLG_X + 14 + 58, by + 10, 13.5f, T.text, AL_CENTER, 104, _("Cancelar"));
-	u32 oc = d->danger ? T.err : T.accent;
-	gfx_rrect(DLG_X + DLG_W - 130, by, 116, 36, 18, po ? gfx_mix(oc, 0xFF000000, 0.2f) : oc);
-	gfx_text(DLG_X + DLG_W - 130 + 58, by + 10, 13.5f, T.on_accent, AL_CENTER, 104, d->ok);
-	gfx_text(DLG_X + 14 + 58, by + 40, 10, gfx_alpha(T.muted, 0.8f), AL_CENTER, 0, "");
-	gfx_text(DLG_X + DLG_W - 130 + 58, by + 40, 10, gfx_alpha(T.muted, 0.8f), AL_CENTER, 0, "");
+// ------------------------------------------------------------ hojas
+#define SH_TOP 36.0f
+static float item_h(const SheetItem *it) { return it->header ? 24.0f : (it->sub[0] ? 40.0f : 32.0f); }
+
+void sheet_open(Sheet *s, int kind, const char *title, bool from_left) {
+    s->open = true; s->closing = false; s->from_left = from_left;
+    s->anim = 0; s->n = 0; s->sel = -1; s->kind = kind;
+    s->scroll = s->scroll_target = 0; s->chosen = -1; s->held_item = -1;
+    s->swipe_item = -1; s->swipe_x = s->swipe_rest = 0; s->swiping = s->vscroll = false; s->swipe_action = SW_NONE;
+    snprintf(s->title, sizeof(s->title), "%s", tr(title));
 }
 
-static struct {
-	char msg[128];
-	Icon ic;
-	u32 color;
-	float t; /* segundos desde que apareció; <0 = oculto */
-} toast = {.t = -1};
+void sheet_close(Sheet *s) { if (s->open) s->closing = true; }
+bool sheet_visible(Sheet *s) { return s->open; }
 
-void toast_show(const char *msg, Icon ic, u32 color)
-{
-	util_strlcpy(toast.msg, msg, sizeof toast.msg);
-	toast.ic = ic;
-	toast.color = color;
-	toast.t = 0;
+SheetItem *sheet_add(Sheet *s, int icon, const char *label, const char *sub, int right, int id) {
+    if (s->n >= 320) return &s->items[319];
+    SheetItem *it = &s->items[s->n++];
+    memset(it, 0, sizeof(*it));
+    it->icon = icon; it->icon_col = 0;
+    snprintf(it->label, sizeof(it->label), "%s", label ? tr(label) : "");
+    snprintf(it->sub, sizeof(it->sub), "%s", sub ? tr(sub) : "");
+    it->right = right; it->id = id;
+    if (s->sel < 0) s->sel = s->n - 1;
+    return it;
 }
 
-void toast_draw(float dt)
-{
-	if (toast.t < 0)
-		return;
-	toast.t += dt;
-	const float life = 3.2f;
-	if (toast.t > life) {
-		toast.t = -1;
-		return;
-	}
-	float a = toast.t < 0.25f ? ease_out_cubic(toast.t / 0.25f) : clampf((life - toast.t) / 0.4f, 0, 1);
-	float w = gfx_text_w(13, toast.msg) + 52;
-	if (w > 360)
-		w = 360;
-	float x = (TOP_W - w) / 2, y = SCR_H - 44 + (1 - a) * 12;
-	gfx_rrect(x, y + 2, w, 32, 16, gfx_alpha(T.shadow, a));
-	gfx_rrect(x, y, w, 32, 16, gfx_alpha(T.card2, a));
-	gfx_circle(x + 18, y + 16, 9, gfx_alpha(toast.color, a));
-	gfx_icon(toast.ic, x + 18, y + 16, 11, gfx_alpha(T.on_accent, a));
-	gfx_text(x + 34, y + 8, 13, gfx_alpha(T.text, a), AL_LEFT, w - 46, toast.msg);
+void sheet_header(Sheet *s, const char *label) {
+    SheetItem *it = sheet_add(s, -1, label, NULL, SR_NONE, -1);
+    it->header = true;
+    if (s->sel == s->n - 1) s->sel = -1;
+}
+
+SheetItem *sheet_selected(Sheet *s) { return (s->sel >= 0 && s->sel < s->n) ? &s->items[s->sel] : NULL; }
+
+static float sheet_content_h(Sheet *s) {
+    float h = 0;
+    for (int i = 0; i < s->n; i++) h += item_h(&s->items[i]);
+    return h;
+}
+
+static float panel_w(Sheet *s) { return s->from_left ? 276 : BOT_W; }
+
+static void ensure_visible(Sheet *s) {
+    float y = 0;
+    for (int i = 0; i < s->sel && i < s->n; i++) y += item_h(&s->items[i]);
+    float h = s->sel >= 0 ? item_h(&s->items[s->sel]) : 0;
+    float view = SCR_H - SH_TOP;
+    if (y < s->scroll_target) s->scroll_target = y - 4;
+    if (y + h > s->scroll_target + view) s->scroll_target = y + h - view + 4;
+}
+
+static void move_sel(Sheet *s, int d) {
+    int i = s->sel;
+    for (int k = 0; k < s->n; k++) {
+        i += d;
+        if (i < 0) i = s->n - 1;
+        if (i >= s->n) i = 0;
+        if (!s->items[i].header && !s->items[i].disabled) { s->sel = i; break; }
+    }
+    ensure_visible(s);
+}
+
+// deslizar: anchos de los botones que quedan a la vista y umbral de la acción completa
+#define SW_PIN_W 76.0f
+#define SW_ACT_W 140.0f
+#define SW_FULL 0.6f
+static float swipe_full(Sheet *s) { return panel_w(s) * SW_FULL; }
+
+// gestiona el deslizamiento horizontal; devuelve -4 si hay que hacer una acción, -5 si consumió el toque
+static int sheet_swipe(Sheet *s, float list_y0) {
+    float pw = panel_w(s);
+    // al empezar a arrastrar se decide el eje (horizontal = deslizar el chat)
+    if (g_touch.held && g_touch.drag && !s->swiping && !s->vscroll) {
+        int dx = g_touch.x - g_touch.sx, dy = g_touch.y - g_touch.sy;
+        int hit = -1;
+        float y = list_y0;
+        for (int i = 0; i < s->n; i++) {
+            float h = item_h(&s->items[i]);
+            if (g_touch.sy >= y && g_touch.sy < y + h && g_touch.sy > SH_TOP) hit = i;
+            y += h;
+        }
+        if (abs(dx) > abs(dy) && hit >= 0 && s->items[hit].swipe && g_touch.sx < pw) {
+            if (s->swipe_item != hit) { s->swipe_item = hit; s->swipe_x = s->swipe_rest = 0; }
+            s->swiping = true;
+            s->swipe_start = s->swipe_rest;
+        } else { s->vscroll = true; s->swipe_rest = 0; }
+    }
+    if (s->swiping && g_touch.held) {
+        float x = s->swipe_start + (g_touch.x - g_touch.sx);
+        float lim = pw - 16;
+        if (x > lim) x = lim;
+        if (x < -lim) x = -lim;
+        s->swipe_x = x;
+        return -5;
+    }
+    if (s->swiping && g_touch.up) {
+        s->swiping = false;
+        float x = s->swipe_x, full = swipe_full(s);
+        if (x > full) { s->swipe_action = SW_PIN; s->held_item = s->swipe_item; s->swipe_rest = 0; return -4; }
+        if (x < -full) { s->swipe_action = SW_DELETE; s->held_item = s->swipe_item; s->swipe_rest = 0; return -4; }
+        if (x > SW_PIN_W * 0.5f) s->swipe_rest = SW_PIN_W;
+        else if (x < -SW_ACT_W * 0.4f) s->swipe_rest = -SW_ACT_W;
+        else { s->swipe_rest = 0; }
+        return -5;
+    }
+    if (g_touch.up) s->vscroll = false;
+    // con los botones a la vista: tocar uno hace su acción, tocar fuera los oculta
+    if (s->swipe_item >= 0 && s->swipe_rest != 0 && g_touch.up && !g_touch.drag) {
+        float y = list_y0;
+        for (int i = 0; i < s->swipe_item; i++) y += item_h(&s->items[i]);
+        float h = item_h(&s->items[s->swipe_item]);
+        bool row = g_touch.y >= y && g_touch.y < y + h && g_touch.sy >= y && g_touch.sy < y + h;
+        int act = SW_NONE;
+        if (row && s->swipe_rest > 0 && g_touch.x < SW_PIN_W) act = SW_PIN;
+        if (row && s->swipe_rest < 0 && g_touch.x >= pw - SW_ACT_W && g_touch.x < pw)
+            act = g_touch.x < pw - SW_ACT_W / 2 ? SW_RENAME : SW_DELETE;
+        s->swipe_rest = 0;
+        if (act) { s->swipe_action = act; s->held_item = s->swipe_item; return -4; }
+        return -5;
+    }
+    return -1;
+}
+
+int sheet_update(Sheet *s) {
+    if (!s->open) return -1;
+    if (s->closing) {
+        s->anim = approach(s->anim, 0, 18);
+        if (s->anim < 0.02f) { s->open = false; s->closing = false; return -2; }
+        return -1;
+    }
+    s->anim = approach(s->anim, 1, 14);
+    float pw = panel_w(s);
+    float maxs = sheet_content_h(s) - (SCR_H - SH_TOP);
+    if (maxs < 0) maxs = 0;
+
+    if (s->swipe_item >= s->n) s->swipe_item = -1;
+    if (!s->swiping) s->swipe_x = approach(s->swipe_x, s->swipe_rest, 18);
+    if (s->swipe_item >= 0 && s->swipe_rest != 0 && (g_kdown & (KEY_B | KEY_UP | KEY_DOWN))) {
+        s->swipe_rest = 0;              // B o moverse con la cruceta oculta los botones
+        if (g_kdown & KEY_B) return -1;
+    }
+    {
+        int r = sheet_swipe(s, SH_TOP - s->scroll);
+        if (r == -4) return -4;
+        if (r == -5) { s->scroll = approach(s->scroll, s->scroll_target, 16); return -1; }
+    }
+
+    if (g_kdown & KEY_B) { sheet_close(s); return -1; }
+    if (g_krepeat & KEY_DOWN) move_sel(s, 1);
+    if (g_krepeat & KEY_UP) move_sel(s, -1);
+    if (g_krepeat & KEY_RIGHT && !s->from_left) { s->scroll_target += 120; }
+    if (g_krepeat & KEY_LEFT && !s->from_left) { s->scroll_target -= 120; }
+    if ((g_kdown & KEY_A) && s->sel >= 0 && !s->items[s->sel].disabled) { s->hit_right = false; return s->sel; }
+    if ((g_kdown & KEY_Y) && s->sel >= 0) { s->held_item = s->sel; return -3; }
+
+    // táctil
+    if (g_touch.held && g_touch.drag && g_touch.sy > SH_TOP && g_touch.sx < pw && !s->swiping) {
+        s->scroll_target -= (g_touch.y - g_touch.py);
+        s->scroll = s->scroll_target;
+    }
+    if (s->from_left && tap(pw, 0, BOT_W - pw, SCR_H)) { sheet_close(s); return -1; }
+    if (tap(pw - 36, 0, 36, SH_TOP)) { sheet_close(s); return -1; }
+    float y = SH_TOP - s->scroll;
+    for (int i = 0; i < s->n; i++) {
+        float h = item_h(&s->items[i]);
+        if (!s->items[i].header && !s->items[i].disabled && y + h > SH_TOP) {
+            if (long_press(0, y, pw, h)) { s->sel = i; s->held_item = i; return -3; }
+            if (tap(0, y, pw, h) && g_touch.y > SH_TOP) { s->sel = i; s->hit_right = g_touch.x > pw - 48; return i; }
+        }
+        y += h;
+    }
+    if (s->scroll_target < 0) s->scroll_target = 0;
+    if (s->scroll_target > maxs) s->scroll_target = maxs;
+    s->scroll = approach(s->scroll, s->scroll_target, 16);
+    return -1;
+}
+
+static void draw_toggle(float x, float y, bool on, float alpha) {
+    u32 track = on ? T.accent : T.surface2;
+    draw_rrect(x, y, 30, 16, 8, col_alpha(track, alpha));
+    draw_circle(on ? x + 22 : x + 8, y + 8, 6, col_alpha(on ? (T.dark ? col_hex(0x062E6F) : 0xFFFFFFFF) : T.text3, alpha));
+}
+
+// botones bajo un chat deslizado: Fijar a la izquierda; Renombrar y Eliminar a la derecha.
+// Tienen tamaño fijo y entran pegados al borde de la fila: el icono y el texto van fijos dentro
+// del botón (si se ve el 20 % del botón, se ve el 20 % de su contenido), nunca se escalan.
+static float s_sw_l, s_sw_r;    // bordes del panel: los botones nunca se dibujan fuera
+
+static void swipe_button(IconId ic, const char *label, float cx, float x0, float x1, float y, float h,
+                         float clip_y, float clip_h, u32 bg, u32 fg) {
+    if (x0 < s_sw_l) x0 = s_sw_l;
+    if (x1 > s_sw_r) x1 = s_sw_r;
+    if (x1 - x0 < 0.5f) return;
+    gfx_clip(x0, clip_y, x1 - x0, clip_h);
+    draw_rect(x0, y, x1 - x0, h, bg);
+    draw_icon(ic, cx, y + h / 2 - 8, 15, fg);
+    text_draw_center(label, cx, y + h / 2 + 4, 0.4f, fg);
+}
+
+static void draw_swipe_actions(Sheet *s, SheetItem *it, float ox, float y, float pw, float h, float sx,
+                               float clip_y, float clip_h) {
+    u32 white = 0xFFFFFFFF;
+    float full = swipe_full(s);
+    s_sw_l = ox; s_sw_r = ox + pw;
+    if (sx > 0) {
+        // Fijar: pegado al borde izquierdo de la fila; al pasar del ancho se estira por la izquierda
+        u32 bg = sx > full ? col_lerp(T.accent, T.text, 0.15f) : T.accent;
+        swipe_button(IC_PIN, it->pinned ? tr("No fijar") : tr("Fijar"), ox + sx - SW_PIN_W / 2, ox, ox + sx, y, h,
+                     clip_y, clip_h, bg, T.dark ? col_hex(0x062E6F) : white);
+    } else {
+        float w = -sx, edge = ox + pw - w;            // borde derecho de la fila desplazada
+        float half = SW_ACT_W / 2;
+        // Eliminar se estira desde la derecha y va tapando a Renombrar hasta ocupar toda la fila
+        float del_w = w <= SW_ACT_W ? half : half + (w - SW_ACT_W) * (full - half) / (full - SW_ACT_W);
+        float del_x = w <= SW_ACT_W ? edge + half : ox + pw - del_w;
+        if (del_x < edge) del_x = edge;
+        swipe_button(IC_PEN, tr("Renombrar"), edge + half / 2, edge, fminf(edge + half, del_x), y, h,
+                     clip_y, clip_h, T.surface2, T.text);
+        u32 dbg = w > full ? col_lerp(T.danger, 0xFF000000, 0.12f) : T.danger;
+        swipe_button(IC_TRASH, tr("Eliminar"), del_x + half / 2, del_x, ox + pw, y, h, clip_y, clip_h, dbg, white);
+    }
+}
+
+void sheet_draw(Sheet *s) {
+    if (!s->open) return;
+    float a = ease_out_cubic(s->anim);
+    float pw = panel_w(s);
+    draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+    float ox = s->from_left ? -(1 - a) * pw : 0;
+    float oy = s->from_left ? 0 : (1 - a) * SCR_H;
+    // panel
+    draw_rect(ox, oy, pw, SCR_H, T.bg2);
+    // lista
+    float y = oy + SH_TOP - s->scroll;
+    for (int i = 0; i < s->n; i++) {
+        SheetItem *it = &s->items[i];
+        float h = item_h(it);
+        if (y + h < oy + SH_TOP || y > SCR_H) { y += h; continue; }
+        if (it->header) {
+            text_draw(it->label, ox + 14, y + 7, 0.45f, T.text3);
+            y += h; continue;
+        }
+        bool sel = i == s->sel;
+        bool press = touch_in(ox, y, pw, h) && g_touch.y > SH_TOP && !(i == s->swipe_item && s->swipe_rest != 0);
+        float sx = (i == s->swipe_item) ? s->swipe_x : 0;
+        bool clip = fabsf(sx) > 0.5f;
+        if (clip) {
+            float cy = fmaxf(y, oy + SH_TOP), ch = y + h - cy;
+            draw_swipe_actions(s, it, ox, y, pw, h, sx, cy, ch);
+            gfx_clip(ox, cy, pw, ch);
+            draw_rect(ox + sx, y, pw, h, T.bg2);
+        }
+        float ox0 = ox;
+        ox += sx;
+        if (sel || press) draw_rrect(ox + 4, y + 1, pw - 8, h - 2, 10, press ? T.pill_hi : col_alpha(T.accent_soft, 1));
+        float tx = ox + 14;
+        u32 fg = it->disabled ? T.text3 : T.text;
+        if (it->icon >= 0) {
+            draw_icon((IconId)it->icon, ox + 24, y + h / 2, 18, it->icon_col ? it->icon_col : (it->disabled ? T.text3 : T.text2));
+            tx = ox + 44;
+        }
+        float rw = it->right == SR_NONE ? 8 : (it->right == SR_VALUE ? text_width(it->value, 0.45f) + 20 : 44);
+        if (it->sub[0]) {
+            text_draw_clip(it->label, tx, y + 4, pw - (tx - ox) - rw, 0.5f, fg);
+            text_draw_clip(it->sub, tx, y + 21, pw - (tx - ox) - rw, 0.42f, T.text3);
+        } else {
+            text_draw_clip(it->label, tx, y + (h - text_lineh(0.5f)) / 2, pw - (tx - ox) - rw, 0.5f, fg);
+        }
+        float rx = ox + pw - 14;
+        switch (it->right) {
+        case SR_CHECK: draw_icon(IC_CHECK, rx - 8, y + h / 2, 16, T.accent); break;
+        case SR_CHEV: draw_icon(IC_CHEV_RIGHT, rx - 6, y + h / 2, 14, T.text3); break;
+        case SR_ON: draw_toggle(rx - 30, y + h / 2 - 8, true, 1); break;
+        case SR_OFF: draw_toggle(rx - 30, y + h / 2 - 8, false, 1); break;
+        case SR_VALUE: text_draw_right(it->value, rx, y + (h - text_lineh(0.45f)) / 2, 0.45f, T.accent); break;
+        case SR_CLEAR: {
+            bool p = touch_in(ox + pw - 48, y, 48, h);
+            draw_circle(rx - 8, y + h / 2, 11, p ? T.pill_hi : T.surface2);
+            draw_icon(IC_CLOSE, rx - 8, y + h / 2, 11, T.text);
+            break;
+        }
+        }
+        ox = ox0;
+        if (clip) gfx_clip_off();
+        y += h;
+    }
+    // barra de desplazamiento
+    float total = sheet_content_h(s), view = SCR_H - SH_TOP;
+    if (total > view) {
+        float bh = view * view / total;
+        float by = SH_TOP + (view - bh) * (s->scroll / (total - view));
+        draw_rrect(ox + pw - 4, oy + by, 3, bh, 1.5f, col_alpha(T.text3, 0.6f));
+    }
+    // cabecera
+    draw_rect(ox, oy, pw, SH_TOP, T.bg2);
+    draw_rect(ox, oy + SH_TOP - 1, pw, 1, T.divider);
+    if (!s->from_left) draw_rrect(BOT_W / 2 - 16, oy + 3, 32, 3, 1.5f, T.text3);
+    text_draw_clip(s->title, ox + 14, oy + 11, pw - 60, 0.58f, T.text);
+    bool cp = touch_in(ox + pw - 36, oy, 36, SH_TOP);
+    if (cp) draw_circle(ox + pw - 18, oy + 18, 14, T.pill_hi);
+    draw_icon(IC_CLOSE, ox + pw - 18, oy + 18, 16, T.text2);
+}
+
+// ------------------------------------------------------------ toast
+static char s_toast[160];
+static float s_toast_t;
+
+void toast(const char *msg) {
+    snprintf(s_toast, sizeof(s_toast), "%s", tr(msg));
+    s_toast_t = 2.4f;
+}
+
+void toast_draw_top(void) {
+    if (s_toast_t <= 0) return;
+    s_toast_t -= g_dt;
+    float a = clampf(s_toast_t / 0.3f, 0, 1) * clampf((2.4f - s_toast_t) / 0.2f, 0, 1);
+    float w = text_width(s_toast, 0.5f) + 28;
+    if (w > 380) w = 380;
+    float x = (TOP_W - w) / 2, y = 240 - 34 + (1 - a) * 12;
+    u32 bg = T.dark ? col_hex(0xE3E3E3) : col_hex(0x303030);
+    u32 fg = T.dark ? col_hex(0x1F1F1F) : col_hex(0xF2F2F2);
+    draw_rrect(x, y, w, 26, 13, col_alpha(bg, a));
+    text_draw_clip(s_toast, x + 14, y + 5, w - 28, 0.5f, col_alpha(fg, a));
+}
+
+// ------------------------------------------------------------ diálogo
+void dialog_open(int ctx, const char *title, const char *msg, const char *ok, bool danger) {
+    g_dialog.open = true; g_dialog.anim = 0; g_dialog.ctx = ctx; g_dialog.danger = danger;
+    snprintf(g_dialog.title, sizeof(g_dialog.title), "%s", tr(title));
+    snprintf(g_dialog.msg, sizeof(g_dialog.msg), "%s", tr(msg));
+    snprintf(g_dialog.ok, sizeof(g_dialog.ok), "%s", tr(ok));
+}
+
+int dialog_update(void) {
+    if (!g_dialog.open) return -1;
+    g_dialog.anim = approach(g_dialog.anim, 1, 16);
+    if (g_kdown & KEY_B) { g_dialog.open = false; return 0; }
+    if (g_kdown & KEY_A) { g_dialog.open = false; return 1; }
+    if (tap(30, 158, 126, 34)) { g_dialog.open = false; return 0; }
+    if (tap(164, 158, 126, 34)) { g_dialog.open = false; return 1; }
+    return -1;
+}
+
+void dialog_draw(void) {
+    if (!g_dialog.open) return;
+    float a = ease_out_cubic(g_dialog.anim);
+    draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+    float s = 0.92f + 0.08f * ease_out_back(g_dialog.anim);
+    float w = 280 * s, h = 168 * s;
+    float x = (BOT_W - w) / 2, y = (SCR_H - h) / 2;
+    draw_rrect(x, y, w, h, 18, col_alpha(T.surface2, a));
+    text_draw_center(g_dialog.title, BOT_W / 2, y + 14, 0.62f, col_alpha(T.text, a));
+    text_wrap_lines(g_dialog.msg, w - 32, 0.47f, 5, x + 16, y + 42, col_alpha(T.text2, a), true);
+    ui_pill_button("Cancelar", -1, 30, 158, 126, 34, T.accent, col_alpha(T.surface, a));
+    ui_pill_button(g_dialog.ok, -1, 164, 158, 126, 34, T.dark ? col_hex(0x1F1F1F) : 0xFFFFFFFF,
+                   g_dialog.danger ? T.danger : T.accent);
+}
+
+// ------------------------------------------------------------ teclado
+bool kb_input(const char *hint, const char *initial, char *out, int outsz, bool multiline, bool password) {
+    SwkbdState kb;
+    swkbdInit(&kb, SWKBD_TYPE_NORMAL, 2, outsz > 2000 ? 2000 : outsz - 1);
+    swkbdSetHintText(&kb, tr(hint));
+    if (initial) swkbdSetInitialText(&kb, initial);
+    swkbdSetButton(&kb, SWKBD_BUTTON_LEFT, tr("Cancelar"), false);
+    swkbdSetButton(&kb, SWKBD_BUTTON_RIGHT, tr("Aceptar"), true);
+    u32 feat = SWKBD_DARKEN_TOP_SCREEN | SWKBD_ALLOW_HOME | SWKBD_ALLOW_RESET | SWKBD_ALLOW_POWER;
+    if (multiline) feat |= SWKBD_MULTILINE;
+    swkbdSetFeatures(&kb, feat);
+    if (password) swkbdSetPasswordMode(&kb, SWKBD_PASSWORD_HIDE_DELAY);
+    swkbdSetValidation(&kb, SWKBD_ANYTHING, 0, 0);
+    char *buf = calloc(1, outsz);
+    SwkbdButton b = swkbdInputText(&kb, buf, outsz);
+    bool ok = b == SWKBD_BUTTON_RIGHT;
+    if (ok) snprintf(out, outsz, "%s", buf);
+    free(buf);
+    return ok;
+}
+
+// ------------------------------------------------------------ QR
+static char s_qr_text[3000];
+static uint8_t s_qr[qrcodegen_BUFFER_LEN_FOR_VERSION(27)];
+static bool s_qr_ok;
+
+static void qr_prepare(const char *text) {
+    if (!strcmp(text, s_qr_text) && s_qr_text[0]) return;
+    snprintf(s_qr_text, sizeof(s_qr_text), "%s", text);
+    static uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(27)];
+    // versión mínima 4: los enlaces cortos (GitHub, Discord, Ko-fi…) salen todos del mismo tamaño
+    s_qr_ok = qrcodegen_encodeText(text, tmp, s_qr, qrcodegen_Ecc_LOW, 4, 27, qrcodegen_Mask_AUTO, true);
+}
+
+int qr_size_for(const char *text) {
+    qr_prepare(text);
+    return s_qr_ok ? qrcodegen_getSize(s_qr) : 0;
+}
+
+bool draw_qr(const char *text, float x, float y, float maxsize, float alpha) {
+    qr_prepare(text);
+    if (!s_qr_ok) return false;
+    int n = qrcodegen_getSize(s_qr);
+    int quiet = 2;
+    float m = floorf(maxsize / (n + quiet * 2));
+    if (m < 1) m = 1;
+    float total = m * (n + quiet * 2);
+    float ox = x + (maxsize - total) / 2, oy = y + (maxsize - total) / 2;
+    draw_rrect(ox - 4, oy - 4, total + 8, total + 8, 10, col_alpha(0xFFFFFFFF, alpha));
+    u32 black = col_alpha(C2D_Color32(0x1F, 0x1F, 0x1F, 0xFF), alpha);
+    for (int yy = 0; yy < n; yy++) {
+        int run = -1;
+        for (int xx = 0; xx <= n; xx++) {
+            bool on = xx < n && qrcodegen_getModule(s_qr, xx, yy);
+            if (on && run < 0) run = xx;
+            if (!on && run >= 0) {
+                C2D_DrawRectSolid(ox + (quiet + run) * m, oy + (quiet + yy) * m, 0.5f, (xx - run) * m, m, black);
+                run = -1;
+            }
+        }
+    }
+    return true;
 }

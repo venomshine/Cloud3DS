@@ -1,710 +1,455 @@
+/*
+ * Cloud3DS - tu nube local para Nintendo 3DS
+ * Copyright (C) 2026 VENOMSHiNE - https://github.com/venomshine/Cloud3DS
+ *
+ * Software libre bajo la GNU General Public License v3 con términos adicionales
+ * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
+ * Interfaz basada en Gemi3DS de VENOMSHiNE - https://github.com/venomshine/Gemi3DS
+ */
+// Cloud3DS - bucle principal e interfaz de la consola
 #include "app.h"
 #include "fsx.h"
-#include "gfx.h"
 #include "i18n.h"
 #include "server.h"
 #include "state.h"
 #include "ui.h"
 #include "util.h"
 
-#include "qrcodegen.h"
 #include <arpa/inet.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-enum { TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
-enum { ACT_NONE, ACT_REVOKE, ACT_NEW_PIN, ACT_EXIT };
-enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_ABOUT, SET_EXIT, SET_COUNT };
+#define TOP_HDR 24
+#define QR_X 16
+#define QR_Y 30
+#define QR_S 176
+#define COL_X 210   // columna derecha de la pantalla superior
+#define COL_W 176
 
-#define TABBAR_H 44
-#define VIEW_Y   34
-#define VIEW_H   (SCR_H - TABBAR_H - VIEW_Y)
+#define ABOUT_TEXT "Tu nube local para Nintendo 3DS: maneja la tarjeta SD desde el móvil o el PC con solo escanear un QR. Sin apps, sin cables y sin configurar nada. Todo se queda en tu red: nada pasa por Internet."
 
-static struct {
-	int tab;
-	float tab_anim;
-	Scroll sc[TAB_COUNT];
-	Dialog dlg;
-	float t_ro, t_prot; /* animación de los interruptores */
-	float busy_anim;    /* 0 = QR, 1 = transferencias */
-	u64 busy_until;     /* mantener la vista de transferencias un momento al acabar */
-	bool about;         /* QR del Discord arriba */
-	float about_anim;
-	bool quit;
+// hojas
+enum { SK_NONE, SK_DRAWER, SK_ACCESS, SK_DEVICES, SK_ACTIVITY, SK_SETTINGS, SK_LANG, SK_ABOUT };
+// diálogos
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR };
+// elementos con id fijo
+enum {
+	ID_ACTIVITY = 1, ID_DEVICES, ID_SETTINGS, ID_ABOUT, ID_EXIT,
+	ID_RW, ID_RO, ID_PROTECT, ID_ACCESS, ID_PIN, ID_LANG, ID_THEME, ID_CLEAR,
+	ID_GITHUB, ID_DISCORD, ID_KOFI, ID_VERSION,
+};
 
-	/* QR */
-	u8 qr[qrcodegen_BUFFER_LEN_FOR_VERSION(10)];
-	bool qr_ok;
-	char qr_text[96];
-	u8 qr2[qrcodegen_BUFFER_LEN_FOR_VERSION(10)];
-	bool qr2_ok;
+static Sheet S;
+static int s_parent;          // hoja a la que se vuelve al cerrar la actual
+static int s_dlg_arg;
+static bool s_quit;
+static float s_busy;          // 0 = datos de conexión, 1 = transferencia (columna derecha)
+static u64 s_free, s_total;
+static u64 s_space_t;
+static bool s_lid_off;
 
-	/* copia del estado para dibujar sin el cerrojo */
-	AppState S;
-	u32 last_rev;
-	int last_hist_n, last_hist_head;
-	bool events_seen; /* el historial cargado de la SD no genera avisos */
-	bool lid_off;
-	float time;
-} U;
+static AppState V;            // copia del estado para dibujar sin el cerrojo
+static u32 s_rev = ~0u;
+static u64 s_copy_t;
+static int s_hist_n, s_hist_head;
+static bool s_events_seen;
 
-static void make_qr(u8 *out, bool *ok, const char *text)
+// ------------------------------------------------------------ datos
+static int online_count(void)
 {
-	u8 tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(10)];
-	*ok = qrcodegen_encodeText(text, tmp, out, qrcodegen_Ecc_MEDIUM, 4, 10, qrcodegen_Mask_AUTO, true);
+	int n = 0;
+	u64 now = util_ms();
+	for (int i = 0; i < MAX_DEVICES; i++)
+		if (V.dev[i].used && V.dev[i].last_ms && now - V.dev[i].last_ms < 30000)
+			n++;
+	return n;
 }
 
-static void draw_qr(const u8 *qr, float x, float y, float size, float a)
+static int paired_count(void)
 {
-	int n = qrcodegen_getSize(qr);
-	int quiet = 2;
-	float m = floorf(size / (n + quiet * 2));
-	float real = m * (n + quiet * 2);
-	x += floorf((size - real) / 2);
-	y += floorf((size - real) / 2);
-	gfx_rrect(x, y, real, real, 8, gfx_alpha(0xFFFFFFFF, a));
-	u32 dark = gfx_alpha(C2D_Color32(0x0D, 0x12, 0x1C, 0xFF), a);
-	for (int r = 0; r < n; r++) {
-		/* tramos horizontales seguidos: menos objetos que dibujar */
-		int c = 0;
-		while (c < n) {
-			if (!qrcodegen_getModule(qr, c, r)) {
-				c++;
-				continue;
-			}
-			int s = c;
-			while (c < n && qrcodegen_getModule(qr, c, r))
-				c++;
-			gfx_rect(x + (s + quiet) * m, y + (r + quiet) * m, (c - s) * m, m, dark);
-		}
-	}
+	int n = 0;
+	for (int i = 0; i < MAX_DEVICES; i++)
+		n += V.dev[i].used;
+	return n;
 }
 
-static void url_text(char *out, size_t n, bool with_scheme)
+static bool dev_online(const Device *d)
 {
-	struct in_addr a = {U.S.ip};
-	if (U.S.port == 80)
-		snprintf(out, n, "%s%s", with_scheme ? "http://" : "", inet_ntoa(a));
+	return d->last_ms && util_ms() - d->last_ms < 30000;
+}
+
+static void url_text(char *out, size_t n, bool scheme)
+{
+	struct in_addr a = {V.ip};
+	if (V.port == 80)
+		snprintf(out, n, "%s%s", scheme ? "http://" : "", inet_ntoa(a));
 	else
-		snprintf(out, n, "%s%s:%d", with_scheme ? "http://" : "", inet_ntoa(a), U.S.port);
+		snprintf(out, n, "%s%s:%d", scheme ? "http://" : "", inet_ntoa(a), V.port);
 }
 
-static void refresh_qr(void)
-{
-	char url[64], text[96];
-	url_text(url, sizeof url, true);
-	snprintf(text, sizeof text, "%s/#k=%s", url, U.S.qr_key);
-	if (strcmp(text, U.qr_text) != 0) {
-		util_strlcpy(U.qr_text, text, sizeof U.qr_text);
-		make_qr(U.qr, &U.qr_ok, text);
-	}
-}
-
-/* ---------- cabecera superior ---------- */
-
-static void draw_header(void)
-{
-	gfx_icon(IC_CLOUD, 20, 14, 20, T.accent);
-	gfx_title(36, 5, 15, T.text);
-
-	bool chg;
-	int pct = util_battery(&chg);
-	char pt[8];
-	snprintf(pt, sizeof pt, "%d%%", pct);
-	float x = TOP_W - 12;
-	x -= gfx_text(x, 6, 12, T.muted, AL_RIGHT, 0, pt) + 6;
-	float bw = 22, bh = 11, by = 8;
-	x -= bw + 3;
-	u32 bc = chg ? T.ok : pct < 15 ? T.err : pct < 30 ? T.warn : T.ok;
-	gfx_rrect(x, by, bw, bh, 3, T.muted);
-	gfx_rect(x + 1.5f, by + 1.5f, bw - 3, bh - 3, T.bg);
-	gfx_rect(x + 2.5f, by + 2.5f, (bw - 5) * pct / 100.0f, bh - 5, bc);
-	gfx_rect(x + bw, by + 3, 2, bh - 6, T.muted);
-	x -= 10;
-	char clk[48];
-	util_fmt_clock(clk, sizeof clk);
-	x -= gfx_text(x, 6, 12, T.muted, AL_RIGHT, 0, clk) + 10;
-
-	/* señal Wi-Fi */
-	int bars = U.S.ip ? osGetWifiStrength() : 0;
-	for (int i = 0; i < 3; i++) {
-		float h = 4 + i * 3;
-		gfx_rrect(x - 14 + i * 5, 17 - h, 3, h, 1, i < bars ? T.text : T.line);
-	}
-}
-
-/* ---------- pantalla superior: conexión ---------- */
-
-static void draw_connect(float a, float off)
-{
-	float cx = 12, cy = 32 + off, cw = TOP_W - 24, ch = 196;
-	gfx_rrect(cx, cy, cw, ch, 16, gfx_alpha(T.card, a));
-	if (U.qr_ok)
-		draw_qr(U.qr, cx + 12, cy + 12, 172, a);
-
-	float x = cx + 198, w = cw - 198 - 14;
-	u32 tx = gfx_alpha(T.text, a), mu = gfx_alpha(T.muted, a);
-	gfx_text(x, cy + 18, 16, tx, AL_LEFT, w, _("Escanea con tu móvil"));
-	gfx_wrap(x, cy + 42, 11.5f, mu, AL_LEFT, w, _("La cámara abre tu nube al instante. Mismo Wi-Fi que la consola."), 3);
-
-	gfx_rect(x, cy + 92, w, 1, gfx_alpha(T.line, a));
-	gfx_text(x, cy + 102, 11.5f, mu, AL_LEFT, w, _("O escribe en el navegador:"));
-	char url[48];
-	url_text(url, sizeof url, false);
-	float us = 19;
-	while (us > 13 && gfx_text_w(us, url) > w)
-		us -= 1;
-	gfx_text(x, cy + 120, us, gfx_alpha(T.accent, a), AL_LEFT, w, url);
-
-	gfx_text(x, cy + 150, 11.5f, mu, AL_LEFT, w, _("PIN"));
-	for (int i = 0; i < 4; i++) {
-		float bx = x + 34 + i * 30, by = cy + 144;
-		gfx_rrect(bx, by, 26, 30, 7, gfx_alpha(T.card2, a));
-		char d[2] = {U.S.pin[i], 0};
-		gfx_text(bx + 13, by + 6, 17, tx, AL_CENTER, 0, d);
-	}
-}
-
-static void draw_center_msg(Icon ic, u32 ic_color, const char *title, const char *text, float a, float off)
-{
-	float cx = 12, cy = 32 + off, cw = TOP_W - 24, ch = 196;
-	gfx_rrect(cx, cy, cw, ch, 16, gfx_alpha(T.card, a));
-	gfx_circle(TOP_W / 2, cy + 62, 34, gfx_alpha(T.card2, a));
-	gfx_icon(ic, TOP_W / 2, cy + 62, 40, gfx_alpha(ic_color, a));
-	gfx_text(TOP_W / 2, cy + 108, 17, gfx_alpha(T.text, a), AL_CENTER, cw - 40, title);
-	gfx_wrap(cx + 40, cy + 134, 12, gfx_alpha(T.muted, a), AL_CENTER, cw - 80, text, 3);
-}
-
-static void draw_spinner(float cx, float cy, float r, float a)
-{
-	for (int i = 0; i < 8; i++) {
-		float ang = U.time * 6 + i * M_PI / 4;
-		float al = (i + 1) / 8.0f;
-		gfx_circle(cx + cosf(ang) * r, cy + sinf(ang) * r, 2.6f, gfx_alpha(T.accent, a * al));
-	}
-}
-
-/* ---------- pantalla superior: transferencias ---------- */
-
-static int collect_xfers(const Xfer **out, int max)
+// transferencias a la vista: las activas y las que acaban de terminar
+static int visible_xfers(const Xfer **out, int max)
 {
 	int n = 0;
 	u64 now = util_ms();
 	for (int i = 0; i < MAX_XFERS && n < max; i++) {
-		const Xfer *x = &U.S.xfers[i];
-		if (x->st == XS_RUNNING || (x->st != XS_FREE && now - x->t_end < 2500))
+		const Xfer *x = &V.xfers[i];
+		if (x->st == XS_RUNNING)
+			out[n++] = x;
+	}
+	for (int i = 0; i < MAX_XFERS && n < max; i++) {
+		const Xfer *x = &V.xfers[i];
+		if (x->st != XS_FREE && x->st != XS_RUNNING && now - x->t_end < 2500)
 			out[n++] = x;
 	}
 	return n;
 }
 
-static void draw_xfer(const Xfer *x, float y, float h, float a)
+static const Event *ev(int i) { return &V.hist[(V.hist_head - i + MAX_HISTORY) % MAX_HISTORY]; }
+
+// texto, icono y color de un evento
+static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn, IconId *ic, u32 *col)
 {
-	float cx = 12, cw = TOP_W - 24;
-	gfx_rrect(cx, y, cw, h, 16, gfx_alpha(T.card, a));
-	bool up = x->kind == XF_UPLOAD;
-	u32 col = x->st == XS_FAILED || x->st == XS_CANCELED ? T.err : up ? T.ok : T.accent;
-	float ix = cx + 30, iy = y + h / 2 - (h > 80 ? 10 : 0);
-	gfx_circle(ix, iy, 18, gfx_alpha(col, a));
-	Icon ic = x->st == XS_DONE ? IC_CHECK : x->st == XS_RUNNING ? (up ? IC_UP : IC_DOWN) : IC_CROSS;
-	gfx_icon(ic, ix, iy, 20, gfx_alpha(T.on_accent, a));
-
-	float tx = cx + 60, tw = cw - 72;
-	float ty = y + (h - 64) / 2;
-	gfx_text(tx, ty, 15, gfx_alpha(T.text, a), AL_LEFT, tw, x->name);
-	char sub[96];
-	if (x->st == XS_DONE)
-		snprintf(sub, sizeof sub, up ? _("Recibido de %s") : _("Enviado a %s"), x->device);
-	else if (x->st == XS_RUNNING)
-		snprintf(sub, sizeof sub, up ? _("Recibiendo de %s") : _("Enviando a %s"), x->device);
-	else
-		snprintf(sub, sizeof sub, "%s", _("Cancelado o conexión perdida"));
-	gfx_text(tx, ty + 19, 11.5f, gfx_alpha(T.muted, a), AL_LEFT, tw, sub);
-
-	float frac = x->total ? (double)x->done / x->total : (x->st == XS_DONE ? 1 : 0);
-	gfx_brand_bar(tx, ty + 38, tw, 8, frac);
-
-	char d[24], t[24], line[80];
-	util_fmt_size(d, sizeof d, x->done);
-	util_fmt_size(t, sizeof t, x->total);
-	snprintf(line, sizeof line, _("%s de %s"), d, t);
-	gfx_text(tx, ty + 51, 11, gfx_alpha(T.muted, a), AL_LEFT, tw / 2, line);
-	if (x->st == XS_RUNNING && x->speed > 0) {
-		char sp[24], eta[24];
-		util_fmt_speed(sp, sizeof sp, x->speed);
-		util_fmt_eta(eta, sizeof eta, (x->total - x->done) / (x->speed ? x->speed : 1));
-		snprintf(line, sizeof line, _("%s · quedan %s"), sp, eta);
-		gfx_text(tx + tw, ty + 51, 11, gfx_alpha(T.muted, a), AL_RIGHT, tw / 2, line);
-	} else if (x->st == XS_DONE) {
-		gfx_text(tx + tw, ty + 51, 11, gfx_alpha(T.ok, a), AL_RIGHT, tw / 2, _("Completado"));
-	}
-}
-
-static void draw_busy(float a, float off)
-{
-	const Xfer *xs[3];
-	int n = collect_xfers(xs, 3);
-	if (!n)
-		return;
-	float top = 32 + off, avail = 172;
-	float h = n == 1 ? 110 : (avail - (n - 1) * 8) / n;
-	float y = top + (n == 1 ? (avail - h) / 2 : 0);
-	for (int i = 0; i < n; i++)
-		draw_xfer(xs[i], y + i * (h + 8), h, a);
-	/* para que otro dispositivo pueda conectarse mientras tanto */
-	char url[48], foot[96];
-	url_text(url, sizeof url, false);
-	snprintf(foot, sizeof foot, _("%s · PIN %s"), url, U.S.pin);
-	gfx_text(TOP_W / 2, top + avail + 8, 11.5f, gfx_alpha(T.muted, a), AL_CENTER, 360, foot);
-}
-
-static void draw_about_top(float a)
-{
-	float cx = 12, cy = 32, cw = TOP_W - 24, ch = 196;
-	gfx_rrect(cx, cy, cw, ch, 16, gfx_alpha(T.card, a));
-	if (U.qr2_ok)
-		draw_qr(U.qr2, cx + 12, cy + 12, 172, a);
-	float x = cx + 198, w = cw - 212;
-	gfx_title(x, cy + 18, 20, gfx_alpha(T.text, a));
-	gfx_text(x, cy + 46, 12, gfx_alpha(T.muted, a), AL_LEFT, w, _("Tu nube local"));
-	gfx_text(x, cy + 64, 12, gfx_alpha(T.muted, a), AL_LEFT, w, "v" APP_VERSION);
-	gfx_rect(x, cy + 90, w, 1, gfx_alpha(T.line, a));
-	gfx_icon(IC_HEART, x + 8, cy + 110, 14, gfx_alpha(T.err, a));
-	gfx_text(x + 20, cy + 102, 12.5f, gfx_alpha(T.text, a), AL_LEFT, w - 20, _("hecho por VENOMSHiNE"));
-	gfx_wrap(x, cy + 128, 11.5f, gfx_alpha(T.muted, a), AL_LEFT, w, _("Escanea para unirte al Discord de la comunidad."), 3);
-}
-
-static void draw_top(float dt)
-{
-	gfx_target_top();
-	draw_header();
-
-	bool busy = collect_xfers((const Xfer *[3]){0}, 3) > 0;
-	U.busy_anim = approach(U.busy_anim, busy ? 1 : 0, 9, dt);
-	U.about_anim = approach(U.about_anim, U.about ? 1 : 0, 10, dt);
-	float b = ease_in_out(U.busy_anim);
-
-	if (U.about_anim > 0.01f) {
-		draw_about_top(U.about_anim);
-	} else if (!U.S.ip) {
-		draw_center_msg(IC_WIFI_OFF, T.muted, _("Sin conexión Wi-Fi"),
-		                _("Conecta la consola a tu Wi-Fi. Si no tienes router, usa el punto de acceso de tu móvil."),
-		                1, 0);
-	} else if (U.S.srv_error[0]) {
-		draw_center_msg(IC_ALERT, T.warn, _("No se pudo abrir el servidor"),
-		                _("Cierra otras apps de red (como FTPD) y vuelve a abrir Cloud3DS."), 1, 0);
-	} else if (!U.S.running) {
-		gfx_rrect(12, 32, TOP_W - 24, 196, 16, T.card);
-		draw_spinner(TOP_W / 2, 110, 16, 1);
-		gfx_text(TOP_W / 2, 148, 15, T.muted, AL_CENTER, 0, _("Preparando tu nube…"));
-	} else {
-		if (b < 0.99f)
-			draw_connect(1 - b, -b * 14);
-		if (b > 0.01f)
-			draw_busy(b, (1 - b) * 14);
-	}
-	toast_draw(dt);
-}
-
-/* ---------- pantalla inferior ---------- */
-
-static void tab_header(const char *title, const char *right)
-{
-	gfx_text(14, 9, 16, T.text, AL_LEFT, 180, title);
-	if (right)
-		gfx_text(BOT_W - 14, 12, 11.5f, T.muted, AL_RIGHT, 130, right);
-}
-
-/* «↑ 24 MB  ↓ 3 MB» con íconos: la fuente del sistema no tiene flechas */
-static void totals_header(u64 up, u64 down)
-{
-	char a[24], b[24];
-	util_fmt_size(a, sizeof a, up);
-	util_fmt_size(b, sizeof b, down);
-	float x = BOT_W - 14;
-	x -= gfx_text(x, 12, 11.5f, T.muted, AL_RIGHT, 0, b) + 3;
-	gfx_icon(IC_DOWN, x - 6, 19, 11, T.accent);
-	x -= 22;
-	x -= gfx_text(x, 12, 11.5f, T.muted, AL_RIGHT, 0, a) + 3;
-	gfx_icon(IC_UP, x - 6, 19, 11, T.ok);
-}
-
-static void row_highlight(int i, float y, float h, Scroll *s)
-{
-	if (IN.used_buttons && i == s->sel && !U.dlg.open)
-		gfx_rrect(6, y + 1, BOT_W - 12, h - 2, 10, T.card2);
-}
-
-static void empty_state(Icon ic, const char *title, const char *text)
-{
-	float cy = VIEW_Y + VIEW_H / 2 - 26;
-	gfx_circle(BOT_W / 2, cy, 24, T.card);
-	gfx_icon(ic, BOT_W / 2, cy, 26, T.muted);
-	gfx_text(BOT_W / 2, cy + 34, 14, T.text, AL_CENTER, 280, title);
-	gfx_wrap(30, cy + 54, 11.5f, T.muted, AL_CENTER, BOT_W - 60, text, 3);
-}
-
-static void ev_text(const Event *e, char *title, size_t tn, char *sub, size_t sn, Icon *ic, u32 *col)
-{
-	char sz[24], when[24];
+	char sz[24];
 	util_fmt_size(sz, sizeof sz, e->size);
-	util_fmt_when(when, sizeof when, e->when);
-	const char *verb = "";
 	util_strlcpy(title, e->name, tn);
 	*col = T.accent;
 	switch (e->kind) {
-	case EV_UPLOAD:      verb = _("Recibido"); *ic = IC_UP; *col = T.ok; break;
-	case EV_DOWNLOAD:    verb = _("Enviado"); *ic = IC_DOWN; break;
-	case EV_UPLOAD_FAIL: verb = _("No se completó"); *ic = IC_CROSS; *col = T.err; break;
-	case EV_MKDIR:       verb = _("Carpeta creada"); *ic = IC_FOLDER; *col = T.warn; break;
-	case EV_RENAME:      verb = _("Renombrado"); *ic = IC_PENCIL; *col = T.accent2; break;
-	case EV_DELETE:      verb = _("Eliminado"); *ic = IC_TRASH; *col = T.err; break;
+	case EV_UPLOAD:
+		*ic = IC_UPLOAD; *col = T.ok;
+		snprintf(sub, sn, "%s · %s · %s", _("Recibido"), sz, e->device);
+		break;
+	case EV_DOWNLOAD:
+		*ic = IC_DOWNLOAD;
+		snprintf(sub, sn, "%s · %s · %s", _("Enviado"), sz, e->device);
+		break;
+	case EV_UPLOAD_FAIL:
+		*ic = IC_CLOSE; *col = T.danger;
+		snprintf(sub, sn, "%s · %s", _("No se completó"), e->device);
+		break;
+	case EV_MKDIR:
+		*ic = IC_FOLDER; *col = col_hex(0xFDD663);
+		snprintf(sub, sn, "%s · %s", _("Carpeta creada"), e->device);
+		break;
+	case EV_RENAME:
+		*ic = IC_PEN; *col = T.text2;
+		snprintf(sub, sn, "%s · %s", _("Renombrado"), e->device);
+		break;
+	case EV_DELETE:
+		*ic = IC_TRASH; *col = T.danger;
+		snprintf(sub, sn, "%s · %s", _("Eliminado"), e->device);
+		break;
 	case EV_PAIRED:
+		*ic = IC_LINK; *col = col_hex(0xC58AF9);
 		util_strlcpy(title, _("Nuevo dispositivo vinculado"), tn);
-		verb = "";
-		*ic = IC_LINK;
-		*col = T.accent2;
+		util_strlcpy(sub, e->device, sn);
 		break;
 	case EV_REVOKED:
+		*ic = IC_LOGOUT; *col = T.text3;
 		util_strlcpy(title, _("Dispositivo expulsado"), tn);
-		*ic = IC_CROSS;
-		*col = T.muted;
+		util_strlcpy(sub, e->device, sn);
 		break;
 	case EV_PIN_RESET:
+		*ic = IC_LOCK; *col = col_hex(0xFDD663);
 		util_strlcpy(title, _("PIN cambiado por seguridad"), tn);
 		util_strlcpy(sub, _("Demasiados intentos fallidos"), sn);
-		*ic = IC_LOCK;
-		*col = T.warn;
-		return;
+		break;
 	}
-	if (e->kind == EV_UPLOAD || e->kind == EV_DOWNLOAD || e->kind == EV_UPLOAD_FAIL)
-		snprintf(sub, sn, "%s · %s · %s", verb, sz, e->device);
-	else if (*verb)
-		snprintf(sub, sn, "%s · %s", verb, e->device);
+}
+
+static IconId dev_icon(const Device *d)
+{
+	return d->kind == 0 ? IC_PHONE : d->kind == 2 ? IC_TABLET : IC_LAPTOP;
+}
+
+// ------------------------------------------------------------ hojas
+static void open_drawer(void)
+{
+	sheet_open(&S, SK_DRAWER, APP_NAME, true);
+	s_parent = SK_NONE;
+	char sub[96];
+	snprintf(sub, sizeof sub, V.hist_n == 1 ? _("%d evento") : _("%d eventos"), V.hist_n);
+	sheet_add(&S, IC_CLOCK, _("Actividad"), V.hist_n ? sub : _("Aún no hay actividad"), SR_CHEV, ID_ACTIVITY);
+	int on = online_count(), pr = paired_count();
+	if (pr)
+		snprintf(sub, sizeof sub, _("%d conectados · %d vinculados"), on, pr);
 	else
-		snprintf(sub, sn, "%s", e->device);
-	(void)when;
+		snprintf(sub, sizeof sub, "%s", _("Ninguno vinculado todavía"));
+	sheet_add(&S, IC_DEVICES, _("Dispositivos"), sub, SR_CHEV, ID_DEVICES);
+	sheet_header(&S, "");
+	sheet_add(&S, IC_GEAR, _("Ajustes"), NULL, SR_CHEV, ID_SETTINGS);
+	snprintf(sub, sizeof sub, _("Versión %s · por %s"), APP_VERSION, "VENOMSHiNE");
+	sheet_add(&S, IC_INFO, _("Acerca de Cloud3DS"), sub, SR_CHEV, ID_ABOUT);
+	sheet_add(&S, IC_POWER, _("Salir"), NULL, SR_NONE, ID_EXIT);
+	S.sel = 0;
 }
 
-static void tab_activity(float dt)
+static void open_access(int parent)
 {
-	Scroll *s = &U.sc[TAB_ACTIVITY];
-	tab_header(_("Actividad"), NULL);
-	if (U.S.stat_up || U.S.stat_down)
-		totals_header(U.S.stat_up, U.S.stat_down);
-	int n = U.S.hist_n;
-	const float RH = 42;
-	scroll_update(s, n, RH, VIEW_H, dt);
-	if (!n) {
-		empty_state(IC_CLOUD, _("Todo listo"), _("Sube algo desde tu móvil o tu PC y aparecerá aquí."));
-		return;
-	}
-	gfx_scissor(0, VIEW_Y, BOT_W, VIEW_H);
-	for (int i = 0; i < n; i++) {
-		float y = VIEW_Y + i * RH - s->off;
-		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
-			continue;
-		/* el anillo de la copia está en U.S */
-		const Event *e = &U.S.hist[(U.S.hist_head - i + MAX_HISTORY) % MAX_HISTORY];
-		char title[128], sub[160] = "", when[24];
-		Icon ic = IC_INFO;
-		u32 col;
-		ev_text(e, title, sizeof title, sub, sizeof sub, &ic, &col);
-		util_fmt_when(when, sizeof when, e->when);
-		row_highlight(i, y, RH, s);
-		gfx_circle(28, y + RH / 2, 13, col);
-		gfx_icon(ic, 28, y + RH / 2, 15, T.on_accent);
-		float ww = gfx_text_w(10.5f, when);
-		gfx_text(50, y + 6, 13.5f, T.text, AL_LEFT, BOT_W - 66 - ww - 8, title);
-		gfx_text(50, y + 23, 10.5f, T.muted, AL_LEFT, BOT_W - 64, sub);
-		gfx_text(BOT_W - 14, y + 8, 10.5f, T.muted, AL_RIGHT, 0, when);
-	}
-	gfx_scissor_off();
+	sheet_open(&S, SK_ACCESS, _("Permisos"), false);
+	s_parent = parent;
+	if (parent)
+		S.anim = 1;
+	sheet_add(&S, IC_FOLDER, _("Lectura y escritura"), _("Pueden subir, renombrar y borrar"), V.readonly ? SR_NONE : SR_CHECK, ID_RW);
+	sheet_add(&S, IC_LOCK, _("Solo lectura"), _("Solo pueden ver y descargar"), V.readonly ? SR_CHECK : SR_NONE, ID_RO);
+	sheet_header(&S, "");
+	sheet_add(&S, IC_SHIELD, _("Proteger carpetas del sistema"), _("Pide confirmación en Nintendo 3DS, luma…"),
+	          V.protect_sys ? SR_ON : SR_OFF, ID_PROTECT);
+	S.sel = V.readonly ? 1 : 0;
 }
 
-static int device_list(int *idx)
+static void open_devices(int parent, int keep_sel)
 {
-	int n = 0;
-	/* los conectados primero, luego por última vez visto */
-	for (int pass = 0; pass < 2; pass++)
+	float sc = S.scroll;
+	sheet_open(&S, SK_DEVICES, _("Dispositivos"), false);
+	s_parent = parent;
+	if (parent || keep_sel >= 0)
+		S.anim = 1;
+	for (int pass = 0; pass < 2; pass++) {
+		bool first = true;
 		for (int i = 0; i < MAX_DEVICES; i++) {
-			const Device *d = &U.S.dev[i];
-			if (!d->used)
+			const Device *d = &V.dev[i];
+			if (!d->used || dev_online(d) != (pass == 0))
 				continue;
-			bool on = d->last_ms && util_ms() - d->last_ms < 30000;
-			if ((pass == 0) == on)
-				idx[n++] = i;
+			if (first)
+				sheet_header(&S, pass == 0 ? _("Conectados ahora") : _("Vinculados"));
+			first = false;
+			char sub[96], when[32];
+			if (pass == 0)
+				snprintf(sub, sizeof sub, "%s · %s", _("Conectado"), d->ip);
+			else {
+				util_fmt_when(when, sizeof when, d->last_seen);
+				snprintf(sub, sizeof sub, _("Visto: %s"), when);
+			}
+			SheetItem *it = sheet_add(&S, dev_icon(d), d->name, sub, SR_CHEV, 100 + i);
+			it->icon_col = pass == 0 ? T.ok : T.text2;
 		}
-	return n;
+	}
+	if (!paired_count()) {
+		SheetItem *e = sheet_add(&S, -1, _("Ningún dispositivo vinculado"), _("Escanea el QR de arriba con tu móvil"), SR_NONE, -9);
+		e->disabled = true;
+	}
+	if (keep_sel >= 0 && keep_sel < S.n) {
+		S.sel = keep_sel;
+		S.scroll = S.scroll_target = sc;
+	} else {
+		S.sel = -1;
+		for (int i = 0; i < S.n; i++)
+			if (!S.items[i].header && !S.items[i].disabled) {
+				S.sel = i;
+				break;
+			}
+	}
 }
 
-static void tab_devices(float dt)
+static void open_activity(int parent)
 {
-	Scroll *s = &U.sc[TAB_DEVICES];
-	int idx[MAX_DEVICES];
-	int n = device_list(idx);
-	int online = 0;
-	for (int i = 0; i < n; i++)
-		if (U.S.dev[idx[i]].last_ms && util_ms() - U.S.dev[idx[i]].last_ms < 30000)
-			online++;
-	char right[48];
-	snprintf(right, sizeof right, online == 1 ? _("%d conectado") : _("%d conectados"), online);
-	tab_header(_("Dispositivos"), n ? right : NULL);
-	const float RH = 46;
-	scroll_update(s, n, RH, VIEW_H, dt);
-	if (!n) {
-		empty_state(IC_DEVICES, _("Sin dispositivos"), _("Escanea el QR de arriba con tu móvil para vincularlo."));
-		return;
-	}
-	if (!U.dlg.open && IN.used_buttons && (IN.down & (KEY_A | KEY_X)) && s->sel < n) {
-		const Device *d = &U.S.dev[idx[s->sel]];
-		char t[200];
-		snprintf(t, sizeof t, _("%s tendrá que volver a escanear el QR o escribir el PIN."), d->name);
-		dialog_open(&U.dlg, _("¿Expulsar dispositivo?"), t, _("Expulsar"), true, ACT_REVOKE, idx[s->sel]);
-	}
-	gfx_scissor(0, VIEW_Y, BOT_W, VIEW_H);
-	for (int i = 0; i < n; i++) {
-		float y = VIEW_Y + i * RH - s->off;
-		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
-			continue;
-		const Device *d = &U.S.dev[idx[i]];
-		bool on = d->last_ms && util_ms() - d->last_ms < 30000;
-		row_highlight(i, y, RH, s);
-		Icon ic = d->kind == 0 ? IC_PHONE : d->kind == 2 ? IC_TABLET : IC_LAPTOP;
-		gfx_circle(30, y + RH / 2, 15, T.card);
-		gfx_icon(ic, 30, y + RH / 2, 20, on ? T.accent : T.muted);
-		if (on) {
-			gfx_circle(41, y + RH / 2 + 10, 5, T.bg);
-			gfx_circle(41, y + RH / 2 + 10, 3.5f, T.ok);
+	sheet_open(&S, SK_ACTIVITY, _("Actividad"), false);
+	s_parent = parent;
+	if (parent)
+		S.anim = 1;
+	long today = (long)(util_unix_now() / 86400);
+	int section = -1;
+	for (int i = 0; i < V.hist_n; i++) {
+		const Event *e = ev(i);
+		int sec = (long)(e->when / 86400) == today ? 0 : 1;
+		if (sec != section) {
+			sheet_header(&S, sec == 0 ? _("Hoy") : _("Antes"));
+			section = sec;
 		}
-		gfx_text(54, y + 7, 13.5f, T.text, AL_LEFT, 170, d->name);
-		char sub[64], when[24];
-		if (on)
-			snprintf(sub, sizeof sub, "%s · %s", _("Conectado ahora"), d->ip);
-		else {
-			util_fmt_when(when, sizeof when, d->last_seen);
-			snprintf(sub, sizeof sub, _("Visto: %s"), when);
-		}
-		gfx_text(54, y + 25, 10.5f, on ? T.ok : T.muted, AL_LEFT, 170, sub);
-		/* botón Expulsar */
-		float bw = 76, bx = BOT_W - 12 - bw, by = y + 9;
-		bool pr = ui_pressing(bx, by, bw, 28);
-		gfx_rrect(bx, by, bw, 28, 14, pr ? gfx_alpha(T.err, 0.35f) : gfx_alpha(T.err, 0.16f));
-		gfx_text(bx + bw / 2, by + 7, 11.5f, T.err, AL_CENTER, bw - 10, _("Expulsar"));
-		if (!U.dlg.open && ui_tap(bx, by, bw, 28) && y >= VIEW_Y - 4 && y + RH <= VIEW_Y + VIEW_H + 4) {
-			char t[200];
-			snprintf(t, sizeof t, _("%s tendrá que volver a escanear el QR o escribir el PIN."), d->name);
-			dialog_open(&U.dlg, _("¿Expulsar dispositivo?"), t, _("Expulsar"), true, ACT_REVOKE, idx[i]);
-		}
+		char title[128], sub[140];
+		IconId ic = IC_INFO;
+		u32 col;
+		ev_info(e, title, sizeof title, sub, sizeof sub, &ic, &col);
+		SheetItem *it = sheet_add(&S, ic, title, sub, SR_VALUE, i);
+		it->icon_col = col;
+		if (sec == 0)
+			util_fmt_hm(it->value, sizeof it->value, e->when);
+		else
+			util_fmt_when(it->value, sizeof it->value, e->when);
 	}
-	gfx_scissor_off();
+	if (!V.hist_n) {
+		SheetItem *e = sheet_add(&S, -1, _("Aún no hay actividad"), _("Sube algo desde tu móvil o tu PC"), SR_NONE, -9);
+		e->disabled = true;
+	} else {
+		sheet_header(&S, "");
+		SheetItem *c = sheet_add(&S, IC_TRASH, _("Borrar el historial"), NULL, SR_NONE, ID_CLEAR);
+		c->icon_col = T.danger;
+	}
+	S.sel = -1;
+	for (int i = 0; i < S.n; i++)
+		if (!S.items[i].header && !S.items[i].disabled) {
+			S.sel = i;
+			break;
+		}
 }
 
-static const char *lang_name(int l)
+static void open_settings(int parent, int keep_sel)
 {
-	switch (l) {
-	case 1: return "Español";
-	case 2: return "English";
-	case 3: return "日本語";
-	default: return _("Sistema");
+	float sc = S.scroll, sct = S.scroll_target;
+	sheet_open(&S, SK_SETTINGS, _("Ajustes"), false);
+	s_parent = parent;
+	if (parent || keep_sel >= 0)
+		S.anim = 1;
+	sheet_header(&S, _("Acceso"));
+	SheetItem *it = sheet_add(&S, IC_LOCK, _("Permisos"), NULL, SR_VALUE, ID_ACCESS);
+	snprintf(it->value, sizeof it->value, "%s", V.readonly ? _("Solo lectura") : _("Lectura y escritura"));
+	sheet_add(&S, IC_SHIELD, _("Proteger carpetas del sistema"), _("Pide confirmación en Nintendo 3DS, luma…"),
+	          V.protect_sys ? SR_ON : SR_OFF, ID_PROTECT);
+	it = sheet_add(&S, IC_KEY, _("PIN nuevo"), _("Invalida el QR y el PIN actuales"), SR_VALUE, ID_PIN);
+	snprintf(it->value, sizeof it->value, "%s", V.pin);
+	sheet_header(&S, _("Apariencia"));
+	it = sheet_add(&S, IC_GLOBE, _("Idioma"), NULL, SR_VALUE, ID_LANG);
+	snprintf(it->value, sizeof it->value, "%s", lang_setting_name(V.lang));
+	it = sheet_add(&S, IC_PALETTE, _("Tema"), NULL, SR_VALUE, ID_THEME);
+	snprintf(it->value, sizeof it->value, "%s", V.light ? _("Claro") : _("Oscuro"));
+	sheet_header(&S, _("Información"));
+	char sub[80];
+	snprintf(sub, sizeof sub, _("Versión %s · por %s"), APP_VERSION, "VENOMSHiNE");
+	sheet_add(&S, IC_INFO, _("Acerca de Cloud3DS"), sub, SR_CHEV, ID_ABOUT);
+	if (keep_sel >= 0) {
+		S.sel = keep_sel;
+		S.scroll = sc;
+		S.scroll_target = sct;
+	} else
+		S.sel = 1;
+}
+
+static void open_lang(void)
+{
+	sheet_open(&S, SK_LANG, _("Idioma"), false);
+	s_parent = SK_SETTINGS;
+	S.anim = 1;
+	for (int l = LSET_SYSTEM; l <= LSET_JA; l++)
+		sheet_add(&S, l == LSET_SYSTEM ? IC_GEAR : IC_GLOBE, lang_setting_name(l),
+		          l == LSET_SYSTEM ? _("Usa el idioma de la consola") : NULL, V.lang == l ? SR_CHECK : SR_NONE, l);
+	S.sel = V.lang;
+}
+
+static void open_about(int parent)
+{
+	sheet_open(&S, SK_ABOUT, _("Acerca de Cloud3DS"), false);
+	s_parent = parent;
+	S.anim = 1;
+	sheet_header(&S, _("Creado por VENOMSHiNE · elige uno para ver su QR"));
+	SheetItem *a = sheet_add(&S, IC_CODE, "GitHub", "github.com/venomshine", SR_CHEV, ID_GITHUB);
+	a->icon_col = T.text;
+	SheetItem *b = sheet_add(&S, IC_CHAT, "Discord", _("Únete a la comunidad"), SR_CHEV, ID_DISCORD);
+	b->icon_col = col_hex(0x8C9EFF);
+	SheetItem *c = sheet_add(&S, IC_STAR, "Ko-fi", _("Invítame a un café"), SR_CHEV, ID_KOFI);
+	c->icon_col = col_hex(0xFF8A80);
+	sheet_header(&S, "");
+	SheetItem *v = sheet_add(&S, IC_CLOUD, "Cloud3DS " APP_VERSION, _("Gracias por usarlo"), SR_NONE, ID_VERSION);
+	v->icon_col = T.accent;
+	S.sel = S.n - 1;   // la versión: arriba se ve el texto de presentación
+}
+
+static void reopen(int kind)
+{
+	switch (kind) {
+	case SK_DRAWER: open_drawer(); S.anim = 1; break;
+	case SK_SETTINGS: open_settings(SK_DRAWER, -1); break;
+	default: break;
 	}
 }
 
-static void apply_setting(int i)
+static void set_access(bool readonly, bool protect)
 {
 	state_lock();
-	switch (i) {
-	case SET_READONLY:
-		G.readonly = !G.readonly;
-		G.dirty_cfg = true;
-		break;
-	case SET_PROTECT:
-		G.protect_sys = !G.protect_sys;
-		G.dirty_cfg = true;
-		break;
-	case SET_LANG:
-		G.lang = (G.lang + 1) % 4;
-		i18n_init(G.lang);
-		G.dirty_cfg = true;
-		break;
-	case SET_THEME:
-		G.light = !G.light;
-		gfx_set_theme(G.light);
-		G.dirty_cfg = true;
-		break;
-	}
+	G.readonly = readonly;
+	G.protect_sys = protect;
+	G.dirty_cfg = true;
 	G.rev++;
 	state_unlock();
-	if (i == SET_PIN)
-		dialog_open(&U.dlg, _("¿Crear un PIN nuevo?"),
-		            _("El PIN y el QR actuales dejarán de servir. Los dispositivos ya vinculados siguen conectados."),
-		            _("Cambiar"), false, ACT_NEW_PIN, 0);
-	else if (i == SET_ABOUT)
-		U.about = !U.about;
-	else if (i == SET_EXIT)
-		U.quit = true;
 }
 
-static void tab_settings(float dt)
+static void handle_choice(int idx)
 {
-	Scroll *s = &U.sc[TAB_SETTINGS];
-	tab_header(_("Ajustes"), NULL);
-	const float RH = 44;
-	scroll_update(s, SET_COUNT, RH, VIEW_H, dt);
-	U.t_ro = approach(U.t_ro, U.S.readonly ? 1 : 0, 14, dt);
-	U.t_prot = approach(U.t_prot, U.S.protect_sys ? 1 : 0, 14, dt);
-
-	if (!U.dlg.open && IN.used_buttons && (IN.down & KEY_A))
-		apply_setting(s->sel);
-
-	gfx_scissor(0, VIEW_Y, BOT_W, VIEW_H);
-	for (int i = 0; i < SET_COUNT; i++) {
-		float y = VIEW_Y + i * RH - s->off;
-		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
-			continue;
-		row_highlight(i, y, RH, s);
-		if (ui_pressing(6, y, BOT_W - 12, RH) && y >= VIEW_Y)
-			gfx_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.card);
-		const char *title = "", *sub = NULL, *val = NULL;
-		char vbuf[32];
-		Icon ic = IC_GEAR;
-		u32 col = T.accent;
-		switch (i) {
-		case SET_READONLY:
-			title = _("Solo lectura");
-			sub = _("Solo se podrá ver y descargar");
-			ic = IC_LOCK;
-			col = T.warn;
-			break;
-		case SET_PROTECT:
-			title = _("Proteger carpetas del sistema");
-			sub = _("Pide confirmación en Nintendo 3DS, luma…");
-			ic = IC_ALERT;
-			col = T.err;
-			break;
-		case SET_PIN:
-			title = _("PIN nuevo");
-			sub = _("Invalida el QR y el PIN actuales");
-			snprintf(vbuf, sizeof vbuf, "%s", U.S.pin);
-			val = vbuf;
-			ic = IC_KEY;
-			col = T.accent2;
-			break;
-		case SET_LANG:
-			title = _("Idioma");
-			val = lang_name(U.S.lang);
-			ic = IC_GLOBE;
-			break;
-		case SET_THEME:
-			title = _("Tema");
-			val = U.S.light ? _("Claro") : _("Oscuro");
-			ic = IC_MOON;
-			col = T.accent2;
-			break;
-		case SET_ABOUT:
-			title = _("Acerca de Cloud3DS");
-			sub = U.about ? _("Mira la pantalla de arriba") : "v" APP_VERSION;
-			ic = IC_INFO;
-			col = T.muted;
-			break;
-		case SET_EXIT:
-			title = _("Salir");
-			sub = _("También con START");
-			ic = IC_POWER;
-			col = T.err;
-			break;
-		}
-		gfx_circle(28, y + RH / 2, 13, col);
-		gfx_icon(ic, 28, y + RH / 2, 15, T.on_accent);
-		float right = BOT_W - 16;
-		if (i == SET_READONLY || i == SET_PROTECT) {
-			ui_toggle(right - 38, y + RH / 2 - 11, false, i == SET_READONLY ? U.t_ro : U.t_prot);
-			right -= 48;
-		} else if (val) {
-			right -= gfx_text(right, y + RH / 2 - 8, 13, T.muted, AL_RIGHT, 110, val) + 10;
-		}
-		float tw = right - 50;
-		if (sub) {
-			gfx_text(50, y + 6, 13.5f, T.text, AL_LEFT, tw, title);
-			gfx_text(50, y + 24, 10.5f, T.muted, AL_LEFT, tw, sub);
-		} else {
-			gfx_text(50, y + RH / 2 - 9, 13.5f, T.text, AL_LEFT, tw, title);
-		}
-		if (!U.dlg.open && ui_tap(6, y, BOT_W - 12, RH) && IN.sy >= VIEW_Y && IN.sy < VIEW_Y + VIEW_H) {
-			s->sel = i;
-			apply_setting(i);
-		}
+	SheetItem *it = &S.items[idx];
+	int id = it->id;
+	switch (S.kind) {
+	case SK_DRAWER:
+		if (id == ID_ACTIVITY) open_activity(SK_DRAWER);
+		else if (id == ID_DEVICES) open_devices(SK_DRAWER, -1);
+		else if (id == ID_SETTINGS) open_settings(SK_DRAWER, -1);
+		else if (id == ID_ABOUT) open_about(SK_DRAWER);
+		else if (id == ID_EXIT) { sheet_close(&S); s_quit = true; }
+		break;
+	case SK_ACCESS: {
+		int keep = idx;
+		if (id == ID_RW) set_access(false, V.protect_sys);
+		else if (id == ID_RO) set_access(true, V.protect_sys);
+		else if (id == ID_PROTECT) set_access(V.readonly, !V.protect_sys);
+		V.readonly = G.readonly;
+		V.protect_sys = G.protect_sys;
+		int parent = s_parent;
+		open_access(parent);
+		S.anim = 1;
+		S.sel = keep;
+		if (id != ID_PROTECT)
+			toast(V.readonly ? _("Solo lectura activado") : _("Lectura y escritura activadas"));
+		break;
 	}
-	gfx_scissor_off();
-}
-
-static void draw_tabbar(float dt)
-{
-	float y = SCR_H - TABBAR_H;
-	gfx_rect(0, y, BOT_W, TABBAR_H, T.card);
-	gfx_rect(0, y, BOT_W, 1, T.line);
-	float tw = BOT_W / (float)TAB_COUNT;
-	U.tab_anim = approach(U.tab_anim, U.tab, 16, dt);
-	gfx_rrect(U.tab_anim * tw + tw / 2 - 16, y + 2, 32, 3, 1.5f, T.accent);
-	static const Icon ics[TAB_COUNT] = {IC_LIST, IC_DEVICES, IC_GEAR};
-	const char *names[TAB_COUNT] = {_("Actividad"), _("Dispositivos"), _("Ajustes")};
-	for (int i = 0; i < TAB_COUNT; i++) {
-		float k = clampf(1 - fabsf(U.tab_anim - i), 0, 1);
-		u32 c = gfx_mix(T.muted, T.accent, k);
-		gfx_icon(ics[i], i * tw + tw / 2, y + 16, 17, c);
-		gfx_text(i * tw + tw / 2, y + 27, 10.5f, c, AL_CENTER, tw - 8, names[i]);
-		if (!U.dlg.open && ui_tap(i * tw, y, tw, TABBAR_H))
-			U.tab = i;
+	case SK_DEVICES:
+		if (id >= 100) {
+			const Device *d = &V.dev[id - 100];
+			char msg[200];
+			snprintf(msg, sizeof msg, _("%s tendrá que volver a escanear el QR o escribir el PIN."), d->name);
+			s_dlg_arg = id - 100;
+			dialog_open(DLG_REVOKE, _("¿Expulsar dispositivo?"), msg, _("Expulsar"), true);
+		}
+		break;
+	case SK_ACTIVITY:
+		if (id == ID_CLEAR)
+			dialog_open(DLG_CLEAR, _("¿Borrar el historial?"), _("Se borra la lista de actividad. Tus archivos no se tocan."),
+			            _("Borrar"), true);
+		break;
+	case SK_SETTINGS:
+		if (id == ID_ACCESS) open_access(SK_SETTINGS);
+		else if (id == ID_PROTECT) {
+			set_access(V.readonly, !V.protect_sys);
+			V.protect_sys = G.protect_sys;
+			open_settings(s_parent, idx);
+		} else if (id == ID_PIN)
+			dialog_open(DLG_NEWPIN, _("¿Crear un PIN nuevo?"),
+			            _("El PIN y el QR actuales dejarán de servir. Los dispositivos ya vinculados siguen conectados."),
+			            _("Cambiar"), false);
+		else if (id == ID_LANG) open_lang();
+		else if (id == ID_THEME) {
+			state_lock();
+			G.light = !G.light;
+			G.dirty_cfg = true;
+			G.rev++;
+			V.light = G.light;
+			state_unlock();
+			theme_set(!V.light);
+			open_settings(s_parent, idx);
+		} else if (id == ID_ABOUT) open_about(SK_SETTINGS);
+		break;
+	case SK_LANG:
+		state_lock();
+		G.lang = id;
+		G.dirty_cfg = true;
+		G.rev++;
+		V.lang = id;
+		state_unlock();
+		i18n_apply(id);
+		open_settings(SK_DRAWER, 5);
+		break;
+	default:
+		break;
 	}
 }
 
-static void draw_bottom(float dt)
+static void handle_dialog(int ctx, bool ok)
 {
-	gfx_target_bot();
-	if (!U.dlg.open) {
-		if (IN.down & (KEY_R | KEY_ZR))
-			U.tab = (U.tab + 1) % TAB_COUNT;
-		if (IN.down & (KEY_L | KEY_ZL))
-			U.tab = (U.tab + TAB_COUNT - 1) % TAB_COUNT;
-		Scroll *s = &U.sc[U.tab];
-		if (IN.down & (KEY_DOWN | KEY_CPAD_DOWN))
-			s->sel++;
-		if (IN.down & (KEY_UP | KEY_CPAD_UP))
-			s->sel--;
-		if (IN.down & (KEY_UP | KEY_DOWN | KEY_CPAD_UP | KEY_CPAD_DOWN)) {
-			/* que la selección quede a la vista */
-			float rh = U.tab == TAB_ACTIVITY ? 42 : U.tab == TAB_DEVICES ? 46 : 44;
-			if (s->sel < 0)
-				s->sel = 0;
-			float y = s->sel * rh;
-			if (y < s->target)
-				s->target = y;
-			if (y + rh > s->target + VIEW_H)
-				s->target = y + rh - VIEW_H;
-		}
-		if (IN.down & KEY_B && U.about)
-			U.about = false;
-	}
-
-	switch (U.tab) {
-	case TAB_ACTIVITY: tab_activity(dt); break;
-	case TAB_DEVICES:  tab_devices(dt); break;
-	default:           tab_settings(dt); break;
-	}
-	draw_tabbar(dt);
-	dialog_draw(&U.dlg);
-}
-
-static void run_dialog(float dt)
-{
-	int r = dialog_run(&U.dlg, dt);
-	if (r != 1)
+	if (!ok)
 		return;
 	state_lock();
-	switch (U.dlg.action) {
-	case ACT_REVOKE: {
-		Device *d = &G.dev[U.dlg.arg];
+	switch (ctx) {
+	case DLG_REVOKE: {
+		Device *d = &G.dev[s_dlg_arg];
 		if (d->used) {
 			event_add(EV_REVOKED, "", d->name, 0);
 			d->used = false;
@@ -712,51 +457,494 @@ static void run_dialog(float dt)
 		}
 		break;
 	}
-	case ACT_NEW_PIN:
+	case DLG_NEWPIN:
 		pin_regen();
 		break;
-	case ACT_EXIT:
-		U.quit = true;
+	case DLG_CLEAR:
+		G.hist_n = 0;
+		G.hist_head = 0;
+		G.dirty_cfg = true;
+		break;
+	case DLG_EXIT:
+		s_quit = true;
 		break;
 	}
 	G.rev++;
+	memcpy(&V, &G, sizeof G);
+	s_hist_n = V.hist_n;
+	s_hist_head = V.hist_head;
 	state_unlock();
-	if (U.dlg.action == ACT_NEW_PIN)
-		toast_show(_("PIN y QR nuevos listos"), IC_KEY, T.accent2);
+	if (ctx == DLG_NEWPIN) {
+		toast(_("PIN y QR nuevos listos"));
+		if (S.open && S.kind == SK_SETTINGS) open_settings(s_parent, S.sel);
+	}
+	if (ctx == DLG_REVOKE && S.open && S.kind == SK_DEVICES) open_devices(s_parent, -1);
+	if (ctx == DLG_CLEAR && S.open) sheet_close(&S);
 }
 
-/* avisos al llegar eventos nuevos del servidor */
+// ------------------------------------------------------------ pantalla superior
+static void draw_battery(float x, float y, int pct, bool charging)
+{
+	float w = 19, h = 10;
+	draw_rrect_outline(x, y, w, h, 2.5f, 1.2f, T.text3);
+	draw_rrect(x + w + 0.5f, y + 3, 2, h - 6, 1, T.text3);
+	if (pct >= 0) {
+		u32 c = charging ? T.accent : (pct <= 15 ? T.danger : (pct <= 30 ? col_hex(0xFDD663) : T.ok));
+		draw_rrect(x + 2, y + 2, fmaxf(1.5f, (w - 4) * pct / 100.0f), h - 4, 1.2f, c);
+	}
+	if (charging)
+		draw_icon(IC_BOLT, x + w / 2, y + h / 2, 9, T.bg);
+}
+
+static const char *status_label(void)
+{
+	const Xfer *xs[1];
+	if (!V.ip) return _("Sin Wi-Fi");
+	if (V.srv_error[0]) return _("Error");
+	if (!V.running) return _("Preparando…");
+	if (visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING)
+		return xs[0]->kind == XF_UPLOAD ? _("Recibiendo") : _("Enviando");
+	if (V.readonly) return _("Solo lectura");
+	return _("Lista");
+}
+
+static void draw_header_top(void)
+{
+	draw_rect(0, 0, TOP_W, TOP_HDR - 4, T.bg);
+	draw_grad_v(0, TOP_HDR - 4, TOP_W, 6, T.bg, col_alpha(T.bg, 0));
+	// derecha: fecha · hora   [batería] 87 %
+	float rx = TOP_W - 10;
+	bool chg = false;
+	int pct = util_battery(&chg);
+	if (pct >= 0) {
+		char bp[8];
+		snprintf(bp, sizeof bp, "%d%%", pct);
+		text_draw_right(bp, rx, 5, 0.45f, T.text2);
+		rx -= text_width(bp, 0.45f) + 4;
+		draw_battery(rx - 22, 6, pct, chg);
+		rx -= 22 + 10;
+	}
+	char clk[8];
+	util_fmt_now(clk, sizeof clk);
+	text_draw_right(clk, rx, 5, 0.45f, T.text2);
+	rx -= text_width(clk, 0.45f) + 5;
+	draw_circle(rx - 1.5f, 12, 1.3f, T.text3);
+	rx -= 6;
+	char day[32];
+	util_fmt_today(day, sizeof day);
+	text_draw_right(day, rx, 5, 0.45f, T.text3);
+	rx -= text_width(day, 0.45f) + 8;
+	// izquierda: Cloud3DS + estado (se recorta para no pisar la fecha)
+	text_draw(APP_NAME, 10, 3, 0.55f, T.text);
+	float mx = 10 + text_width(APP_NAME, 0.55f) + 6;
+	if (rx - 8 - mx > 20)
+		text_draw_clip(status_label(), mx, 5, rx - 8 - mx, 0.45f, T.text3);
+	const Xfer *xs[1];
+	if (visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING) {
+		float p = g_time * 1.2f;
+		draw_grad_h(0, TOP_HDR - 4, TOP_W, 2, col_alpha(brand_grad(p), 0.9f), col_alpha(brand_grad(p + 0.5f), 0.9f));
+	}
+}
+
+static void bg_glow(float w)
+{
+	float t = g_time * 0.15f;
+	draw_grad4(0, 140, w, 100, col_alpha(brand_grad(t), 0), col_alpha(brand_grad(t + 0.3f), 0),
+	           col_alpha(brand_grad(t), 0.14f), col_alpha(brand_grad(t + 0.3f), 0.14f));
+}
+
+static void draw_qr_card(void)
+{
+	char url[64], qr[96];
+	if (!V.ip || V.srv_error[0] || !V.running) {
+		draw_rrect(QR_X, QR_Y, QR_S, QR_S, 14, T.surface);
+		if (!V.ip) {
+			draw_icon(IC_WIFI_OFF, QR_X + QR_S / 2, QR_Y + 58, 44, T.text3);
+			text_draw_center(_("Sin conexión Wi-Fi"), QR_X + QR_S / 2, QR_Y + 96, 0.5f, T.text2);
+			text_wrap_lines(_("Conecta la consola a tu Wi-Fi o al punto de acceso de tu móvil. El código aparecerá solo."),
+			                QR_S - 24, 0.4f, 4, QR_X + 12, QR_Y + 120, T.text3, true);
+		} else if (V.srv_error[0]) {
+			draw_icon(IC_INFO, QR_X + QR_S / 2, QR_Y + 58, 40, T.danger);
+			text_draw_center(_("No se pudo abrir el servidor"), QR_X + QR_S / 2, QR_Y + 96, 0.45f, T.text2);
+			text_wrap_lines(_("Cierra otras apps de red (como FTPD) y vuelve a abrir Cloud3DS."), QR_S - 24, 0.4f, 4,
+			                QR_X + 12, QR_Y + 120, T.text3, true);
+		} else {
+			draw_arc(QR_X + QR_S / 2, QR_Y + QR_S / 2 - 8, 14, 3, g_time * 6, g_time * 6 + 4.2f, T.accent);
+			text_draw_center(_("Preparando tu nube…"), QR_X + QR_S / 2, QR_Y + QR_S / 2 + 16, 0.45f, T.text2);
+		}
+		return;
+	}
+	url_text(url, sizeof url, true);
+	snprintf(qr, sizeof qr, "%s/#k=%s", url, V.qr_key);
+	float pulse = 0.5f + 0.5f * sinf(g_time * 2);
+	draw_rrect(QR_X - 3, QR_Y - 3, QR_S + 6, QR_S + 6, 16, col_alpha(brand_grad(g_time * 0.1f), 0.35f + 0.25f * pulse));
+	draw_qr(qr, QR_X, QR_Y, QR_S, 1);
+	text_draw_center(_("Escanéalo con la cámara del móvil"), QR_X + QR_S / 2, QR_Y + QR_S + 6, 0.4f, T.text3);
+}
+
+static void draw_status_line(float y)
+{
+	int on = online_count();
+	if (!V.ip || !V.running)
+		return;
+	if (on) {
+		char s[48];
+		snprintf(s, sizeof s, on == 1 ? _("%d dispositivo conectado") : _("%d dispositivos conectados"), on);
+		draw_circle(COL_X + 4, y + 8, 4, T.ok);
+		text_draw_clip(s, COL_X + 14, y + 1, COL_W - 14, 0.45f, T.ok);
+	} else {
+		int dots = (int)(g_time * 2) % 4;
+		char w[48];
+		snprintf(w, sizeof w, _("Esperando conexión%.*s"), dots, "...");
+		text_draw(w, COL_X, y + 1, 0.45f, T.text3);
+	}
+}
+
+// columna derecha: cómo conectarse
+static void draw_connect_col(float a, float dy)
+{
+	float tx = COL_X, y0 = QR_Y + dy;
+	if (!V.ip) {
+		text_draw(_("Conecta tu"), tx, y0, 0.72f, col_alpha(T.text, a));
+		text_draw_grad(_("consola"), tx, y0 + 22, 0.72f, g_time * 0.1f, a);
+		text_wrap_lines(_("Cloud3DS funciona en tu red local: el móvil o el PC tienen que estar en el mismo Wi-Fi."),
+		                COL_W, 0.42f, 5, tx, y0 + 58, col_alpha(T.text2, a), true);
+		return;
+	}
+	text_draw(_("Abre tu"), tx, y0, 0.72f, col_alpha(T.text, a));
+	text_draw_grad(_("nube local"), tx, y0 + 22, 0.72f, g_time * 0.1f, a);
+	text_draw(_("O escribe en el navegador:"), tx, y0 + 58, 0.42f, col_alpha(T.text3, a));
+	char url[48];
+	url_text(url, sizeof url, false);
+	float s = 0.62f;
+	while (s > 0.44f && text_width(url, s) > COL_W)
+		s -= 0.02f;
+	text_draw(url, tx, y0 + 74, s, col_alpha(T.accent, a));
+	text_draw(_("PIN"), tx, y0 + 108, 0.42f, col_alpha(T.text3, a));
+	for (int i = 0; i < 4; i++) {
+		float bx = tx + 30 + i * 30, by = y0 + 102;
+		draw_rrect(bx, by, 26, 28, 8, col_alpha(T.surface2, a));
+		char d[2] = {V.pin[i], 0};
+		text_draw_center(d, bx + 13, by + 5, 0.62f, col_alpha(T.text, a));
+	}
+}
+
+// columna derecha: transferencia en curso (el QR sigue a la vista)
+static void draw_xfer_col(float a, float dy)
+{
+	const Xfer *xs[3];
+	int n = visible_xfers(xs, 3);
+	if (!n)
+		return;
+	const Xfer *x = xs[0];
+	float tx = COL_X, y = QR_Y + dy;
+	bool up = x->kind == XF_UPLOAD;
+	const char *head;
+	u32 hc = T.text;
+	IconId ic = up ? IC_UPLOAD : IC_DOWNLOAD;
+	if (x->st == XS_RUNNING)
+		head = up ? _("Recibiendo") : _("Enviando");
+	else if (x->st == XS_DONE) {
+		head = _("Completado");
+		hc = T.ok;
+		ic = IC_CHECK;
+	} else {
+		head = _("No se completó");
+		hc = T.danger;
+		ic = IC_CLOSE;
+	}
+	draw_icon(ic, tx + 9, y + 10, 18, col_alpha(hc, a));
+	text_draw(head, tx + 24, y + 1, 0.6f, col_alpha(hc, a));
+	text_wrap_lines(x->name, COL_W, 0.5f, 2, tx, y + 28, col_alpha(T.text, a), true);
+	char sub[96];
+	snprintf(sub, sizeof sub, up ? _("de %s") : _("a %s"), x->device);
+	text_draw_clip(sub, tx, y + 64, COL_W, 0.42f, col_alpha(T.text3, a));
+
+	// barra fina con el degradado de la marca, que la transferencia va descubriendo
+	float frac = x->total ? (float)((double)x->done / x->total) : (x->st == XS_DONE ? 1 : 0);
+	if (x->st == XS_DONE)
+		frac = 1;
+	float bx = tx, by = y + 88, bw = COL_W, bh = 5;
+	draw_rrect(bx, by, bw, bh, bh / 2, col_alpha(T.surface2, a));
+	if (frac > 0) {
+		float fw = bw * frac;
+		gfx_clip(bx, by, fw, bh);
+		for (int k = 0; k < 16; k++)
+			draw_grad_h(bx + bw * k / 16, by, bw / 16 + 1, bh, col_alpha(brand_grad(k / 16.0f * 0.6f), a),
+			            col_alpha(brand_grad((k + 1) / 16.0f * 0.6f), a));
+		gfx_clip_off();
+		draw_circle(bx + fw, by + bh / 2, 3.2f, col_alpha(brand_grad(frac * 0.6f), a));
+	}
+	char d[24], t[24], line[80], pc[12];
+	util_fmt_size(d, sizeof d, x->done);
+	util_fmt_size(t, sizeof t, x->total);
+	snprintf(line, sizeof line, _("%s de %s"), d, t);
+	text_draw_clip(line, tx, by + 10, COL_W - 44, 0.42f, col_alpha(T.text2, a));
+	snprintf(pc, sizeof pc, "%d%%", (int)(frac * 100));
+	text_draw_right(pc, tx + COL_W, by + 8, 0.5f, col_alpha(brand_grad(0.3f), a));
+	if (x->st == XS_RUNNING && x->speed > 0) {
+		char sp[24], eta[24];
+		util_fmt_speed(sp, sizeof sp, x->speed);
+		util_fmt_eta(eta, sizeof eta, (x->total - x->done) / x->speed);
+		snprintf(line, sizeof line, _("%s · quedan %s"), sp, eta);
+		text_draw_clip(line, tx, by + 28, COL_W, 0.42f, col_alpha(T.text3, a));
+	}
+	if (n > 1) {
+		char more[48];
+		snprintf(more, sizeof more, _("y %d más"), n - 1);
+		text_draw(more, tx, by + 46, 0.42f, col_alpha(T.text3, a));
+	}
+}
+
+// información de la hoja abierta: ocupa la columna derecha y el QR sigue a la vista
+static bool draw_sheet_context_top(void)
+{
+	if (!S.open)
+		return false;
+	SheetItem *it = sheet_selected(&S);
+	float a = ease_out_cubic(S.anim);
+	if (S.kind == SK_ABOUT) {
+		draw_rect(0, TOP_HDR, TOP_W, SCR_H - TOP_HDR, col_alpha(T.bg, a));
+		const char *url = NULL, *name = NULL, *desc = NULL;
+		if (it && it->id == ID_GITHUB) { url = LINK_GITHUB; name = "GitHub"; desc = _("Código, novedades y nuevas versiones de mis proyectos."); }
+		if (it && it->id == ID_DISCORD) { url = LINK_DISCORD; name = "Discord"; desc = _("Únete a la comunidad: dudas, ideas y avisos de actualizaciones."); }
+		if (it && it->id == ID_KOFI) { url = LINK_KOFI; name = "Ko-fi"; desc = _("Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!"); }
+		if (url) {
+			draw_qr(url, QR_X, QR_Y, QR_S, a);
+			float tx = COL_X;
+			text_draw(name, tx, QR_Y + 4, 0.75f, col_alpha(T.text, a));
+			text_wrap_lines(desc, COL_W, 0.45f, 5, tx, QR_Y + 34, col_alpha(T.text2, a), true);
+			text_draw(_("Escanéalo con tu teléfono"), tx, QR_Y + 130, 0.42f, col_alpha(T.text3, a));
+			text_wrap_lines(url + 8, COL_W, 0.4f, 3, tx, QR_Y + 150, col_alpha(T.accent, a), true);
+		} else {
+			draw_cloud(44, 62, 20, a);
+			text_draw_grad(APP_NAME, 78, 42, 1.0f, g_time * 0.1f, a);
+			char vb[80];
+			snprintf(vb, sizeof vb, _("v%s · hecho por %s"), APP_VERSION, "VENOMSHiNE");
+			text_draw(vb, 80, 74, 0.47f, col_alpha(T.text2, a));
+			text_wrap_lines(_(ABOUT_TEXT), 364, 0.44f, 6, 18, 102, col_alpha(T.text2, a), true);
+			text_draw(_("Interfaz basada en Gemi3DS"), 18, 206, 0.42f, col_alpha(T.text3, a));
+		}
+		return true;
+	}
+	if (!it || (S.kind != SK_DEVICES && S.kind != SK_ACTIVITY && S.kind != SK_SETTINGS && S.kind != SK_ACCESS))
+		return false;
+	// panel en la columna derecha
+	float x = COL_X - 6, y = QR_Y - 2, w = TOP_W - x - 8, h = QR_S + 6;
+	draw_rect(x - 4, y - 4, w + 12, h + 30, col_alpha(T.bg, a));
+	draw_rrect(x, y, w, h, 14, col_alpha(T.surface, a));
+	float tx = x + 12, tw = w - 24;
+	if (S.kind == SK_DEVICES && it->id >= 100) {
+		const Device *d = &V.dev[it->id - 100];
+		draw_icon(dev_icon(d), tx + 9, y + 20, 18, col_alpha(dev_online(d) ? T.ok : T.text2, a));
+		text_draw_clip(d->name, tx + 24, y + 11, tw - 24, 0.55f, col_alpha(T.text, a));
+		char l1[80], when[32];
+		util_fmt_when(when, sizeof when, d->created);
+		snprintf(l1, sizeof l1, _("Vinculado: %s"), when);
+		text_draw_clip(l1, tx, y + 42, tw, 0.42f, col_alpha(T.text2, a));
+		if (dev_online(d))
+			snprintf(l1, sizeof l1, "%s", _("Conectado ahora"));
+		else {
+			util_fmt_when(when, sizeof when, d->last_seen);
+			snprintf(l1, sizeof l1, _("Visto: %s"), when);
+		}
+		text_draw_clip(l1, tx, y + 60, tw, 0.42f, col_alpha(dev_online(d) ? T.ok : T.text2, a));
+		snprintf(l1, sizeof l1, "IP %s", d->ip);
+		text_draw_clip(l1, tx, y + 78, tw, 0.42f, col_alpha(T.text3, a));
+		text_wrap_lines(_("Toca para expulsarlo: tendrá que volver a escanear el QR o escribir el PIN."), tw, 0.4f, 3, tx,
+		                y + 112, col_alpha(T.text3, a), true);
+	} else if (S.kind == SK_ACTIVITY && it->id >= 0 && it->id < V.hist_n) {
+		const Event *e = ev(it->id);
+		char title[128], sub[140], when[32];
+		IconId ic = IC_INFO;
+		u32 col;
+		ev_info(e, title, sizeof title, sub, sizeof sub, &ic, &col);
+		draw_icon(ic, tx + 9, y + 20, 18, col_alpha(col, a));
+		util_fmt_when(when, sizeof when, e->when);
+		text_draw_clip(when, tx + 24, y + 13, tw - 24, 0.45f, col_alpha(T.text3, a));
+		int nl = text_wrap_lines(title, tw, 0.5f, 3, tx, y + 40, col_alpha(T.text, a), true);
+		text_wrap_lines(sub, tw, 0.42f, 4, tx, y + 44 + nl * text_lineh(0.5f), col_alpha(T.text2, a), true);
+	} else {
+		const char *t = it->label, *d = "";
+		if (it->id == ID_ACCESS || it->id == ID_RW || it->id == ID_RO)
+			d = _("Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada.");
+		else if (it->id == ID_PROTECT)
+			d = _("Antes de borrar o cambiar Nintendo 3DS, luma/payloads, boot.firm y otras carpetas importantes, la web pide confirmación.");
+		else if (it->id == ID_PIN)
+			d = _("Crea un PIN y un QR nuevos. Los dispositivos ya vinculados siguen conectados; los nuevos necesitarán el PIN nuevo.");
+		else if (it->id == ID_LANG)
+			d = _("Idioma de la consola. La web usa el idioma de tu móvil o tu PC.");
+		else if (it->id == ID_THEME)
+			d = _("Tema oscuro o claro para la consola. La web sigue el tema de tu móvil o tu PC.");
+		else if (it->id == ID_ABOUT)
+			d = _("Versión, créditos y enlaces a la comunidad.");
+		else
+			return true;
+		text_draw_clip(t, tx, y + 12, tw, 0.55f, col_alpha(T.text, a));
+		text_wrap_lines(d, tw, 0.43f, 8, tx, y + 40, col_alpha(T.text2, a), true);
+	}
+	return true;
+}
+
+static void draw_top(void)
+{
+	gfx_target(g_top, T.bg);
+	bg_glow(TOP_W);
+	bool about = S.open && S.kind == SK_ABOUT;
+	if (!about)
+		draw_qr_card();
+	const Xfer *xs[1];
+	bool busy = visible_xfers(xs, 1) > 0;
+	s_busy = approach(s_busy, busy ? 1 : 0, 9);
+	float b = ease_in_out(s_busy);
+	if (!draw_sheet_context_top()) {
+		if (b < 0.99f)
+			draw_connect_col(1 - b, -b * 10);
+		if (b > 0.01f)
+			draw_xfer_col(b, (1 - b) * 10);
+		draw_status_line(QR_Y + QR_S - 14);
+	}
+	draw_header_top();
+	toast_draw_top();
+}
+
+// ------------------------------------------------------------ pantalla inferior
+static void draw_top_bar(void)
+{
+	if (ui_icon_button(IC_MENU, 19, 19, 15, T.text2, 0) && !g_dialog.open && !S.open)
+		open_drawer();
+	const char *lbl = V.readonly ? _("Solo lectura") : _("Lectura y escritura");
+	float w = text_width(lbl, 0.5f) + 50;
+	if (w > 200)
+		w = 200;
+	float x = 160 - w / 2;
+	bool p = touch_in(x, 4, w, 30);
+	draw_rrect(x, 7, w, 24, 12, p ? T.pill_hi : T.surface);
+	draw_icon(V.readonly ? IC_LOCK : IC_FOLDER, x + 15, 19, 13, V.readonly ? col_hex(0xFDD663) : T.accent);
+	text_draw_clip(lbl, x + 26, 12, w - 44, 0.5f, T.text);
+	draw_icon(IC_CHEV_DOWN, x + w - 13, 19, 11, T.text2);
+	if (tap(x, 4, w, 30) && !g_dialog.open && !S.open)
+		open_access(SK_NONE);
+	// dispositivos, con los conectados en un globo
+	if (ui_icon_button(IC_DEVICES, 301, 19, 15, T.text2, 0) && !g_dialog.open && !S.open)
+		open_devices(SK_NONE, -1);
+	int on = online_count();
+	if (on) {
+		char n[12];
+		snprintf(n, sizeof n, "%d", on > 9 ? 9 : on);
+		draw_circle(311, 10, 6.5f, T.ok);
+		text_draw_center(n, 311, 4.5f, 0.38f, T.bg);
+	}
+}
+
+static void stat_tile(int i, IconId ic, u32 icc, const char *label, const char *val)
+{
+	float x = 10 + (i % 2) * 154, y = 62 + (i / 2) * 54;
+	float app = clampf(g_time * 3 - i * 0.15f, 0, 1);
+	bool p = touch_in(x, y, 146, 46);
+	draw_rrect(x, y + (1 - ease_out_cubic(app)) * 8, 146, 46, 14, col_alpha(p ? T.pill_hi : T.surface, app));
+	draw_icon(ic, x + 21, y + 23, 18, col_alpha(icc, app));
+	text_draw_clip(label, x + 38, y + 7, 102, 0.42f, col_alpha(T.text3, app));
+	text_draw_clip(val, x + 38, y + 21, 102, 0.55f, col_alpha(T.text, app));
+}
+
+static void draw_home_bot(void)
+{
+	u64 now = util_ms();
+	if (now - s_space_t > 5000 || !s_space_t) {
+		s_space_t = now;
+		fsx_space(&s_free, &s_total);
+	}
+	text_draw_center(_("Hoy en tu nube"), 160, 43, 0.45f, T.text3);
+	char v[32];
+	snprintf(v, sizeof v, "%d", online_count());
+	stat_tile(0, IC_DEVICES, col_hex(0x8AB4F8), _("Conectados"), v);
+	util_fmt_size(v, sizeof v, s_free);
+	stat_tile(1, IC_FOLDER, col_hex(0xFDD663), _("Espacio libre"), v);
+	util_fmt_size(v, sizeof v, V.stat_up);
+	stat_tile(2, IC_UPLOAD, col_hex(0x81C995), _("Recibido"), v);
+	util_fmt_size(v, sizeof v, V.stat_down);
+	stat_tile(3, IC_DOWNLOAD, col_hex(0xF28B82), _("Enviado"), v);
+	if (!g_dialog.open && !S.open) {
+		if (tap(10, 62, 146, 46))
+			open_devices(SK_NONE, -1);
+		else if (tap(164, 62, 146, 46) || tap(10, 116, 300, 46))
+			open_activity(SK_NONE);
+	}
+}
+
+// barra inferior: lo último que pasó (abre la actividad)
+static void draw_last_bar(void)
+{
+	bool p = touch_in(8, 184, 304, 46);
+	draw_rrect(8, 184, 304, 46, 23, p ? T.pill_hi : T.pill);
+	if (!T.dark)
+		draw_rrect_outline(8, 184, 304, 46, 23, 1, T.divider);
+	if (!V.hist_n) {
+		draw_icon(IC_CLOCK, 31, 207, 17, T.text3);
+		text_draw_clip(_("Aquí verás lo que suban o descarguen"), 52, 199, 228, 0.5f, T.text3);
+	} else {
+		const Event *e = ev(0);
+		char title[128], sub[140], hm[16];
+		IconId ic = IC_INFO;
+		u32 col;
+		ev_info(e, title, sizeof title, sub, sizeof sub, &ic, &col);
+		draw_icon(ic, 31, 207, 17, col);
+		util_fmt_hm(hm, sizeof hm, e->when);
+		float hw = text_width(hm, 0.42f);
+		text_draw_clip(title, 52, 191, 230 - hw - 8, 0.5f, T.text);
+		text_draw_right(hm, 282, 193, 0.42f, T.text3);
+		text_draw_clip(sub, 52, 208, 230, 0.42f, T.text3);
+	}
+	draw_icon(IC_CHEV_RIGHT, 297, 207, 12, T.text3);
+	if (tap(8, 184, 304, 46) && !g_dialog.open && !S.open)
+		open_activity(SK_NONE);
+}
+
+static void draw_bottom(void)
+{
+	gfx_target(g_bot, T.bg);
+	draw_top_bar();
+	draw_home_bot();
+	draw_last_bar();
+	sheet_draw(&S);
+	dialog_draw();
+}
+
+// ------------------------------------------------------------ lógica
 static void watch_events(void)
 {
-	int n = U.S.hist_n, head = U.S.hist_head;
-	if (n == U.last_hist_n && head == U.last_hist_head)
+	if (V.hist_n == s_hist_n && V.hist_head == s_hist_head)
 		return;
-	if (U.events_seen && n > 0) {
-		const Event *e = &U.S.hist[head];
-		char msg[128];
+	if (s_events_seen && V.hist_n > 0) {
+		const Event *e = ev(0);
+		char msg[160];
 		if (e->kind == EV_PAIRED) {
 			snprintf(msg, sizeof msg, _("Vinculado: %s"), e->device);
-			toast_show(msg, IC_LINK, T.accent2);
+			toast(msg);
 		} else if (e->kind == EV_PIN_RESET) {
-			toast_show(_("PIN cambiado por seguridad"), IC_LOCK, T.warn);
+			toast(_("PIN cambiado por seguridad"));
 		} else if (e->kind == EV_DELETE) {
 			snprintf(msg, sizeof msg, _("Eliminado: %s"), e->name);
-			toast_show(msg, IC_TRASH, T.err);
+			toast(msg);
+		} else if (e->kind == EV_UPLOAD_FAIL) {
+			snprintf(msg, sizeof msg, _("No se completó: %s"), e->name);
+			toast(msg);
 		}
 	}
-	U.last_hist_n = n;
-	U.last_hist_head = head;
+	s_hist_n = V.hist_n;
+	s_hist_head = V.hist_head;
 }
 
 static void lid_and_sleep(void)
 {
 	bool busy = xfer_active() > 0;
 	aptSetSleepAllowed(!busy);
-	/* tapa cerrada transfiriendo: apaga la luz y sigue */
+	// tapa cerrada transfiriendo: apaga la luz y sigue
 	u8 open = 1;
 	PTMU_GetShellState(&open);
 	bool want_off = busy && !open;
-	if (want_off != U.lid_off) {
+	if (want_off != s_lid_off) {
 		if (R_SUCCEEDED(gspLcdInit())) {
 			if (want_off)
 				GSPLCD_PowerOffAllBacklights();
@@ -764,8 +952,40 @@ static void lid_and_sleep(void)
 				GSPLCD_PowerOnAllBacklights();
 			gspLcdExit();
 		}
-		U.lid_off = want_off;
+		s_lid_off = want_off;
 	}
+}
+
+static void ask_exit(void)
+{
+	if (xfer_active())
+		dialog_open(DLG_EXIT, _("¿Salir de Cloud3DS?"), _("Hay transferencias en curso y se cancelarán."), _("Salir"), true);
+	else
+		s_quit = true;
+}
+
+static void update(void)
+{
+	int d = dialog_update();
+	if (d >= 0) {
+		handle_dialog(g_dialog.ctx, d == 1);
+		return;
+	}
+	if (g_dialog.open)
+		return;
+	if (S.open) {
+		int r = sheet_update(&S);
+		if (r >= 0)
+			handle_choice(r);
+		else if (r == -2 && s_parent != SK_NONE)
+			reopen(s_parent);
+		return;
+	}
+	if (g_kdown & KEY_X) open_drawer();
+	else if (g_kdown & KEY_Y) open_devices(SK_NONE, -1);
+	else if (g_kdown & KEY_A) open_activity(SK_NONE);
+	else if (g_kdown & KEY_R) open_access(SK_NONE);
+	else if (g_kdown & KEY_START) ask_exit();
 }
 
 static aptHookCookie hook;
@@ -797,62 +1017,47 @@ int main(void)
 	osSetSpeedupEnable(true);
 	romfsInit();
 	ptmuInit();
+	util_battery_init();
 	gfx_init();
 	state_init();
 	config_load();
-	i18n_init(G.lang);
-	gfx_set_theme(G.light);
+	i18n_apply(G.lang);
+	theme_set(!G.light);
 	load_console_name();
 	fsx_init();
 	aptHook(&hook, apt_hook, NULL);
-	make_qr(U.qr2, &U.qr2_ok, LINK_DISCORD);
+	hidSetRepeatParameters(18, 5);
 
 	server_start();
 
-	u64 last = util_ms(), last_save = last;
-	while (aptMainLoop() && !U.quit) {
-		u64 now = util_ms();
-		float dt = (now - last) / 1000.0f;
-		if (dt > 0.1f)
-			dt = 0.1f;
-		last = now;
-		U.time += dt;
-
+	u64 last_save = util_ms();
+	while (aptMainLoop() && !s_quit) {
 		input_update();
+		gfx_tick();
 
+		// la copia se rehace si algo cambió, durante las transferencias y cada segundo
+		// (para que «conectado ahora» esté al día)
 		state_lock();
-		if (G.rev != U.last_rev || xfer_active()) {
-			memcpy(&U.S, &G, sizeof G);
-			U.last_rev = G.rev;
+		u64 tnow = util_ms();
+		if (G.rev != s_rev || xfer_active() || tnow - s_copy_t > 1000) {
+			memcpy(&V, &G, sizeof G);
+			s_rev = G.rev;
+			s_copy_t = tnow;
 		}
 		bool dirty = G.dirty_cfg;
 		state_unlock();
 
-		if (U.S.ip && U.S.running)
-			refresh_qr();
 		watch_events();
-		U.events_seen = true;
+		s_events_seen = true;
 		lid_and_sleep();
-
-		if (IN.down & KEY_START && !U.dlg.open) {
-			if (xfer_active())
-				dialog_open(&U.dlg, _("¿Salir de Cloud3DS?"),
-				            _("Hay transferencias en curso y se cancelarán."), _("Salir"), true, ACT_EXIT, 0);
-			else
-				break;
-		}
-		if (U.quit && xfer_active()) {
-			U.quit = false;
-			dialog_open(&U.dlg, _("¿Salir de Cloud3DS?"), _("Hay transferencias en curso y se cancelarán."),
-			            _("Salir"), true, ACT_EXIT, 0);
-		}
+		update();
 
 		gfx_frame_begin();
-		draw_top(dt);
-		draw_bottom(dt);
+		draw_top();
+		draw_bottom();
 		gfx_frame_end();
-		run_dialog(dt);
 
+		u64 now = util_ms();
 		if (dirty && now - last_save > 3000 && !xfer_active()) {
 			state_lock();
 			config_save();
@@ -865,13 +1070,14 @@ int main(void)
 	state_lock();
 	config_save();
 	state_unlock();
-	if (U.lid_off && R_SUCCEEDED(gspLcdInit())) {
+	if (s_lid_off && R_SUCCEEDED(gspLcdInit())) {
 		GSPLCD_PowerOnAllBacklights();
 		gspLcdExit();
 	}
 	aptUnhook(&hook);
 	fsx_exit();
 	gfx_exit();
+	util_battery_exit();
 	ptmuExit();
 	romfsExit();
 	return 0;

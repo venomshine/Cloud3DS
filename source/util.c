@@ -29,7 +29,7 @@ static const char *const MO_EN[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
 
 static void fmt_date(char *out, size_t n, const struct tm *t)
 {
-	switch (i18n_lang()) {
+	switch (g_lang) {
 	case LANG_EN:
 		snprintf(out, n, "%s, %s %d", WD_EN[t->tm_wday], MO_EN[t->tm_mon], t->tm_mday);
 		break;
@@ -42,14 +42,20 @@ static void fmt_date(char *out, size_t n, const struct tm *t)
 	}
 }
 
-void util_fmt_clock(char *out, size_t n)
+void util_fmt_today(char *out, size_t n)
 {
 	time_t now = time(NULL);
 	struct tm t;
 	gmtime_r(&now, &t); /* el reloj de la 3DS ya está en hora local */
-	char d[32];
-	fmt_date(d, sizeof d, &t);
-	snprintf(out, n, "%s · %02d:%02d", d, t.tm_hour, t.tm_min);
+	fmt_date(out, n, &t);
+}
+
+void util_fmt_now(char *out, size_t n)
+{
+	time_t now = time(NULL);
+	struct tm t;
+	gmtime_r(&now, &t);
+	snprintf(out, n, "%02d:%02d", t.tm_hour, t.tm_min);
 }
 
 void util_fmt_hm(char *out, size_t n, u64 unix_s)
@@ -71,9 +77,9 @@ void util_fmt_when(char *out, size_t n, u64 unix_s)
 		snprintf(out, n, "%s %02d:%02d", _("Hoy"), t.tm_hour, t.tm_min);
 	else if (day == today - 1)
 		snprintf(out, n, "%s %02d:%02d", _("Ayer"), t.tm_hour, t.tm_min);
-	else if (i18n_lang() == LANG_EN)
+	else if (g_lang == LANG_EN)
 		snprintf(out, n, "%s %d", MO_EN[t.tm_mon], t.tm_mday);
-	else if (i18n_lang() == LANG_JA)
+	else if (g_lang == LANG_JA)
 		snprintf(out, n, "%d/%d", t.tm_mon + 1, t.tm_mday);
 	else
 		snprintf(out, n, "%d %s", t.tm_mday, MO_ES[t.tm_mon]);
@@ -81,7 +87,7 @@ void util_fmt_when(char *out, size_t n, u64 unix_s)
 
 static char dec_sep(void)
 {
-	return i18n_lang() == LANG_ES ? ',' : '.';
+	return g_lang == LANG_ES ? ',' : '.';
 }
 
 void util_fmt_size(char *out, size_t n, u64 b)
@@ -124,30 +130,38 @@ void util_fmt_eta(char *out, size_t n, u64 secs)
 		snprintf(out, n, _("%d h %d min"), (int)(secs / 3600), (int)((secs % 3600) / 60));
 }
 
+/* el servicio de la batería se abre una vez; si no hay acceso a mcu::HWC, nivel aproximado de ptm */
+static bool s_mcu, s_bat_init;
+
+void util_battery_init(void)
+{
+	s_mcu = R_SUCCEEDED(mcuHwcInit());
+	s_bat_init = true;
+}
+
+void util_battery_exit(void)
+{
+	if (s_mcu)
+		mcuHwcExit();
+	s_mcu = false;
+}
+
 int util_battery(bool *charging)
 {
 	static u64 last;
 	static int pct = -1;
 	static bool chg;
 	u64 now = util_ms();
+	if (!s_bat_init)
+		util_battery_init();
 	if (pct < 0 || now - last > 5000) {
 		last = now;
-		u8 lvl = 0, c = 0;
-		bool got = false;
-		if (R_SUCCEEDED(mcuHwcInit())) {
-			if (R_SUCCEEDED(MCUHWC_GetBatteryLevel(&lvl))) {
-				pct = lvl > 100 ? 100 : lvl;
-				got = true;
-			}
-			mcuHwcExit();
-		}
-		/* sin acceso a mcu::HWC: nivel aproximado (0-5) */
-		if (!got && R_SUCCEEDED(PTMU_GetBatteryLevel(&lvl)))
-			pct = lvl * 20;
-		if (R_SUCCEEDED(PTMU_GetBatteryChargeState(&c)))
-			chg = c != 0;
-		if (pct < 0)
-			pct = 100;
+		u8 v = 0, c = 0;
+		if (s_mcu && R_SUCCEEDED(MCUHWC_GetBatteryLevel(&v)) && v <= 100)
+			pct = v;
+		else if (R_SUCCEEDED(PTMU_GetBatteryLevel(&v)))
+			pct = v >= 5 ? 100 : v * 20;
+		chg = R_SUCCEEDED(PTMU_GetBatteryChargeState(&c)) && c;
 	}
 	if (charging)
 		*charging = chg;
