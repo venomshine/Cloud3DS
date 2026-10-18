@@ -98,7 +98,61 @@ def banner():
     d.text((W / 2, 92 * S), t2, font=f2, fill=(0x8B, 0x96, 0xAB, 255), anchor="mm")
     im.resize((256, 128), Image.LANCZOS).convert("RGB").save(os.path.join(ROOT, "cia", "banner.png"))
 
+def logo_png(size, path):
+    """Logo suavizado (8x de supermuestreo) para la consola: la nube centrada en su caja real
+    (ancho 1.7r, alto 1.24r) con un degradado continuo y un brillo suave arriba."""
+    S = 8
+    W = size * S
+    r = W / 1.86
+    cx = W / 2 - 0.05 * r            # centro de la caja de la nube, no del lóbulo
+    cy = W / 2 + 0.12 * r
+    m = cloud_mask((W, W), cx, cy, r)
+    col = Image.new("RGBA", (W, W))
+    px = col.load()
+    x0, x1 = cx - 0.8 * r, cx + 0.9 * r
+    y0, y1 = cy - 0.74 * r, cy + 0.5 * r
+    for y in range(W):
+        ty = (y - y0) / (y1 - y0)
+        hl = max(0.0, 0.22 * (1 - ty * 1.6))   # brillo arriba, se apaga hacia la mitad
+        for x in range(W):
+            t = min(1, max(0, (x - x0) / (x1 - x0)))
+            c = [A[i] * (1 - t) + B[i] * t for i in range(3)]
+            c = [int(v + (255 - v) * hl) for v in c]
+            px[x, y] = tuple(c) + (255,)
+    col.putalpha(m)
+    col.resize((size, size), Image.LANCZOS).save(path)
+
+def glow_png(size, path):
+    """Resplandor suave con la forma de la nube (para la presentación)."""
+    W = size
+    r = W / 3.2
+    m = cloud_mask((W, W), W / 2 - 0.05 * r, W / 2 + 0.12 * r, r).filter(ImageFilter.GaussianBlur(W / 10))
+    g = Image.new("RGBA", (W, W), (0x5B, 0x6E, 0xFF, 0))
+    g.putalpha(m.point(lambda v: int(v * 0.9)))
+    g.save(path)
+
+def halo_png(size, path):
+    """Halo circular: degradado radial que se desvanece hasta transparente."""
+    im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    px = im.load()
+    c = (size - 1) / 2
+    for y in range(size):
+        for x in range(size):
+            d = ((x - c) ** 2 + (y - c) ** 2) ** 0.5 / c
+            a = max(0.0, 1 - d) ** 2.2
+            px[x, y] = (0x4A, 0x7C, 0xFF, int(255 * a))
+    im.save(path)
+
+def sprites():
+    g = os.path.join(ROOT, "gfx")
+    os.makedirs(g, exist_ok=True)
+    for s in (256, 128, 64, 32):
+        logo_png(s, os.path.join(g, f"logo{s}.png"))
+    glow_png(256, os.path.join(g, "glow.png"))
+    halo_png(128, os.path.join(g, "halo.png"))
+
 if __name__ == "__main__":
     icon()
     banner()
+    sprites()
     print("ok")

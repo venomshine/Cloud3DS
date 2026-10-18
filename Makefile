@@ -71,7 +71,7 @@ export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-export _3DSXDEPS	:=	$(OUTPUT).smdh $(CURDIR)/$(ROMFS)/web/index.html.gz
+export _3DSXDEPS	:=	$(OUTPUT).smdh $(CURDIR)/$(ROMFS)/web/index.html.gz $(CURDIR)/$(ROMFS)/gfx/sprites.t3x
 export APP_ICON := $(TOPDIR)/$(ICON)
 export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
@@ -83,7 +83,13 @@ export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 all: web $(BUILD) $(DEPSDIR)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
-web: $(ROMFS)/web/index.html.gz
+web: $(ROMFS)/web/index.html.gz $(ROMFS)/gfx/sprites.t3x
+
+# logo, resplandor y halo (imágenes de gfx/, generadas con tools/gen_art.py)
+$(ROMFS)/gfx/sprites.t3x: gfx/sprites.t3s $(wildcard gfx/*.png)
+	@mkdir -p $(ROMFS)/gfx
+	@tex3ds -i $< -o $@
+	@echo gfx/sprites.t3s
 
 $(ROMFS)/web/index.html.gz: web/index.html
 	@mkdir -p $(ROMFS)/web
@@ -104,7 +110,7 @@ endif
 
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(ROMFS)/web/index.html.gz
+	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(ROMFS)/web/index.html.gz $(ROMFS)/gfx
 
 #---------------------------------------------------------------------------------
 else

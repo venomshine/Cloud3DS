@@ -38,6 +38,9 @@ static u64   s_last_ms;
 
 #define Z 0.5f
 
+static C2D_SpriteSheet s_sprites;   // logo, resplandor y halo (romfs:/gfx/sprites.t3x)
+static void sprites_load(void);
+
 // colores propios de Cloud3DS (azul marino, tarjetas, azul cielo y violeta)
 void theme_set(bool dark) {
     T.dark = dark;
@@ -74,12 +77,14 @@ void gfx_init(void) {
     if (fi) s_lineFeed = fi->lineFeed;
     s_last_ms = osGetTime();
     theme_set(true);
+    sprites_load();
 #ifdef G3_FONTDBG
     { void font_debug(void); font_debug(); }
 #endif
 }
 
 void gfx_exit(void) {
+    if (s_sprites) C2D_SpriteSheetFree(s_sprites);
     C2D_TextBufDelete(s_tbuf);
     C2D_Fini();
     C3D_Fini();
@@ -261,19 +266,35 @@ static void sparkle_impl(float cx, float cy, float r, float rot, float alpha, bo
 }
 void draw_sparkle(float cx, float cy, float r, float rot, float alpha) { sparkle_impl(cx, cy, r, rot, alpha, true, 0); }
 
-// logo de Cloud3DS: tres lóbulos y una base redondeada, cada parte con su tono del degradado
-void draw_cloud(float cx, float cy, float r, float alpha) {
-    float p = g_time * 0.05f;
-    u32 c0 = col_alpha(brand_grad(p), alpha), c1 = col_alpha(brand_grad(p + 0.25f), alpha);
-    u32 c2 = col_alpha(brand_grad(p + 0.5f), alpha);
-    draw_circle(cx - 0.36f * r, cy + 0.04f * r, 0.44f * r, c0);
-    draw_circle(cx + 0.56f * r, cy + 0.16f * r, 0.34f * r, c2);
-    draw_circle(cx + 0.12f * r, cy - 0.18f * r, 0.56f * r, c1);
-    float bx = cx - 0.80f * r, bw = 1.70f * r, by = cy + 0.04f * r, bh = 0.46f * r;
-    draw_rrect(bx, by, bw / 2, bh, bh / 2, c0);
-    draw_grad_h(bx + bh / 2, by, bw - bh, bh, c0, c2);
-    draw_rrect(bx + bw / 2, by, bw / 2, bh, bh / 2, c2);
+// logo de Cloud3DS: imágenes suavizadas generadas en el PC (tools/gen_art.py), no figuras.
+// Están centradas en la caja real de la nube, así que (cx, cy) es su centro visual.
+enum { SPR_LOGO256, SPR_LOGO128, SPR_LOGO64, SPR_LOGO32, SPR_GLOW, SPR_HALO };
+
+static void sprites_load(void) {
+    s_sprites = C2D_SpriteSheetLoad("romfs:/gfx/sprites.t3x");
+    if (!s_sprites) return;
+    C2D_Image im = C2D_SpriteSheetGetImage(s_sprites, 0);
+    C3D_TexSetFilter(im.tex, GPU_LINEAR, GPU_LINEAR);   // escalado suave
 }
+
+static void sprite_at(int idx, float cx, float cy, float size, float alpha) {
+    if (!s_sprites || alpha <= 0.003f || size <= 0.5f) return;
+    C2D_Image im = C2D_SpriteSheetGetImage(s_sprites, idx);
+    float sc = size / im.subtex->width;
+    C2D_ImageTint tint;
+    C2D_AlphaImageTint(&tint, clampf(alpha, 0, 1));
+    C2D_DrawImageAt(im, cx - size / 2, cy - size / 2, Z, &tint, sc, sc);
+}
+
+// r: «radio» de la nube; su caja mide 1.7r de ancho y 1.24r de alto
+void draw_cloud(float cx, float cy, float r, float alpha) {
+    float size = 1.86f * r;                      // la nube ocupa el 91 % del ancho de la imagen
+    int idx = size > 128 ? SPR_LOGO256 : size > 64 ? SPR_LOGO128 : size > 32 ? SPR_LOGO64 : SPR_LOGO32;
+    sprite_at(idx, cx, cy, size, alpha);
+}
+
+void draw_cloud_glow(float cx, float cy, float r, float alpha) { sprite_at(SPR_GLOW, cx, cy, 3.2f * r, alpha); }
+void draw_halo(float cx, float cy, float radius, float alpha) { sprite_at(SPR_HALO, cx, cy, 2 * radius, alpha); }
 void draw_sparkle_mono(float cx, float cy, float r, float rot, u32 c) { sparkle_impl(cx, cy, r, rot, 1, false, c); }
 
 // barra «cargando» con un brillo que se desplaza

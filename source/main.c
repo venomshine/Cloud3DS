@@ -427,7 +427,7 @@ static void about_card(void)
 		text_draw_clip(_("Escanéalo con tu móvil"), COL_X, QR_Y + 120, COL_W, TS_SUB, T.text3);
 		text_wrap_lines(LINKS[k] + 8, COL_W, TS_SUB, 3, COL_X, QR_Y + 136, T.accent, true);
 	} else {
-		draw_cloud(QR_X + QR_S / 2 - 6, QR_Y + 62, 34, 1);
+		draw_cloud(QR_X + QR_S / 2, QR_Y + 62, 34, 1);
 		float w = text_width(APP_NAME, 0.9f);
 		text_draw_grad(APP_NAME, QR_X + (QR_S - w) / 2, QR_Y + 102, 0.9f, g_time * 0.1f, 1);
 		char vb[80];
@@ -444,14 +444,15 @@ static void splash_top(float alpha)
 {
 	float t = U.splash >= 0 ? U.splash : 2.0f;
 	float a = ease_out_cubic(t / 0.9f);
-	// halo con los colores de la marca
-	for (int i = 0; i < 6; i++) {
-		float r = 30 + i * 22 * a;
-		draw_circle(200, 98, r, col_alpha(brand_grad(i / 6.0f + t * 0.2f), 0.05f * a * alpha));
+	// halo radial suave que «respira» detrás del logo
+	float breathe = 1 + 0.04f * sinf(t * 3.0f);
+	draw_halo(200, 92, (70 + 40 * a) * breathe, 0.55f * a * alpha);
+	// el logo crece con una escala amortiguada (sin rebotes bruscos) y su resplandor lo acompaña
+	float sc = ease_out_back(clampf(t / 0.9f, 0, 1));
+	if (sc > 0.01f) {
+		draw_cloud_glow(200, 92, 44 * sc, 0.8f * a * alpha);
+		draw_cloud(200, 92, 44 * sc, alpha * clampf(t / 0.25f, 0, 1));
 	}
-	float sc = ease_out_back(clampf(t / 0.8f, 0, 1));
-	if (sc > 0.01f)
-		draw_cloud(196, 96, 44 * sc, alpha);
 	float ta = clampf((t - 0.5f) / 0.5f, 0, 1) * alpha;
 	float w = text_width(APP_NAME, 1.1f);
 	text_draw_grad(APP_NAME, 200 - w / 2, 150 + (1 - ta) * 10, 1.1f, t * 0.3f, ta);

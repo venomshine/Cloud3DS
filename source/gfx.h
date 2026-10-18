@@ -61,7 +61,9 @@ void draw_sparkle(float cx, float cy, float r, float rot, float alpha);
 void draw_sparkle_mono(float cx, float cy, float r, float rot, u32 c);
 void draw_shimmer_bar(float x, float y, float w, float h, float phase);
 u32  brand_grad(float t);         // degradado de la marca: azul cielo -> violeta, t en [0,1]
-void draw_cloud(float cx, float cy, float r, float alpha);   // logo: nube con el degradado de la marca
+void draw_cloud(float cx, float cy, float r, float alpha);       // logo (imagen suavizada), centrado en (cx, cy)
+void draw_cloud_glow(float cx, float cy, float r, float alpha);  // resplandor con la forma del logo
+void draw_halo(float cx, float cy, float radius, float alpha);   // halo radial suave
 
 // texto (fuente del sistema)
 float text_lineh(float scale);

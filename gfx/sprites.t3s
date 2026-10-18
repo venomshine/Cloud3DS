@@ -1,0 +1,7 @@
+--atlas -f rgba8888 -z auto
+logo256.png
+logo128.png
+logo64.png
+logo32.png
+glow.png
+halo.png
