@@ -430,11 +430,22 @@ static void about_top(void)
 		                       _("Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones."),
 		                       _("Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!")};
 		int k = sel - AB_GITHUB;
-		draw_qr(LINKS[k], 16, 16, 208, 1);
-		text_draw(NAMES[k], X, 22, 0.78f, T.text);
-		text_wrap_lines(desc[k], W, 0.44f, 6, X, 56, T.text2, true);
-		text_draw_clip(_("Escanéalo con tu móvil"), X, 168, W, TS_SUB, T.text3);
-		text_wrap_lines(LINKS[k] + 8, W, TS_SUB, 3, X, 184, T.accent, true);
+		/* el QR con su marco blanco termina en x≈212: el texto empieza 24 px después */
+		const float QX = 236, QW = TOP_W - QX - 14;
+		draw_qr(LINKS[k], 16, 24, 192, 1);
+		text_draw(NAMES[k], QX, 26, 0.78f, T.text);
+		text_wrap_lines(desc[k], QW, 0.44f, 6, QX, 60, T.text2, true);
+		text_draw_clip(_("Escanéalo con tu móvil"), QX, 164, QW, TS_SUB, T.text3);
+		/* si el enlace no cabe, se corta en la última «/» y no a mitad del código */
+		const char *link = LINKS[k] + 8, *cut = strrchr(link, '/');
+		if (text_width(link, TS_SUB) > QW && cut) {
+			char first[64];
+			snprintf(first, sizeof first, "%.*s", (int)(cut - link + 1), link);
+			text_draw_clip(first, QX, 180, QW, TS_SUB, T.accent);
+			text_draw_clip(cut + 1, QX, 180 + text_lineh(TS_SUB), QW, TS_SUB, T.accent);
+		} else {
+			text_draw_clip(link, QX, 180, QW, TS_SUB, T.accent);
+		}
 	} else {
 		const float LX = 108;
 		draw_halo(LX, 84, 96, 0.35f);
