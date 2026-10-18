@@ -419,35 +419,36 @@ static void xfer_col(float a, float dy)
 }
 
 // subpágina «Acerca de»: la tarjeta muestra el enlace elegido (al salir vuelve el QR de conexión)
-static void about_card(void)
+/* «Acerca de» ocupa toda la pantalla de arriba: sin cabecera ni tarjeta */
+static void about_top(void)
 {
-	card();
 	int sel = U.list[TAB_COUNT + 1].sel;
+	const float X = 222, W = TOP_W - X - 16;
 	if (sel >= AB_GITHUB && sel <= AB_KOFI) {
 		static const char *const NAMES[3] = {"GitHub", "Discord", "Ko-fi"};
 		const char *desc[3] = {_("Código y nuevas versiones. Si algo falla, abre un issue y lo reviso."),
 		                       _("Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones."),
 		                       _("Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!")};
 		int k = sel - AB_GITHUB;
-		draw_qr(LINKS[k], QR_X, QR_Y, QR_S, 1);
-		text_draw(NAMES[k], COL_X, QR_Y + 2, 0.66f, T.text);
-		text_wrap_lines(desc[k], COL_W, 0.42f, 5, COL_X, QR_Y + 30, T.text2, true);
-		text_draw_clip(_("Escanéalo con tu móvil"), COL_X, QR_Y + 120, COL_W, TS_SUB, T.text3);
-		text_wrap_lines(LINKS[k] + 8, COL_W, TS_SUB, 3, COL_X, QR_Y + 136, T.accent, true);
+		draw_qr(LINKS[k], 16, 16, 208, 1);
+		text_draw(NAMES[k], X, 22, 0.78f, T.text);
+		text_wrap_lines(desc[k], W, 0.44f, 6, X, 56, T.text2, true);
+		text_draw_clip(_("Escanéalo con tu móvil"), X, 168, W, TS_SUB, T.text3);
+		text_wrap_lines(LINKS[k] + 8, W, TS_SUB, 3, X, 184, T.accent, true);
 	} else {
-		draw_cloud(QR_X + QR_S / 2, QR_Y + 62, 34, 1);
-		float w = text_width(APP_NAME, 0.9f);
-		text_draw_grad(APP_NAME, QR_X + (QR_S - w) / 2, QR_Y + 102, 0.9f, g_time * 0.1f, 1);
+		const float LX = 108;
+		draw_halo(LX, 84, 96, 0.35f);
+		draw_cloud(LX, 84, 46, 1);
+		float w = text_width(APP_NAME, 1.05f);
+		text_draw_grad(APP_NAME, LX - w / 2, 136, 1.05f, g_time * 0.1f, 1);
 		char vb[80];
 		snprintf(vb, sizeof vb, _("v%s · hecho por %s"), APP_VERSION, "VENOMSHiNE");
-		float vw = text_width(vb, TS_SUB);
-		text_draw_clip(vb, QR_X + (QR_S - fminf(vw, QR_S)) / 2, QR_Y + 136, QR_S, TS_SUB, T.text2);
-		text_draw(_("Gracias por usar Cloud3DS"), COL_X, QR_Y + 2, TS_BODY, T.text);
-		int n = text_wrap_lines(_(ABOUT_TEXT), COL_W, 0.40f, 8, COL_X, QR_Y + 24, T.text2, true);
-		float ly = text_lineh(0.40f);
-		text_wrap_lines(_("Si encuentras algún problema, escríbeme por GitHub o Discord."), COL_W, 0.40f, 3, COL_X,
-		                QR_Y + 30 + n * ly, T.accent, true);
-		text_draw_clip(_("Software libre · licencia GPL-3.0"), COL_X, QR_Y + QR_S - 12, COL_W, TS_SUB, T.text3);
+		text_draw_center(vb, LX, 178, TS_SUB, T.text2);
+		text_draw(_("Gracias por usar!"), X, 18, TS_TITLE, T.text);
+		int n = text_wrap_lines(_(ABOUT_TEXT), W, 0.42f, 9, X, 46, T.text2, true);
+		text_wrap_lines(_("Si encuentras algún problema, escríbeme por GitHub o Discord."), W, 0.42f, 3, X,
+		                54 + n * text_lineh(0.42f), T.accent, true);
+		text_draw_clip(_("Software libre · licencia GPL-3.0"), X, 216, W, TS_SUB, T.text3);
 	}
 }
 
@@ -490,9 +491,11 @@ static void draw_top(void)
 		splash_top(1);
 		return;
 	}
-	draw_header();
-	if (U.tab == TAB_SETTINGS && U.page == PAGE_ABOUT) {
-		about_card();
+	bool about = U.tab == TAB_SETTINGS && U.page == PAGE_ABOUT;
+	if (!about)
+		draw_header();
+	if (about) {
+		about_top();
 	} else if (!V.ip) {
 		card_message(IC_WIFI_OFF, T.text3, _("Sin conexión Wi-Fi"),
 		             _("Conecta la consola a tu Wi-Fi. Si no tienes router, usa el punto de acceso de tu móvil."));
@@ -910,7 +913,7 @@ static void settings_about(void)
 	static const IconId IC[AB_COUNT] = {IC_CLOUD, IC_CODE, IC_CHAT, IC_HEART};
 	const u32 COL[AB_COUNT] = {T.accent, col_hex(0x6E7681), col_hex(0x5865F2), col_hex(0xFF5E5B)};
 	const char *title[AB_COUNT] = {"Cloud3DS " APP_VERSION, "GitHub", "Discord", "Ko-fi"};
-	const char *sub[AB_COUNT] = {_("Gracias por usar Cloud3DS"), _("Código y avisos de errores"), _("Comunidad y ayuda"),
+	const char *sub[AB_COUNT] = {_("Gracias por usar!"), _("Código y avisos de errores"), _("Comunidad y ayuda"),
 	                             _("Invítame a un café")};
 	for (int i = 0; i < AB_COUNT; i++) {
 		float y = VIEW_Y + i * RH - l->off;

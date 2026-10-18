@@ -14,7 +14,7 @@ TR = {
          "変更するとQRコードも新しくなります。登録済みの端末は接続されたままです。"),
     "PIN de 4 cifras": ("4-digit PIN", "4桁のPIN"),
     "PIN guardado": ("PIN saved", "PINを保存しました"),
-    "Gracias por usar Cloud3DS": ("Thanks for using Cloud3DS", "Cloud3DSをご利用いただきありがとうございます"),
+    "Gracias por usar!": ("Thanks for using!", "ご利用ありがとう!"),
     "Código y avisos de errores": ("Code and bug reports", "コードと不具合の報告"),
     "Comunidad y ayuda": ("Community and help", "コミュニティとサポート"),
     "Código y nuevas versiones. Si algo falla, abre un issue y lo reviso.":

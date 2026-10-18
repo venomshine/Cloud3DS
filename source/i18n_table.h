@@ -33,7 +33,7 @@ static const TrEntry TR_TAB[] = {
 	{"Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!", "If you like Cloud3DS, buy me a coffee. It helps a lot!", "Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!"},
 	{"Escanéalo con tu móvil", "Scan it with your phone", "スマホで読み取ってください"},
 	{"v%s · hecho por %s", "v%s · made by %s", "v%s · 制作: %s"},
-	{"Gracias por usar Cloud3DS", "Thanks for using Cloud3DS", "Cloud3DSをご利用いただきありがとうございます"},
+	{"Gracias por usar!", "Thanks for using!", "ご利用ありがとう!"},
 	{"Si encuentras algún problema, escríbeme por GitHub o Discord.", "Found a problem? Let me know on GitHub or Discord.", "問題があれば、GitHubかDiscordで教えてください。"},
 	{"Software libre · licencia GPL-3.0", "Free software · GPL-3.0 license", "フリーソフトウェア · GPL-3.0"},
 	{"Tu nube local", "Your local cloud", "あなたのローカルクラウド"},
