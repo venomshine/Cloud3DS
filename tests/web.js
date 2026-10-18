@@ -40,7 +40,7 @@ const check = (n, c, x = '') => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n 
   await page.click('.chip:has-text("Capturas")');
   await page.waitForSelector('.row:has-text("_top.png")');
   await shot('w04_screens_list');
-  await page.click('#bview');
+  await page.click('#tView');
   await page.waitForSelector('.tile img');
   await sleep(1500);
   await shot('w05_screens_grid');
@@ -52,7 +52,22 @@ const check = (n, c, x = '') => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n 
   await sleep(500);
   check('el visor avanza', (await page.textContent('.vcount')).startsWith('2'));
   await page.click('[data-v="x"]');
-  await page.click('#bview');
+  await page.click('#tView');
+  // carpeta anterior
+  await page.click('#bUp');
+  await page.waitForSelector('.row:has-text("screenshots")');
+  check('botón de carpeta anterior', page.url().endsWith(encodeURIComponent('/luma')), page.url());
+  await shot('w06b_up');
+  // búsqueda: lupa que se despliega
+  await page.click('#sLens');
+  await sleep(450);
+  await page.keyboard.type('conf');
+  await sleep(300);
+  await shot('w06c_search');
+  check('la búsqueda filtra', (await page.$$('#list .row')).length === 1);
+  await page.click('#sX');
+  await sleep(400);
+  check('la búsqueda se cierra', !(await page.isVisible('#search.open')));
 
   // 4) carpeta que no existe aún
   await page.click('.chip:has-text("Partidas")');
@@ -105,18 +120,17 @@ const check = (n, c, x = '') => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n 
   await page.waitForFunction(() => !document.querySelector('.row[data-n="partida.sav"]'), null, { timeout: 20000 });
   check('borrado múltiple', true);
 
-  // 8) carpeta del sistema pide confirmación
+  // 8) carpeta protegida: sin opciones de borrar ni renombrar
   await page.click('.chip:has-text("Inicio")');
   await page.waitForSelector('.row:has-text("luma")');
+  check('candado en carpetas protegidas', await page.isVisible('.row[data-n="Nintendo 3DS"] .lockb'));
+  await shot('w14_protected_list');
   await page.click('.row:has-text("boot.firm") .more');
-  await page.click('.act[data-a="del"]');
-  await page.click('.dlg [data-r="1"]');
-  await page.waitForSelector('.dlg:has-text("sistema")');
-  await shot('w14_system');
-  await page.click('.dlg [data-r="0"]');
-  await sleep(400);
-  check('boot.firm sigue ahí', await page.isVisible('.row:has-text("boot.firm")'));
-
+  await page.waitForSelector('.act.off');
+  await shot('w14_protected');
+  check('boot.firm sin borrar ni renombrar', !(await page.isVisible('.act[data-a="del"]')));
+  await page.keyboard.press('Escape');
+  await sleep(300);
   // 9) texto
   await page.click('.row:has-text("notes.txt")');
   await page.waitForSelector('.viewer pre:not(:has(.spin))');
@@ -131,11 +145,23 @@ const check = (n, c, x = '') => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n 
   await p2.waitForSelector('#list .row');
   await p2.click('.chip:has-text("Capturas")');
   await p2.waitForSelector('.row:has-text("_top.png")');
-  await p2.click('#bview');
+  await p2.click('#tView');
   await p2.waitForSelector('.tile img');
   await sleep(1500);
   await p2.screenshot({ path: path.join(out, 'w16_pc_grid.png') });
-  await p2.click('#bview');
+  await p2.click('#sLens');
+  await sleep(450);
+  await p2.screenshot({ path: path.join(out, 'w17_pc_search.png') });
+  await p2.click('#sX');
+  await p2.click('#tView');
+  await p2.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await sleep(300);
+  await p2.screenshot({ path: path.join(out, 'w18_pc_footer.png') });
+  // expulsión: la consola lo saca y la página lo explica
+  mark('kick');
+  await page.waitForSelector('#lkick:not(.hide)', { timeout: 60000 });
+  await shot('w19_kicked');
+  check('aviso de expulsado', await page.isVisible('#lkick b'));
   mark('done');
   await browser.close();
   console.log('FALLOS:', fails);
