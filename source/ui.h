@@ -72,6 +72,7 @@ SheetItem *sheet_selected(Sheet *s);
 
 // ------------------------------------------------------------ avisos y diálogos
 void toast(const char *msg);
+void toast_icon(const char *msg, int ic, u32 col);   // con icono y color propios
 void toast_draw_top(void);
 
 typedef struct { bool open; float anim; char title[64]; char msg[300]; char ok[24]; int ctx; bool danger; } Dialog;

@@ -397,29 +397,45 @@ void sheet_draw(Sheet *s) {
     draw_icon(IC_CLOSE, ox + pw - 18, oy + 18, 16, T.text2);
 }
 
-// ------------------------------------------------------------ toast
+// ------------------------------------------------------------ aviso (pantalla superior)
 static char s_toast[160];
-static float s_toast_t;
+static float s_toast_t = -1;
+static int s_toast_ic = IC_CHECK;
+static u32 s_toast_col;
 
-void toast(const char *msg) {
+void toast_icon(const char *msg, int ic, u32 col) {
     snprintf(s_toast, sizeof(s_toast), "%s", tr(msg));
-    s_toast_t = 2.4f;
+    s_toast_t = 0;
+    s_toast_ic = ic;
+    s_toast_col = col;
 }
+
+void toast(const char *msg) { toast_icon(msg, IC_CHECK, T.accent); }
 
 void toast_draw_top(void) {
-    if (s_toast_t <= 0) return;
-    s_toast_t -= g_dt;
-    float a = clampf(s_toast_t / 0.3f, 0, 1) * clampf((2.4f - s_toast_t) / 0.2f, 0, 1);
-    float w = text_width(s_toast, 0.5f) + 28;
-    if (w > 380) w = 380;
-    float x = (TOP_W - w) / 2, y = 240 - 34 + (1 - a) * 12;
-    u32 bg = T.dark ? col_hex(0xE3E3E3) : col_hex(0x303030);
-    u32 fg = T.dark ? col_hex(0x1F1F1F) : col_hex(0xF2F2F2);
-    draw_rrect(x, y, w, 26, 13, col_alpha(bg, a));
-    text_draw_clip(s_toast, x + 14, y + 5, w - 28, 0.5f, col_alpha(fg, a));
+    if (s_toast_t < 0) return;
+    s_toast_t += g_dt;
+    const float life = 3.0f;
+    if (s_toast_t > life) { s_toast_t = -1; return; }
+    float a = s_toast_t < 0.25f ? ease_out_cubic(s_toast_t / 0.25f) : clampf((life - s_toast_t) / 0.4f, 0, 1);
+    float w = text_width(s_toast, 0.45f) + 46;
+    if (w > 360) w = 360;
+    float x = (TOP_W - w) / 2, y = SCR_H - 38 + (1 - a) * 10;
+    draw_rrect(x, y + 2, w, 28, 14, col_alpha(T.shadow, a));
+    draw_rrect(x, y, w, 28, 14, col_alpha(T.surface2, a));
+    draw_circle(x + 15, y + 14, 9, col_alpha(s_toast_col, a));
+    draw_icon((IconId)s_toast_ic, x + 15, y + 14, 12, col_alpha(0xFFFFFFFF, a));
+    text_draw_clip(s_toast, x + 30, y + 7, w - 40, 0.45f, col_alpha(T.text, a));
 }
 
-// ------------------------------------------------------------ diálogo
+// ------------------------------------------------------------ diálogo (pantalla inferior)
+#define DLG_X 24.0f
+#define DLG_W 272.0f
+#define DLG_Y 38.0f
+#define DLG_H 164.0f
+#define DLG_BW 118.0f
+#define DLG_BH 34.0f
+
 void dialog_open(int ctx, const char *title, const char *msg, const char *ok, bool danger) {
     g_dialog.open = true; g_dialog.anim = 0; g_dialog.ctx = ctx; g_dialog.danger = danger;
     snprintf(g_dialog.title, sizeof(g_dialog.title), "%s", tr(title));
@@ -427,29 +443,64 @@ void dialog_open(int ctx, const char *title, const char *msg, const char *ok, bo
     snprintf(g_dialog.ok, sizeof(g_dialog.ok), "%s", tr(ok));
 }
 
+static float dlg_by(void) { return DLG_Y + DLG_H - DLG_BH - 14; }
+
 int dialog_update(void) {
     if (!g_dialog.open) return -1;
     g_dialog.anim = approach(g_dialog.anim, 1, 16);
-    if (g_kdown & KEY_B) { g_dialog.open = false; return 0; }
-    if (g_kdown & KEY_A) { g_dialog.open = false; return 1; }
-    if (tap(30, 158, 126, 34)) { g_dialog.open = false; return 0; }
-    if (tap(164, 158, 126, 34)) { g_dialog.open = false; return 1; }
+    float by = dlg_by();
+    if ((g_kdown & KEY_B) || tap(DLG_X + 14, by, DLG_BW, DLG_BH)) { g_dialog.open = false; return 0; }
+    if ((g_kdown & KEY_A) || tap(DLG_X + DLG_W - 14 - DLG_BW, by, DLG_BW, DLG_BH)) { g_dialog.open = false; return 1; }
+    // tocar fuera también cancela
+    if (g_touch.up && !g_touch.drag && !(g_touch.sx >= DLG_X && g_touch.sx < DLG_X + DLG_W && g_touch.sy >= DLG_Y && g_touch.sy < DLG_Y + DLG_H)) {
+        g_dialog.open = false;
+        return 0;
+    }
     return -1;
+}
+
+static void dlg_button(const char *glyph, const char *label, float x, float y, u32 fg, u32 bg) {
+    bool p = touch_in(x, y, DLG_BW, DLG_BH);
+    draw_rrect(x, y, DLG_BW, DLG_BH, DLG_BH / 2, p ? col_lerp(bg, T.text, 0.15f) : bg);
+    char t[64];
+    snprintf(t, sizeof(t), "%s %s", glyph, label);
+    float w = text_width(t, 0.47f);
+    if (w > DLG_BW - 16) { snprintf(t, sizeof(t), "%s", label); w = text_width(t, 0.47f); }
+    text_draw_clip(t, x + (DLG_BW - fminf(w, DLG_BW - 16)) / 2, y + (DLG_BH - text_lineh(0.47f)) / 2, DLG_BW - 16, 0.47f, fg);
 }
 
 void dialog_draw(void) {
     if (!g_dialog.open) return;
     float a = ease_out_cubic(g_dialog.anim);
     draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-    float s = 0.92f + 0.08f * ease_out_back(g_dialog.anim);
-    float w = 280 * s, h = 168 * s;
-    float x = (BOT_W - w) / 2, y = (SCR_H - h) / 2;
-    draw_rrect(x, y, w, h, 18, col_alpha(T.surface2, a));
-    text_draw_center(g_dialog.title, BOT_W / 2, y + 14, 0.62f, col_alpha(T.text, a));
-    text_wrap_lines(g_dialog.msg, w - 32, 0.47f, 5, x + 16, y + 42, col_alpha(T.text2, a), true);
-    ui_pill_button("Cancelar", -1, 30, 158, 126, 34, T.accent, col_alpha(T.surface, a));
-    ui_pill_button(g_dialog.ok, -1, 164, 158, 126, 34, T.dark ? col_hex(0x1F1F1F) : 0xFFFFFFFF,
-                   g_dialog.danger ? T.danger : T.accent);
+    float y = DLG_Y + (1 - a) * 14;
+    draw_rrect(DLG_X, y + 3, DLG_W, DLG_H, 16, col_alpha(T.shadow, a));
+    draw_rrect(DLG_X, y, DLG_W, DLG_H, 16, T.surface);
+    float tw = text_width(g_dialog.title, 0.58f);
+    text_draw_clip(g_dialog.title, DLG_X + (DLG_W - fminf(tw, DLG_W - 28)) / 2, y + 14, DLG_W - 28, 0.58f, T.text);
+    // texto centrado línea a línea
+    float sc = 0.44f, lw = DLG_W - 36;
+    int nl = text_wrap_lines(g_dialog.msg, lw, sc, 4, 0, 0, 0, false);
+    const char *p = g_dialog.msg;
+    for (int l = 0; l < nl && *p; l++) {
+        char line[300]; int n = 0; float w = 0; const char *last_sp = NULL; int last_n = 0;
+        while (*p && *p != '\n') {
+            const char *q = p; u32 cp = utf8_next(&q);
+            float gw = glyph_w(cp, sc);
+            if (w + gw > lw && n) break;
+            if (cp == ' ') { last_sp = q; last_n = n; }
+            memcpy(line + n, p, q - p); n += (int)(q - p); w += gw; p = q;
+            if (n > 280) break;
+        }
+        if (*p && *p != '\n' && last_sp) { n = last_n; p = last_sp; }
+        line[n] = 0;
+        if (*p == '\n') p++;
+        while (*p == ' ') p++;
+        text_draw_center(line, BOT_W / 2, y + 44 + l * text_lineh(sc), sc, T.text3);
+    }
+    float by = y + DLG_H - DLG_BH - 14;
+    dlg_button(GLYPH_B, tr("Cancelar"), DLG_X + 14, by, T.text, T.surface2);
+    dlg_button(GLYPH_A, g_dialog.ok, DLG_X + DLG_W - 14 - DLG_BW, by, 0xFFFFFFFF, g_dialog.danger ? T.danger : T.accent);
 }
 
 // ------------------------------------------------------------ teclado

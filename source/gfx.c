@@ -39,29 +39,27 @@ static u64   s_last_ms;
 
 #define Z 0.5f
 
+// colores propios de Cloud3DS (azul marino, tarjetas, azul cielo y violeta)
 void theme_set(bool dark) {
     T.dark = dark;
     if (dark) {
-        T.bg = col_hex(0x131314);  T.bg2 = col_hex(0x1B1C1E);
-        T.surface = col_hex(0x1E1F20); T.surface2 = col_hex(0x282A2C);
-        T.pill = col_hex(0x1E1F20); T.pill_hi = col_hex(0x333537);
-        T.text = col_hex(0xE3E3E3); T.text2 = col_hex(0xC4C7C5); T.text3 = col_hex(0x8E918F);
-        T.accent = col_hex(0x8AB4F8); T.accent_soft = RGBA(0x8A, 0xB4, 0xF8, 40);
-        T.divider = col_hex(0x3C4043); T.code_bg = col_hex(0x0E0F10); T.code_text = col_hex(0xD7E3FF);
-        T.user_bubble = col_hex(0x303235); T.user_text = col_hex(0xE3E3E3);
-        T.danger = col_hex(0xF28B82); T.ok = col_hex(0x81C995); T.link = col_hex(0x8AB4F8);
-        T.dim = RGBA(0, 0, 0, 150); T.quote_bar = col_hex(0x5F6368);
+        T.bg = col_hex(0x0D121C);       T.bg2 = col_hex(0x131A27);
+        T.surface = col_hex(0x18202E);  T.surface2 = col_hex(0x222B3B);
+        T.pill = col_hex(0x18202E);     T.pill_hi = col_hex(0x2A3446);
+        T.text = col_hex(0xECF0F7);     T.text2 = col_hex(0xB9C2D3);  T.text3 = col_hex(0x8B96AB);
+        T.divider = col_hex(0x2A3446);  T.dim = RGBA(0, 0, 0, 140);   T.shadow = RGBA(0, 0, 0, 70);
     } else {
-        T.bg = col_hex(0xFFFFFF);  T.bg2 = col_hex(0xF8FAFD);
-        T.surface = col_hex(0xF0F4F9); T.surface2 = col_hex(0xE9EEF6);
-        T.pill = col_hex(0xF0F4F9); T.pill_hi = col_hex(0xDDE3EA);
-        T.text = col_hex(0x1F1F1F); T.text2 = col_hex(0x444746); T.text3 = col_hex(0x747775);
-        T.accent = col_hex(0x0B57D0); T.accent_soft = RGBA(0x0B, 0x57, 0xD0, 30);
-        T.divider = col_hex(0xDADCE0); T.code_bg = col_hex(0xF1F3F4); T.code_text = col_hex(0x174EA6);
-        T.user_bubble = col_hex(0xE9EEF6); T.user_text = col_hex(0x1F1F1F);
-        T.danger = col_hex(0xB3261E); T.ok = col_hex(0x146C2E); T.link = col_hex(0x0B57D0);
-        T.dim = RGBA(0, 0, 0, 90); T.quote_bar = col_hex(0xC4C7C5);
+        T.bg = col_hex(0xF2F5FA);       T.bg2 = col_hex(0xE9EEF6);
+        T.surface = col_hex(0xFFFFFF);  T.surface2 = col_hex(0xE7ECF4);
+        T.pill = col_hex(0xFFFFFF);     T.pill_hi = col_hex(0xD9E0EA);
+        T.text = col_hex(0x161C2A);     T.text2 = col_hex(0x3A4356);  T.text3 = col_hex(0x667085);
+        T.divider = col_hex(0xD9E0EA);  T.dim = RGBA(10, 20, 40, 90); T.shadow = RGBA(16, 32, 64, 28);
     }
+    T.accent = col_hex(0x3B9CFF);  T.accent2 = col_hex(0x7A5CFF);
+    T.accent_soft = RGBA(0x3B, 0x9C, 0xFF, dark ? 46 : 36);
+    T.ok = col_hex(0x2EC47A);      T.warn = col_hex(0xF5B02E);    T.danger = col_hex(0xF04A5A);
+    T.link = T.accent;             T.quote_bar = T.divider;
+    T.code_bg = T.bg2;             T.code_text = T.text;          T.user_bubble = T.surface2; T.user_text = T.text;
 }
 
 void gfx_init(void) {
@@ -151,8 +149,8 @@ u32 col_lerp(u32 a, u32 b, float t) {
 u32 col_hex(u32 rgb) { return C2D_Color32((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, 0xFF); }
 
 u32 brand_grad(float t) {
-    // cielo -> violeta -> aguamarina -> cielo (cíclico)
-    static const u32 stops[4] = {0x4F9DF0, 0x8C7BEF, 0x45C2D6, 0x4F9DF0};
+    // azul cielo -> violeta -> azul claro -> azul cielo (cíclico)
+    static const u32 stops[4] = {0x3B9CFF, 0x7A5CFF, 0x5AB8FF, 0x3B9CFF};
     t = t - floorf(t);
     float f = t * 3.0f;
     int i = (int)f; if (i > 2) i = 2;

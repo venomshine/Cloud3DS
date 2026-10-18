@@ -20,6 +20,7 @@ typedef struct {
     u32 bg, bg2, surface, surface2, pill, pill_hi, text, text2, text3;
     u32 accent, accent_soft, divider, code_bg, code_text, user_bubble, user_text;
     u32 danger, ok, link, dim, quote_bar;
+    u32 warn, accent2, shadow;
     bool dark;
 } Theme;
 
@@ -60,7 +61,7 @@ void draw_tri(float x0, float y0, float x1, float y1, float x2, float y2, u32 c)
 void draw_sparkle(float cx, float cy, float r, float rot, float alpha);
 void draw_sparkle_mono(float cx, float cy, float r, float rot, u32 c);
 void draw_shimmer_bar(float x, float y, float w, float h, float phase);
-u32  brand_grad(float t);         // degradado cielo->violeta->aguamarina, t en [0,1]
+u32  brand_grad(float t);         // degradado de la marca: azul cielo -> violeta, t en [0,1]
 void draw_cloud(float cx, float cy, float r, float alpha);   // logo: nube con el degradado de la marca
 
 // texto (fuente del sistema)
