@@ -431,12 +431,15 @@ static void h_login(Conn *c, const char *body)
 	bool ok = (k[0] && strcmp(k, G.qr_key) == 0) || (pin[0] && strcmp(pin, G.pin) == 0);
 	if (!ok) {
 		G.pin_fails++;
-		if (G.pin_fails % 5 == 0)
-			lock_until = now + 30000;
-		if (G.pin_fails >= 15) {
-			/* demasiados intentos: PIN nuevo */
-			pin_regen();
-			event_add(EV_PIN_RESET, "", "", 0);
+		/* cada 5 fallos, bloqueo cada vez más largo: 30 s, 1 min, 2 min… hasta 30 min.
+		 * El PIN no cambia solo: así el usuario puede aprendérselo. */
+		if (G.pin_fails % 5 == 0) {
+			int step = G.pin_fails / 5 - 1;
+			u64 secs = 30ull << (step > 6 ? 6 : step);
+			if (secs > 1800)
+				secs = 1800;
+			lock_until = now + secs * 1000;
+			event_add(EV_PIN_LOCK, "", c->ip, secs);
 		}
 		state_unlock();
 		util_log("login fallido desde %s", c->ip);

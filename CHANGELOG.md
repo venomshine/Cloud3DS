@@ -3,7 +3,7 @@
 ## 1.0.0 — primera versión
 
 - Servidor web en la consola: web para el móvil y el PC servida comprimida desde la propia 3DS.
-- Vinculación con QR (entra directamente) o con PIN de 4 cifras, con bloqueo tras varios intentos fallidos. Dispositivos recordados, que se pueden expulsar desde la consola.
+- Vinculación con QR (entra directamente) o con PIN de 4 cifras que no cambia entre arranques (se puede elegir uno propio o pedir uno al azar), con bloqueo cada vez más largo tras varios intentos fallidos. Dispositivos recordados, que se pueden expulsar desde la consola.
 - Explorador de la SD: accesos rápidos, ruta navegable, lista o cuadrícula con miniaturas, búsqueda y orden por nombre, fecha o tamaño.
 - Subidas de archivos y carpetas (botón o arrastrar y soltar) con cola, progreso, velocidad, tiempo restante y cancelación. Conflictos: reemplazar, conservar ambos u omitir.
 - Descargas con soporte de rangos (los vídeos se pueden adelantar), visor de fotos, vídeos y texto.

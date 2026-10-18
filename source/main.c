@@ -45,7 +45,8 @@
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS: maneja la tarjeta SD desde el móvil o el PC con solo escanear un QR. Sin apps, sin cables y sin configurar nada. Todo se queda en tu red: nada pasa por Internet."
 
 enum { TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
-enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT };
+enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN };
+enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
 enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR };
@@ -58,7 +59,7 @@ typedef struct {
 static struct {
 	int tab, page;
 	float tab_anim;
-	List list[TAB_COUNT + 2];   // una por pestaña y por subpágina de Ajustes
+	List list[TAB_COUNT + 3];   // una por pestaña y por subpágina de Ajustes
 	bool buttons;                // la última interacción fue con botones (se ve la selección)
 	float busy;                  // 0 = datos de conexión, 1 = transferencia
 	float t_ro, t_prot;          // animación de los interruptores
@@ -67,6 +68,7 @@ static struct {
 	float splash;                // segundos de presentación (-1 = terminada)
 	float fade;                  // fundido de la presentación a la app (1 -> 0)
 	bool lid_off;
+	bool want_pin;               // abrir el teclado del PIN fuera del dibujo
 } U;
 
 static AppState V;               // copia del estado para dibujar sin el cerrojo
@@ -158,11 +160,17 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 		util_strlcpy(title, _("Dispositivo expulsado"), tn);
 		util_strlcpy(sub, e->device, sn);
 		break;
-	default:
+	default: {
+		char dur[24];
 		*ic = IC_LOCK; *col = T.warn;
-		util_strlcpy(title, _("PIN cambiado por seguridad"), tn);
-		util_strlcpy(sub, _("Demasiados intentos fallidos"), sn);
+		util_fmt_eta(dur, sizeof dur, e->size);
+		util_strlcpy(title, _("Intentos de PIN fallidos"), tn);
+		if (e->size)
+			snprintf(sub, sn, _("Bloqueado %s · %s"), dur, e->device);
+		else
+			util_strlcpy(sub, _("Demasiados intentos fallidos"), sn);
 		break;
+	}
 	}
 }
 
@@ -521,6 +529,8 @@ static List *cur_list(void)
 		return &U.list[TAB_COUNT];
 	if (U.tab == TAB_SETTINGS && U.page == PAGE_ABOUT)
 		return &U.list[TAB_COUNT + 1];
+	if (U.tab == TAB_SETTINGS && U.page == PAGE_PIN)
+		return &U.list[TAB_COUNT + 2];
 	return &U.list[U.tab];
 }
 
@@ -727,9 +737,9 @@ static void settings_action(int i)
 		set_flag(&G.protect_sys);
 		break;
 	case SET_PIN:
-		dialog_open(DLG_NEWPIN, _("¿Crear un PIN nuevo?"),
-		            _("El PIN y el QR actuales dejarán de servir. Los dispositivos ya vinculados siguen conectados."),
-		            _("Cambiar"), false);
+		U.page = PAGE_PIN;
+		U.list[TAB_COUNT + 2].sel = PIN_CUSTOM;
+		U.list[TAB_COUNT + 2].off = U.list[TAB_COUNT + 2].target = 0;
 		break;
 	case SET_LANG:
 		U.page = PAGE_LANG;
@@ -779,7 +789,8 @@ static void settings_main(void)
 			ic = IC_SHIELD; col = T.danger;
 			break;
 		case SET_PIN:
-			title = _("PIN nuevo"); sub = _("Invalida el QR y el PIN actuales"); ic = IC_KEY; col = T.accent2; val = V.pin;
+			title = _("PIN"); sub = _("Siempre el mismo hasta que lo cambies"); ic = IC_KEY; col = T.accent2; val = V.pin;
+			chev = true;
 			break;
 		case SET_LANG:
 			title = _("Idioma"); ic = IC_GLOBE; chev = true;
@@ -859,6 +870,33 @@ static void settings_lang(void)
 	}
 }
 
+static void settings_pin(void)
+{
+	List *l = cur_list();
+	tab_header(_("PIN"), true);
+	const float RH = 44;
+	list_update(l, PIN_COUNT, RH);
+	for (int i = 0; i < PIN_COUNT; i++) {
+		float y = VIEW_Y + i * RH - l->off;
+		bool t = row(l, i, y, RH);
+		row_icon(28, y + RH / 2, i == PIN_CUSTOM ? IC_KEY : IC_REFRESH, T.accent2);
+		text_draw_clip(i == PIN_CUSTOM ? _("Elegir mi PIN") : _("PIN aleatorio nuevo"), 50, y + 6, 230, TS_BODY, T.text);
+		text_draw_clip(i == PIN_CUSTOM ? _("Cuatro cifras fáciles de recordar") : _("La consola elige uno al azar"),
+		               50, y + 23, 230, TS_SUB, T.text3);
+		if (t || activate(l, i)) {
+			if (i == PIN_CUSTOM)
+				U.want_pin = true;
+			else
+				dialog_open(DLG_NEWPIN, _("¿Crear un PIN nuevo?"),
+				            _("El PIN y el QR actuales dejarán de servir. Los dispositivos ya vinculados siguen conectados."),
+				            _("Cambiar"), false);
+		}
+	}
+	float y = VIEW_Y + PIN_COUNT * RH + 10 - l->off;
+	text_wrap_lines(_("Al cambiarlo, el QR también se renueva. Los dispositivos ya vinculados siguen conectados."),
+	                BOT_W - 40, TS_SUB, 3, 20, y, T.text3, true);
+}
+
 static void settings_about(void)
 {
 	List *l = cur_list();
@@ -919,6 +957,8 @@ static void draw_bottom(void)
 		settings_lang();
 	else if (U.page == PAGE_ABOUT)
 		settings_about();
+	else if (U.page == PAGE_PIN)
+		settings_pin();
 	else
 		settings_main();
 	draw_tabbar();
@@ -964,8 +1004,8 @@ static void watch_events(void)
 		if (e->kind == EV_PAIRED) {
 			snprintf(msg, sizeof msg, _("Vinculado: %s"), e->device);
 			toast_icon(msg, IC_LINK, T.accent2);
-		} else if (e->kind == EV_PIN_RESET) {
-			toast_icon(_("PIN cambiado por seguridad"), IC_LOCK, T.warn);
+		} else if (e->kind == EV_PIN_LOCK) {
+			toast_icon(_("PIN bloqueado por intentos fallidos"), IC_LOCK, T.warn);
 		} else if (e->kind == EV_DELETE) {
 			snprintf(msg, sizeof msg, _("Eliminado: %s"), e->name);
 			toast_icon(msg, IC_TRASH, T.danger);
@@ -1020,6 +1060,19 @@ static void update(void)
 		U.buttons = true;
 	if (g_touch.down)
 		U.buttons = false;
+	if (U.want_pin) {
+		U.want_pin = false;
+		char pin[8];
+		if (kb_pin(_("PIN de 4 cifras"), pin, sizeof pin)) {
+			state_lock();
+			bool ok = pin_set(pin);
+			memcpy(&V, &G, sizeof G);
+			state_unlock();
+			if (ok)
+				toast_icon(_("PIN guardado"), IC_KEY, T.accent2);
+		}
+		return;
+	}
 	int d = dialog_update();
 	if (d >= 0) {
 		handle_dialog(g_dialog.ctx, d == 1);
@@ -1037,7 +1090,7 @@ static void update(void)
 	}
 	// atrás: de una subpágina a Ajustes (y la pantalla de arriba vuelve al QR)
 	if (U.page != PAGE_MAIN && ((g_kdown & KEY_B) || tap(0, 0, 170, VIEW_Y))) {
-		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : SET_ABOUT;
+		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : SET_ABOUT;
 		U.page = PAGE_MAIN;
 	}
 	if (g_kdown & KEY_START) {

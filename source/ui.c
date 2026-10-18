@@ -523,6 +523,21 @@ bool kb_input(const char *hint, const char *initial, char *out, int outsz, bool 
     return ok;
 }
 
+bool kb_pin(const char *hint, char *out, int outsz) {
+    SwkbdState kb;
+    swkbdInit(&kb, SWKBD_TYPE_NUMPAD, 2, 4);
+    swkbdSetHintText(&kb, tr(hint));
+    swkbdSetButton(&kb, SWKBD_BUTTON_LEFT, tr("Cancelar"), false);
+    swkbdSetButton(&kb, SWKBD_BUTTON_RIGHT, tr("Aceptar"), true);
+    swkbdSetFeatures(&kb, SWKBD_DARKEN_TOP_SCREEN | SWKBD_FIXED_WIDTH);
+    swkbdSetValidation(&kb, SWKBD_FIXEDLEN, 0, 0);
+    char buf[8] = "";
+    SwkbdButton b = swkbdInputText(&kb, buf, sizeof buf);
+    if (b != SWKBD_BUTTON_RIGHT || strlen(buf) != 4 || strspn(buf, "0123456789") != 4) return false;
+    snprintf(out, outsz, "%s", buf);
+    return true;
+}
+
 // ------------------------------------------------------------ QR
 static char s_qr_text[3000];
 static uint8_t s_qr[qrcodegen_BUFFER_LEN_FOR_VERSION(27)];

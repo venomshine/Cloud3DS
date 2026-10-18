@@ -41,10 +41,22 @@ void pin_regen(void)
 	u8 b[4];
 	util_rand_bytes(b, 4);
 	u32 v = (b[0] | b[1] << 8 | b[2] << 16 | (u32)b[3] << 24) % 10000;
-	snprintf(G.pin, sizeof G.pin, "%04u", (unsigned)v);
-	util_rand_hex(G.qr_key, 8);
+	char pin[5];
+	snprintf(pin, sizeof pin, "%04u", (unsigned)v);
+	pin_set(pin);
+}
+
+/* el PIN se guarda en la SD: es el mismo en cada arranque hasta que se cambie */
+bool pin_set(const char *pin)
+{
+	if (strlen(pin) != 4 || strspn(pin, "0123456789") != 4)
+		return false;
+	util_strlcpy(G.pin, pin, sizeof G.pin);
+	util_rand_hex(G.qr_key, 8); /* el QR anterior deja de servir */
 	G.pin_fails = 0;
+	G.dirty_cfg = true;
 	G.rev++;
+	return true;
 }
 
 void device_revoke(int i)
@@ -219,6 +231,12 @@ void config_load(void)
 	G.light = jbool(r, "light", false);
 	G.readonly = jbool(r, "readonly", false);
 	G.protect_sys = jbool(r, "protect_sys", true);
+	const char *pin = jstr(r, "pin"), *key = jstr(r, "qr_key");
+	bool keep = strlen(pin) == 4 && strspn(pin, "0123456789") == 4 && strlen(key) == 8 && strspn(key, "0123456789abcdef") == 8;
+	if (keep) {
+		util_strlcpy(G.pin, pin, sizeof G.pin);
+		util_strlcpy(G.qr_key, key, sizeof G.qr_key);
+	}
 
 	cJSON *devs = cJSON_GetObjectItemCaseSensitive(r, "devices"), *d;
 	int i = 0;
@@ -246,7 +264,7 @@ void config_load(void)
 		event_add((EventKind)jnum(e, "k", 0), jstr(e, "n"), jstr(e, "d"), (u64)jnum(e, "s", 0));
 		G.hist[G.hist_head].when = (u64)jnum(e, "t", 0);
 	}
-	G.dirty_cfg = false;
+	G.dirty_cfg = !keep; /* config antigua sin PIN: se guarda el de ahora */
 	cJSON_Delete(r);
 }
 
@@ -258,6 +276,8 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "light", G.light);
 	cJSON_AddBoolToObject(r, "readonly", G.readonly);
 	cJSON_AddBoolToObject(r, "protect_sys", G.protect_sys);
+	cJSON_AddStringToObject(r, "pin", G.pin);
+	cJSON_AddStringToObject(r, "qr_key", G.qr_key);
 	cJSON *devs = cJSON_AddArrayToObject(r, "devices");
 	for (int i = 0; i < MAX_DEVICES; i++) {
 		Device *v = &G.dev[i];

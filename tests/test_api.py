@@ -138,5 +138,13 @@ st, d, _ = req("POST", "/api/delete?p=" + q("/c3d test"), cookie=tok)
 check("borrar carpeta entera", st == 200, str(d))
 st, d, _ = req("GET", "/api/list?p=" + q("/c3d test"), cookie=tok)
 check("ya no existe", st == 404)
+# intentos fallidos: se bloquea un rato, pero el PIN no cambia y las sesiones siguen
+form = {"Content-Type": "application/x-www-form-urlencoded"}
+for _ in range(5):
+    st, d, _ = req("POST", "/api/login", body="pin=0000x", headers=form)
+st, d, _ = req("POST", "/api/login", body="k=" + key, headers=form)
+check("5 fallos → bloqueo (429)", st == 429, f"{st} {d}")
+st, d, _ = req("GET", "/api/list?p=/", cookie=tok)
+check("la sesión abierta sigue funcionando", st == 200)
 print("FALLOS:", fails)
 sys.exit(1 if fails else 0)

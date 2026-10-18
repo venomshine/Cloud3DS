@@ -48,7 +48,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 
 ## Funciones
 
-- **Conectar en un segundo:** QR en la consola para el móvil y dirección + PIN para el PC. El PIN cambia en cada arranque y se bloquea tras varios intentos fallidos.
+- **Conectar en un segundo:** QR en la consola para el móvil y dirección + PIN para el PC. El PIN es siempre el mismo para que te lo aprendas; puedes elegir el tuyo o pedir uno al azar en Ajustes. Tras varios intentos fallidos se bloquea un rato.
 - **Dispositivos recordados:** los ves en la consola, con quién está conectado ahora, y puedes **expulsar** a cualquiera; en su navegador aparece al momento que lo desconectaron.
 - **Explorador de la SD** en el navegador: accesos rápidos a **Capturas** (Luma), **Fotos** (cámara), **CIAs**, **Homebrew** y **Partidas** (Checkpoint); lista o cuadrícula con miniaturas; búsqueda y orden por nombre, fecha o tamaño.
 - **Subir arrastrando** archivos sueltos o carpetas enteras, con cola, progreso, velocidad y tiempo restante. Si algo ya existe, eliges **reemplazar**, **conservar ambos** u **omitir**.
@@ -117,7 +117,7 @@ Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python
 
 **Install:** open **FBI** → *Remote Install* → *Scan QR Code* and scan the QR above, or download `Cloud3DS.cia` / `Cloud3DS.3dsx` from the [latest release](https://github.com/venomshine/Cloud3DS/releases/latest).
 
-**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, view photos and videos, rename and delete. Devices are remembered and can be removed from the console. Read-only mode and system-folder protection are on hand, and uploads never leave half-written files behind.
+**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, view photos and videos, rename and delete. Devices are remembered and can be removed from the console. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads never leave half-written files behind.
 
 **Build:** devkitPro with `3ds-dev`, then `make` (or `make cia` with bannertool and makerom).
 

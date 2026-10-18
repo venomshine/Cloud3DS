@@ -82,6 +82,7 @@ void dialog_draw(void);
 
 // ------------------------------------------------------------ teclado del sistema
 bool kb_input(const char *hint, const char *initial, char *out, int outsz, bool multiline, bool password);
+bool kb_pin(const char *hint, char *out, int outsz);   // teclado numérico, exactamente 4 cifras
 
 // ------------------------------------------------------------ QR
 bool draw_qr(const char *text, float x, float y, float maxsize, float alpha);

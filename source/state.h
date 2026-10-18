@@ -41,7 +41,7 @@ typedef enum {
 	EV_DELETE,
 	EV_PAIRED,
 	EV_REVOKED,
-	EV_PIN_RESET,
+	EV_PIN_LOCK,   /* bloqueo por intentos fallidos: device = IP, size = segundos */
 } EventKind;
 
 typedef struct {
@@ -105,7 +105,8 @@ Xfer  *xfer_get(int id);
 int    xfer_active(void);
 void   event_add(EventKind k, const char *name, const char *device, u64 size);
 const Event *event_at(int i); /* 0 = más reciente */
-void   pin_regen(void);
+void   pin_regen(void);           /* PIN y QR nuevos al azar */
+bool   pin_set(const char *pin);   /* PIN elegido (4 cifras) y QR nuevo */
 void   device_revoke(int i); /* expulsa y recuerda el token */
 
 /* Configuración en la SD (config.json) */
