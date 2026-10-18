@@ -6,3 +6,4 @@ build/
 *.map
 romfs/web/index.html.gz
 /dist/
+__pycache__/
