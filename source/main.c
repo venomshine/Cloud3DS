@@ -428,7 +428,7 @@ static void about_top(void)
 		static const char *const NAMES[3] = {"GitHub", "Discord", "Ko-fi"};
 		const char *desc[3] = {_("Código y nuevas versiones. Si algo falla, abre un issue y lo reviso."),
 		                       _("Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones."),
-		                       _("Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!")};
+		                       _("Si te gusta Cloud3DS, invítame a un café: ayuda muchísimo.")};
 		int k = sel - AB_GITHUB;
 		/* el QR con su marco blanco termina en x≈212: el texto empieza 24 px después */
 		const float QX = 236, QW = TOP_W - QX - 14;

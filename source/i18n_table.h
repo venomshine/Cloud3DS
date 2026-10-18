@@ -30,7 +30,7 @@ static const TrEntry TR_TAB[] = {
 	{"y %d más", "and %d more", "ほか %d 件"},
 	{"Código y nuevas versiones. Si algo falla, abre un issue y lo reviso.", "Code and new versions. If something breaks, open an issue and I'll look into it.", "コードと新しいバージョン。不具合があればissueを立ててください。確認します。"},
 	{"Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones.", "Join the community: questions, problems, ideas and update news.", "コミュニティに参加: 質問、不具合、アイデア、アップデート情報。"},
-	{"Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!", "If you like Cloud3DS, buy me a coffee. It helps a lot!", "Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!"},
+	{"Si te gusta Cloud3DS, invítame a un café: ayuda muchísimo.", "If you like Cloud3DS, buy me a coffee. It helps a lot!", "Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!"},
 	{"Escanéalo con tu móvil", "Scan it with your phone", "スマホで読み取ってください"},
 	{"v%s · hecho por %s", "v%s · made by %s", "v%s · 制作: %s"},
 	{"Gracias por usar!", "Thanks for using!", "ご利用ありがとう!"},

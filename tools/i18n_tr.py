@@ -166,7 +166,7 @@ TR = {
     'y %d más': ('and %d more', 'ほか %d 件'),
     'Código, novedades y nuevas versiones de mis proyectos.': ('Code, news and new versions of my projects.', 'プロジェクトのコード、最新情報、新バージョン。'),
     'Únete a la comunidad: dudas, ideas y avisos de actualizaciones.': ('Join the community: questions, ideas and update news.', 'コミュニティに参加: 質問、アイデア、更新のお知らせ。'),
-    'Si te gusta Cloud3DS, invítame a un café. ¡Ayuda muchísimo!': ('If you like Cloud3DS, buy me a coffee. It helps a lot!', 'Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!'),
+    'Si te gusta Cloud3DS, invítame a un café: ayuda muchísimo.': ('If you like Cloud3DS, buy me a coffee. It helps a lot!', 'Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!'),
     'Escanéalo con tu teléfono': ('Scan it with your phone', 'スマホで読み取ってください'),
     'v%s · hecho por %s': ('v%s · made by %s', 'v%s · 制作: %s'),
     'Toca para expulsarlo: tendrá que volver a escanear el QR o escribir el PIN.': ('Tap to remove it: it will need to scan the QR code or enter the PIN again.', 'タップで解除。再びQRコードかPINが必要になります。'),
