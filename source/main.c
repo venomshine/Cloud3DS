@@ -458,7 +458,7 @@ static void splash_top(float alpha)
 	float a = ease_out_cubic(t / 0.9f);
 	// halo radial suave que «respira» detrás del logo
 	float breathe = 1 + 0.04f * sinf(t * 3.0f);
-	draw_halo(200, 92, (70 + 40 * a) * breathe, 0.55f * a * alpha);
+	draw_halo(200, 104, (120 + 110 * a) * breathe, 0.75f * a * alpha);
 	// el logo crece con una escala amortiguada (sin rebotes bruscos) y su resplandor lo acompaña
 	float sc = ease_out_back(clampf(t / 0.9f, 0, 1));
 	if (sc > 0.01f) {

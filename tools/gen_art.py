@@ -135,14 +135,17 @@ def glow_png(size, path):
 
 def halo_png(size, path):
     """Halo circular: degradado radial que se desvanece hasta transparente."""
+    import random
+    rnd = random.Random(3)
     im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     px = im.load()
     c = (size - 1) / 2
     for y in range(size):
         for x in range(size):
             d = ((x - c) ** 2 + (y - c) ** 2) ** 0.5 / c
-            a = max(0.0, 1 - d) ** 2.2
-            px[x, y] = (0x4A, 0x7C, 0xFF, int(255 * a))
+            a = max(0.0, 1 - d) ** 1.6
+            # tramado: sin escalones visibles al ampliarlo a casi toda la pantalla
+            px[x, y] = (0x4A, 0x7C, 0xFF, min(255, int(255 * a + rnd.random())))
     im.save(path)
 
 def sprites():
@@ -151,7 +154,7 @@ def sprites():
     for s in (256, 128, 64, 32):
         logo_png(s, os.path.join(g, f"logo{s}.png"))
     glow_png(256, os.path.join(g, "glow.png"))
-    halo_png(128, os.path.join(g, "halo.png"))
+    halo_png(256, os.path.join(g, "halo.png"))
 
 if __name__ == "__main__":
     icon()
