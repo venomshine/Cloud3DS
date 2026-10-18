@@ -1116,6 +1116,8 @@ static void on_readable(Conn *c)
 		}
 		state_lock();
 		xfer_progress(c->xid, c->u_done);
+		if (c->dev >= 0)
+			G.dev[c->dev].last_ms = util_ms(); /* sigue «conectado» mientras transfiere */
 		state_unlock();
 		if (c->u_done >= c->u_total)
 			upload_finish(c);
@@ -1175,6 +1177,8 @@ static void on_writable(Conn *c)
 			c->x_done += r;
 			state_lock();
 			xfer_progress(c->xid, c->x_done);
+			if (c->dev >= 0)
+				G.dev[c->dev].last_ms = util_ms();
 			state_unlock();
 		}
 	}
