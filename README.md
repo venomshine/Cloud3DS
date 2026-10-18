@@ -83,4 +83,4 @@ Hecho por **VENOMSHiNE** · [GitHub](https://github.com/venomshine) · [Discord]
 
 <a href="https://ko-fi.com/W3A028X2KV"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Apóyame en Ko-fi"></a>
 
-Cloud3DS se distribuye bajo la licencia **GPL-3.0** (ver [LICENSE](LICENSE)). Usa [libctru, citro2d y citro3d](https://github.com/devkitPro), [cJSON](https://github.com/DaveGamble/cJSON) y [QR Code generator](https://github.com/nayuki/QR-Code-generator). Los detalles están en [NOTICE.md](NOTICE.md).
+Cloud3DS se distribuye bajo la licencia **GPL-3.0 con términos adicionales de atribución** (sección 7): ver [LICENSE](LICENSE) y [NOTICE.md](NOTICE.md). La interfaz de la consola está basada en [Gemi3DS](https://github.com/venomshine/Gemi3DS). Usa [libctru, citro2d y citro3d](https://github.com/devkitPro), [cJSON](https://github.com/DaveGamble/cJSON) y [QR Code generator](https://github.com/nayuki/QR-Code-generator).

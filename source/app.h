@@ -1,3 +1,10 @@
+/*
+ * Cloud3DS - tu nube local para Nintendo 3DS
+ * Copyright (C) 2026 VENOMSHiNE - https://github.com/venomshine/Cloud3DS
+ *
+ * Software libre bajo la GNU General Public License v3 con términos adicionales
+ * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
+ */
 #pragma once
 
 #include <3ds.h>
