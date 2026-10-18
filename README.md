@@ -29,7 +29,7 @@ FTPD funciona, pero hay que instalar un cliente FTP, escribir la IP y el puerto 
 - **Seguro por defecto:** PIN nuevo en cada arranque, bloqueo tras varios intentos fallidos, modo **solo lectura** y confirmación antes de tocar carpetas del sistema (`Nintendo 3DS`, `luma/payloads`, `boot.firm`…).
 - **Sin sorpresas:** las subidas se escriben en un temporal y solo se renombran al terminar. Si se corta la conexión, no quedan archivos a medias. Avisa si no hay espacio o si el archivo pasa de 4 GB (límite de FAT32).
 - **Puedes cerrar la tapa:** mientras transfiere, la consola no se suspende y apaga la pantalla.
-- **En la consola:** QR, dirección y PIN, transferencias en directo, historial de actividad, dispositivos conectados, batería, Wi-Fi y hora. Tema oscuro o claro, en español, inglés y japonés.
+- **En la consola:** el QR, la dirección y el PIN siempre a la vista, con las transferencias en directo al lado. Resumen del día, actividad, dispositivos conectados, permisos y ajustes en menús con el mismo estilo que [Gemi3DS](https://github.com/venomshine/Gemi3DS). Tema oscuro o claro, en español, inglés y japonés.
 
 <p align="center"><img src="docs/c_activity.png" width="400" alt="Actividad"> <img src="docs/c_settings.png" width="400" alt="Ajustes"></p>
 <p align="center"><img src="docs/r_web_pc.png" width="820" alt="Cloud3DS en el navegador del PC"></p>
@@ -54,10 +54,12 @@ El móvil o el PC tienen que estar en la **misma red** que la consola. En alguna
 
 | Botón | Acción |
 |---|---|
-| L / R | Cambiar de pestaña (Actividad, Dispositivos, Ajustes) |
-| Cruceta / Circle Pad | Moverse por la lista |
-| A | Elegir |
-| B | Cancelar o cerrar |
+| X | Menú (actividad, dispositivos, ajustes, acerca de) |
+| A | Actividad |
+| Y | Dispositivos |
+| R | Permisos (lectura y escritura o solo lectura) |
+| Cruceta | Moverse por las listas |
+| B | Cerrar (la pantalla de arriba vuelve al QR) |
 | START | Salir |
 
 Todo se puede hacer también con la pantalla táctil.
