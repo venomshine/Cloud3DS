@@ -69,16 +69,27 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .banner.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:color-mix(in srgb,var(--warn) 70%,var(--text))}
 .banner.err{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
 
-.bar2{display:flex;align-items:center;gap:8px;margin:14px 0 10px}
-.crumbs{flex:1;min-width:0;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;white-space:nowrap;font-size:15px}
+.bar2{display:flex;align-items:center;gap:8px;margin:14px 0 10px;position:relative;padding-right:48px}
+.sq{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--card);border:1px solid var(--line);color:var(--text);flex:none;transition:all .15s}
+.sq:hover{border-color:var(--a)}
+.sq:disabled{opacity:.35;cursor:default;border-color:var(--line)}
+.sq svg{width:19px;height:19px}
+.crumbs{flex:1;min-width:0;height:40px;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;white-space:nowrap;font-size:15px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 6px}
 .crumbs::-webkit-scrollbar{display:none}
 .crumbs button{padding:6px 8px;border-radius:8px;color:var(--muted)}
 .crumbs button:last-child{color:var(--text);font-weight:600}
 .crumbs button:hover{background:var(--card2)}
 .crumbs .sep{color:var(--line);font-size:13px}
-.search{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 10px;height:40px;width:200px;transition:width .2s}
-.search input{border:0;outline:0;background:none;width:100%;min-width:0}
-.search svg{width:17px;height:17px;color:var(--muted)}
+/* búsqueda: una lupa que se despliega hacia la izquierda y tapa la fila con su propio fondo */
+.search{position:absolute;right:0;top:0;height:40px;width:40px;display:flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;z-index:3;transition:width .28s cubic-bezier(.2,.9,.3,1),box-shadow .2s,border-color .2s}
+.search .lens{width:38px;height:38px;display:grid;place-items:center;flex:none;color:var(--text)}
+.search .lens svg{width:19px;height:19px}
+.search input{border:0;outline:0;background:none;flex:1;min-width:0;opacity:0;transition:opacity .2s;font-size:15px}
+.search .x{width:34px;height:34px;display:grid;place-items:center;flex:none;color:var(--muted);opacity:0;pointer-events:none;transition:opacity .2s}
+.search .x svg{width:17px;height:17px}
+.search.open{width:100%;border-color:var(--a);box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.search.open .lens{color:var(--a)}
+.search.open input,.search.open .x{opacity:1;pointer-events:auto}
 .tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 15px;border-radius:12px;background:var(--card);border:1px solid var(--line);font-size:14.5px;font-weight:500;transition:all .15s;white-space:nowrap}
 .btn:hover{border-color:var(--a)}
@@ -231,9 +242,6 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
   .btn{padding:0 11px}
   .tools .btn.up{display:none}
   .fab{display:flex}
-  .search{width:44px;padding:0 12px;cursor:pointer}
-  .search.open{width:100%;position:absolute;left:16px;right:16px;width:auto;z-index:2}
-  .bar2{position:relative}
   .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
   .queue{right:12px;left:12px;bottom:12px;width:auto;max-width:none}
   .selbar span.n{display:none}
@@ -261,16 +269,17 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
     <div class="top">
       <div class="logo"><svg viewBox="0 0 48 48"><path d="M15 34a8 8 0 0 1-.7-16A11 11 0 0 1 35 16.5 8.8 8.8 0 0 1 35 34z"/></svg></div>
       <div class="brand"><b>Cloud3DS</b><span id="cname"></span></div>
-      <button class="ibtn" id="bview" title=""></button>
-      <button class="ibtn" id="bmenu" title=""><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg></button>
+      <button class="ibtn" id="bref"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg></button>
+      <button class="ibtn" id="bout"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg></button>
     </div>
     <div class="space"><span id="sfree"></span><div class="bar"><i id="sbar"></i></div></div>
     <div class="chips" id="chips"></div>
     <div id="banners"></div>
   </header>
   <div class="bar2">
+    <button class="sq" id="bUp"><svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg></button>
     <div class="crumbs" id="crumbs"></div>
-    <div class="search" id="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search"></div>
+    <div class="search" id="search"><button class="lens" id="sLens"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button><input id="q" type="text" autocomplete="off" enterkeyhint="search"><button class="x" id="sX"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
   </div>
   <div class="tools" id="tools"></div>
   <div id="list"></div>
@@ -579,8 +588,10 @@ function renderChrome(){
    `<button class="btn" id="tNew">${svg("plusf")}<span class="lbl">${t("newFolder")}</span></button>`)+
   `<div class="grow"></div>`+
   `<button class="btn" id="tSort" title="${t("sortBy")}">${svg("sort")}<span class="lbl">${t(sortIc)}</span></button>`+
-  `<button class="btn" id="tRef" title="${t("refresh")}">${svg("ref")}</button>`;
- $("#bview").innerHTML=svg(S.view==="grid"?"list":"grid");$("#bview").title=t(S.view==="grid"?"listv":"grid");
+  `<button class="btn" id="tView" title="${t(S.view==="grid"?"listv":"grid")}">${svg(S.view==="grid"?"list":"grid")}</button>`;
+ $("#bref").title=t("refresh");$("#bout").title=t("logout");
+ $("#bUp").disabled=S.path==="/";$("#bUp").title=t("back");
+ $("#sLens").title=t("search");
  $("#fab").innerHTML=svg("up")+t("upload");$("#fab").classList.toggle("hide",ro||$("#app").classList.contains("hide"));
  $("#q").placeholder=t("search");
  $("#foot").innerHTML=`Cloud3DS ${esc(hello.version||"")} · ${t("made")} · <a href="https://discord.com/invite/yVKp8JwV4e" target="_blank" rel="noopener">Discord</a> · <a href="https://ko-fi.com/venomshine" target="_blank" rel="noopener">Ko-fi</a>`;
@@ -738,14 +749,11 @@ function sortMenu(){
  const m=modal(`<div class="sheet"><div class="grab"></div>${["name","date","size"].map(k=>`<button class="act" data-s="${k}">${svg(S.sort===k?"check":"sort")}${t({name:"sortName",date:"sortDate",size:"sortSize"}[k])}</button>`).join("")}</div>`);
  m.el.addEventListener("click",e=>{const s=e.target.closest("[data-s]");if(!s)return;S.sort=s.dataset.s;try{localStorage.setItem("c3d_sort",S.sort)}catch(e){}m.close();render()});
 }
-function mainMenu(){
- const m=modal(`<div class="sheet"><div class="grab"></div>
-  <div class="sh"><div class="ic txt">${svg("lock")}</div><div class="meta"><b>${esc(S.info.console||"")}</b><span>${esc(t("device",S.info.device||""))}</span></div></div>
-  <button class="act" data-a="ref">${svg("ref")}${t("refresh")}</button>
-  <button class="act danger" data-a="out">${svg("out")}${t("logout")}</button></div>`);
- m.el.addEventListener("click",async e=>{const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
-  if(a==="ref"){go(S.path,true);refreshInfo()}
-  if(a==="out"){const ok=await ask({title:t("logout"),text:t("logoutD"),ok:t("cont"),danger:true});if(ok){try{await api("POST","logout")}catch(e){}hello.authed=false;showLogin()}}});
+async function disconnect(){
+ const ok=await ask({title:t("logout"),text:t("device",S.info.device||"")+". "+t("logoutD"),ok:t("disc"),danger:true});
+ if(!ok)return;
+ try{await api("POST","logout")}catch(e){}
+ hello.authed=false;showLogin();
 }
 
 document.addEventListener("click",e=>{
@@ -755,13 +763,17 @@ document.addEventListener("click",e=>{
  if(id==="tUpF")$("#dpick").click();
  if(id==="tNew")newFolder();
  if(id==="tSort")sortMenu();
- if(id==="tRef"){go(S.path,true);refreshInfo()}
- if(id==="bview"){S.view=S.view==="grid"?"list":"grid";try{localStorage.setItem("c3d_view",S.view)}catch(e){}render()}
- if(id==="bmenu")mainMenu();
+ if(id==="bref"){go(S.path,true);refreshInfo()}
+ if(id==="tView"){S.view=S.view==="grid"?"list":"grid";try{localStorage.setItem("c3d_view",S.view)}catch(e){}render()}
+ if(id==="bout")disconnect();
+ if(id==="bUp"&&S.path!=="/")go(parent(S.path));
+ if(id==="sLens"){const o=$("#search").classList.toggle("open");if(o)setTimeout(()=>$("#q").focus(),120);else closeSearch()}
+ if(id==="sX")closeSearch();
 });
-$("#search").addEventListener("click",()=>{$("#search").classList.add("open");$("#q").focus()});
+function closeSearch(){$("#q").value="";S.filter="";$("#search").classList.remove("open");render()}
 $("#q").addEventListener("input",e=>{S.filter=e.target.value.trim();render()});
-$("#q").addEventListener("blur",()=>{if(!S.filter)$("#search").classList.remove("open")});
+$("#q").addEventListener("keydown",e=>{if(e.key==="Escape")closeSearch()});
+$("#q").addEventListener("blur",()=>{setTimeout(()=>{if(!S.filter&&document.activeElement!==$("#q"))$("#search").classList.remove("open")},150)});
 
 /* ---------- visor ---------- */
 function openViewer(it){
