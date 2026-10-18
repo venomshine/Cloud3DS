@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d121c">
 <title>Cloud3DS</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233b9cff'/%3E%3Cstop offset='1' stop-color='%237a5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='48' height='48' rx='12' fill='url(%23g)'/%3E%3Cpath fill='%23fff' d='M15 33a7 7 0 0 1-.6-14A10 10 0 0 1 33.6 17 8 8 0 0 1 34 33z'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%233b9cff'/%3E%3Cstop offset='1' stop-color='%237a5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg fill='url(%23g)'%3E%3Ccircle cx='15.9' cy='26.6' r='9.2'/%3E%3Ccircle cx='35.1' cy='29.1' r='7.1'/%3E%3Ccircle cx='25.9' cy='22' r='11.7'/%3E%3Crect x='6.3' y='26.6' width='35.5' height='9.6' rx='4.8'/%3E%3C/g%3E%3C/svg%3E">
 <style>
 :root{
   --bg:#f2f5fa;--card:#fff;--card2:#e9eef5;--line:#dbe2ec;--text:#161c2a;--muted:#667085;
@@ -26,8 +26,9 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
 /* ---------- acceso ---------- */
 #login{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}
 .lcard{width:100%;max-width:380px;background:var(--card);border-radius:24px;padding:32px 26px 26px;box-shadow:var(--shadow);text-align:center}
-.logo{width:64px;height:64px;border-radius:18px;background:var(--grad);display:grid;place-items:center;margin:0 auto 14px;box-shadow:0 8px 24px rgba(91,110,255,.35)}
-.logo svg{width:38px;height:38px;fill:#fff;stroke:none}
+.logo{width:76px;height:76px;display:grid;place-items:center;margin:0 auto 10px;position:relative}
+.logo::before{content:"";position:absolute;inset:14px;border-radius:50%;background:radial-gradient(circle,rgba(91,110,255,.35),transparent 70%);filter:blur(8px)}
+.logo svg.cloud{width:100%;height:100%;stroke:none;position:relative}
 .lcard h1{margin:0;font-size:24px;letter-spacing:-.2px}
 .lcard .sub{margin:4px 0 22px;color:var(--muted)}
 .pin{display:flex;gap:10px;justify-content:center;margin:8px 0 6px}
@@ -49,8 +50,8 @@ svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:
 #app{max-width:1000px;margin:0 auto;padding:0 16px 120px}
 header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);margin:0 -16px;padding:12px 16px 10px}
 .top{display:flex;align-items:center;gap:12px}
-.top .logo{width:38px;height:38px;border-radius:11px;margin:0;box-shadow:none}
-.top .logo svg{width:24px;height:24px}
+.top .logo{width:40px;height:40px;margin:0}
+.top .logo::before{inset:8px}
 .brand{flex:1;min-width:0}
 .brand b{display:block;font-size:17px;line-height:1.2}
 .brand span{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -256,10 +257,15 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 </style>
 </head>
 <body>
+<!-- logo de Cloud3DS: la misma nube con degradado que en la consola -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <defs><linearGradient id="c3dgrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3b9cff"/><stop offset=".55" stop-color="#6a6bff"/><stop offset="1" stop-color="#7a5cff"/></linearGradient>
+ <symbol id="c3dcloud" viewBox="0 0 48 48"><g fill="url(#c3dgrad)"><circle cx="15.9" cy="26.6" r="9.2"/><circle cx="35.1" cy="29.1" r="7.1"/><circle cx="25.9" cy="22" r="11.7"/><rect x="6.3" y="26.6" width="35.5" height="9.6" rx="4.8"/></g></symbol></defs>
+</svg>
 
 <div id="login">
   <div class="lcard">
-    <div class="logo"><svg viewBox="0 0 48 48"><path d="M15 34a8 8 0 0 1-.7-16A11 11 0 0 1 35 16.5 8.8 8.8 0 0 1 35 34z"/></svg></div>
+    <div class="logo"><svg viewBox="0 0 48 48" class="cloud"><use href="#c3dcloud"/></svg></div>
     <h1>Cloud3DS</h1>
     <div id="lkick" class="hide"></div>
     <div class="sub" id="lsub"></div>
@@ -274,7 +280,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 <div id="app" class="hide">
   <header>
     <div class="top">
-      <div class="logo"><svg viewBox="0 0 48 48"><path d="M15 34a8 8 0 0 1-.7-16A11 11 0 0 1 35 16.5 8.8 8.8 0 0 1 35 34z"/></svg></div>
+      <div class="logo"><svg viewBox="0 0 48 48" class="cloud"><use href="#c3dcloud"/></svg></div>
       <div class="brand"><b>Cloud3DS</b><span id="cname"></span></div>
       <button class="ibtn" id="bref"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg></button>
       <button class="ibtn" id="bout"><svg viewBox="0 0 24 24"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg></button>
