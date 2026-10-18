@@ -162,6 +162,8 @@ const check = (n, c, x = '') => { console.log((c ? 'OK   ' : 'FALLA') + ' ' + n 
   await page.waitForSelector('#lkick:not(.hide)', { timeout: 60000 });
   await shot('w19_kicked');
   check('aviso de expulsado', await page.isVisible('#lkick b'));
+  const pins = await page.$$eval('#pin input', xs => xs.map(x => x.value).join(''));
+  check('el PIN sale vacío al expulsar', pins === '', pins);
   mark('done');
   await browser.close();
   console.log('FALLOS:', fails);

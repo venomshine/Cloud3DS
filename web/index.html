@@ -270,7 +270,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
     <div id="lkick" class="hide"></div>
     <div class="sub" id="lsub"></div>
     <div id="lpin">
-      <div class="pin" id="pin"><input inputmode="numeric" maxlength="1" autocomplete="one-time-code"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"></div>
+      <div class="pin" id="pin"><input inputmode="numeric" maxlength="1" autocomplete="off"><input inputmode="numeric" maxlength="1" autocomplete="off"><input inputmode="numeric" maxlength="1" autocomplete="off"><input inputmode="numeric" maxlength="1" autocomplete="off"></div>
     </div>
     <div class="lmsg" id="lmsg"></div>
     <div class="hint" id="lhint"></div>
@@ -500,7 +500,10 @@ async function boot(){
  showLogin();
 }
 function msg(s,err){const m=$("#lmsg");m.innerHTML=s;m.classList.toggle("err",!!err)}
+// el PIN nunca se queda escrito: ni al entrar, ni al salir, ni al volver a esta pantalla
+function clearPin(){document.querySelectorAll("#pin input").forEach(x=>x.value="");$("#pin").classList.remove("bad")}
 function showLogin(connecting,kicked){
+ clearPin();
  const wasApp=!$("#app").classList.contains("hide");
  $("#app").classList.add("hide");$("#fab").classList.add("hide");$("#login").classList.remove("hide");
  clearInterval(window._ping);
@@ -530,7 +533,7 @@ function showLogin(connecting,kicked){
 })();
 async function tryPin(pin){
  const box=$("#pin");msg('<span class="spin"></span>');
- try{await api("POST","login",{}, "pin="+pin);startApp()}
+ try{await api("POST","login",{}, "pin="+pin);clearPin();startApp()}
  catch(e){
   box.classList.remove("bad");void box.offsetWidth;box.classList.add("bad");
   document.querySelectorAll("#pin input").forEach(x=>x.value="");$("#pin input").focus();
