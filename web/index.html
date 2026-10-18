@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d121c">
+<title>Cloud3DS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233b9cff'/%3E%3Cstop offset='1' stop-color='%237a5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='48' height='48' rx='12' fill='url(%23g)'/%3E%3Cpath fill='%23fff' d='M15 33a7 7 0 0 1-.6-14A10 10 0 0 1 33.6 17 8 8 0 0 1 34 33z'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f2f5fa;--card:#fff;--card2:#e9eef5;--line:#dbe2ec;--text:#161c2a;--muted:#667085;
+  --a:#3b9cff;--b:#7a5cff;--ok:#20b26c;--warn:#e9a21f;--err:#e5484d;--shadow:0 6px 24px rgba(16,32,64,.08);
+  --grad:linear-gradient(120deg,var(--a),var(--b));--r:14px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0d121c;--card:#161e2b;--card2:#1f2837;--line:#283244;--text:#ecf0f7;--muted:#8b96ab;--shadow:0 6px 24px rgba(0,0,0,.35);
+}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Sans","Noto Sans JP",sans-serif}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0}
+svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hide{display:none!important}
+.muted{color:var(--muted)}
+
+/* ---------- acceso ---------- */
+#login{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}
+.lcard{width:100%;max-width:380px;background:var(--card);border-radius:24px;padding:32px 26px 26px;box-shadow:var(--shadow);text-align:center}
+.logo{width:64px;height:64px;border-radius:18px;background:var(--grad);display:grid;place-items:center;margin:0 auto 14px;box-shadow:0 8px 24px rgba(91,110,255,.35)}
+.logo svg{width:38px;height:38px;fill:#fff;stroke:none}
+.lcard h1{margin:0;font-size:24px;letter-spacing:-.2px}
+.lcard .sub{margin:4px 0 22px;color:var(--muted)}
+.pin{display:flex;gap:10px;justify-content:center;margin:8px 0 6px}
+.pin input{width:54px;height:62px;border-radius:14px;border:2px solid var(--line);background:var(--card2);text-align:center;font-size:28px;font-weight:600;outline:none;transition:border-color .15s,transform .15s}
+.pin input:focus{border-color:var(--a)}
+.pin.bad input{border-color:var(--err);animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.lmsg{min-height:40px;margin-top:12px;font-size:14px;color:var(--muted)}
+.lmsg.err{color:var(--err)}
+.spin{width:22px;height:22px;border-radius:50%;border:3px solid var(--card2);border-top-color:var(--a);animation:rot .8s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes rot{to{transform:rotate(360deg)}}
+.hint{margin-top:18px;font-size:13px;color:var(--muted);line-height:1.5}
+
+/* ---------- app ---------- */
+#app{max-width:1000px;margin:0 auto;padding:0 16px 120px}
+header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);margin:0 -16px;padding:12px 16px 10px}
+.top{display:flex;align-items:center;gap:12px}
+.top .logo{width:38px;height:38px;border-radius:11px;margin:0;box-shadow:none}
+.top .logo svg{width:24px;height:24px}
+.brand{flex:1;min-width:0}
+.brand b{display:block;font-size:17px;line-height:1.2}
+.brand span{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ibtn{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:var(--text);transition:background .15s}
+.ibtn:hover,.ibtn.on{background:var(--card2)}
+.space{margin-top:12px;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.bar{flex:1;height:6px;border-radius:3px;background:var(--card2);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--grad);border-radius:3px;transition:width .3s}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:12px 0 2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;background:var(--card);border:1px solid var(--line);white-space:nowrap;font-size:14px;transition:all .15s}
+.chip svg{width:17px;height:17px;color:var(--a)}
+.chip.on{background:var(--grad);color:#fff;border-color:transparent}
+.chip.on svg{color:#fff}
+.banner{margin-top:12px;padding:10px 14px;border-radius:12px;font-size:13.5px;display:flex;gap:10px;align-items:center}
+.banner.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:color-mix(in srgb,var(--warn) 70%,var(--text))}
+.banner.err{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
+
+.bar2{display:flex;align-items:center;gap:8px;margin:14px 0 10px}
+.crumbs{flex:1;min-width:0;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;white-space:nowrap;font-size:15px}
+.crumbs::-webkit-scrollbar{display:none}
+.crumbs button{padding:6px 8px;border-radius:8px;color:var(--muted)}
+.crumbs button:last-child{color:var(--text);font-weight:600}
+.crumbs button:hover{background:var(--card2)}
+.crumbs .sep{color:var(--line);font-size:13px}
+.search{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 10px;height:40px;width:200px;transition:width .2s}
+.search input{border:0;outline:0;background:none;width:100%;min-width:0}
+.search svg{width:17px;height:17px;color:var(--muted)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 15px;border-radius:12px;background:var(--card);border:1px solid var(--line);font-size:14.5px;font-weight:500;transition:all .15s;white-space:nowrap}
+.btn:hover{border-color:var(--a)}
+.btn.pri{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(91,110,255,.3)}
+.btn.danger{color:var(--err)}
+.btn svg{width:18px;height:18px}
+.btn .lbl{display:inline}
+.grow{flex:1}
+
+.list{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;user-select:none}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--card2)}
+.row.sel{background:color-mix(in srgb,var(--a) 12%,var(--card))}
+.ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;flex:none;overflow:hidden}
+.ic svg{width:21px;height:21px}
+.ic img{width:100%;height:100%;object-fit:cover}
+.ic.folder{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.ic.img{background:color-mix(in srgb,var(--b) 16%,transparent);color:var(--b)}
+.ic.app{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.ic.file{background:var(--card2);color:var(--muted)}
+.ic.vid{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
+.ic.txt{background:color-mix(in srgb,var(--a) 14%,transparent);color:var(--a)}
+.meta{flex:1;min-width:0}
+.meta b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta span{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);display:grid;place-items:center;flex:none;transition:all .12s}
+.chk svg{width:14px;height:14px;stroke-width:3;color:#fff;opacity:0}
+.row.sel .chk{background:var(--a);border-color:var(--a)}
+.row.sel .chk svg{opacity:1}
+.more{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:var(--muted);flex:none}
+.more:hover{background:var(--line)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);cursor:pointer;position:relative;user-select:none}
+.tile .th{aspect-ratio:4/3;display:grid;place-items:center;background:var(--card2)}
+.tile .th img{width:100%;height:100%;object-fit:cover}
+.tile .th svg{width:34px;height:34px;color:var(--muted)}
+.tile .th.folder svg{color:var(--warn)}
+.tile .nm{padding:8px 10px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.sel{outline:3px solid var(--a)}
+
+.empty{text-align:center;padding:56px 20px;color:var(--muted)}
+.empty .big{width:64px;height:64px;border-radius:20px;background:var(--card2);display:grid;place-items:center;margin:0 auto 14px}
+.empty .big svg{width:30px;height:30px}
+.empty b{display:block;color:var(--text);font-size:16px;margin-bottom:4px}
+.loading{padding:40px;text-align:center}
+
+.foot{margin:28px 0 0;text-align:center;font-size:12.5px;color:var(--muted)}
+.foot a{color:var(--muted)}
+
+/* barra de selección */
+.selbar{position:fixed;left:50%;bottom:20px;transform:translate(-50%,140%);background:var(--text);color:var(--bg);border-radius:16px;padding:8px 8px 8px 16px;display:flex;align-items:center;gap:6px;box-shadow:0 10px 30px rgba(0,0,0,.3);transition:transform .25s cubic-bezier(.2,.9,.3,1.2);z-index:40;max-width:calc(100vw - 24px)}
+.selbar.show{transform:translate(-50%,0)}
+.selbar span{font-weight:600;margin-right:6px;white-space:nowrap}
+.selbar button{height:38px;padding:0 12px;border-radius:11px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.selbar button:hover{background:rgba(127,127,127,.25)}
+.selbar svg{width:18px;height:18px}
+
+/* botón flotante (móvil) */
+.fab{position:fixed;right:18px;bottom:22px;height:56px;padding:0 22px 0 18px;border-radius:18px;background:var(--grad);color:#fff;display:none;align-items:center;gap:8px;font-weight:600;box-shadow:0 10px 26px rgba(91,110,255,.45);z-index:30;transition:transform .2s}
+.fab svg{width:22px;height:22px}
+.fab.away{transform:translateY(160%)}
+
+/* cola de subidas */
+.queue{position:fixed;right:20px;bottom:20px;width:360px;max-width:calc(100vw - 24px);background:var(--card);border-radius:18px;box-shadow:0 14px 40px rgba(0,0,0,.28);z-index:45;overflow:hidden;transform:translateY(130%);transition:transform .3s cubic-bezier(.2,.9,.3,1.1)}
+.queue.show{transform:none}
+.qh{display:flex;align-items:center;gap:10px;padding:14px 12px 12px 16px;cursor:pointer}
+.qh b{flex:1;font-size:15px}
+.qh .muted{font-size:12.5px}
+.qsum{padding:0 16px 12px}
+.qlist{max-height:260px;overflow:auto;border-top:1px solid var(--line)}
+.queue.min .qlist{display:none}
+.qi{display:flex;gap:10px;align-items:center;padding:10px 12px 10px 16px;border-bottom:1px solid var(--line)}
+.qi:last-child{border-bottom:0}
+.qi .meta span.err{color:var(--err)}
+.qi .meta span.ok{color:var(--ok)}
+.pbar{height:5px;border-radius:3px;background:var(--card2);overflow:hidden;margin-top:6px}
+.pbar i{display:block;height:100%;width:0;background:var(--grad);transition:width .25s}
+
+/* hojas, diálogos y visor */
+.scrim{position:fixed;inset:0;background:rgba(5,10,20,.5);z-index:50;opacity:0;transition:opacity .2s;display:flex;align-items:flex-end;justify-content:center}
+.scrim.show{opacity:1}
+.sheet{width:100%;max-width:440px;background:var(--card);border-radius:22px 22px 0 0;padding:8px 10px calc(14px + env(safe-area-inset-bottom));transform:translateY(100%);transition:transform .25s cubic-bezier(.2,.9,.3,1)}
+.scrim.show .sheet{transform:none}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 10px}
+.sh{display:flex;gap:12px;align-items:center;padding:4px 10px 12px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.sh .meta b{white-space:normal;word-break:break-word}
+.act{display:flex;align-items:center;gap:14px;width:100%;padding:13px 12px;border-radius:12px;text-align:left;font-size:15.5px}
+.act:hover{background:var(--card2)}
+.act svg{color:var(--muted)}
+.act.danger,.act.danger svg{color:var(--err)}
+@media (min-width:700px){
+  .scrim{align-items:center}
+  .sheet{border-radius:22px;padding-bottom:14px;transform:scale(.96)}
+}
+.dlg{width:calc(100% - 32px);max-width:400px;background:var(--card);border-radius:22px;padding:22px 20px 16px;margin:auto;transform:scale(.95);transition:transform .2s}
+.scrim.center{align-items:center}
+.scrim.show .dlg{transform:none}
+.dlg h3{margin:0 0 8px;font-size:18px}
+.dlg p{margin:0 0 16px;color:var(--muted);font-size:14.5px;word-break:break-word}
+.dlg .field{width:100%;height:46px;border-radius:12px;border:2px solid var(--line);background:var(--card2);padding:0 12px;outline:0;margin-bottom:16px;font-size:16px}
+.dlg .field:focus{border-color:var(--a)}
+.dlg .btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.dlg .btns .btn{height:42px}
+.dlg .btns.col{flex-direction:column}
+.dlg .btns.col .btn{width:100%;justify-content:center}
+.dlg .btn.dng{background:var(--err);color:#fff;border-color:transparent}
+.dlg label{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--muted);margin:-6px 0 14px}
+
+.viewer{position:fixed;inset:0;background:#000;z-index:60;display:flex;flex-direction:column;opacity:0;transition:opacity .2s}
+.viewer.show{opacity:1}
+.vtop{display:flex;align-items:center;gap:8px;padding:10px 12px;color:#fff;background:linear-gradient(#000a,#0000);position:absolute;left:0;right:0;top:0;z-index:2}
+.vtop b{flex:1;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vtop .ibtn{color:#fff}
+.vtop .ibtn:hover{background:#ffffff22}
+.vbody{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:pan-y}
+.vbody img,.vbody video{max-width:100%;max-height:100%;object-fit:contain;image-rendering:auto}
+.vbody pre{color:#e8e8e8;background:#111;margin:60px 12px 12px;padding:14px;border-radius:12px;max-width:900px;width:100%;max-height:calc(100% - 72px);overflow:auto;white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.vnav{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;background:#ffffff22;color:#fff;display:grid;place-items:center}
+.vnav.l{left:12px}.vnav.r{right:12px}
+.vcount{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);color:#fffc;font-size:13px;background:#0008;padding:4px 10px;border-radius:99px}
+
+.drop{position:fixed;inset:12px;border:3px dashed var(--a);border-radius:24px;background:color-mix(in srgb,var(--a) 10%,var(--bg));z-index:70;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;font-size:18px;font-weight:600;pointer-events:none}
+.drop.show{display:flex}
+.drop svg{width:48px;height:48px;color:var(--a)}
+.drop span{font-size:14px;font-weight:400;color:var(--muted)}
+
+.toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-160%);background:var(--text);color:var(--bg);padding:11px 16px;border-radius:14px;z-index:80;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:transform .25s;max-width:calc(100vw - 24px)}
+.toast.show{transform:translate(-50%,0)}
+.offline{position:fixed;left:0;right:0;top:0;z-index:90;background:var(--err);color:#fff;text-align:center;padding:8px 12px;font-size:13.5px;transform:translateY(-100%);transition:transform .25s}
+.offline.show{transform:none}
+
+/* ocultos de verdad cuando no se muestran: si no, asoma la sombra */
+.toast,.selbar,.queue,.offline{visibility:hidden;transition:transform .28s cubic-bezier(.2,.9,.3,1.1),visibility 0s linear .28s}
+.toast.show,.selbar.show,.queue.show,.offline.show{visibility:visible;transition:transform .28s cubic-bezier(.2,.9,.3,1.1),visibility 0s}
+
+@media (max-width:699px){
+  .btn .lbl{display:none}
+  .btn{padding:0 11px}
+  .tools .btn.up{display:none}
+  .fab{display:flex}
+  .search{width:44px;padding:0 12px;cursor:pointer}
+  .search.open{width:100%;position:absolute;left:16px;right:16px;width:auto;z-index:2}
+  .bar2{position:relative}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+  .queue{right:12px;left:12px;bottom:12px;width:auto;max-width:none}
+  .selbar span.n{display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="lcard">
+    <div class="logo"><svg viewBox="0 0 48 48"><path d="M15 34a8 8 0 0 1-.7-16A11 11 0 0 1 35 16.5 8.8 8.8 0 0 1 35 34z"/></svg></div>
+    <h1>Cloud3DS</h1>
+    <div class="sub" id="lsub"></div>
+    <div id="lpin">
+      <div class="pin" id="pin"><input inputmode="numeric" maxlength="1" autocomplete="one-time-code"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"></div>
+    </div>
+    <div class="lmsg" id="lmsg"></div>
+    <div class="hint" id="lhint"></div>
+  </div>
+</div>
+
+<div id="app" class="hide">
+  <header>
+    <div class="top">
+      <div class="logo"><svg viewBox="0 0 48 48"><path d="M15 34a8 8 0 0 1-.7-16A11 11 0 0 1 35 16.5 8.8 8.8 0 0 1 35 34z"/></svg></div>
+      <div class="brand"><b>Cloud3DS</b><span id="cname"></span></div>
+      <button class="ibtn" id="bview" title=""></button>
+      <button class="ibtn" id="bmenu" title=""><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg></button>
+    </div>
+    <div class="space"><span id="sfree"></span><div class="bar"><i id="sbar"></i></div></div>
+    <div class="chips" id="chips"></div>
+    <div id="banners"></div>
+  </header>
+  <div class="bar2">
+    <div class="crumbs" id="crumbs"></div>
+    <div class="search" id="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search"></div>
+  </div>
+  <div class="tools" id="tools"></div>
+  <div id="list"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<button class="fab hide" id="fab"></button>
+<div class="selbar" id="selbar"></div>
+<div class="queue" id="queue"></div>
+<div class="drop" id="drop"></div>
+<div class="toast" id="toast"></div>
+<div class="offline" id="offline"></div>
+<input type="file" id="fpick" multiple class="hide">
+<input type="file" id="dpick" webkitdirectory multiple class="hide">
+
+<script>
+"use strict";
+/* ---------- textos ---------- */
+const L = {
+es:{
+ conn:"Conectando con tu consola…", pinAsk:"Escribe el PIN que aparece en la pantalla de arriba de tu consola.",
+ hint:"¿No ves el PIN? Abre Cloud3DS en tu 3DS. El móvil o PC tiene que estar en el mismo Wi-Fi.",
+ badPin:"PIN incorrecto. Revísalo en la consola.", locked:"Demasiados intentos. Espera 30 segundos.",
+ noConsole:"No encuentro la consola. ¿Sigue abierta Cloud3DS y en el mismo Wi-Fi?", qrOld:"Ese QR ya no sirve. Escribe el PIN de la consola.",
+ home:"Inicio", shots:"Capturas", photos:"Fotos", cias:"CIAs", hb:"Homebrew", saves:"Partidas",
+ free:"%1 libres de %2", upload:"Subir", uploadFolder:"Subir carpeta", newFolder:"Nueva carpeta", select:"Seleccionar",
+ sortName:"Nombre", sortDate:"Fecha", sortSize:"Tamaño", search:"Buscar aquí",
+ emptyT:"Carpeta vacía", emptyD:"Arrastra archivos aquí o pulsa Subir.", emptyRO:"No hay nada en esta carpeta.",
+ noMatch:"Nada coincide con «%1».", missingT:"Esta carpeta aún no existe", missingD:"Puedes crearla ahora y subir tus archivos.", create:"Crear carpeta",
+ items:"%1 elementos", item:"1 elemento", folder:"Carpeta",
+ download:"Descargar", view:"Ver", rename:"Renombrar", del:"Eliminar", cancel:"Cancelar", ok:"Aceptar", save:"Guardar",
+ delQ:"¿Eliminar «%1»?", delQn:"¿Eliminar %1 elementos?", delD:"Se borrará de la tarjeta SD de la consola. No se puede deshacer.",
+ delDirD:"Se borrará la carpeta y todo lo que contiene. No se puede deshacer.",
+ sysQ:"Carpeta del sistema", sysD:"«%1» es importante para que la consola o el homebrew funcionen. ¿Seguro que quieres continuar?", cont:"Continuar",
+ renT:"Renombrar", newT:"Nueva carpeta", nameErr:"Ese nombre no es válido. Evita \\ / : * ? \" < > | y no termines en punto.",
+ exists:"Ya existe «%1»", existsD:"¿Qué quieres hacer?", replace:"Reemplazar", skip:"Omitir", keep:"Conservar ambos", all:"Aplicar a todos",
+ ro:"Modo solo lectura: puedes ver y descargar, pero no cambiar nada.", sysHere:"Estás en una carpeta del sistema. Ten cuidado con lo que cambias.",
+ uploading:"Subiendo %1 de %2", uploadsDone:"Subidas terminadas", upDone:"%1 subidos", left:"quedan %1", queued:"En cola",
+ done:"Completado", failed:"Error", canceled:"Cancelado", skipped:"Omitido",
+ err_readonly:"La consola está en modo solo lectura.", err_no_space:"No hay espacio suficiente en la SD.", err_too_big:"La SD (FAT32) no admite archivos de más de 4 GB.",
+ err_exists:"Ya existe un archivo con ese nombre.", err_not_found:"Ya no existe. Puede que se haya movido o borrado.", err_io:"La SD dio un error al escribir.",
+ err_net:"Se perdió la conexión con la consola.", err_is_dir:"Ya hay una carpeta con ese nombre.", err:"Algo salió mal (%1).",
+ offline:"Sin conexión con la consola. Reintentando…", logout:"Desconectar este dispositivo", logoutD:"Tendrás que volver a escanear el QR o escribir el PIN.",
+ deleted:"Eliminado", renamed:"Renombrado", created:"Carpeta creada", sel:"%1 seleccionados", all2:"Todo",
+ grid:"Cuadrícula", listv:"Lista", made:"hecho por VENOMSHiNE", sortBy:"Ordenar", refresh:"Actualizar", desc:"Descargando %1…",
+ today:"Hoy", yest:"Ayer", device:"Este dispositivo: %1", leave:"Hay subidas en curso. Si cierras la página se cancelarán."
+},
+en:{
+ conn:"Connecting to your console…", pinAsk:"Enter the PIN shown on your console's top screen.",
+ hint:"Can't see the PIN? Open Cloud3DS on your 3DS. Your phone or PC must be on the same Wi-Fi.",
+ badPin:"Wrong PIN. Check it on the console.", locked:"Too many attempts. Wait 30 seconds.",
+ noConsole:"Can't find the console. Is Cloud3DS still open and on the same Wi-Fi?", qrOld:"That QR code no longer works. Enter the console's PIN.",
+ home:"Home", shots:"Screenshots", photos:"Photos", cias:"CIAs", hb:"Homebrew", saves:"Saves",
+ free:"%1 free of %2", upload:"Upload", uploadFolder:"Upload folder", newFolder:"New folder", select:"Select",
+ sortName:"Name", sortDate:"Date", sortSize:"Size", search:"Search here",
+ emptyT:"Empty folder", emptyD:"Drag files here or tap Upload.", emptyRO:"There's nothing in this folder.",
+ noMatch:"Nothing matches “%1”.", missingT:"This folder doesn't exist yet", missingD:"You can create it now and upload your files.", create:"Create folder",
+ items:"%1 items", item:"1 item", folder:"Folder",
+ download:"Download", view:"View", rename:"Rename", del:"Delete", cancel:"Cancel", ok:"OK", save:"Save",
+ delQ:"Delete “%1”?", delQn:"Delete %1 items?", delD:"It will be erased from the console's SD card. This can't be undone.",
+ delDirD:"The folder and everything in it will be erased. This can't be undone.",
+ sysQ:"System folder", sysD:"“%1” matters for the console or homebrew to work. Are you sure you want to continue?", cont:"Continue",
+ renT:"Rename", newT:"New folder", nameErr:"That name isn't valid. Avoid \\ / : * ? \" < > | and don't end with a dot.",
+ exists:"“%1” already exists", existsD:"What do you want to do?", replace:"Replace", skip:"Skip", keep:"Keep both", all:"Apply to all",
+ ro:"Read-only mode: you can view and download, but not change anything.", sysHere:"You're in a system folder. Be careful with what you change.",
+ uploading:"Uploading %1 of %2", uploadsDone:"Uploads finished", upDone:"%1 uploaded", left:"%1 left", queued:"Queued",
+ done:"Done", failed:"Error", canceled:"Canceled", skipped:"Skipped",
+ err_readonly:"The console is in read-only mode.", err_no_space:"Not enough space on the SD card.", err_too_big:"The SD card (FAT32) can't store files over 4 GB.",
+ err_exists:"A file with that name already exists.", err_not_found:"It no longer exists. It may have been moved or deleted.", err_io:"The SD card failed to write.",
+ err_net:"Lost connection to the console.", err_is_dir:"There's already a folder with that name.", err:"Something went wrong (%1).",
+ offline:"No connection to the console. Retrying…", logout:"Disconnect this device", logoutD:"You'll need to scan the QR code or enter the PIN again.",
+ deleted:"Deleted", renamed:"Renamed", created:"Folder created", sel:"%1 selected", all2:"All",
+ grid:"Grid", listv:"List", made:"made by VENOMSHiNE", sortBy:"Sort", refresh:"Refresh", desc:"Downloading %1…",
+ today:"Today", yest:"Yesterday", device:"This device: %1", leave:"Uploads are in progress. Closing the page will cancel them."
+},
+ja:{
+ conn:"本体に接続中…", pinAsk:"本体の上画面に表示されているPINを入力してください。",
+ hint:"PINが見えない場合は3DSでCloud3DSを開いてください。スマホやPCは同じWi-Fiに接続してください。",
+ badPin:"PINが違います。本体で確認してください。", locked:"試行回数が多すぎます。30秒お待ちください。",
+ noConsole:"本体が見つかりません。Cloud3DSは開いたままで、同じWi-Fiですか?", qrOld:"このQRコードは無効です。本体のPINを入力してください。",
+ home:"ホーム", shots:"スクショ", photos:"写真", cias:"CIA", hb:"Homebrew", saves:"セーブ",
+ free:"空き %1 / %2", upload:"アップロード", uploadFolder:"フォルダをアップロード", newFolder:"新しいフォルダ", select:"選択",
+ sortName:"名前", sortDate:"日付", sortSize:"サイズ", search:"このフォルダを検索",
+ emptyT:"空のフォルダ", emptyD:"ここにファイルをドラッグするか、アップロードを押してください。", emptyRO:"このフォルダには何もありません。",
+ noMatch:"「%1」に一致するものはありません。", missingT:"このフォルダはまだありません", missingD:"今すぐ作成してファイルをアップロードできます。", create:"フォルダを作成",
+ items:"%1 項目", item:"1 項目", folder:"フォルダ",
+ download:"ダウンロード", view:"表示", rename:"名前を変更", del:"削除", cancel:"キャンセル", ok:"OK", save:"保存",
+ delQ:"「%1」を削除しますか?", delQn:"%1 項目を削除しますか?", delD:"本体のSDカードから削除されます。元に戻せません。",
+ delDirD:"フォルダとその中身がすべて削除されます。元に戻せません。",
+ sysQ:"システムフォルダ", sysD:"「%1」は本体やHomebrewの動作に重要です。続けますか?", cont:"続ける",
+ renT:"名前を変更", newT:"新しいフォルダ", nameErr:"無効な名前です。\\ / : * ? \" < > | は使えず、最後を「.」にできません。",
+ exists:"「%1」はすでにあります", existsD:"どうしますか?", replace:"置き換え", skip:"スキップ", keep:"両方残す", all:"すべてに適用",
+ ro:"読み取り専用モード: 閲覧とダウンロードのみできます。", sysHere:"システムフォルダです。変更には注意してください。",
+ uploading:"アップロード中 %1 / %2", uploadsDone:"アップロード完了", upDone:"%1 件アップロード", left:"残り %1", queued:"待機中",
+ done:"完了", failed:"エラー", canceled:"キャンセル", skipped:"スキップ",
+ err_readonly:"本体は読み取り専用モードです。", err_no_space:"SDカードの空き容量が足りません。", err_too_big:"SDカード(FAT32)には4GBを超えるファイルを保存できません。",
+ err_exists:"同じ名前のファイルがあります。", err_not_found:"見つかりません。移動または削除された可能性があります。", err_io:"SDカードへの書き込みに失敗しました。",
+ err_net:"本体との接続が切れました。", err_is_dir:"同じ名前のフォルダがあります。", err:"エラーが発生しました (%1)。",
+ offline:"本体と接続できません。再試行中…", logout:"このデバイスの接続を解除", logoutD:"再びQRコードの読み取りかPINの入力が必要になります。",
+ deleted:"削除しました", renamed:"名前を変更しました", created:"フォルダを作成しました", sel:"%1 件選択", all2:"すべて",
+ grid:"グリッド", listv:"リスト", made:"制作: VENOMSHiNE", sortBy:"並べ替え", refresh:"更新", desc:"ダウンロード中 %1…",
+ today:"今日", yest:"昨日", device:"このデバイス: %1", leave:"アップロード中です。ページを閉じるとキャンセルされます。"
+}};
+const lang = (navigator.language||"es").slice(0,2);
+const TX = L[lang] || (lang==="es" ? L.es : L.en);
+document.documentElement.lang = L[lang] ? lang : "en";
+function t(k,...a){let s=TX[k]??L.es[k]??k;a.forEach((v,i)=>s=s.replace("%"+(i+1),v));return s}
+
+/* ---------- íconos ---------- */
+const I = {
+ cloud:'<path d="M7 18a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 18 8.5 4.8 4.8 0 0 1 18 18z"/>',
+ folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+ file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+ img:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-9 9"/>',
+ vid:'<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
+ txt:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M9 13h6M9 17h4"/>',
+ app:'<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12h6M12 9v6"/>',
+ home:'<path d="m3 11 9-7 9 7"/><path d="M5 10v10h14V10"/>',
+ cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+ pic:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-9 9"/>',
+ box:'<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+ game:'<rect x="2" y="7" width="20" height="11" rx="5"/><path d="M7 11v3M5.5 12.5h3"/><circle cx="16" cy="12" r=".8"/><circle cx="18" cy="14" r=".8"/>',
+ save:'<path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/>',
+ up:'<path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/>',
+ down:'<path d="M12 4v12M6 10l6 6 6-6"/><path d="M4 20h16"/>',
+ plusf:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/>',
+ upf:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 16v-6M9.5 12.5 12 10l2.5 2.5"/>',
+ check:'<path d="m5 12 5 5 9-10"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>',
+ dots:'<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
+ trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', pen:'<path d="M4 20h4L20 8l-4-4L4 16z"/>',
+ eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+ grid:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+ list:'<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/>',
+ sort:'<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>', left:'<path d="m15 5-7 7 7 7"/>', right:'<path d="m9 5 7 7-7 7"/>',
+ lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', warn:'<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/>',
+ out:'<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>', ref:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/>', selall:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>'
+};
+const svg=(n,c="")=>`<svg viewBox="0 0 24 24" class="${c}">${I[n]}</svg>`;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------- utilidades ---------- */
+const dec = lang==="es" ? "," : ".";
+function fsize(b){if(b<1024)return b+" B";const u=["KB","MB","GB","TB"];let i=-1;do{b/=1024;i++}while(b>=1024&&i<3);return (b>=100?b.toFixed(0):b.toFixed(1)).replace(".",dec)+" "+u[i]}
+function fdate(ts){if(!ts)return"";const d=new Date(ts*1000),n=new Date();
+ /* la 3DS guarda la hora local: se muestra tal cual, sin zona horaria */
+ const o={timeZone:"UTC"},hm=d.toLocaleTimeString(lang,{...o,hour:"2-digit",minute:"2-digit"});
+ const day=x=>Math.floor((x.getTime()-x.getTimezoneOffset()*6e4)/864e5), dd=Math.floor(ts/86400), td=day(n);
+ if(dd===td)return t("today")+" "+hm; if(dd===td-1)return t("yest")+" "+hm;
+ return d.toLocaleDateString(lang,{...o,day:"numeric",month:"short",year:dd<td-300?"numeric":undefined})}
+function feta(s){s=Math.max(1,Math.round(s));if(s<60)return s+" s";if(s<3600)return Math.round(s/60)+" min";return Math.floor(s/3600)+" h "+Math.round(s%3600/60)+" min"}
+function join(a,b){return a==="/"?"/"+b:a+"/"+b}
+function parent(p){const i=p.lastIndexOf("/");return i<=0?"/":p.slice(0,i)}
+function base(p){return p.slice(p.lastIndexOf("/")+1)}
+function ext(n){const i=n.lastIndexOf(".");return i<0?"":n.slice(i+1).toLowerCase()}
+const IMG=["png","jpg","jpeg","gif","bmp","webp"],VID=["mp4","webm","m4v","mov"],AUD=["mp3","wav","ogg","m4a"],TXT=["txt","ini","log","json","cfg","xml","md","yml","yaml","csv"];
+function kind(it){if(it.d)return"folder";const e=ext(it.n);if(IMG.includes(e))return"img";if(VID.includes(e)||AUD.includes(e))return"vid";if(TXT.includes(e))return"txt";if(["cia","3dsx","firm","3ds","cxi","nds"].includes(e))return"app";return"file"}
+function validName(n){return n&&n.length<=255&&!/[\\/:*?"<>|\x00-\x1f]/.test(n)&&n!=="."&&n!==".."&&!/[. ]$/.test(n)}
+const SYS=["/nintendo 3ds","/boot.firm","/boot.3dsx","/gm9","/3ds/cloud3ds","/luma/payloads","/luma/sysmodules","/luma/titles","/luma/config.ini"];
+const isSys=p=>{p=p.toLowerCase();return p==="/luma"||SYS.some(s=>p===s||p.startsWith(s+"/"))};
+const fileUrl=(p,dl)=>"/api/file?p="+encodeURIComponent(p)+(dl?"&dl=1":"");
+
+let toastT;
+function toast(msg){const e=$("#toast");e.textContent=msg;e.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove("show"),2600)}
+
+/* ---------- API ---------- */
+class ApiErr extends Error{constructor(code,status){super(code);this.code=code;this.status=status}}
+async function api(method,ep,params={},body){
+ const q=new URLSearchParams(params).toString();
+ let r;
+ try{r=await fetch("/api/"+ep+(q?"?"+q:""),{method,body,credentials:"same-origin",headers:body&&typeof body==="string"?{"Content-Type":"application/x-www-form-urlencoded"}:undefined})}
+ catch(e){setOffline(true);throw new ApiErr("net",0)}
+ setOffline(false);
+ let j={};try{j=await r.json()}catch(e){}
+ if(r.status===401&&ep!=="login"){showLogin();throw new ApiErr("auth",401)}
+ if(!r.ok)throw new ApiErr(j.error||String(r.status),r.status);
+ return j;
+}
+function errText(e){const k="err_"+(e.code||"");return TX[k]||L.es[k]?t(k):t("err",e.code||e.message)}
+function setOffline(on){const o=$("#offline");o.textContent=t("offline");o.classList.toggle("show",on)}
+
+/* ---------- acceso ---------- */
+let hello={};
+async function boot(){
+ try{hello=await (await fetch("/api/hello")).json()}catch(e){hello={}}
+ const k=(location.hash.match(/k=([0-9a-f]+)/)||[])[1];
+ if(k)history.replaceState(null,"",location.pathname);
+ if(hello.authed){startApp();return}
+ if(k){
+  showLogin(true);
+  try{await api("POST","login",{}, "k="+k);startApp();return}
+  catch(e){showLogin();msg(e.code==="net"?t("noConsole"):e.code==="locked"?t("locked"):t("qrOld"),true);return}
+ }
+ showLogin();
+}
+function msg(s,err){const m=$("#lmsg");m.innerHTML=s;m.classList.toggle("err",!!err)}
+function showLogin(connecting){
+ $("#app").classList.add("hide");$("#fab").classList.add("hide");$("#login").classList.remove("hide");
+ $("#lsub").textContent=hello.console||"Nintendo 3DS";
+ $("#lpin").classList.toggle("hide",!!connecting);
+ $("#lhint").textContent=connecting?"":t("hint");
+ if(connecting)msg('<span class="spin"></span>&nbsp; '+t("conn"));else{msg(t("pinAsk"));setTimeout(()=>$("#pin input").focus(),50)}
+}
+(function pinBoxes(){
+ const ins=[...document.querySelectorAll("#pin input")];
+ ins.forEach((el,i)=>{
+  el.addEventListener("input",()=>{
+   const v=el.value.replace(/\D/g,"");
+   if(v.length>1){v.split("").slice(0,4-i).forEach((c,j)=>ins[i+j].value=c);ins[Math.min(3,i+v.length-1)].focus()}
+   else{el.value=v;if(v&&i<3)ins[i+1].focus()}
+   const pin=ins.map(x=>x.value).join("");
+   if(pin.length===4)tryPin(pin);
+  });
+  el.addEventListener("keydown",e=>{if(e.key==="Backspace"&&!el.value&&i>0){ins[i-1].focus();ins[i-1].value=""}});
+ });
+})();
+async function tryPin(pin){
+ const box=$("#pin");msg('<span class="spin"></span>');
+ try{await api("POST","login",{}, "pin="+pin);startApp()}
+ catch(e){
+  box.classList.remove("bad");void box.offsetWidth;box.classList.add("bad");
+  document.querySelectorAll("#pin input").forEach(x=>x.value="");$("#pin input").focus();
+  msg(e.code==="locked"?t("locked"):e.code==="net"?t("noConsole"):t("badPin"),true);
+ }
+}
+
+/* ---------- app ---------- */
+const S={path:"/",items:[],sort:"name",asc:true,view:"list",sel:new Set(),info:{},filter:"",missing:false,system:false,loading:false};
+try{S.view=localStorage.getItem("c3d_view")||"list";S.sort=localStorage.getItem("c3d_sort")||"name"}catch(e){}
+const PLACES=[["/","home","home"],["/luma/screenshots","shots","cam"],["/DCIM","photos","pic"],["/cias","cias","box"],["/3ds","hb","game"],["/3ds/Checkpoint/saves","saves","save"]];
+
+function startApp(){
+ $("#login").classList.add("hide");$("#app").classList.remove("hide");$("#fab").classList.remove("hide");
+ const p=decodeURIComponent((location.hash.match(/^#p=(.*)$/)||[])[1]||"");
+ go(p&&p.startsWith("/")?p:"/",true);
+ refreshInfo();
+ clearInterval(window._ping);window._ping=setInterval(()=>{if(!document.hidden)refreshInfo()},15000);
+}
+async function refreshInfo(){
+ try{
+  S.info=await api("GET","info");
+  $("#cname").textContent=S.info.console;
+  $("#sfree").textContent=t("free",fsize(S.info.free),fsize(S.info.total));
+  $("#sbar").style.width=(100-S.info.free/S.info.total*100).toFixed(1)+"%";
+  renderChrome();
+ }catch(e){}
+}
+async function go(p,replace){
+ S.path=p;S.sel.clear();S.filter="";$("#q").value="";$("#search").classList.remove("open");
+ history[replace?"replaceState":"pushState"]({p},"","#p="+encodeURIComponent(p));
+ S.loading=true;render();
+ try{
+  const r=await api("GET","list",{p});
+  S.items=r.items;S.missing=false;S.system=r.system;
+ }catch(e){
+  S.items=[];S.missing=e.code==="not_found";S.system=isSys(p);
+  if(e.code!=="not_found"&&e.code!=="auth")toast(errText(e));
+ }
+ S.loading=false;render();
+}
+window.addEventListener("popstate",e=>{if(e.state&&e.state.p&&!$("#app").classList.contains("hide"))go(e.state.p,true)});
+
+function sorted(){
+ let a=S.items.slice();
+ if(S.filter){const f=S.filter.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");a=a.filter(i=>i.n.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").includes(f))}
+ const col=new Intl.Collator(lang,{numeric:true,sensitivity:"base"});
+ a.sort((x,y)=>{
+  if(x.d!==y.d)return y.d-x.d;
+  let r=S.sort==="date"?(y.t-x.t):S.sort==="size"?(y.s-x.s):col.compare(x.n,y.n);
+  if(r===0)r=col.compare(x.n,y.n);
+  return r;
+ });
+ return a;
+}
+function renderChrome(){
+ const ro=!!S.info.readonly;
+ $("#chips").innerHTML=PLACES.map(([p,k,ic])=>`<button class="chip${S.path===p?" on":""}" data-p="${esc(p)}">${svg(ic)}${t(k)}</button>`).join("");
+ let b="";
+ if(ro)b+=`<div class="banner warn">${svg("lock")}${t("ro")}</div>`;
+ else if(S.system&&S.path!=="/")b+=`<div class="banner warn">${svg("warn")}${t("sysHere")}</div>`;
+ $("#banners").innerHTML=b;
+ const parts=S.path==="/"?[]:S.path.slice(1).split("/");
+ let acc="",cr=`<button data-p="/">SD</button>`;
+ parts.forEach(x=>{acc+="/"+x;cr+=`<span class="sep">›</span><button data-p="${esc(acc)}">${esc(x)}</button>`});
+ $("#crumbs").innerHTML=cr;
+ const cb=$("#crumbs");cb.scrollLeft=cb.scrollWidth;
+ const sortIc={name:"sortName",date:"sortDate",size:"sortSize"}[S.sort];
+ $("#tools").innerHTML=
+  (ro?"":`<button class="btn pri up" id="tUp">${svg("up")}<span class="lbl">${t("upload")}</span></button>`+
+   `<button class="btn up" id="tUpF">${svg("upf")}<span class="lbl">${t("uploadFolder")}</span></button>`+
+   `<button class="btn" id="tNew">${svg("plusf")}<span class="lbl">${t("newFolder")}</span></button>`)+
+  `<div class="grow"></div>`+
+  `<button class="btn" id="tSort" title="${t("sortBy")}">${svg("sort")}<span class="lbl">${t(sortIc)}</span></button>`+
+  `<button class="btn" id="tRef" title="${t("refresh")}">${svg("ref")}</button>`;
+ $("#bview").innerHTML=svg(S.view==="grid"?"list":"grid");$("#bview").title=t(S.view==="grid"?"listv":"grid");
+ $("#fab").innerHTML=svg("up")+t("upload");$("#fab").classList.toggle("hide",ro||$("#app").classList.contains("hide"));
+ $("#q").placeholder=t("search");
+ $("#foot").innerHTML=`Cloud3DS ${esc(hello.version||"")} · ${t("made")} · <a href="https://discord.com/invite/yVKp8JwV4e" target="_blank" rel="noopener">Discord</a> · <a href="https://ko-fi.com/venomshine" target="_blank" rel="noopener">Ko-fi</a>`;
+}
+function render(){
+ renderChrome();
+ const L=$("#list");
+ if(S.loading){L.innerHTML=`<div class="loading"><span class="spin"></span></div>`;return}
+ if(S.missing){
+  L.innerHTML=`<div class="empty"><div class="big">${svg("folder")}</div><b>${t("missingT")}</b>${t("missingD")}<br><br>${S.info.readonly?"":`<button class="btn pri" id="mkMissing">${svg("plusf")}${t("create")}</button>`}</div>`;
+  return;
+ }
+ const a=sorted();
+ if(!a.length){
+  L.innerHTML=`<div class="empty"><div class="big">${svg(S.filter?"eye":"cloud")}</div><b>${S.filter?"":t("emptyT")}</b>${S.filter?t("noMatch",esc(S.filter)):S.info.readonly?t("emptyRO"):t("emptyD")}</div>`;
+  return;
+ }
+ const selMode=S.sel.size>0;
+ if(S.view==="grid"){
+  L.innerHTML=`<div class="grid">`+a.map(it=>{const k=kind(it),p=join(S.path,it.n);
+   const th=k==="img"?`<img loading="lazy" src="${fileUrl(p)}" alt="">`:svg(k==="folder"?"folder":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file");
+   return `<div class="tile${S.sel.has(it.n)?" sel":""}" data-n="${esc(it.n)}"><div class="th ${k}">${th}</div><div class="nm">${esc(it.n)}</div></div>`}).join("")+`</div>`;
+ }else{
+  L.innerHTML=`<div class="list">`+a.map(it=>{const k=kind(it);
+   const sub=it.d?t("folder")+(it.t?" · "+fdate(it.t):""):fsize(it.s)+(it.t?" · "+fdate(it.t):"");
+   return `<div class="row${S.sel.has(it.n)?" sel":""}" data-n="${esc(it.n)}">`+
+    (selMode?`<div class="chk">${svg("check")}</div>`:"")+
+    `<div class="ic ${k}">${svg(k==="folder"?"folder":k==="img"?"img":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file")}</div>`+
+    `<div class="meta"><b>${esc(it.n)}</b><span>${sub}</span></div>`+
+    `<button class="more" data-more="1">${svg("dots")}</button></div>`}).join("")+`</div>`;
+ }
+ renderSel();
+}
+function itemByName(n){return S.items.find(i=>i.n===n)}
+
+/* clics en la lista */
+$("#list").addEventListener("click",e=>{
+ if(e.target.closest("#mkMissing")){api("POST","mkdir",{p:S.path}).then(()=>{toast(t("created"));go(S.path,true)}).catch(err=>toast(errText(err)));return}
+ const el=e.target.closest("[data-n]");if(!el)return;
+ const it=itemByName(el.dataset.n);if(!it)return;
+ if(e.target.closest("[data-more]")){e.stopPropagation();openSheet(it);return}
+ if(S.sel.size>0||e.ctrlKey||e.metaKey){toggleSel(it.n);return}
+ openItem(it);
+});
+let pressT,pressed=false;
+$("#list").addEventListener("pointerdown",e=>{const el=e.target.closest("[data-n]");if(!el||e.target.closest("[data-more]"))return;pressed=false;
+ pressT=setTimeout(()=>{pressed=true;toggleSel(el.dataset.n);if(navigator.vibrate)navigator.vibrate(15)},480)});
+["pointerup","pointerleave","pointercancel","pointermove"].forEach(ev=>$("#list").addEventListener(ev,e=>{if(ev==="pointermove"&&Math.abs(e.movementX)+Math.abs(e.movementY)<3)return;clearTimeout(pressT)}));
+$("#list").addEventListener("click",e=>{if(pressed){e.stopImmediatePropagation();pressed=false}},true);
+$("#list").addEventListener("contextmenu",e=>{const el=e.target.closest("[data-n]");if(el&&matchMedia("(pointer:fine)").matches){e.preventDefault();const it=itemByName(el.dataset.n);if(it)openSheet(it)}});
+
+function toggleSel(n){S.sel.has(n)?S.sel.delete(n):S.sel.add(n);render()}
+function renderSel(){
+ const b=$("#selbar"),n=S.sel.size;
+ b.classList.toggle("show",n>0);
+ $("#fab").classList.toggle("away",n>0);
+ if(!n)return;
+ const files=[...S.sel].map(itemByName).filter(i=>i&&!i.d);
+ b.innerHTML=`<span>${n}</span><span class="n">${t("sel","").trim()}</span>`+
+  `<button id="sAll">${svg("selall")}${t("all2")}</button>`+
+  (files.length?`<button id="sDl">${svg("down")}</button>`:"")+
+  (S.info.readonly?"":`<button id="sDel">${svg("trash")}</button>`)+
+  `<button id="sX">${svg("x")}</button>`;
+}
+$("#selbar").addEventListener("click",e=>{
+ const id=(e.target.closest("button")||{}).id;
+ if(id==="sX"){S.sel.clear();render()}
+ if(id==="sAll"){sorted().forEach(i=>S.sel.add(i.n));render()}
+ if(id==="sDl"){const f=[...S.sel].map(itemByName).filter(i=>i&&!i.d);f.forEach((it,i)=>setTimeout(()=>download(join(S.path,it.n)),i*700))}
+ if(id==="sDel"){const list=[...S.sel].map(itemByName).filter(Boolean);confirmDelete(list)}
+});
+
+function openItem(it){
+ const p=join(S.path,it.n),k=kind(it);
+ if(it.d){go(p);return}
+ if(k==="img"||k==="vid"||k==="txt"){openViewer(it);return}
+ openSheet(it);
+}
+function download(p){
+ const a=document.createElement("a");a.href=fileUrl(p,true);a.download=base(p);document.body.appendChild(a);a.click();a.remove();
+ toast(t("desc",base(p)));
+}
+
+/* ---------- hojas y diálogos ---------- */
+function modal(html,center){
+ const s=document.createElement("div");s.className="scrim"+(center?" center":"");s.innerHTML=html;document.body.appendChild(s);
+ requestAnimationFrame(()=>s.classList.add("show"));
+ const close=()=>{s.classList.remove("show");setTimeout(()=>s.remove(),220);document.removeEventListener("keydown",kd)};
+ const kd=e=>{if(e.key==="Escape")close()};document.addEventListener("keydown",kd);
+ s.addEventListener("click",e=>{if(e.target===s)close()});
+ return {el:s,close};
+}
+function openSheet(it){
+ const p=join(S.path,it.n),k=kind(it),ro=S.info.readonly;
+ const m=modal(`<div class="sheet"><div class="grab"></div>
+  <div class="sh"><div class="ic ${k}">${svg(k==="folder"?"folder":k==="img"?"img":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file")}</div>
+  <div class="meta"><b>${esc(it.n)}</b><span>${it.d?t("folder"):fsize(it.s)}${it.t?" · "+fdate(it.t):""}</span></div></div>
+  ${it.d?"":(k==="img"||k==="vid"||k==="txt")?`<button class="act" data-a="view">${svg("eye")}${t("view")}</button>`:""}
+  ${it.d?"":`<button class="act" data-a="dl">${svg("down")}${t("download")}</button>`}
+  ${ro?"":`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
+  <button class="act" data-a="sel">${svg("selall")}${t("select")}</button>
+ </div>`);
+ m.el.addEventListener("click",e=>{const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
+  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n)});
+}
+function ask({title,text,ok,danger,input,value,check}){
+ return new Promise(res=>{
+  const m=modal(`<div class="dlg"><h3>${esc(title)}</h3>${text?`<p>${esc(text)}</p>`:""}
+   ${input?`<input class="field" value="${esc(value||"")}" spellcheck="false" autocapitalize="off">`:""}
+   <div class="btns"><button class="btn" data-r="0">${t("cancel")}</button><button class="btn ${danger?"dng":"pri"}" data-r="1">${esc(ok)}</button></div></div>`,true);
+  const f=m.el.querySelector(".field");
+  if(f){setTimeout(()=>{f.focus();const d=f.value.lastIndexOf(".");f.setSelectionRange(0,d>0?d:f.value.length)},60);
+   f.addEventListener("keydown",e=>{if(e.key==="Enter")m.el.querySelector('[data-r="1"]').click()})}
+  let done=false;
+  m.el.addEventListener("click",e=>{const r=e.target.closest("[data-r]");if(!r)return;done=true;m.close();res(r.dataset.r==="1"?(f?f.value.trim():true):null)});
+  const obs=new MutationObserver(()=>{if(!document.body.contains(m.el)){obs.disconnect();if(!done)res(null)}});obs.observe(document.body,{childList:true});
+ });
+}
+async function sysGuard(p){
+ if(!S.info.protect||!isSys(p))return {};
+ const ok=await ask({title:t("sysQ"),text:t("sysD",base(p)||"/"),ok:t("cont"),danger:true});
+ return ok?{force:1}:null;
+}
+async function renameDlg(it){
+ const p=join(S.path,it.n);
+ const g=await sysGuard(p);if(!g)return;
+ let v=await ask({title:t("renT"),input:true,value:it.n,ok:t("save")});
+ if(v==null||v===it.n)return;
+ if(!validName(v)){toast(t("nameErr"));return}
+ try{await api("POST","rename",{p,to:v,...g});toast(t("renamed"));go(S.path,true)}catch(e){toast(errText(e))}
+}
+async function newFolder(){
+ const v=await ask({title:t("newT"),input:true,value:"",ok:t("create")});
+ if(!v)return;
+ if(!validName(v)){toast(t("nameErr"));return}
+ try{await api("POST","mkdir",{p:join(S.path,v)});toast(t("created"));go(S.path,true)}catch(e){toast(errText(e))}
+}
+async function confirmDelete(list){
+ if(!list.length)return;
+ const one=list.length===1;
+ const ok=await ask({title:one?t("delQ",list[0].n):t("delQn",list.length),text:list.some(i=>i.d)?t("delDirD"):t("delD"),ok:t("del"),danger:true});
+ if(!ok)return;
+ const g=await sysGuard(join(S.path,list[0].n));if(!g)return;
+ let errs=0;
+ for(const it of list){try{await api("POST","delete",{p:join(S.path,it.n),...g})}catch(e){errs++;toast(errText(e))}}
+ if(!errs)toast(t("deleted"));
+ S.sel.clear();go(S.path,true);refreshInfo();
+}
+function sortMenu(){
+ const m=modal(`<div class="sheet"><div class="grab"></div>${["name","date","size"].map(k=>`<button class="act" data-s="${k}">${svg(S.sort===k?"check":"sort")}${t({name:"sortName",date:"sortDate",size:"sortSize"}[k])}</button>`).join("")}</div>`);
+ m.el.addEventListener("click",e=>{const s=e.target.closest("[data-s]");if(!s)return;S.sort=s.dataset.s;try{localStorage.setItem("c3d_sort",S.sort)}catch(e){}m.close();render()});
+}
+function mainMenu(){
+ const m=modal(`<div class="sheet"><div class="grab"></div>
+  <div class="sh"><div class="ic txt">${svg("lock")}</div><div class="meta"><b>${esc(S.info.console||"")}</b><span>${esc(t("device",S.info.device||""))}</span></div></div>
+  <button class="act" data-a="ref">${svg("ref")}${t("refresh")}</button>
+  <button class="act danger" data-a="out">${svg("out")}${t("logout")}</button></div>`);
+ m.el.addEventListener("click",async e=>{const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
+  if(a==="ref"){go(S.path,true);refreshInfo()}
+  if(a==="out"){const ok=await ask({title:t("logout"),text:t("logoutD"),ok:t("cont"),danger:true});if(ok){try{await api("POST","logout")}catch(e){}hello.authed=false;showLogin()}}});
+}
+
+document.addEventListener("click",e=>{
+ const c=e.target.closest("[data-p]");if(c&&(c.closest("#chips")||c.closest("#crumbs"))){go(c.dataset.p);return}
+ const id=(e.target.closest("button")||{}).id;
+ if(id==="tUp"||id==="fab")$("#fpick").click();
+ if(id==="tUpF")$("#dpick").click();
+ if(id==="tNew")newFolder();
+ if(id==="tSort")sortMenu();
+ if(id==="tRef"){go(S.path,true);refreshInfo()}
+ if(id==="bview"){S.view=S.view==="grid"?"list":"grid";try{localStorage.setItem("c3d_view",S.view)}catch(e){}render()}
+ if(id==="bmenu")mainMenu();
+});
+$("#search").addEventListener("click",()=>{$("#search").classList.add("open");$("#q").focus()});
+$("#q").addEventListener("input",e=>{S.filter=e.target.value.trim();render()});
+$("#q").addEventListener("blur",()=>{if(!S.filter)$("#search").classList.remove("open")});
+
+/* ---------- visor ---------- */
+function openViewer(it){
+ const media=sorted().filter(i=>!i.d&&["img","vid"].includes(kind(i)));
+ let idx=media.findIndex(i=>i.n===it.n);
+ const v=document.createElement("div");v.className="viewer";document.body.appendChild(v);
+ requestAnimationFrame(()=>v.classList.add("show"));
+ const close=()=>{v.classList.remove("show");setTimeout(()=>v.remove(),200);document.removeEventListener("keydown",kd)};
+ async function show(cur){
+  const p=join(S.path,cur.n),k=kind(cur);
+  let body;
+  if(k==="img")body=`<img src="${fileUrl(p)}" alt="">`;
+  else if(k==="vid")body=`<video src="${fileUrl(p)}" controls autoplay playsinline></video>`;
+  else body=`<pre><span class="spin"></span></pre>`;
+  const nav=idx>=0&&media.length>1;
+  v.innerHTML=`<div class="vtop"><button class="ibtn" data-v="x">${svg("x")}</button><b>${esc(cur.n)}</b>
+   <button class="ibtn" data-v="dl">${svg("down")}</button></div><div class="vbody">${body}</div>
+   ${nav?`<button class="vnav l" data-v="p">${svg("left")}</button><button class="vnav r" data-v="n">${svg("right")}</button><div class="vcount">${idx+1} / ${media.length}</div>`:""}`;
+  v.dataset.p=p;
+  if(k==="txt"){
+   try{const r=await fetch(fileUrl(p),{headers:{Range:"bytes=0-262143"}});const tx=await r.text();v.querySelector("pre").textContent=tx}
+   catch(e){v.querySelector("pre").textContent=t("err_net")}
+  }
+ }
+ const step=d=>{if(idx<0||media.length<2)return;idx=(idx+d+media.length)%media.length;show(media[idx])};
+ v.addEventListener("click",e=>{const a=(e.target.closest("[data-v]")||{}).dataset?.v;
+  if(a==="x")close();if(a==="dl")download(v.dataset.p);if(a==="p")step(-1);if(a==="n")step(1)});
+ const kd=e=>{if(e.key==="Escape")close();if(e.key==="ArrowLeft")step(-1);if(e.key==="ArrowRight")step(1)};
+ document.addEventListener("keydown",kd);
+ let sx=null;
+ v.addEventListener("touchstart",e=>{sx=e.touches.length===1?e.touches[0].clientX:null},{passive:true});
+ v.addEventListener("touchend",e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>60)step(dx<0?1:-1);sx=null});
+ show(it);
+}
+
+/* ---------- subidas ---------- */
+const Q={items:[],running:false,min:false,policy:null,doneCount:0};
+function enqueue(files,dest){
+ if(S.info.readonly){toast(t("err_readonly"));return}
+ for(const f of files){
+  const rel=f._rel||f.webkitRelativePath||f.name;
+  if(!rel)continue;
+  Q.items.push({file:f,path:dest==="/"?"/"+rel:dest+"/"+rel,name:base(rel),state:"queued",done:0,speed:0,deep:rel.includes("/")});
+ }
+ Q.policy=null;
+ renderQueue();
+ if(!Q.running)runQueue();
+}
+async function runQueue(){
+ Q.running=true;
+ let forceSys=null;
+ for(const it of Q.items){
+  if(it.state!=="queued")continue;
+  const dir=parent(it.path);
+  if(S.info.protect&&isSys(dir)&&dir!=="/"){
+   if(forceSys===null){const ok=await ask({title:t("sysQ"),text:t("sysD",dir),ok:t("cont"),danger:true});forceSys=!!ok}
+   if(!forceSys){it.state="skipped";renderQueue();continue}
+  }
+  await uploadOne(it,{force:forceSys?1:0,ow:0});
+  renderQueue();
+ }
+ Q.running=false;
+ renderQueue();
+ go(S.path,true);refreshInfo();
+}
+function uploadOne(it,opt){
+ return new Promise(resolve=>{
+  const x=new XMLHttpRequest();it.xhr=x;it.state="run";it.t0=performance.now();it.lt=it.t0;it.ld=0;
+  const q=new URLSearchParams({p:it.path});if(opt.ow)q.set("ow","1");if(opt.force)q.set("force","1");if(it.deep)q.set("mk","1");
+  x.open("PUT","/api/upload?"+q);
+  x.upload.onprogress=e=>{const now=performance.now();it.done=e.loaded;const dt=(now-it.lt)/1000;
+   if(dt>.5){const inst=(e.loaded-it.ld)/dt;it.speed=it.speed?it.speed*.6+inst*.4:inst;it.lt=now;it.ld=e.loaded}renderQueueSoon()};
+  x.onload=async()=>{
+   let j={};try{j=JSON.parse(x.responseText)}catch(e){}
+   if(x.status===200){it.state="done";it.done=it.file.size;Q.doneCount++;resolve();return}
+   if(x.status===409&&j.error==="exists"){
+    const pol=Q.policy||await conflict(it.name);
+    if(pol==="replace"){resolve(await uploadOne(it,{...opt,ow:1}));return}
+    if(pol==="keep"){it.path=freeName(it.path);it.name=base(it.path);resolve(await uploadOne(it,opt));return}
+    it.state="skipped";resolve();return;
+   }
+   if(x.status===401){showLogin();}
+   it.state="error";it.err=errText({code:j.error||String(x.status)});resolve();
+  };
+  x.onerror=()=>{it.state="error";it.err=t("err_net");setOffline(true);resolve()};
+  x.onabort=()=>{it.state="canceled";resolve()};
+  x.send(it.file);
+  renderQueue();
+ });
+}
+function freeName(p){
+ const d=parent(p),n=base(p),i=n.lastIndexOf("."),b=i>0?n.slice(0,i):n,e=i>0?n.slice(i):"";
+ const names=new Set(S.items.map(x=>x.n.toLowerCase()));let k=2,c;
+ do{c=`${b} (${k++})${e}`}while(names.has(c.toLowerCase())&&k<999);
+ names.add(c.toLowerCase());S.items.push({n:c});
+ return join(d,c);
+}
+function conflict(name){
+ return new Promise(res=>{
+  const m=modal(`<div class="dlg"><h3>${esc(t("exists",name))}</h3><p>${t("existsD")}</p>
+   <label><input type="checkbox" id="cAll"> ${t("all")}</label>
+   <div class="btns col"><button class="btn pri" data-c="replace">${t("replace")}</button><button class="btn" data-c="keep">${t("keep")}</button><button class="btn" data-c="skip">${t("skip")}</button></div></div>`,true);
+  let done=false;
+  m.el.addEventListener("click",e=>{const c=e.target.closest("[data-c]");if(!c)return;done=true;if(m.el.querySelector("#cAll").checked)Q.policy=c.dataset.c;m.close();res(c.dataset.c)});
+  const obs=new MutationObserver(()=>{if(!document.body.contains(m.el)){obs.disconnect();if(!done)res("skip")}});obs.observe(document.body,{childList:true});
+ });
+}
+let rqT=0;
+function renderQueueSoon(){if(!rqT)rqT=setTimeout(()=>{rqT=0;renderQueue()},250)}
+function renderQueue(){
+ const el=$("#queue"),items=Q.items;
+ if(!items.length){el.classList.remove("show");return}
+ el.classList.add("show");el.classList.toggle("min",Q.min);
+ const active=items.filter(i=>i.state==="run"||i.state==="queued");
+ const total=items.reduce((a,i)=>a+(i.state==="skipped"||i.state==="canceled"?0:i.file.size),0);
+ const done=items.reduce((a,i)=>a+(i.state==="done"?i.file.size:i.state==="run"?i.done:0),0);
+ const run=items.find(i=>i.state==="run");
+ const speed=run?run.speed:0;
+ const idx=items.filter(i=>i.state!=="queued").length;
+ const head=active.length?t("uploading",Math.min(idx,items.length),items.length):t("uploadsDone");
+ const sub=active.length&&speed?`${fsize(speed)}/s · ${t("left",feta((total-done)/speed))}`:active.length?"":t("upDone",Q.doneCount);
+ const row=i=>{
+  const st=i.state==="run"?`${fsize(i.done)} / ${fsize(i.file.size)}`:i.state==="queued"?t("queued")+" · "+fsize(i.file.size):
+   i.state==="done"?`<span class="ok">${t("done")}</span>`:i.state==="error"?`<span class="err">${esc(i.err||t("failed"))}</span>`:i.state==="skipped"?t("skipped"):t("canceled");
+  const pct=i.state==="done"?100:i.file.size?i.done/i.file.size*100:0;
+  return `<div class="qi"><div class="ic ${kind({n:i.name})}">${svg(kind({n:i.name})==="img"?"img":"file")}</div><div class="meta"><b>${esc(i.name)}</b><span>${st}</span>${i.state==="run"?`<div class="pbar"><i style="width:${pct.toFixed(1)}%"></i></div>`:""}</div>
+   ${i.state==="run"||i.state==="queued"?`<button class="more" data-qx="${items.indexOf(i)}">${svg("x")}</button>`:""}</div>`;
+ };
+ el.innerHTML=`<div class="qh" id="qh"><div class="meta"><b>${head}</b><span class="muted">${sub}</span></div>
+  ${active.length?"":`<button class="more" data-qclose="1">${svg("x")}</button>`}</div>
+  <div class="qsum"><div class="pbar"><i style="width:${total?(done/total*100).toFixed(1):100}%"></i></div></div>
+  <div class="qlist">${items.slice().reverse().map(row).join("")}</div>`;
+}
+$("#queue").addEventListener("click",e=>{
+ const x=e.target.closest("[data-qx]");
+ if(x){e.stopPropagation();const it=Q.items[+x.dataset.qx];if(it.state==="run")it.xhr.abort();else it.state="canceled";renderQueue();return}
+ if(e.target.closest("[data-qclose]")){e.stopPropagation();Q.items=[];Q.doneCount=0;renderQueue();return}
+ if(e.target.closest("#qh")){Q.min=!Q.min;renderQueue()}
+});
+window.addEventListener("beforeunload",e=>{if(Q.items.some(i=>i.state==="run"||i.state==="queued")){e.preventDefault();e.returnValue=t("leave")}});
+$("#fpick").addEventListener("change",e=>{enqueue([...e.target.files],S.path);e.target.value=""});
+$("#dpick").addEventListener("change",e=>{enqueue([...e.target.files],S.path);e.target.value=""});
+
+/* arrastrar y soltar, con carpetas */
+let dragN=0;
+const dropEl=$("#drop");
+function dropText(){dropEl.innerHTML=`${svg("up")}${t("upload")}<span>${esc(S.path)}</span>`}
+window.addEventListener("dragenter",e=>{if(!e.dataTransfer||![...e.dataTransfer.types].includes("Files")||$("#app").classList.contains("hide")||S.info.readonly)return;dragN++;dropText();dropEl.classList.add("show")});
+window.addEventListener("dragleave",()=>{if(--dragN<=0){dragN=0;dropEl.classList.remove("show")}});
+window.addEventListener("dragover",e=>e.preventDefault());
+window.addEventListener("drop",async e=>{
+ e.preventDefault();dragN=0;dropEl.classList.remove("show");
+ if($("#app").classList.contains("hide")||S.info.readonly)return;
+ const dest=S.path,out=[];
+ const entries=[...e.dataTransfer.items].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+ if(!entries.length){enqueue([...e.dataTransfer.files],dest);return}
+ async function walk(en,pre){
+  if(en.isFile){await new Promise(r=>en.file(f=>{f._rel=pre+f.name;out.push(f);r()},r))}
+  else if(en.isDirectory){const rd=en.createReader();let batch;do{batch=await new Promise(r=>rd.readEntries(r,()=>r([])));for(const c of batch)await walk(c,pre+en.name+"/")}while(batch.length)}
+ }
+ for(const en of entries)await walk(en,"");
+ enqueue(out,dest);
+});
+
+/* escanear el QR con la página ya abierta solo cambia el # */
+window.addEventListener("hashchange",()=>{if(/k=[0-9a-f]+/.test(location.hash))boot()});
+
+/* sigue viva la conexión: si vuelve, refresca */
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!$("#app").classList.contains("hide"))refreshInfo()});
+
+boot();
+</script>
+</body>
+</html>
