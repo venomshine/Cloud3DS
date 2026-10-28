@@ -1,5 +1,13 @@
 # Cambios
 
+## 1.1.0 — arreglos
+
+- Wi-Fi al abrir: si la red de la consola no estaba lista al arrancar, la app se quedaba en «Sin conexión Wi-Fi» para siempre. Ahora lo reintenta sola cada pocos segundos, distingue «Iniciando la red», «Conectado al Wi-Fi, esperando IP» y «Sin conexión Wi-Fi», y lo apunta todo en `net.log`.
+- Flechas de transferencia en el sentido correcto: lo que la consola recibe lleva ↓ y lo que envía, ↑ (tarjeta de transferencias, historial y totales de Actividad).
+- Salir siempre pide confirmación, con START o desde Ajustes. Si hay transferencias, el diálogo dice cuántas y cuál, y que se cancelarán.
+- «Partidas» en la web abre las copias de Checkpoint (`/3ds/Checkpoint/saves`) o JKSM (`/JKSV`), y si no hay ninguna explica cómo hacerlas.
+- Japonés: los textos de la consola ya no se salen de su sitio (pantalla principal y «Acerca de»), con traducciones más cortas donde se cortaban.
+
 ## 1.0.0 — primera versión
 
 - Servidor web en la consola: web para el móvil y el PC servida comprimida desde la propia 3DS.
