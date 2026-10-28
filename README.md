@@ -105,12 +105,14 @@ source/   código de la app
   fsx.c           operaciones de la SD
   ops.c           copiar y mover dentro de la SD
   names.c         nombre real de los dispositivos (mDNS, NetBIOS y el router)
+  install.c       instalar CIA de la SD (con confirmación en la consola)
+  img.c           abrir fotos para el visor y las miniaturas de la consola
   update.c        buscar e instalar actualizaciones desde GitHub
   state.c         estado compartido, dispositivos, historial y configuración
   gfx.c ui.c icons.c   gráficos, componentes e íconos
   i18n.c          idiomas (la tabla i18n_table.h se genera con tools/gen_i18n.py)
 web/      página web (se sirve comprimida desde romfs)
-lib/      cJSON, QR Code generator
+lib/      cJSON, QR Code generator, stb_image
 romfs/    certificados raíz de Mozilla para HTTPS
 cia/      icono, banner, sonido y configuración del .cia
 tools/    traducciones, icono y banner, sonido del banner y empaquetado del .cia
