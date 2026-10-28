@@ -9,6 +9,7 @@
 #include "app.h"
 #include "fsx.h"
 #include "i18n.h"
+#include "ops.h"
 #include "server.h"
 #include "state.h"
 #include "ui.h"
@@ -161,6 +162,14 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 		*ic = IC_LOGOUT; *col = T.text3;
 		util_strlcpy(title, _("Dispositivo desvinculado"), tn);
 		util_strlcpy(sub, e->device, sn);
+		break;
+	case EV_COPY:
+		*ic = IC_FOLDER; *col = T.accent;
+		snprintf(sub, sn, "%s · %s · %s", _("Copiado"), sz, e->device);
+		break;
+	case EV_MOVE:
+		*ic = IC_FOLDER; *col = T.accent2;
+		snprintf(sub, sn, "%s · %s", _("Movido"), e->device);
 		break;
 	default: {
 		char dur[24];
@@ -375,6 +384,11 @@ static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic)
 	*head = up ? _("Recibiendo") : _("Enviando");
 	*col = up ? T.ok : T.accent;
 	*ic = up ? IC_DOWNLOAD : IC_UPLOAD; // la consola recibe (↓) o envía (↑)
+	if (x->kind == XF_COPY) {
+		*head = _("Copiando");
+		*col = T.accent2;
+		*ic = IC_FOLDER;
+	}
 	if (x->st == XS_DONE) {
 		*head = _("Completado");
 		*col = T.ok;
@@ -404,7 +418,7 @@ static void xfer_col(float a, float dy)
 	text_draw_clip(head, tx + 34, y + 4, COL_W - 34, 0.55f, col_alpha(T.text, a));
 	text_wrap_lines(x->name, COL_W, TS_BODY, 2, tx, y + 34, col_alpha(T.text, a), true);
 	char sub[96];
-	snprintf(sub, sizeof sub, up ? _("de %s") : _("a %s"), x->device);
+	snprintf(sub, sizeof sub, up || x->kind == XF_COPY ? _("de %s") : _("a %s"), x->device);
 	text_draw_clip(sub, tx, y + 66, COL_W, TS_SUB, col_alpha(T.text3, a));
 
 	float frac = x->st == XS_DONE ? 1 : x->total ? (float)((double)x->done / x->total) : 0;
@@ -451,7 +465,7 @@ static void xfer_wide(float x0, float y, float w, float a)
 	text_draw_clip(head, x0 + 34, y + 4, w - 34 - pw - 10, 0.55f, col_alpha(T.text, a));
 	text_draw_right(pc, x0 + w, y + 2, 0.62f, col_alpha(T.accent, a));
 	text_draw_clip(x->name, x0, y + 32, w, TS_BODY, col_alpha(T.text, a));
-	snprintf(line, sizeof line, x->kind == XF_UPLOAD ? _("de %s") : _("a %s"), x->device);
+	snprintf(line, sizeof line, x->kind != XF_DOWNLOAD ? _("de %s") : _("a %s"), x->device);
 	text_draw_clip(line, x0, y + 52, w, TS_SUB, col_alpha(T.text3, a));
 	brand_bar(x0, y + 72, w, 8, frac);
 	util_fmt_size(d, sizeof d, x->done);
@@ -1217,7 +1231,7 @@ static void exit_text(char *msg, size_t n, bool *danger)
 	char name[64];
 	util_strlcpy(name, x->name, sizeof name);
 	int pct = x->total ? (int)((double)x->done * 100 / x->total) : 0;
-	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : _("enviando");
+	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : x->kind == XF_COPY ? _("copiando") : _("enviando");
 	if (cnt == 1)
 		snprintf(msg, n, _("Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará."), dir, name, pct);
 	else
@@ -1376,6 +1390,7 @@ int main(void)
 		}
 	}
 
+	ops_exit();
 	server_stop();
 	state_lock();
 	config_save();

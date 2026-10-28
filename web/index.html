@@ -213,6 +213,14 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .dlg .field:focus{border-color:var(--a)}
 .dlg .btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .dlg .btns .btn{height:42px}
+.dlg.pick{max-width:460px;display:flex;flex-direction:column;max-height:calc(100vh - 60px)}
+.dlg.pick .pc{margin:0 0 8px;overflow-x:auto;white-space:nowrap;display:flex;gap:4px;align-items:center;font-size:14px}
+.dlg.pick .pc button{padding:4px 6px;border-radius:8px}.dlg.pick .pc .sep{color:var(--muted)}
+.dlg.pick .plist{flex:1;min-height:180px;max-height:46vh;overflow-y:auto;border:1px solid var(--line);border-radius:12px;margin-bottom:14px;padding:4px}
+.prow{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border-radius:10px;text-align:left;font-size:15px}
+.prow:hover{background:var(--card2)}.prow svg{width:20px;height:20px;color:var(--warn,#e8a33a);flex:none}
+.pempty{text-align:center;color:var(--muted);padding:30px 10px;margin:0}
+.dlg .btns .grow{flex:1}
 .dlg .btns.col{flex-direction:column}
 .dlg .btns.col .btn{width:100%;justify-content:center}
 .dlg .btn.dng{background:var(--err);color:#fff;border-color:transparent}
@@ -331,7 +339,7 @@ es:{
  sysQ:"Carpeta del sistema", sysD:"«%1» es necesaria para que la consola o el homebrew funcionen correctamente. ¿Quieres continuar?", cont:"Continuar",
  renT:"Renombrar", newT:"Nueva carpeta", nameErr:"Nombre no válido. No uses \\ / : * ? \" < > | ni termines el nombre en punto.",
  exists:"Ya existe «%1»", existsD:"Elige qué hacer con este archivo.", replace:"Reemplazar", skip:"Omitir", keep:"Conservar ambos", all:"Aplicar a todos",
- renameAs:"Renombrar…", cancelAll:"Cancelar todo", merge:"Combinar", existsDirD:"Ya hay una carpeta con ese nombre. Puedes combinar su contenido.", newName:"Nuevo nombre", 
+ renameAs:"Renombrar…", cancelAll:"Cancelar todo", merge:"Combinar", existsDirD:"Ya hay una carpeta con ese nombre. Puedes combinar su contenido.", newName:"Nuevo nombre", copy:"Copiar", move:"Mover", copyTo:"Copiar a…", moveTo:"Mover a…", pickT:"Elige la carpeta de destino", copyHere:"Copiar aquí", moveHere:"Mover aquí", copying:"Copiando %1…", copied:"Copiado", moved:"Movido", err_into_self:"No puedes copiar ni mover una carpeta dentro de sí misma.", err_busy:"Ya hay una copia en curso. Espera a que termine.", err_is_file:"Ya hay un archivo con ese nombre.", err_no_dir:"La carpeta de destino ya no existe.", err_bad_name:"Ese nombre no es válido.",
  ro:"Modo solo lectura: puedes ver y descargar archivos, pero no modificarlos.", sysHere:"Estás en una carpeta del sistema. Modifícala con precaución.",
  uploading:"Subiendo %1 de %2", uploadsDone:"Subidas terminadas", upDone:"%1 subidos", left:"quedan %1", queued:"En cola",
  done:"Completado", failed:"Error", canceled:"Cancelado", skipped:"Omitido",
@@ -362,7 +370,7 @@ en:{
  sysQ:"System folder", sysD:"“%1” is needed for the console or homebrew to work properly. Do you want to continue?", cont:"Continue",
  renT:"Rename", newT:"New folder", nameErr:"Invalid name. Don't use \\ / : * ? \" < > | or end the name with a period.",
  exists:"“%1” already exists", existsD:"Choose what to do with this file.", replace:"Replace", skip:"Skip", keep:"Keep both", all:"Apply to all",
- renameAs:"Rename…", cancelAll:"Cancel all", merge:"Merge", existsDirD:"A folder with that name already exists. You can merge their contents.", newName:"New name", 
+ renameAs:"Rename…", cancelAll:"Cancel all", merge:"Merge", existsDirD:"A folder with that name already exists. You can merge their contents.", newName:"New name", copy:"Copy", move:"Move", copyTo:"Copy to…", moveTo:"Move to…", pickT:"Choose the destination folder", copyHere:"Copy here", moveHere:"Move here", copying:"Copying %1…", copied:"Copied", moved:"Moved", err_into_self:"You can't copy or move a folder into itself.", err_busy:"A copy is already in progress. Wait for it to finish.", err_is_file:"A file with that name already exists.", err_no_dir:"The destination folder no longer exists.", err_bad_name:"That name isn't valid.",
  ro:"Read-only mode: you can view and download files, but not change them.", sysHere:"You're in a system folder. Change it with care.",
  uploading:"Uploading %1 of %2", uploadsDone:"Uploads finished", upDone:"%1 uploaded", left:"%1 left", queued:"Queued",
  done:"Done", failed:"Error", canceled:"Canceled", skipped:"Skipped",
@@ -393,7 +401,7 @@ ja:{
  sysQ:"システムフォルダ", sysD:"「%1」は本体やHomebrewの動作に必要です。続けますか?", cont:"続ける",
  renT:"名前を変更", newT:"新しいフォルダ", nameErr:"無効な名前です。\\ / : * ? \" < > | は使えず、ピリオドで終わることもできません。",
  exists:"「%1」はすでにあります", existsD:"このファイルをどうするか選んでください。", replace:"置き換え", skip:"スキップ", keep:"両方残す", all:"すべてに適用",
- renameAs:"名前を変更…", cancelAll:"すべてキャンセル", merge:"統合", existsDirD:"同じ名前のフォルダがあります。中身を統合できます。", newName:"新しい名前", 
+ renameAs:"名前を変更…", cancelAll:"すべてキャンセル", merge:"統合", existsDirD:"同じ名前のフォルダがあります。中身を統合できます。", newName:"新しい名前", copy:"コピー", move:"移動", copyTo:"コピー先…", moveTo:"移動先…", pickT:"移動先のフォルダを選択", copyHere:"ここにコピー", moveHere:"ここに移動", copying:"%1 をコピー中…", copied:"コピーしました", moved:"移動しました", err_into_self:"フォルダをその中にコピー・移動することはできません。", err_busy:"コピー中です。終わるまでお待ちください。", err_is_file:"同じ名前のファイルがあります。", err_no_dir:"移動先のフォルダがもうありません。", err_bad_name:"その名前は使えません。",
  ro:"読み取り専用モード: ファイルの表示とダウンロードはできますが、変更はできません。", sysHere:"システムフォルダです。変更には注意してください。",
  uploading:"アップロード中 %1 / %2", uploadsDone:"アップロード完了", upDone:"%1 件アップロード", left:"残り %1", queued:"待機中",
  done:"完了", failed:"エラー", canceled:"キャンセル", skipped:"スキップ",
@@ -413,6 +421,8 @@ function t(k,...a){let s=TX[k]??L.es[k]??k;a.forEach((v,i)=>s=s.replace("%"+(i+1
 /* ---------- íconos ---------- */
 const I = {
  cloud:'<path d="M7 18a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 18 8.5 4.8 4.8 0 0 1 18 18z"/>',
+ copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+ mv:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M10 13h6M13 10l3 3-3 3"/>',
  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
  file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
  img:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-9 9"/>',
@@ -701,7 +711,7 @@ function renderSel(){
  b.innerHTML=`<span>${n}</span><span class="n">${t("sel","").trim()}</span>`+
   `<button id="sAll">${svg("selall")}${t("all2")}</button>`+
   (files.length?`<button id="sDl">${svg("down")}</button>`:"")+
-  (S.info.readonly?"":`<button id="sDel">${svg("trash")}</button>`)+
+  (S.info.readonly?"":`<button id="sMv" title="${t("moveTo")}">${svg("mv")}</button><button id="sCp" title="${t("copyTo")}">${svg("copy")}</button><button id="sDel">${svg("trash")}</button>`)+
   `<button id="sX">${svg("x")}</button>`;
 }
 $("#selbar").addEventListener("click",e=>{
@@ -710,6 +720,7 @@ $("#selbar").addEventListener("click",e=>{
  if(id==="sAll"){sorted().forEach(i=>S.sel.add(i.n));render()}
  if(id==="sDl"){const f=[...S.sel].map(itemByName).filter(i=>i&&!i.d);f.forEach((it,i)=>setTimeout(()=>download(join(S.path,it.n)),i*700))}
  if(id==="sDel"){const list=[...S.sel].map(itemByName).filter(Boolean);confirmDelete(list)}
+ if(id==="sMv"||id==="sCp"){const list=[...S.sel].map(itemByName).filter(Boolean);transfer(id==="sMv"?"move":"copy",list)}
 });
 
 function openItem(it){
@@ -739,11 +750,11 @@ function openSheet(it){
   <div class="meta"><b>${esc(it.n)}</b><span>${it.d?t("folder"):fsize(it.s)}${it.t?" · "+fdate(it.t):""}</span></div></div>
   ${it.d?"":(k==="img"||k==="vid"||k==="txt")?`<button class="act" data-a="view">${svg("eye")}${t("view")}</button>`:""}
   ${it.d?"":`<button class="act" data-a="dl">${svg("down")}${t("download")}</button>`}
-  ${ro?"":isProt(p)?`<div class="act off">${svg("lock")}<span><b>${t("protT")}</b><small>${t("protD")}</small></span></div>`:`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
+  ${ro?"":isProt(p)?`<div class="act off">${svg("lock")}<span><b>${t("protT")}</b><small>${t("protD")}</small></span></div>`:`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act" data-a="mv">${svg("mv")}${t("moveTo")}</button><button class="act" data-a="cp">${svg("copy")}${t("copyTo")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
   <button class="act" data-a="sel">${svg("selall")}${t("select")}</button>
  </div>`);
  m.el.addEventListener("click",e=>{const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
-  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n)});
+  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n);if(a==="mv")transfer("move",[it]);if(a==="cp")transfer("copy",[it])});
 }
 function ask({title,text,ok,danger,input,value,check}){
  return new Promise(res=>{
@@ -791,6 +802,66 @@ async function confirmDelete(list){
  let errs=0;
  for(const it of list){try{await api("POST","delete",{p:join(S.path,it.n),...g})}catch(e){errs++;toast(errText(e))}}
  if(!errs)toast(t("deleted"));
+ S.sel.clear();go(S.path,true);refreshInfo();
+}
+/* ---------- copiar y mover ---------- */
+function pickFolder(kind){
+ return new Promise(res=>{
+  let cur=S.path,done=false;
+  const m=modal(`<div class="dlg pick"><h3>${t("pickT")}</h3><div class="crumbs pc"></div><div class="plist"></div>
+   <div class="btns"><button class="btn" data-r="new">${svg("plusf")}</button><div class="grow"></div><button class="btn" data-r="0">${t("cancel")}</button><button class="btn pri" data-r="1">${t(kind==="move"?"moveHere":"copyHere")}</button></div></div>`,true);
+  const load=async p=>{
+   cur=p;const parts=p==="/"?[]:p.slice(1).split("/");let acc="",cr=`<button data-pp="/">SD</button>`;
+   parts.forEach(x=>{acc+="/"+x;cr+=`<span class="sep">›</span><button data-pp="${esc(acc)}">${esc(x)}</button>`});
+   m.el.querySelector(".pc").innerHTML=cr;const pl=m.el.querySelector(".plist");pl.innerHTML=`<div class="loading"><span class="spin"></span></div>`;
+   try{const r=await api("GET","list",{p});const col=new Intl.Collator(lang,{numeric:true,sensitivity:"base"});
+    const ds=r.items.filter(i=>i.d).sort((a,b)=>col.compare(a.n,b.n));
+    pl.innerHTML=ds.length?ds.map(d=>`<button class="prow" data-pp="${esc(join(p,d.n))}">${svg("folder")}<span>${esc(d.n)}</span></button>`).join(""):`<p class="pempty">${t("emptyRO")}</p>`;
+   }catch(e){pl.innerHTML=`<p class="pempty">${esc(errText(e))}</p>`}
+  };
+  m.el.addEventListener("click",async e=>{
+   const pp=e.target.closest("[data-pp]");if(pp){load(pp.dataset.pp);return}
+   const r=e.target.closest("[data-r]");if(!r)return;
+   if(r.dataset.r==="new"){const v=await ask({title:t("newT"),input:true,value:"",ok:t("create")});if(!v)return;if(!validName(v)){toast(t("nameErr"));return}
+    try{await api("POST","mkdir",{p:join(cur,v)});load(join(cur,v))}catch(err){toast(errText(err))}return}
+   done=true;m.close();res(r.dataset.r==="1"?cur:null);
+  });
+  const obs=new MutationObserver(()=>{if(!document.body.contains(m.el)){obs.disconnect();if(!done)res(null)}});obs.observe(document.body,{childList:true});
+  load(cur);
+ });
+}
+async function waitJob(name){
+ for(;;){
+  await new Promise(r=>setTimeout(r,500));
+  let j;try{j=await api("GET","job")}catch(e){continue}
+  if(j.st==="run"){toast(t("copying",name)+(j.total?" "+Math.floor(j.done*100/j.total)+"%":""));continue}
+  if(j.st==="fail")throw new ApiErr(j.error||"io",500);
+  return;
+ }
+}
+async function transfer(kind,list){
+ if(!list.length)return;
+ const dest=await pickFolder(kind);if(dest==null)return;
+ let force=null,pol=null,ok=0;
+ if(isSys(dest)&&dest!=="/"&&S.info.protect){const g=await ask({title:t("sysQ"),text:t("sysD",dest),ok:t("cont"),danger:true});if(!g)return;force=1}
+ outer:for(const it of list){
+  const params={p:join(S.path,it.n),to:dest};if(force)params.force=1;
+  for(;;){
+   try{await api("POST",kind,params);if(kind==="copy")await waitJob(params.name||it.n);ok++;break}
+   catch(e){
+    if(e.code==="exists"){
+     const r=pol?{act:pol}:await conflict(params.name||it.n,!!e.j.dir);
+     if(r.all)pol=r.act;
+     if(r.act==="cancel")break outer;
+     if(r.act==="skip")break;
+     if(r.act==="rename"){params.name=r.name;delete params.on;continue}
+     params.on=r.act;continue;
+    }
+    toast(errText(e));break;
+   }
+  }
+ }
+ if(ok)toast(t(kind==="move"?"moved":"copied"));
  S.sel.clear();go(S.path,true);refreshInfo();
 }
 function sortMenu(){

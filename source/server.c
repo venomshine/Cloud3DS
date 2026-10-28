@@ -8,6 +8,7 @@
 #define _GNU_SOURCE
 #include "server.h"
 #include "fsx.h"
+#include "ops.h"
 #include "state.h"
 #include "util.h"
 
@@ -530,6 +531,10 @@ typedef struct {
 static bool list_cb(const FsxEntry *e, void *u)
 {
 	ListCtx *x = u;
+	/* temporales de subidas y copias en curso (o de una cortada): no se enseñan */
+	size_t l = strlen(e->name);
+	if (!e->dir && !strncmp(e->name, ".c3d_", 5) && l > 5 && !strcmp(e->name + l - 5, ".part"))
+		return true;
 	if (x->n++)
 		buf_puts(x->b, ",");
 	buf_puts(x->b, "{\"n\":");
@@ -752,6 +757,113 @@ static void h_delete(Conn *c)
 	event_add(EV_DELETE, basename_of(p), G.dev[c->dev].name, 0);
 	state_unlock();
 	resp_ok(c);
+}
+
+/* copiar y mover: p = origen, to = carpeta de destino, name = otro nombre (opcional),
+ * on = replace | keep si ya existe (si no, 409 exists y la web pregunta) */
+static bool op_target(Conn *c, bool move, char *src, char *dst, size_t n)
+{
+	char to[1024], name[256], on[16] = "";
+	if (!qget(c->query, "p", src, 1024) || !fsx_path_ok(src) || strcmp(src, "/") == 0 || !qget(c->query, "to", to, sizeof to) ||
+	    !fsx_path_ok(to)) {
+		resp_err(c, 400, "bad_path");
+		return false;
+	}
+	if (!qget(c->query, "name", name, sizeof name))
+		util_strlcpy(name, basename_of(src), sizeof name);
+	if (!fsx_name_ok(name)) {
+		resp_err(c, 400, "bad_name");
+		return false;
+	}
+	qget(c->query, "on", on, sizeof on);
+	if (move ? !check_write(c, src, SYS_BLOCK) : G.readonly ? (resp_err(c, 403, "readonly"), true) : false)
+		return false;
+	if (!check_write(c, to, SYS_CONFIRM))
+		return false;
+	bool sd, dd;
+	u64 sz;
+	if (fsx_stat(src, &sd, &sz) < 0) {
+		resp_err(c, 404, "not_found");
+		return false;
+	}
+	if (fsx_stat(to, &dd, &sz) < 0 || !dd) {
+		resp_err(c, 404, "no_dir");
+		return false;
+	}
+	snprintf(dst, n, "%s%s%s", to, strcmp(to, "/") ? "/" : "", name);
+	if (sd && ops_inside(src, dst) && strcasecmp(src, dst) != 0) {
+		resp_err(c, 400, "into_self");
+		return false;
+	}
+	bool same = strcasecmp(src, dst) == 0;
+	if (move && same) {
+		resp_ok(c); /* ya está ahí */
+		return false;
+	}
+	if (fsx_stat(dst, &dd, &sz) == 0) {
+		if (!strcmp(on, "keep") || (same && !move)) {
+			ops_free_name(dst, n, to, name);
+		} else if (!strcmp(on, "replace")) {
+			if (dd != sd) {
+				resp_err(c, 409, dd ? "is_dir" : "is_file");
+				return false;
+			}
+		} else {
+			Buf b = {0};
+			buf_printf(&b, "{\"ok\":false,\"error\":\"exists\",\"dir\":%s}", dd ? "true" : "false");
+			resp_json(c, 409, &b);
+			free(b.p);
+			return false;
+		}
+	}
+	return true;
+}
+
+static void h_move(Conn *c)
+{
+	char src[1024], dst[1024];
+	if (!op_target(c, true, src, dst, sizeof dst))
+		return;
+	int r = ops_move(src, dst);
+	if (r != OPS_OK) {
+		resp_err(c, r == OPS_NOT_FOUND ? 404 : r == OPS_TYPE ? 409 : 500, r == OPS_NOT_FOUND ? "not_found" : r == OPS_TYPE ? "is_dir" : "io");
+		return;
+	}
+	state_lock();
+	event_add(EV_MOVE, basename_of(dst), G.dev[c->dev].name, 0);
+	state_unlock();
+	resp_ok(c);
+}
+
+static void h_copy(Conn *c)
+{
+	char src[1024], dst[1024];
+	if (!op_target(c, false, src, dst, sizeof dst))
+		return;
+	char dev[48];
+	state_lock();
+	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
+	state_unlock();
+	int r = ops_copy_start(src, dst, dev);
+	if (r != OPS_OK) {
+		resp_err(c, r == OPS_BUSY ? 409 : r == OPS_NO_SPACE ? 507 : 500, r == OPS_BUSY ? "busy" : r == OPS_NO_SPACE ? "no_space" : "io");
+		return;
+	}
+	resp_ok(c);
+}
+
+static void h_job(Conn *c)
+{
+	int st, err;
+	u64 done, total;
+	ops_job(&st, &err, &done, &total);
+	static const char *const ST[] = {"idle", "run", "done", "fail"};
+	const char *e = err == OPS_NO_SPACE ? "no_space" : err == OPS_CANCELED ? "canceled" : err == OPS_NOT_FOUND ? "not_found" : err ? "io" : "";
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"st\":\"%s\",\"done\":%llu,\"total\":%llu,\"error\":\"%s\"}", ST[st],
+	           (unsigned long long)done, (unsigned long long)total, e);
+	resp_json(c, 200, &b);
+	free(b.p);
 }
 
 static void send_now(int fd, const char *s)
@@ -981,6 +1093,16 @@ static void route(Conn *c, const char *body)
 		h_rename(c);
 	else if (strcmp(p, "delete") == 0 && post)
 		h_delete(c);
+	else if (strcmp(p, "move") == 0 && post)
+		h_move(c);
+	else if (strcmp(p, "copy") == 0 && post)
+		h_copy(c);
+	else if (strcmp(p, "job") == 0 && get)
+		h_job(c);
+	else if (strcmp(p, "job_cancel") == 0 && post) {
+		ops_cancel();
+		resp_ok(c);
+	}
 	else
 		resp_err(c, 404, "unknown");
 }

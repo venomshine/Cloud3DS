@@ -17,7 +17,7 @@
 #define MAX_DEVICES  16
 #define MAX_REVOKED  8
 
-typedef enum { XF_UPLOAD, XF_DOWNLOAD } XferKind;
+typedef enum { XF_UPLOAD, XF_DOWNLOAD, XF_COPY } XferKind;
 typedef enum { XS_FREE, XS_RUNNING, XS_DONE, XS_FAILED, XS_CANCELED } XferState;
 
 typedef struct {
@@ -42,6 +42,8 @@ typedef enum {
 	EV_PAIRED,
 	EV_REVOKED,
 	EV_PIN_LOCK,   /* bloqueo por intentos fallidos: device = IP, size = segundos */
+	EV_COPY,
+	EV_MOVE,
 } EventKind;
 
 typedef struct {

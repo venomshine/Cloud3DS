@@ -254,4 +254,8 @@ TR = {
          "入力ミスが多いためロックしました"),
     "Tu nube está lista": ("Your cloud is ready", "クラウドの準備ができました"),
     "Pulsa SELECT para ver el código QR": ("Press SELECT to show the QR code", "SELECTでQRコードを表示"),
+    "Copiado": ("Copied", "コピー"),
+    "Movido": ("Moved", "移動"),
+    "Copiando": ("Copying", "コピー中"),
+    "copiando": ("copying", "コピー中"),
 }
