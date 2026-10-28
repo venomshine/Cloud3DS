@@ -444,17 +444,24 @@ void dialog_open(int ctx, const char *title, const char *msg, const char *ok, bo
 
 static float dlg_by(void) { return DLG_Y + DLG_H - DLG_BH - 14; }
 
+// al cerrarse, el diálogo se queda con la pulsación: si no, la fila de debajo
+// recibe el mismo A (o el mismo toque) en ese frame y vuelve a abrirlo
+static int dialog_close(int r) {
+    g_dialog.open = false;
+    g_kdown &= ~(KEY_A | KEY_B);
+    g_touch.up = false;
+    return r;
+}
+
 int dialog_update(void) {
     if (!g_dialog.open) return -1;
     g_dialog.anim = approach(g_dialog.anim, 1, 16);
     float by = dlg_by();
-    if ((g_kdown & KEY_B) || tap(DLG_X + 14, by, DLG_BW, DLG_BH)) { g_dialog.open = false; return 0; }
-    if ((g_kdown & KEY_A) || tap(DLG_X + DLG_W - 14 - DLG_BW, by, DLG_BW, DLG_BH)) { g_dialog.open = false; return 1; }
+    if ((g_kdown & KEY_B) || tap(DLG_X + 14, by, DLG_BW, DLG_BH)) return dialog_close(0);
+    if ((g_kdown & KEY_A) || tap(DLG_X + DLG_W - 14 - DLG_BW, by, DLG_BW, DLG_BH)) return dialog_close(1);
     // tocar fuera también cancela
-    if (g_touch.up && !g_touch.drag && !(g_touch.sx >= DLG_X && g_touch.sx < DLG_X + DLG_W && g_touch.sy >= DLG_Y && g_touch.sy < DLG_Y + DLG_H)) {
-        g_dialog.open = false;
-        return 0;
-    }
+    if (g_touch.up && !g_touch.drag && !(g_touch.sx >= DLG_X && g_touch.sx < DLG_X + DLG_W && g_touch.sy >= DLG_Y && g_touch.sy < DLG_Y + DLG_H))
+        return dialog_close(0);
     return -1;
 }
 
