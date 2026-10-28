@@ -16,6 +16,7 @@
 #define MAX_HISTORY  60
 #define MAX_DEVICES  16
 #define MAX_REVOKED  8
+#define MAX_MARKS    96
 
 typedef enum { XF_UPLOAD, XF_DOWNLOAD, XF_COPY } XferKind;
 typedef enum { XS_FREE, XS_RUNNING, XS_DONE, XS_FAILED, XS_CANCELED } XferState;
@@ -65,6 +66,12 @@ typedef struct {
 	u64  last_ms;    /* ms, para «conectado ahora» */
 } Device;
 
+/* carpetas o archivos destacados con un color (1-6) desde la web */
+typedef struct {
+	char path[200];
+	u8   color;
+} Mark;
+
 typedef struct {
 	/* ajustes */
 	int  lang;        /* 0 sistema, 1 es, 2 en, 3 ja */
@@ -94,6 +101,8 @@ typedef struct {
 	bool   dirty_cfg;
 	char   revoked[MAX_REVOKED][33]; /* expulsados recientes, para avisarles */
 	int    revoked_next;
+	Mark   marks[MAX_MARKS];
+	int    marks_n;
 } AppState;
 
 extern AppState G;
@@ -113,6 +122,10 @@ const Event *event_at(int i); /* 0 = más reciente */
 void   pin_regen(void);           /* PIN y QR nuevos al azar */
 bool   pin_set(const char *pin);   /* PIN elegido (4 cifras) y QR nuevo */
 void   device_revoke(int i); /* expulsa y recuerda el token */
+int    mark_get(const char *path);              /* 0 = sin color */
+void   mark_set(const char *path, int color);   /* 0 quita la marca */
+void   mark_moved(const char *from, const char *to); /* también lo de dentro */
+void   mark_deleted(const char *path);
 
 /* Configuración en la SD (config.json) */
 void config_load(void);

@@ -526,6 +526,7 @@ static void h_info(Conn *c)
 typedef struct {
 	Buf *b;
 	int n;
+	const char *dir;
 } ListCtx;
 
 static bool list_cb(const FsxEntry *e, void *u)
@@ -539,8 +540,14 @@ static bool list_cb(const FsxEntry *e, void *u)
 		buf_puts(x->b, ",");
 	buf_puts(x->b, "{\"n\":");
 	buf_json_str(x->b, e->name);
-	buf_printf(x->b, ",\"d\":%d,\"s\":%llu,\"t\":%llu}", e->dir ? 1 : 0, (unsigned long long)e->size,
+	buf_printf(x->b, ",\"d\":%d,\"s\":%llu,\"t\":%llu", e->dir ? 1 : 0, (unsigned long long)e->size,
 	           (unsigned long long)e->mtime);
+	char full[1300];
+	snprintf(full, sizeof full, "%s%s%s", x->dir, strcmp(x->dir, "/") ? "/" : "", e->name);
+	state_lock();
+	int col = mark_get(full);
+	state_unlock();
+	buf_printf(x->b, col ? ",\"c\":%d}" : "}", col);
 	return x->n < 5000;
 }
 
@@ -555,7 +562,7 @@ static void h_list(Conn *c)
 	buf_puts(&b, "{\"ok\":true,\"p\":");
 	buf_json_str(&b, p);
 	buf_printf(&b, ",\"system\":%s,\"items\":[", fsx_is_system(p) ? "true" : "false");
-	ListCtx x = {&b, 0};
+	ListCtx x = {&b, 0, p};
 	if (fsx_list(p, !qflag(c->query, "fast"), list_cb, &x) < 0) {
 		free(b.p);
 		resp_err(c, 404, "not_found");
@@ -736,6 +743,7 @@ static void h_rename(Conn *c)
 	}
 	state_lock();
 	event_add(EV_RENAME, to, G.dev[c->dev].name, 0);
+	mark_moved(p, np);
 	state_unlock();
 	resp_ok(c);
 }
@@ -755,6 +763,7 @@ static void h_delete(Conn *c)
 	}
 	state_lock();
 	event_add(EV_DELETE, basename_of(p), G.dev[c->dev].name, 0);
+	mark_deleted(p);
 	state_unlock();
 	resp_ok(c);
 }
@@ -831,6 +840,7 @@ static void h_move(Conn *c)
 	}
 	state_lock();
 	event_add(EV_MOVE, basename_of(dst), G.dev[c->dev].name, 0);
+	mark_moved(src, dst);
 	state_unlock();
 	resp_ok(c);
 }
@@ -849,6 +859,26 @@ static void h_copy(Conn *c)
 		resp_err(c, r == OPS_BUSY ? 409 : r == OPS_NO_SPACE ? 507 : 500, r == OPS_BUSY ? "busy" : r == OPS_NO_SPACE ? "no_space" : "io");
 		return;
 	}
+	resp_ok(c);
+}
+
+/* destacar con un color (1-6, 0 lo quita): solo es un dato de Cloud3DS, no toca la SD */
+static void h_mark(Conn *c)
+{
+	char p[1024], cs[4] = "";
+	if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p) || strcmp(p, "/") == 0 || !qget(c->query, "c", cs, sizeof cs)) {
+		resp_err(c, 400, "bad_path");
+		return;
+	}
+	int col = atoi(cs);
+	if (col < 0 || col > 6 || strlen(p) >= sizeof G.marks[0].path) {
+		resp_err(c, 400, "bad_color");
+		return;
+	}
+	state_lock();
+	mark_set(p, col);
+	G.rev++;
+	state_unlock();
 	resp_ok(c);
 }
 
@@ -1097,6 +1127,8 @@ static void route(Conn *c, const char *body)
 		h_move(c);
 	else if (strcmp(p, "copy") == 0 && post)
 		h_copy(c);
+	else if (strcmp(p, "mark") == 0 && post)
+		h_mark(c);
 	else if (strcmp(p, "job") == 0 && get)
 		h_job(c);
 	else if (strcmp(p, "job_cancel") == 0 && post) {

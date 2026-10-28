@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 AppState G;
@@ -58,6 +59,71 @@ bool pin_set(const char *pin)
 	G.dirty_cfg = true;
 	G.rev++;
 	return true;
+}
+
+static bool under(const char *p, const char *root)
+{
+	size_t l = strlen(root);
+	return strncasecmp(p, root, l) == 0 && (p[l] == 0 || p[l] == '/');
+}
+
+int mark_get(const char *path)
+{
+	for (int i = 0; i < G.marks_n; i++)
+		if (strcasecmp(G.marks[i].path, path) == 0)
+			return G.marks[i].color;
+	return 0;
+}
+
+static void mark_remove(int i)
+{
+	G.marks[i] = G.marks[--G.marks_n];
+}
+
+void mark_set(const char *path, int color)
+{
+	if (strlen(path) >= sizeof G.marks[0].path)
+		return;
+	for (int i = 0; i < G.marks_n; i++)
+		if (strcasecmp(G.marks[i].path, path) == 0) {
+			if (color)
+				G.marks[i].color = (u8)color;
+			else
+				mark_remove(i);
+			G.dirty_cfg = true;
+			return;
+		}
+	if (!color)
+		return;
+	if (G.marks_n == MAX_MARKS)
+		mark_remove(0); /* lleno: se olvida la más antigua */
+	util_strlcpy(G.marks[G.marks_n].path, path, sizeof G.marks[0].path);
+	G.marks[G.marks_n++].color = (u8)color;
+	G.dirty_cfg = true;
+}
+
+void mark_moved(const char *from, const char *to)
+{
+	size_t l = strlen(from);
+	for (int i = 0; i < G.marks_n; i++)
+		if (under(G.marks[i].path, from)) {
+			char np[400];
+			snprintf(np, sizeof np, "%s%s", to, G.marks[i].path + l);
+			if (strlen(np) < sizeof G.marks[0].path)
+				util_strlcpy(G.marks[i].path, np, sizeof G.marks[0].path);
+			G.dirty_cfg = true;
+		}
+}
+
+void mark_deleted(const char *path)
+{
+	for (int i = 0; i < G.marks_n;)
+		if (under(G.marks[i].path, path)) {
+			mark_remove(i);
+			G.dirty_cfg = true;
+		} else {
+			i++;
+		}
 }
 
 void device_revoke(int i)
@@ -260,6 +326,14 @@ void config_load(void)
 	}
 
 	/* historial: del más antiguo al más reciente */
+	cJSON *marks = cJSON_GetObjectItemCaseSensitive(r, "marks"), *mk;
+	cJSON_ArrayForEach(mk, marks)
+	{
+		int col = (int)jnum(mk, "c", 0);
+		if (col >= 1 && col <= 6)
+			mark_set(jstr(mk, "p"), col);
+	}
+
 	cJSON *hist = cJSON_GetObjectItemCaseSensitive(r, "history"), *e;
 	cJSON_ArrayForEach(e, hist)
 	{
@@ -294,6 +368,13 @@ void config_save(void)
 		cJSON_AddNumberToObject(d, "created", (double)v->created);
 		cJSON_AddNumberToObject(d, "seen", (double)v->last_seen);
 		cJSON_AddItemToArray(devs, d);
+	}
+	cJSON *marks = cJSON_AddArrayToObject(r, "marks");
+	for (int i = 0; i < G.marks_n; i++) {
+		cJSON *o = cJSON_CreateObject();
+		cJSON_AddStringToObject(o, "p", G.marks[i].path);
+		cJSON_AddNumberToObject(o, "c", G.marks[i].color);
+		cJSON_AddItemToArray(marks, o);
 	}
 	cJSON *hist = cJSON_AddArrayToObject(r, "history");
 	for (int i = G.hist_n - 1; i >= 0; i--) {
