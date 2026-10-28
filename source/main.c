@@ -126,12 +126,13 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 	util_fmt_size(sz, sizeof sz, e->size);
 	util_strlcpy(title, e->name, tn);
 	switch (e->kind) {
+	// desde la consola: lo que sube la web es algo que la consola recibe (flecha hacia dentro)
 	case EV_UPLOAD:
-		*ic = IC_UPLOAD; *col = T.ok;
+		*ic = IC_DOWNLOAD; *col = T.ok;
 		snprintf(sub, sn, "%s · %s · %s", _("Recibido"), sz, e->device);
 		break;
 	case EV_DOWNLOAD:
-		*ic = IC_DOWNLOAD; *col = T.accent;
+		*ic = IC_UPLOAD; *col = T.accent;
 		snprintf(sub, sn, "%s · %s · %s", _("Enviado"), sz, e->device);
 		break;
 	case EV_UPLOAD_FAIL:
@@ -377,7 +378,7 @@ static void xfer_col(float a, float dy)
 	bool up = x->kind == XF_UPLOAD;
 	const char *head = up ? _("Recibiendo") : _("Enviando");
 	u32 col = up ? T.ok : T.accent;
-	IconId ic = up ? IC_UPLOAD : IC_DOWNLOAD;
+	IconId ic = up ? IC_DOWNLOAD : IC_UPLOAD; // la consola recibe (↓) o envía (↑)
 	if (x->st == XS_DONE) {
 		head = _("Completado");
 		col = T.ok;
@@ -645,11 +646,12 @@ static void tab_activity(void)
 		util_fmt_size(a, sizeof a, V.stat_up);
 		util_fmt_size(b, sizeof b, V.stat_down);
 		float x = hx - text_width(b, TS_SUB);
+		// enviado (↑) a la derecha y recibido (↓) a su izquierda, con los colores del historial
 		text_draw(b, x, 11, TS_SUB, T.text3);
-		draw_icon(IC_DOWNLOAD, x - 9, 16, 12, T.accent);
+		draw_icon(IC_UPLOAD, x - 9, 16, 12, T.accent);
 		x -= 26 + text_width(a, TS_SUB);
 		text_draw(a, x, 11, TS_SUB, T.text3);
-		draw_icon(IC_UPLOAD, x - 9, 16, 12, T.ok);
+		draw_icon(IC_DOWNLOAD, x - 9, 16, 12, T.ok);
 	}
 	int n = V.hist_n;
 	const float RH = 40;
