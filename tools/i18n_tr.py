@@ -563,12 +563,6 @@ TR = {
     "Carpeta del sistema: no la borres ni la cambies si no sabes para qué sirve.":
         ("System folder: don't delete or change it unless you know what it's for.",
          "システムフォルダです。用途がわからない場合は削除や変更をしないでください。"),
-    "A abrir · Y opciones":
-        ("A open · Y options",
-         "Aで開く · Yでオプション"),
-    "A o Y: opciones":
-        ("A or Y: options",
-         "AかY: オプション"),
     "Archivos":
         ("Files",
          "ファイル"),
@@ -584,4 +578,94 @@ TR = {
     "No se pudo renombrar":
         ("Couldn't rename it",
          "名前を変更できませんでした"),
+    'Esta foto es demasiado grande para verla en la consola':
+        ('This photo is too large to view on the console',
+         'この写真は大きすぎて本体では表示できません'),
+    'No se pudo abrir esta foto':
+        ("Couldn't open this photo",
+         'この写真を開けませんでした'),
+    'Anterior':
+        ('Previous',
+         '前へ'),
+    'Siguiente':
+        ('Next',
+         '次へ'),
+    'Subir':
+        ('Up',
+         '上へ'),
+    'Bajar':
+        ('Down',
+         '下へ'),
+    'Opciones':
+        ('Options',
+         'オプション'),
+    'Cerrar':
+        ('Close',
+         '閉じる'),
+    'Esta carpeta aún no existe':
+        ("This folder doesn't exist yet",
+         'このフォルダはまだありません'),
+    'Crear carpeta':
+        ('Create folder',
+         'フォルダを作成'),
+    'Las partidas de los juegos van cifradas dentro de «Nintendo 3DS». Haz una copia con Checkpoint o JKSM y aparecerá aquí.':
+        ("Game saves are encrypted inside “Nintendo 3DS”. Back them up with Checkpoint or JKSM and they'll show up here.",
+         'セーブデータは「Nintendo 3DS」内で暗号化されています。CheckpointやJKSMでバックアップするとここに表示されます。'),
+    'Carpeta del sistema':
+        ('System folder',
+         'システムフォルダ'),
+    'Programa instalable (CIA)':
+        ('Installable title (CIA)',
+         'インストール可能なソフト(CIA)'),
+    'Homebrew (3DSX)':
+        ('Homebrew (3DSX)',
+         '自作ソフト(3DSX)'),
+    'Imagen %s':
+        ('%s image',
+         '%s 画像'),
+    'Texto %s':
+        ('%s text',
+         '%s テキスト'),
+    'Archivo %s':
+        ('%s file',
+         '%s ファイル'),
+    'Archivo':
+        ('File',
+         'ファイル'),
+    'Tipo':
+        ('Type',
+         '種類'),
+    'Contenido':
+        ('Contents',
+         '中身'),
+    '%s (%llu bytes)':
+        ('%s (%llu bytes)',
+         '%s(%llu バイト)'),
+    'Tamaño':
+        ('Size',
+         'サイズ'),
+    'Dimensiones':
+        ('Dimensions',
+         '解像度'),
+    'Modificado':
+        ('Modified',
+         '更新日時'),
+    'Versión':
+        ('Version',
+         'バージョン'),
+    'ID':
+        ('ID',
+         'ID'),
+    'Abrir':
+        ('Open',
+         '開く'),
+    'Última vez':
+        ('Last seen',
+         '最終接続'),
+    'Nombre de la carpeta':
+        ('Folder name',
+         'フォルダ名'),
+    'No se pudo crear la carpeta':
+        ("Couldn't create the folder",
+         'フォルダを作成できませんでした'),
 }

@@ -12,6 +12,8 @@
 #include "ops.h"
 #include "update.h"
 #include "install.h"
+#include "img.h"
+#include <time.h>
 #include <stdlib.h>
 #include <strings.h>
 #include "server.h"
@@ -77,6 +79,7 @@ static struct {
 	bool want_pin;               // abrir el teclado del PIN fuera del dibujo
 	int want_rename;             // dispositivo a renombrar con el teclado (-1 = ninguno)
 	bool want_frename;           // renombrar el archivo elegido en Archivos
+	bool want_fnew;              // crear una carpeta en Archivos
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 	float t_upd;                 // interruptor «Buscar al abrir»
 	UpdInfo upd;                 // estado de las actualizaciones (copia por frame)
@@ -760,8 +763,14 @@ static void mini_strip(float a)
 	text_draw_center(pin, px + pw / 2, cy - text_lineh(sc) / 2, sc, col_alpha(T.text, a));
 	float lw = text_width(_("PIN"), TS_SUB);
 	text_draw(_("PIN"), px - 6 - lw, cy - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.text3, a));
-	float sx = lx + text_width(url, sc) + 14;
-	draw_status(sx, cy - 7, px - 12 - lw - sx, a);
+	int on = online_count();
+	if (on) {
+		float sx = lx + text_width(url, sc) + 14;
+		char n[8];
+		snprintf(n, sizeof n, "%d", on);
+		draw_icon(IC_DEVICES, sx + 8, cy, 14, col_alpha(T.ok, a));
+		text_draw(n, sx + 19, cy - text_lineh(sc) / 2, sc, col_alpha(T.ok, a));
+	}
 }
 
 // debajo de la tira: las transferencias a lo ancho o una pista para volver a abrir el QR
@@ -808,7 +817,7 @@ static void mini_body(float a)
 		float frac = x->st == XS_DONE ? 1 : x->total ? (float)((double)x->done / x->total) : 0;
 		draw_circle(X + 12, ry + 14, 11, col_alpha(col, a));
 		draw_icon(ic, X + 12, ry + 14, 12, col_alpha(0xFFFFFFFF, a));
-		char pc[8], sub[96];
+		char pc[16], sub[96];
 		snprintf(pc, sizeof pc, "%d%%", (int)(frac * 100));
 		text_draw_clip(x->name, X + 30, ry + 1, W - 80, TS_BODY, col_alpha(T.text, a));
 		text_draw_right(pc, X + W, ry + 1, TS_BODY, col_alpha(T.accent, a));
@@ -913,12 +922,19 @@ static void splash_bot(float alpha)
 }
 
 static void files_top(float a);
+static void vw_top(void);
+static bool vw_is_open(void);
 
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
 	if (U.splash >= 0) {
 		splash_top(1);
+		return;
+	}
+	if (U.tab == TAB_FILES && vw_is_open()) { // visor: pantalla completa, sin cabecera
+		vw_top();
+		toast_draw_top();
 		return;
 	}
 	bool about = U.tab == TAB_SETTINGS && U.page == PAGE_ABOUT;
@@ -1213,10 +1229,17 @@ static struct {
 	float off, target, total;
 	int sel, chip;
 	bool sys_open;
+	bool missing;      // la carpeta no existe (acceso rápido): se ofrece crearla
+	bool nosaves;      // «Partidas» sin copias de Checkpoint ni JKSM
+	bool need_reload;  // algo cambió en la SD (web, copias…): se vuelve a leer
 	int info_for;      // de qué elemento es la información de arriba
 	InsReq *cia;       // datos del CIA elegido (si lo es)
 	bool cia_ok;
 	Texture cia_icon;
+	Texture thumb;     // foto elegida, en pequeño
+	int iw, ih;        // su tamaño original
+	char app_title[64], app_pub[64]; // de un .3dsx (su SMDH)
+	int dir_count;     // elementos de la carpeta elegida
 } F = {.path = "/", .sys_open = true, .info_for = -1, .sel = 1};
 
 static const char *chip_name(int i)
@@ -1340,7 +1363,12 @@ static void f_load(const char *path)
 	util_strlcpy(F.path, path, sizeof F.path);
 	F.n = 0;
 	F.truncated = false;
+	F.nosaves = false;
+	F.need_reload = false;
 	F.err = fsx_list(path, true, f_collect, NULL) < 0;
+	bool d;
+	u64 sz;
+	F.missing = F.err && fsx_stat(path, &d, &sz) < 0;
 	state_lock();
 	for (int i = 0; i < F.n; i++) {
 		char full[700];
@@ -1360,6 +1388,21 @@ static void f_load(const char *path)
 	F.info_for = -1;
 }
 
+static void f_reload_keep(void)
+{
+	char keep[128] = "", p[512];
+	const FView *v = F.sel >= 0 && F.sel < F.nv ? &F.v[F.sel] : NULL;
+	if (v && v->kind == FV_ITEM)
+		util_strlcpy(keep, F.e[v->idx].name, sizeof keep);
+	util_strlcpy(p, F.path, sizeof p);
+	float off = F.target;
+	f_load(p);
+	F.target = fminf(off, fmaxf(0, F.total - VIEW_H));
+	for (int i = 0; keep[0] && i < F.nv; i++)
+		if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, keep))
+			F.sel = i;
+}
+
 static void f_open_chip(int c)
 {
 	const char *p = CHIP_PATH[c];
@@ -1371,8 +1414,12 @@ static void f_open_chip(int c)
 			if (fsx_stat(SAVE_DIRS[i], &d, &sz) == 0 && d)
 				p = SAVE_DIRS[i];
 		}
-		if (!p) {
-			toast_icon(_("Aún no hay copias de tus partidas: hazlas con Checkpoint o JKSM"), IC_STAR, T.warn);
+		if (!p) { // como en la web: se explica en vez de abrir una carpeta vacía
+			F.nosaves = true;
+			F.n = 0;
+			f_build_view();
+			F.sel = 0;
+			F.chip = CH_SAVES;
 			return;
 		}
 	}
@@ -1405,7 +1452,56 @@ static const FEnt *f_selected(void)
 	return F.sel >= 0 && F.sel < F.nv && F.v[F.sel].kind == FV_ITEM ? &F.e[F.v[F.sel].idx] : NULL;
 }
 
-// lee lo que hace falta para la pantalla de arriba (un CIA: su nombre, icono y versión)
+// SMDH de un .3dsx (nombre, autor e icono), si lo lleva
+static bool read_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, Texture *icon)
+{
+	char sd[720];
+	snprintf(sd, sizeof sd, "sdmc:%s", path);
+	FILE *f = fopen(sd, "rb");
+	if (!f)
+		return false;
+	u8 h[0x28];
+	bool ok = fread(h, 1, sizeof h, f) == sizeof h && !memcmp(h, "3DSX", 4) && (h[4] | h[5] << 8) > 32;
+	u8 *smdh = NULL;
+	if (ok) {
+		u32 off = h[32] | h[33] << 8 | h[34] << 16 | (u32)h[35] << 24, sz = h[36] | h[37] << 8 | h[38] << 16 | (u32)h[39] << 24;
+		ok = sz >= 0x36C0 && (smdh = malloc(0x36C0)) && !fseek(f, off, SEEK_SET) && fread(smdh, 1, 0x36C0, f) == 0x36C0 &&
+		     !memcmp(smdh, "SMDH", 4);
+	}
+	fclose(f);
+	if (ok) {
+		int l = g_lang == LANG_JA ? 0 : g_lang == LANG_ES ? 5 : 1;
+		const u8 *ti = smdh + 8 + l * 0x200;
+		if (!ti[0] && !ti[1])
+			ti = smdh + 8 + 0x200;
+		u16 tmp[0x81] = {0};
+		for (int i = 0; i < 0x40; i++)
+			tmp[i] = ti[i * 2] | ti[i * 2 + 1] << 8;
+		util_utf16_to_utf8(title, tn, tmp, 0x40);
+		for (int i = 0; i < 0x40; i++)
+			tmp[i] = ti[0x180 + i * 2] | ti[0x180 + i * 2 + 1] << 8;
+		util_utf16_to_utf8(pub, pn, tmp, 0x40);
+		static u16 px[48 * 48];
+		const u16 *ic = (const u16 *)(smdh + 0x24C0);
+		static const u8 tbl[8] = {0x00, 0x01, 0x04, 0x05, 0x10, 0x11, 0x14, 0x15};
+		for (int y = 0; y < 48; y++)
+			for (int x = 0; x < 48; x++)
+				px[y * 48 + x] = ic[((y >> 3) * 6 + (x >> 3)) * 64 + (tbl[x & 7] | tbl[y & 7] << 1)];
+		tex_from_rgb565(icon, px, 48, 48);
+	}
+	free(smdh);
+	return ok;
+}
+
+static bool count_cb(const FsxEntry *e, void *u)
+{
+	(void)e;
+	return ++*(int *)u < 100000;
+}
+
+static bool f_is_img(const FEnt *e);
+
+// lee lo que hace falta para la pantalla de arriba: icono y datos del CIA o .3dsx, foto en pequeño…
 static void f_info_refresh(void)
 {
 	int idx = f_selected() ? F.v[F.sel].idx : -1;
@@ -1413,35 +1509,312 @@ static void f_info_refresh(void)
 		return;
 	F.info_for = idx;
 	F.cia_ok = false;
+	F.app_title[0] = F.app_pub[0] = 0;
+	F.iw = F.ih = 0;
+	F.dir_count = -1;
 	tex_free(&F.cia_icon);
-	if (idx < 0 || F.e[idx].dir || strcasecmp(f_ext(F.e[idx].name), "cia"))
+	tex_free(&F.thumb);
+	if (idx < 0)
 		return;
-	if (!F.cia)
-		F.cia = malloc(sizeof *F.cia);
+	const FEnt *e = &F.e[idx];
 	char full[700];
 	f_full(idx, full, sizeof full);
-	if (F.cia && strlen(full) < sizeof F.cia->path && ins_peek(full, F.cia)) {
-		F.cia_ok = true;
-		if (F.cia->has_icon)
-			tex_from_rgb565(&F.cia_icon, F.cia->icon, 48, 48);
+	if (e->dir) {
+		int n = 0;
+		if (fsx_list(full, false, count_cb, &n) >= 0)
+			F.dir_count = n;
+	} else if (!strcasecmp(f_ext(e->name), "cia")) {
+		if (!F.cia)
+			F.cia = malloc(sizeof *F.cia);
+		if (F.cia && strlen(full) < sizeof F.cia->path && ins_peek(full, F.cia)) {
+			F.cia_ok = true;
+			if (F.cia->has_icon)
+				tex_from_rgb565(&F.cia_icon, F.cia->icon, 48, 48);
+		}
+	} else if (!strcasecmp(f_ext(e->name), "3dsx")) {
+		read_3dsx(full, F.app_title, sizeof F.app_title, F.app_pub, sizeof F.app_pub, &F.cia_icon);
+	} else if (f_is_img(e)) {
+		u8 *px = NULL;
+		int w, h;
+		if (img_load_fit(full, 116, 116, &px, &w, &h, &F.iw, &F.ih) == IMG_OK)
+			tex_from_rgba(&F.thumb, px, w, h);
+		else
+			img_size(full, &F.iw, &F.ih);
+		free(px);
 	}
 }
 
 static void f_menu_open(void);
+static bool f_open_item(int vi);
+
+// mover o copiar: carpeta de destino que se está eligiendo
+static struct {
+	int mode;          // 0 nada, FA_MOVE o FA_COPY: eligiendo carpeta de destino
+	char src[700], name[128];
+	bool src_dir;
+} FP;
+
+// ---- visor (fotos y textos): pantalla completa arriba, controles abajo
+enum { VW_NONE, VW_IMG, VW_TXT };
+static struct {
+	int kind;
+	int idx;           // elemento de F.e
+	Texture tex;
+	int w, h, ow, oh;
+	ImgResult res;
+	char *txt;
+	float scroll, target;
+	float t;           // tiempo abierto, para el pie que se desvanece
+} VW;
+
+static bool f_is_img(const FEnt *e)
+{
+	const char *x = f_ext(e->name);
+	return !e->dir && (!strcasecmp(x, "png") || !strcasecmp(x, "jpg") || !strcasecmp(x, "jpeg") || !strcasecmp(x, "bmp") || !strcasecmp(x, "gif"));
+}
+
+static bool f_is_txt(const FEnt *e)
+{
+	static const char *const X[] = {"txt", "ini", "json", "log", "cfg", "md", "xml", "csv", "yml", "yaml"};
+	const char *x = f_ext(e->name);
+	for (size_t i = 0; !e->dir && i < ARRAY_LEN(X); i++)
+		if (!strcasecmp(x, X[i]))
+			return true;
+	return false;
+}
+
+static bool vw_is_open(void)
+{
+	return VW.kind != VW_NONE;
+}
+
+static void vw_close(void)
+{
+	tex_free(&VW.tex);
+	free(VW.txt);
+	VW.txt = NULL;
+	VW.kind = VW_NONE;
+}
+
+static void vw_load(int idx)
+{
+	char full[700];
+	f_full(idx, full, sizeof full);
+	tex_free(&VW.tex);
+	free(VW.txt);
+	VW.txt = NULL;
+	VW.idx = idx;
+	VW.t = 0;
+	VW.scroll = VW.target = 0;
+	if (f_is_img(&F.e[idx])) {
+		VW.kind = VW_IMG;
+		u8 *px = NULL;
+		VW.res = img_load_fit(full, 400, 240, &px, &VW.w, &VW.h, &VW.ow, &VW.oh);
+		if (VW.res == IMG_OK && !tex_from_rgba(&VW.tex, px, VW.w, VW.h))
+			VW.res = IMG_BAD;
+		free(px);
+	} else {
+		VW.kind = VW_TXT;
+		char sd[720];
+		snprintf(sd, sizeof sd, "sdmc:%s", full);
+		FILE *f = fopen(sd, "rb");
+		const size_t MAX = 12 * 1024; // lo justo para leer sin que la consola vaya lenta
+		VW.txt = calloc(1, MAX + 64);
+		if (f && VW.txt) {
+			size_t n = fread(VW.txt, 1, MAX, f);
+			VW.txt[n] = 0;
+			for (size_t k = 0; k < n; k++) // tabuladores y saltos de Windows
+				if (VW.txt[k] == '\t' || VW.txt[k] == '\r')
+					VW.txt[k] = ' ';
+			if (!util_utf8_valid(VW.txt))
+				for (size_t k = 0; k < n; k++)
+					if ((u8)VW.txt[k] >= 0x80)
+						VW.txt[k] = '?';
+			if (n == MAX)
+				strcat(VW.txt, "\n…");
+		}
+		if (f)
+			fclose(f);
+	}
+}
+
+// fotos de la carpeta, para pasar con ← →
+static void vw_step(int d)
+{
+	if (VW.kind != VW_IMG)
+		return;
+	for (int k = 1; k < F.n; k++) {
+		int i = (VW.idx + d * k + F.n * 4) % F.n;
+		if (f_is_img(&F.e[i])) {
+			vw_load(i);
+			for (int v = 0; v < F.nv; v++) // la lista sigue a la foto
+				if (F.v[v].kind == FV_ITEM && F.v[v].idx == i)
+					F.sel = v;
+			return;
+		}
+	}
+}
+
+static void vw_top(void)
+{
+	VW.t += g_dt;
+	if (VW.kind == VW_IMG) {
+		draw_rect(0, 0, TOP_W, SCR_H, 0xFF000000);
+		if (VW.res == IMG_OK)
+			draw_texture(&VW.tex, (TOP_W - VW.w) / 2.0f, (SCR_H - VW.h) / 2.0f, VW.w, VW.h, 1);
+		else
+			text_draw_center(VW.res == IMG_TOO_BIG ? _("Esta foto es demasiado grande para verla en la consola") : _("No se pudo abrir esta foto"),
+			                 TOP_W / 2, SCR_H / 2 - 8, TS_BODY, 0xFFAAAAAA);
+		// pie con el nombre, que se desvanece a los 3 s
+		float a = clampf((3.5f - VW.t) / 0.5f, 0, 1);
+		if (a > 0.01f) {
+			draw_rect(0, SCR_H - 26, TOP_W, 26, col_alpha(0xFF000000, 0.55f * a));
+			char cap[200];
+			if (VW.res == IMG_OK)
+				snprintf(cap, sizeof cap, "%s · %d × %d", F.e[VW.idx].name, VW.ow, VW.oh);
+			else
+				util_strlcpy(cap, F.e[VW.idx].name, sizeof cap);
+			text_draw_center_clip(cap, TOP_W / 2, SCR_H - 21, TOP_W - 20, TS_SUB, col_alpha(0xFFFFFFFF, a));
+		}
+		return;
+	}
+	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+	VW.scroll = approach(VW.scroll, VW.target, 18);
+	gfx_clip(0, 0, TOP_W, SCR_H);
+	int nl = text_wrap_lines(VW.txt ? VW.txt : "", TOP_W - 28, TS_SUB, 900, 14, 10 - VW.scroll, T.text, true);
+	gfx_clip_off();
+	float maxs = fmaxf(0, nl * text_lineh(TS_SUB) + 20 - SCR_H);
+	VW.target = clampf(VW.target, 0, maxs);
+	if (maxs > 0) { // barra de desplazamiento fina
+		float vh = SCR_H * SCR_H / (maxs + SCR_H);
+		draw_rrect(TOP_W - 5, (SCR_H - vh) * (VW.scroll / maxs), 3, vh, 1.5f, col_alpha(T.text3, 0.6f));
+	}
+}
+
+static void vw_bottom(void)
+{
+	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
+	const FEnt *e = &F.e[VW.idx];
+	IconId ic;
+	u32 col;
+	f_kind(e, &ic, &col);
+	draw_rrect(14, 14, 36, 36, 10, col_alpha(col, 0.18f));
+	draw_icon(ic, 32, 32, 18, col);
+	text_draw_clip(e->name, 60, 14, BOT_W - 74, TS_BODY, T.text);
+	char sub[64], sz[24];
+	util_fmt_size(sz, sizeof sz, e->size);
+	if (VW.kind == VW_IMG && VW.res == IMG_OK)
+		snprintf(sub, sizeof sub, "%d × %d · %s", VW.ow, VW.oh, sz);
+	else
+		util_strlcpy(sub, sz, sizeof sub);
+	text_draw_clip(sub, 60, 32, BOT_W - 74, TS_SUB, T.text3);
+	// botones grandes: anterior / siguiente (fotos) o subir / bajar (texto), opciones y cerrar
+	const float BY = 72, BH = 52;
+	struct { const char *g, *t; IconId ic; } B[3];
+	if (VW.kind == VW_IMG) {
+		B[0] = (typeof(B[0])){GLYPH_DPAD, _("Anterior"), IC_CHEV_LEFT};
+		B[2] = (typeof(B[0])){GLYPH_DPAD, _("Siguiente"), IC_CHEV_RIGHT};
+	} else {
+		B[0] = (typeof(B[0])){GLYPH_DPAD, _("Subir"), IC_UP};
+		B[2] = (typeof(B[0])){GLYPH_DPAD, _("Bajar"), IC_DOWN};
+	}
+	B[1] = (typeof(B[0])){GLYPH_Y, _("Opciones"), IC_MENU};
+	float bw = (BOT_W - 40) / 3.0f;
+	int hit = -1;
+	for (int k = 0; k < 3; k++) {
+		float bx = 14 + k * (bw + 6);
+		bool p = touch_in(bx, BY, bw, BH);
+		draw_rrect(bx, BY, bw, BH, 14, p ? T.surface2 : T.surface);
+		draw_icon(B[k].ic, bx + bw / 2, BY + 18, 16, T.text2);
+		text_draw_center_clip(B[k].t, bx + bw / 2, BY + 31, bw - 8, TS_SUB, T.text3);
+		if (tap(bx, BY, bw, BH))
+			hit = k;
+	}
+	float cy = BY + BH + 14;
+	bool cp = touch_in(14, cy, BOT_W - 28, 40);
+	draw_rrect(14, cy, BOT_W - 28, 40, 20, cp ? T.surface2 : T.surface);
+	char cl[64];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	text_draw_center(cl, BOT_W / 2, cy + (40 - text_lineh(0.48f)) / 2, 0.48f, T.text);
+	bool img = VW.kind == VW_IMG;
+	if (hit == 0 || (img ? (g_krepeat & KEY_LEFT) : (g_krepeat & KEY_UP)))
+		img ? vw_step(-1) : (void)(VW.target -= 60);
+	if (hit == 2 || (img ? (g_krepeat & KEY_RIGHT) : (g_krepeat & KEY_DOWN)))
+		img ? vw_step(1) : (void)(VW.target += 60);
+	// deslizar el dedo: fotos, pasar; texto, desplazar
+	if (g_touch.up && g_touch.drag && img && fabsf((float)(g_touch.x - g_touch.sx)) > 50)
+		vw_step(g_touch.x < g_touch.sx ? 1 : -1);
+	if (!img && g_touch.held && g_touch.drag)
+		VW.target -= (g_touch.y - g_touch.py) * 1.5f;
+	if (hit == 1 || (g_kdown & KEY_Y)) {
+		g_kdown &= ~KEY_Y;
+		f_menu_open();
+	} else if (tap(14, cy, BOT_W - 28, 40) || (g_kdown & KEY_B)) {
+		vw_close();
+	}
+}
+
+// abrir: carpeta → entra; foto o texto → visor; CIA → su tarjeta de instalar; lo demás → opciones
+static bool f_open_item(int vi)
+{
+	F.sel = vi;
+	const FEnt *e = &F.e[F.v[vi].idx];
+	char full[700];
+	f_full(F.v[vi].idx, full, sizeof full);
+	if (e->dir) {
+		if (strlen(full) < sizeof F.path)
+			f_load(full);
+	} else if (f_is_img(e) || f_is_txt(e)) {
+		vw_load(F.v[vi].idx);
+	} else if (!strcasecmp(f_ext(e->name), "cia") && strlen(full) < 256) {
+		char err[24] = "";
+		if (ins_request(full, G.console, err, sizeof err) < 0)
+			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está esperando en la consola")
+			                                                                                                  : _("La consola no reconoce este CIA"),
+			           IC_CLOSE, T.danger);
+		else
+			ins_refresh(); // sale la tarjeta de instalar, con su icono y su versión
+	} else {
+		f_menu_open();
+	}
+	return true;
+}
+
+static void f_new_folder(void)
+{
+	U.want_fnew = true;
+}
 
 static void tab_files(void)
 {
 	if (!F.e)
 		f_load("/");
-	// cabecera: atrás y la carpeta actual
+	if (F.need_reload)
+		f_reload_keep();
+	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = !strcmp(F.path, "/");
-	const char *nm = root ? "SD" : strrchr(F.path, '/') + 1;
-	tab_header(nm, !root);
-	char cnt[32];
-	snprintf(cnt, sizeof cnt, F.n == 1 ? _("1 elemento") : _("%d elementos"), F.n);
-	text_draw_right(cnt, BOT_W - 14, 11, TS_SUB, T.text3);
-	if (!root && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
-		f_up();
+	const char *nm = F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
+	tab_header(nm, !root || F.nosaves);
+	float nx = BOT_W - 24, ny = 16;
+	bool np = touch_in(nx - 14, ny - 14, 28, 28);
+	if (!F.missing && !F.nosaves) {
+		draw_circle(nx, ny, 12, np ? T.surface2 : T.surface);
+		draw_icon(IC_FOLDER, nx - 1, ny + 1, 13, T.accent);
+		draw_circle(nx + 6, ny - 5, 5, T.accent);
+		draw_icon(IC_PLUS, nx + 6, ny - 5, 7, 0xFFFFFFFF);
+		char cnt[32];
+		snprintf(cnt, sizeof cnt, F.n == 1 ? _("1 elemento") : _("%d elementos"), F.n);
+		text_draw_right(cnt, nx - 20, 11, TS_SUB, T.text3);
+		if (!g_dialog.open && (tap(nx - 14, ny - 14, 28, 28) || (U.buttons && !FP.mode && (g_kdown & KEY_X)))) {
+			f_new_folder();
+			return;
+		}
+	}
+	if ((!root || F.nosaves) && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
+		if (F.nosaves)
+			f_reload_keep();
+		else
+			f_up();
 		return;
 	}
 	// desplazamiento con el dedo o siguiendo la selección
@@ -1465,7 +1838,7 @@ static void tab_files(void)
 	F.off = approach(F.off, F.target, 18);
 
 	bool inview = g_touch.sy >= VIEW_Y && g_touch.sy < VIEW_Y + VIEW_H && !g_dialog.open;
-	int act = -1; // fila tocada o activada con A
+	int open = -1, menu = -1; // fila que se abre o cuyo menú se pide
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
 	for (int i = 0; i < F.nv; i++) {
 		const FView *v = &F.v[i];
@@ -1476,8 +1849,8 @@ static void tab_files(void)
 			float cw = (BOT_W - 12) / (float)CH_COUNT;
 			for (int c = 0; c < CH_COUNT; c++) {
 				float cx = 6 + c * cw;
-				bool here = c == CH_SAVES ? (strstr(F.path, "/Checkpoint/saves") || !strncasecmp(F.path, "/JKSV", 5))
-				                          : !strcasecmp(F.path, CHIP_PATH[c]);
+				bool here = c == CH_SAVES ? (F.nosaves || strstr(F.path, "/Checkpoint/saves") || !strncasecmp(F.path, "/JKSV", 5))
+				                          : !F.nosaves && !strcasecmp(F.path, CHIP_PATH[c]);
 				bool hl = here || (U.buttons && F.sel == 0 && F.chip == c) || (inview && touch_in(cx, y + 2, cw, 40));
 				if (hl)
 					draw_rrect(cx + 2, y + 3, cw - 4, 38, 10, here ? col_alpha(T.accent, 0.18f) : T.surface);
@@ -1511,6 +1884,9 @@ static void tab_files(void)
 		IconId ic;
 		u32 col;
 		f_kind(e, &ic, &col);
+		// a la derecha, «⋮» para las opciones (como en la web); se comprueba antes que la fila
+		float mx = BOT_W - 30;
+		bool mp = inview && touch_in(mx - 4, y, 34, v->h);
 		if (pressed || selected)
 			draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 10, selected ? col_alpha(T.accent, 0.14f) : T.surface);
 		if (e->color) // destacada: una raya de su color a la izquierda, como en la web
@@ -1530,37 +1906,60 @@ static void tab_files(void)
 			util_fmt_size(sz, sizeof sz, e->size);
 			snprintf(sub, sizeof sub, "%s%s%s", sz, when[0] ? " · " : "", when);
 		}
-		text_draw_clip(e->name, 48, y + 3, BOT_W - 66, TS_BODY, e->color ? col : T.text);
-		text_draw_clip(sub, 48, y + 19, BOT_W - 66, TS_SUB, T.text3);
-		if (e->dir)
-			draw_icon(IC_CHEV_RIGHT, BOT_W - 18, y + v->h / 2, 10, T.text3);
-		if (inview && tap(6, y, BOT_W - 12, v->h))
-			act = i;
+		text_draw_clip(e->name, 48, y + 3, mx - 58, TS_BODY, e->color ? col : T.text);
+		text_draw_clip(sub, 48, y + 19, mx - 58, TS_SUB, T.text3);
+		if (mp)
+			draw_circle(mx + 12, y + v->h / 2, 12, T.surface2);
+		for (int d = -1; d <= 1; d++)
+			draw_circle(mx + 12, y + v->h / 2 + d * 5, 1.6f, T.text3);
+		if (inview && tap(mx - 4, y, 34, v->h))
+			menu = i;
+		else if (inview && long_press(6, y, mx - 10, v->h))
+			menu = i;
+		else if (inview && tap(6, y, mx - 10, v->h))
+			open = i;
 	}
 	gfx_clip_off();
-	if (F.err || F.n == 0) {
-		float cy = VIEW_Y + 44 - F.off + 50;
-		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, cy, TS_BODY, T.text3);
-	}
-	if (U.buttons && !g_dialog.open && F.sel > 0 && F.v[F.sel].kind == FV_ITEM && (g_kdown & (KEY_A | KEY_Y)))
-		act = F.sel | ((g_kdown & KEY_Y) ? 0x10000 : 0);
-	if (U.buttons && !g_dialog.open && (g_kdown & KEY_B))
-		f_up();
-	if (act >= 0) {
-		bool menu = act & 0x10000;
-		act &= 0xFFFF;
-		const FEnt *e = &F.e[F.v[act].idx];
-		if (e->dir && !menu) {
-			char full[700];
-			f_full(F.v[act].idx, full, sizeof full);
-			if (strlen(full) < sizeof F.path)
-				f_load(full);
-		} else if (menu || F.sel == act || U.buttons) {
-			F.sel = act;
-			f_menu_open();
-		} else {
-			F.sel = act; // primer toque: se elige y arriba sale su información
+	float my = VIEW_Y + 44 - F.off;
+	if (F.missing) {
+		// acceso rápido a una carpeta que aún no existe: se ofrece crearla, como en la web
+		text_draw_center(_("Esta carpeta aún no existe"), BOT_W / 2, my + 22, TS_BODY, T.text);
+		bool bp = touch_in(BOT_W / 2 - 70, my + 50, 140, 32);
+		draw_rrect(BOT_W / 2 - 70, my + 50, 140, 32, 16, bp ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+		char t[64];
+		snprintf(t, sizeof t, "%s %s", GLYPH_A, _("Crear carpeta"));
+		text_draw_center(t, BOT_W / 2, my + 50 + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, 0xFFFFFFFF);
+		if (tap(BOT_W / 2 - 70, my + 50, 140, 32) || (U.buttons && (g_kdown & KEY_A))) {
+			if (fsx_mkdirs(F.path) == 0) {
+				state_lock();
+				event_add(EV_MKDIR, strrchr(F.path, '/') + 1, G.console, 0);
+				state_unlock();
+			}
+			f_reload_keep();
 		}
+	} else if (F.nosaves) {
+		wrap_center(_("Las partidas de los juegos van cifradas dentro de «Nintendo 3DS». Haz una copia con Checkpoint o JKSM y aparecerá aquí."),
+		            BOT_W / 2, my + 14, BOT_W - 40, TS_SUB, 4, T.text3);
+	} else if (F.err || F.n == 0) {
+		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
+	}
+	if (U.buttons && !g_dialog.open && F.sel > 0 && F.v[F.sel].kind == FV_ITEM) {
+		if (g_kdown & KEY_A)
+			open = F.sel;
+		else if (g_kdown & KEY_Y)
+			menu = F.sel;
+	}
+	if (U.buttons && !g_dialog.open && (g_kdown & KEY_B)) {
+		if (F.nosaves)
+			f_reload_keep();
+		else
+			f_up();
+	}
+	if (menu >= 0) {
+		F.sel = menu;
+		f_menu_open();
+	} else if (open >= 0) {
+		f_open_item(open);
 	}
 }
 
@@ -1571,12 +1970,8 @@ static struct {
 	float anim;
 	int idx;     // elemento de F.e
 	int acts[6], n, sel, color;
+	bool just;   // se acaba de abrir: el toque o el botón que lo abrió no cuenta
 } FM;
-static struct {
-	int mode;          // 0 nada, FA_MOVE o FA_COPY: eligiendo carpeta de destino
-	char src[700], name[128];
-	bool src_dir;
-} FP;
 
 static void f_menu_open(void)
 {
@@ -1599,7 +1994,7 @@ static void f_menu_open(void)
 	FM.sel = 0;
 	FM.color = e->color;
 	FM.open = true;
-	U.buttons = U.buttons || !g_touch.up;
+	FM.just = true;
 }
 
 static const char *fa_name(int a)
@@ -1686,6 +2081,15 @@ static void f_menu(void)
 	text_draw_center_clip(e->name, BOT_W / 2, y + 12, BOT_W - 50, TS_BODY, T.text);
 	static const u32 MK[7] = {0, 0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
 	int run = -1;
+	// el mismo toque o botón que abrió el menú no elige nada: ese frame no hay entrada
+	u32 kd = g_kdown, kr = g_krepeat;
+	Touch tc = g_touch;
+	bool fresh = FM.just;
+	FM.just = false;
+	if (fresh) {
+		g_kdown = g_krepeat = 0;
+		memset(&g_touch, 0, sizeof g_touch);
+	}
 	if (U.buttons) {
 		if (g_krepeat & KEY_DOWN) FM.sel = (FM.sel + 1) % FM.n;
 		if (g_krepeat & KEY_UP) FM.sel = (FM.sel + FM.n - 1) % FM.n;
@@ -1736,7 +2140,9 @@ static void f_menu(void)
 	} else if (run >= 0) {
 		fa_run(run);
 	}
-	g_kdown &= ~(KEY_A | KEY_B); // el menú se queda con la pulsación
+	if (fresh)
+		g_kdown = kd, g_krepeat = kr, g_touch = tc;
+	g_kdown &= ~(KEY_A | KEY_B | KEY_Y); // el menú se queda con la pulsación
 	g_touch.up = false;
 }
 
@@ -1747,7 +2153,7 @@ static void f_pick_bar(void)
 {
 	if (!FP.mode)
 		return;
-	float y = VIEW_Y + VIEW_H - 34, w = BOT_W - 20;
+	float y = VIEW_Y + VIEW_H - QR_PAD - 34, w = BOT_W - 20; // por encima del botón del QR
 	draw_rrect(10, y + 2, w, 30, 15, T.shadow);
 	draw_rrect(10, y, w, 30, 15, T.accent);
 	char t[96];
@@ -1812,58 +2218,134 @@ static void f_pick_do(const char *dst)
 	f_reload();
 }
 
+static void f_fmt_date(char *out, size_t n, u64 t)
+{
+	time_t tt = (time_t)t;
+	struct tm tm;
+	gmtime_r(&tt, &tm);
+	if (g_lang == LANG_JA)
+		snprintf(out, n, "%04d/%02d/%02d %02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min);
+	else if (g_lang == LANG_EN)
+		snprintf(out, n, "%02d/%02d/%04d %02d:%02d", tm.tm_mon + 1, tm.tm_mday, tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
+	else
+		snprintf(out, n, "%02d/%02d/%04d %02d:%02d", tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
+}
+
+static void f_type_text(const FEnt *e, char *out, size_t n)
+{
+	const char *x = f_ext(e->name);
+	char up[12] = "";
+	for (int i = 0; x[i] && i < 10; i++)
+		up[i] = (char)(x[i] >= 'a' && x[i] <= 'z' ? x[i] - 32 : x[i]);
+	if (e->dir)
+		util_strlcpy(out, e->sys ? _("Carpeta del sistema") : _("Carpeta"), n);
+	else if (!strcasecmp(x, "cia"))
+		util_strlcpy(out, _("Programa instalable (CIA)"), n);
+	else if (!strcasecmp(x, "3dsx"))
+		util_strlcpy(out, _("Homebrew (3DSX)"), n);
+	else if (f_is_img(e))
+		snprintf(out, n, _("Imagen %s"), up);
+	else if (f_is_txt(e))
+		snprintf(out, n, _("Texto %s"), up);
+	else if (up[0])
+		snprintf(out, n, _("Archivo %s"), up);
+	else
+		util_strlcpy(out, _("Archivo"), n);
+}
+
+// fila «etiqueta  valor» de la información
+static float info_row(float x, float y, float w, const char *label, const char *value, u32 vc, float a)
+{
+	const float LW = 74;
+	text_draw_clip(label, x, y, LW - 6, TS_SUB, col_alpha(T.text3, a));
+	text_draw_clip(value, x + LW, y, w - LW, TS_SUB, col_alpha(vc, a));
+	return y + 15;
+}
+
 // pantalla de arriba en Archivos con el QR cerrado: la información de lo elegido
 static void files_top(float a)
 {
 	f_info_refresh();
 	const FEnt *e = f_selected();
-	float y = CARD_Y + MINI_H + 10, h = SCR_H - 8 - y;
-	draw_rrect(CARD_X, y + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
-	draw_rrect(CARD_X, y, CARD_W, h, 16, col_alpha(T.surface, a));
-	const float X = CARD_X + 16, W = CARD_W - 32;
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28;
 	if (!e) {
-		text_draw_center(_("Elige un archivo para ver su información"), TOP_W / 2, y + h / 2 - 8, TS_BODY, col_alpha(T.text3, a));
+		draw_icon(IC_FOLDER, TOP_W / 2, y0 + h / 2 - 14, 30, col_alpha(T.text3, a));
+		text_draw_center(_("Elige un archivo para ver su información"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
 		return;
 	}
 	IconId ic;
 	u32 col;
 	f_kind(e, &ic, &col);
-	float iy = y + 14;
-	if (F.cia_ok && F.cia_icon.ok) {
-		draw_rrect(X - 2, iy - 2, 68, 68, 14, col_alpha(T.surface2, a));
-		draw_texture(&F.cia_icon, X + 2, iy + 2, 60, 60, a);
+	// a la izquierda, la vista previa: la foto, el icono del programa o el del tipo
+	const float PS = 120;
+	float py = y0 + 12;
+	draw_rrect(X, py, PS, PS, 14, col_alpha(T.surface2, a));
+	if (F.thumb.ok)
+		draw_texture(&F.thumb, X + (PS - F.thumb.w) / 2, py + (PS - F.thumb.h) / 2, F.thumb.w, F.thumb.h, a);
+	else if (F.cia_icon.ok)
+		draw_texture(&F.cia_icon, X + 12, py + 12, 96, 96, a);
+	else
+		draw_icon(ic, X + PS / 2, py + PS / 2, 48, col_alpha(col, a));
+	// a la derecha, los datos
+	float rx = X + PS + 14, rw = X + W - rx, y = py;
+	const char *title = F.cia_ok && F.cia->title[0] ? F.cia->title : F.app_title[0] ? F.app_title : e->name;
+	int nl = text_wrap_lines(title, rw, TS_TITLE, 2, rx, y, col_alpha(e->color ? col : T.text, a), true);
+	y += nl * text_lineh(TS_TITLE) + 2;
+	const char *pub = F.cia_ok ? F.cia->publisher : F.app_pub;
+	if (pub[0]) {
+		text_draw_clip(pub, rx, y, rw, TS_SUB, col_alpha(T.text2, a));
+		y += 16;
+	}
+	y += 4;
+	char v[160], b[48];
+	f_type_text(e, v, sizeof v);
+	y = info_row(rx, y, rw, _("Tipo"), v, e->sys ? T.warn : T.text2, a);
+	if (e->dir) {
+		if (F.dir_count >= 0) {
+			snprintf(v, sizeof v, F.dir_count == 1 ? _("1 elemento") : _("%d elementos"), F.dir_count);
+			y = info_row(rx, y, rw, _("Contenido"), v, T.text2, a);
+		}
 	} else {
-		draw_rrect(X, iy, 64, 64, 16, col_alpha(col, 0.18f * a));
-		draw_icon(ic, X + 32, iy + 32, 30, col_alpha(col, a));
+		util_fmt_size(b, sizeof b, e->size);
+		if (e->size >= 1024)
+			snprintf(v, sizeof v, _("%s (%llu bytes)"), b, (unsigned long long)e->size);
+		else
+			util_strlcpy(v, b, sizeof v);
+		y = info_row(rx, y, rw, _("Tamaño"), v, T.text2, a);
 	}
-	float tx = X + 78, tw = W - 78;
-	const char *title = F.cia_ok && F.cia->title[0] ? F.cia->title : e->name;
-	int nl = text_wrap_lines(title, tw - 90, TS_TITLE, 2, tx, iy, col_alpha(T.text, a), true);
-	float ly = iy + nl * text_lineh(TS_TITLE) + 4;
-	char line[160], sz[24], when[24] = "";
-	if (F.cia_ok && F.cia->publisher[0]) {
-		text_draw_clip(F.cia->publisher, tx, ly, tw, TS_SUB, col_alpha(T.text3, a));
-		ly += 16;
+	if (F.iw > 0) {
+		snprintf(v, sizeof v, "%d × %d", F.iw, F.ih);
+		y = info_row(rx, y, rw, _("Dimensiones"), v, T.text2, a);
 	}
-	if (e->mtime)
-		util_fmt_when(when, sizeof when, e->mtime);
-	util_fmt_size(sz, sizeof sz, e->size);
-	snprintf(line, sizeof line, "%s%s%s", e->dir ? _("Carpeta") : sz, when[0] ? " · " : "", when);
-	text_draw_clip(line, tx, ly, tw, TS_SUB, col_alpha(T.text2, a));
-	float by = y + 92;
-	draw_rect(X, by, W, 1, col_alpha(T.divider, a));
-	char full[700];
-	f_full(F.v[F.sel].idx, full, sizeof full);
-	text_draw_clip(full, X, by + 8, W, TS_SUB, col_alpha(T.text3, a));
+	if (e->mtime) {
+		f_fmt_date(v, sizeof v, e->mtime);
+		y = info_row(rx, y, rw, _("Modificado"), v, T.text2, a);
+	}
 	if (F.cia_ok) {
 		u32 vc;
-		ins_version_line(F.cia, line, sizeof line, &vc);
-		text_wrap_lines(line, W, TS_SUB, 2, X, by + 26, col_alpha(vc, a), true);
-	} else if (e->sys) {
-		text_wrap_lines(_("Carpeta del sistema: no la borres ni la cambies si no sabes para qué sirve."), W, TS_SUB, 2, X, by + 26,
-		                col_alpha(T.warn, a), true);
+		char vl[160];
+		ins_version_line(F.cia, vl, sizeof vl, &vc);
+		y = info_row(rx, y, rw, _("Versión"), vl, vc, a);
+		snprintf(v, sizeof v, "%016llX", (unsigned long long)F.cia->tid);
+		y = info_row(rx, y, rw, _("ID"), v, T.text2, a);
 	}
-	text_draw_right(e->dir ? _("A abrir · Y opciones") : _("A o Y: opciones"), X + W, y + 10, TS_SUB, col_alpha(T.text3, a));
+	// abajo: la ruta y qué hacen los botones
+	float by = y0 + h - 22;
+	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	bool can_open = e->dir || f_is_img(e) || f_is_txt(e) || F.cia_ok;
+	char hint[96];
+	if (can_open)
+		snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"));
+	else
+		snprintf(hint, sizeof hint, "%s %s", GLYPH_Y, _("Opciones"));
+	float hw = text_width(hint, TS_SUB);
+	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
+	char full[700];
+	f_full(F.v[F.sel].idx, full, sizeof full);
+	text_draw_clip(full, X, by, W - hw - 12, TS_SUB, col_alpha(T.text3, a));
 }
 
 static void set_flag(bool *f)
@@ -2212,17 +2694,21 @@ static void draw_bottom(void)
 		splash_bot(1);
 		return;
 	}
-	if (U.tab == TAB_FILES) {
-		// con el menú abierto, la lista de debajo no recibe las pulsaciones
-		u32 kd = g_kdown, kr = g_krepeat;
-		Touch tc = g_touch;
-		if (FM.open || U.ins_pend) {
-			g_kdown = g_krepeat = 0;
-			memset(&g_touch, 0, sizeof g_touch);
-		}
+	// con un menú, la tarjeta de instalar o el visor encima, lo de debajo (pestaña y barra) no recibe nada
+	u32 kd = g_kdown, kr = g_krepeat;
+	Touch tc = g_touch;
+	bool viewer = U.tab == TAB_FILES && VW.kind;
+	if (FM.open || U.ins_pend || viewer) {
+		g_kdown = g_krepeat = 0;
+		memset(&g_touch, 0, sizeof g_touch);
+	}
+	if (viewer) {
+		if (!FM.open && !U.ins_pend)
+			g_kdown = kd, g_krepeat = kr, g_touch = tc;
+		vw_bottom();
+	} else if (U.tab == TAB_FILES) {
 		tab_files();
 		f_pick_bar();
-		g_kdown = kd, g_krepeat = kr, g_touch = tc;
 	} else if (U.tab == TAB_ACTIVITY)
 		tab_activity();
 	else if (U.tab == TAB_DEVICES)
@@ -2237,7 +2723,9 @@ static void draw_bottom(void)
 		settings_update();
 	else
 		settings_main();
-	draw_tabbar();
+	if (!viewer)
+		draw_tabbar();
+	g_kdown = kd, g_krepeat = kr, g_touch = tc;
 	if (U.tab == TAB_FILES)
 		f_menu();
 	install_card();
@@ -2294,6 +2782,7 @@ static void watch_events(void)
 {
 	if (V.hist_n == s_hist_n && V.hist_head == s_hist_head)
 		return;
+	F.need_reload = true; // subidas, copias, borrados… la carpeta abierta se vuelve a leer
 	if (s_events_seen && V.hist_n > 0) {
 		const Event *e = ev(0);
 		char msg[160];
@@ -2394,6 +2883,31 @@ static void update(void)
 		U.buttons = true;
 	if (g_touch.down)
 		U.buttons = false;
+	if (U.want_fnew) {
+		U.want_fnew = false;
+		char nm[128], dst[700];
+		if (kb_input(_("Nombre de la carpeta"), "", nm, sizeof nm, false, false) && nm[0]) {
+			bool d;
+			u64 sz;
+			snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
+			if (strpbrk(nm, "\\/:*?\"<>|") || nm[strlen(nm) - 1] == '.' || nm[strlen(nm) - 1] == ' ')
+				toast_icon(_("Ese nombre no es válido"), IC_CLOSE, T.danger);
+			else if (fsx_stat(dst, &d, &sz) == 0)
+				toast_icon(_("Ya existe un archivo con ese nombre"), IC_CLOSE, T.danger);
+			else if (fsx_mkdirs(dst) < 0)
+				toast_icon(_("No se pudo crear la carpeta"), IC_CLOSE, T.danger);
+			else {
+				state_lock();
+				event_add(EV_MKDIR, nm, G.console, 0);
+				state_unlock();
+				f_reload_keep();
+				for (int i = 0; i < F.nv; i++) // queda elegida la carpeta nueva
+					if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm))
+						F.sel = i;
+			}
+		}
+		return;
+	}
 	if (U.want_frename) {
 		U.want_frename = false;
 		char nm[128], full[700], dst[1100];
@@ -2466,6 +2980,8 @@ static void update(void)
 	}
 	if (g_dialog.open)
 		return;
+	if ((g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind)
+		vw_close();
 	if (g_kdown & (KEY_R | KEY_ZR)) {
 		U.tab = (U.tab + 1) % TAB_COUNT;
 		U.page = PAGE_MAIN;
