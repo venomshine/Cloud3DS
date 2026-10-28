@@ -10,6 +10,7 @@
 #include "fsx.h"
 #include "ops.h"
 #include "names.h"
+#include "install.h"
 #include "state.h"
 #include "util.h"
 
@@ -902,6 +903,55 @@ static void h_mark(Conn *c)
 	resp_ok(c);
 }
 
+/* instalar un CIA de la SD: la consola pregunta; la web sigue el estado con /api/installs */
+static void h_install(Conn *c)
+{
+	char p[1024], err[24] = "", dev[48];
+	if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p) || strlen(p) >= 256) {
+		resp_err(c, 400, "bad_path");
+		return;
+	}
+	if (G.readonly) {
+		resp_err(c, 403, "readonly");
+		return;
+	}
+	state_lock();
+	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
+	G.rev++;
+	state_unlock();
+	int id = ins_request(p, dev, err, sizeof err);
+	if (id < 0) {
+		resp_err(c, !strcmp(err, "already") || !strcmp(err, "full") ? 409 : 400, err);
+		return;
+	}
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"id\":%d}", id);
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
+static void h_installs(Conn *c)
+{
+	static InsReq q[MAX_INS]; /* solo el hilo del servidor la usa */
+	int n = ins_snapshot(q, MAX_INS);
+	static const char *const ST[] = {"free", "pending", "queued", "running", "done", "failed", "kept", "rejected"};
+	Buf b = {0};
+	buf_puts(&b, "{\"ok\":true,\"items\":[");
+	for (int i = 0; i < n; i++) {
+		char v[16];
+		buf_printf(&b, "%s{\"id\":%d,\"st\":\"%s\",\"path\":", i ? "," : "", q[i].id, ST[q[i].st]);
+		buf_json_str(&b, q[i].path);
+		buf_puts(&b, ",\"title\":");
+		buf_json_str(&b, q[i].title);
+		buf_printf(&b, ",\"ver\":\"%s\",\"inst\":%d,\"newer\":%s,\"self\":%s,\"size\":%llu,\"done\":%llu,\"error\":\"%s\"}",
+		           ins_ver_text(q[i].ver, v, sizeof v), q[i].inst_ver, q[i].inst_ver > q[i].ver ? "true" : "false", q[i].self ? "true" : "false", (unsigned long long)q[i].size,
+		           (unsigned long long)q[i].done, q[i].err);
+	}
+	buf_puts(&b, "]}");
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
 static void h_job(Conn *c)
 {
 	int st, err;
@@ -1147,6 +1197,10 @@ static void route(Conn *c, const char *body)
 		h_move(c);
 	else if (strcmp(p, "copy") == 0 && post)
 		h_copy(c);
+	else if (strcmp(p, "install") == 0 && post)
+		h_install(c);
+	else if (strcmp(p, "installs") == 0 && get)
+		h_installs(c);
 	else if (strcmp(p, "devname") == 0 && post)
 		h_devname(c);
 	else if (strcmp(p, "mark") == 0 && post)

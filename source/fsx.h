@@ -35,3 +35,4 @@ u64  fsx_mtime(const char *path);
 bool fsx_path_ok(const char *p);
 bool fsx_name_ok(const char *n);
 bool fsx_is_system(const char *p); /* /Nintendo 3DS, /luma, boot.firm... */
+Result fsx_open(const char *path, u32 flags, Handle *out); /* handle del servicio FS (para AM) */

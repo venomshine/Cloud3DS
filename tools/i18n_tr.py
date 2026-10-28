@@ -374,4 +374,67 @@ TR = {
     "Nueva versión %s disponible en Ajustes":
         ("Version %s is available in Settings",
          "新しいバージョン%sを設定から入手できます"),
+    "Instalado":
+        ("Installed",
+         "インストール済み"),
+    "Es Cloud3DS: actualízala desde Ajustes → Actualizaciones.":
+        ("This is Cloud3DS: update it from Settings → Updates.",
+         "Cloud3DSです。設定 → アップデートから更新してください。"),
+    "Versión %s · no está instalado":
+        ("Version %s · not installed",
+         "バージョン%s · 未インストール"),
+    "Versión %s · ya instalada (se reinstalará)":
+        ("Version %s · already installed (it will be reinstalled)",
+         "バージョン%s · インストール済み(再インストールします)"),
+    "Versión %s · ya tienes una más nueva (%s). La consola no deja bajar de versión.":
+        ("Version %s · you already have a newer one (%s). The console doesn't allow downgrades.",
+         "バージョン%s · より新しい%sがあります。本体はダウングレードできません。"),
+    "Versión %s · actualiza la %s instalada":
+        ("Version %s · updates the installed %s",
+         "バージョン%s · インストール済みの%sを更新"),
+    "Instalar en la consola":
+        ("Install on the console",
+         "本体にインストール"),
+    "Este juego es solo para New 3DS.":
+        ("This game is for New 3DS only.",
+         "このゲームはNew 3DS専用です。"),
+    "ID %016llX · pedido desde %s":
+        ("ID %016llX · requested from %s",
+         "ID %016llX · %sから"),
+    "y %d más esperando":
+        ("and %d more waiting",
+         "ほか%d件が待機中"),
+    "%d CIA para instalar":
+        ("%d CIA to install",
+         "インストールするCIA: %d"),
+    "¿Instalar este CIA?":
+        ("Install this CIA?",
+         "このCIAをインストールしますか?"),
+    "Instalar todos":
+        ("Install all",
+         "すべてインストール"),
+    "Instalar":
+        ("Install",
+         "インストール"),
+    "Solo guardar en la SD":
+        ("Just save it to the SD",
+         "SDに保存するだけ"),
+    "Rechazar":
+        ("Decline",
+         "拒否"),
+    "Instalando…":
+        ("Installing…",
+         "インストール中…"),
+    "Guardado en la SD sin instalar":
+        ("Saved to the SD without installing",
+         "インストールせずにSDに保存しました"),
+    "Instalando":
+        ("Installing",
+         "インストール中"),
+    "instalando":
+        ("installing",
+         "インストール中"),
+    "Espera a que termine la instalación":
+        ("Wait for the install to finish",
+         "インストールが終わるまでお待ちください"),
 }

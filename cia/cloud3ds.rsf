@@ -25,6 +25,10 @@ AccessControlInfo:
   UseExtSaveData                : false
   FileSystemAccess:
    - DirectSdmc
+   # añadir la seed de un juego después de instalarlo, como FBI
+   - SeedDB
+  IoAccessControl:
+   - CreateSeed
   AffinityMask                  : 1
   IdealProcessor                : 0
   Priority                      : 16

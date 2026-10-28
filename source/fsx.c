@@ -238,3 +238,9 @@ bool fsx_is_system(const char *p)
 	}
 	return false;
 }
+
+Result fsx_open(const char *path, u32 flags, Handle *out)
+{
+	u16 pb[512];
+	return FSUSER_OpenFile(out, sd, mkpath(pb, 512, path), flags, 0);
+}

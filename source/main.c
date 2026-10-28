@@ -11,6 +11,7 @@
 #include "i18n.h"
 #include "ops.h"
 #include "update.h"
+#include "install.h"
 #include "server.h"
 #include "state.h"
 #include "ui.h"
@@ -76,6 +77,11 @@ static struct {
 	float t_upd;                 // interruptor «Buscar al abrir»
 	UpdInfo upd;                 // estado de las actualizaciones (copia por frame)
 	u32 upd_seen;                // para avisar una sola vez de una versión nueva
+	InsReq ins[MAX_INS];         // cola de CIA para instalar (copia)
+	int ins_n, ins_pend;
+	int ins_icon_id;             // de qué petición es el icono cargado
+	Texture ins_icon;
+	float ins_anim;
 } U;
 
 static AppState V;               // copia del estado para dibujar sin el cerrojo
@@ -175,6 +181,10 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 	case EV_MOVE:
 		*ic = IC_FOLDER; *col = T.accent2;
 		snprintf(sub, sn, "%s · %s", _("Movido"), e->device);
+		break;
+	case EV_INSTALL:
+		*ic = IC_CHECK; *col = T.ok;
+		snprintf(sub, sn, "%s · %s · %s", _("Instalado"), sz, e->device);
 		break;
 	default: {
 		char dur[24];
@@ -372,6 +382,180 @@ static void update_top(void)
 	                W, TS_BODY, 4, X, y, T.text3, true);
 }
 
+// ------------------------------------------------------------ instalar CIA (pedido desde la web)
+static void text_draw_center_clip(const char *t, float cx, float y, float maxw, float sc, u32 c)
+{
+	float w = fminf(text_width(t, sc), maxw);
+	text_draw_clip(t, cx - w / 2, y, maxw, sc, c);
+}
+
+// se puede instalar: ni Cloud3DS (va por Actualizaciones) ni bajar de versión (AM no deja)
+static bool ins_can(const InsReq *r)
+{
+	return !r->self && !(r->inst_ver >= 0 && r->inst_ver > r->ver);
+}
+
+static const InsReq *ins_first_pending(void)
+{
+	for (int i = 0; i < U.ins_n; i++)
+		if (U.ins[i].st == INS_PENDING)
+			return &U.ins[i];
+	return NULL;
+}
+
+// versión del CIA frente a la instalada, con el color que le toca
+static void ins_version_line(const InsReq *r, char *out, size_t n, u32 *col)
+{
+	char a[16], b[16];
+	ins_ver_text(r->ver, a, sizeof a);
+	*col = T.text3;
+	if (r->self) {
+		util_strlcpy(out, _("Es Cloud3DS: actualízala desde Ajustes → Actualizaciones."), n);
+		*col = T.warn;
+	} else if (r->inst_ver < 0) {
+		snprintf(out, n, _("Versión %s · no está instalado"), a);
+	} else if (r->inst_ver == r->ver) {
+		snprintf(out, n, _("Versión %s · ya instalada (se reinstalará)"), a);
+	} else if (r->inst_ver > r->ver) {
+		snprintf(out, n, _("Versión %s · ya tienes una más nueva (%s). La consola no deja bajar de versión."), a,
+		         ins_ver_text((u16)r->inst_ver, b, sizeof b));
+		*col = T.warn;
+	} else {
+		snprintf(out, n, _("Versión %s · actualiza la %s instalada"), a, ins_ver_text((u16)r->inst_ver, b, sizeof b));
+		*col = T.ok;
+	}
+}
+
+static void ins_refresh(void)
+{
+	U.ins_n = ins_snapshot(U.ins, MAX_INS);
+	U.ins_pend = 0;
+	for (int i = 0; i < U.ins_n; i++)
+		U.ins_pend += U.ins[i].st == INS_PENDING;
+	const InsReq *r = ins_first_pending();
+	if (r && r->id != U.ins_icon_id) {
+		U.ins_icon_id = r->id;
+		if (r->has_icon)
+			tex_from_rgb565(&U.ins_icon, r->icon, 48, 48);
+		else
+			tex_free(&U.ins_icon);
+	}
+}
+
+// pantalla de arriba mientras hay CIA esperando: los datos del primero
+static void install_top(void)
+{
+	const InsReq *r = ins_first_pending();
+	if (!r)
+		return;
+	card();
+	const float X = CARD_X + 18, W = CARD_W - 36;
+	float ix = X, iy = CARD_Y + 18;
+	draw_rrect(ix - 2, iy - 2, 100, 100, 18, T.surface2);
+	if (U.ins_icon.ok)
+		draw_texture(&U.ins_icon, ix + 2, iy + 2, 92, 92, 1);
+	else
+		draw_icon(IC_GEM, ix + 48, iy + 48, 44, T.text3);
+	float tx = ix + 114, tw = X + W - tx;
+	text_draw_clip(_("Instalar en la consola"), tx, iy, tw, TS_SUB, T.accent);
+	if (U.ins_pend > 1) {
+		char more[48];
+		snprintf(more, sizeof more, _("y %d más esperando"), U.ins_pend - 1);
+		text_draw_right(more, X + W, iy, TS_SUB, T.text3);
+	}
+	text_wrap_lines(r->title, tw, TS_TITLE, 2, tx, iy + 16, T.text, true);
+	text_draw_clip(r->publisher, tx, iy + 56, tw, TS_SUB, T.text3);
+	char line[160], sz[24];
+	util_fmt_size(sz, sizeof sz, r->size);
+	snprintf(line, sizeof line, "%s · %s", sz, r->file);
+	text_draw_clip(line, tx, iy + 74, tw, TS_SUB, T.text3);
+	float y = CARD_Y + 130;
+	draw_rect(X, y, W, 1, T.divider);
+	u32 col;
+	ins_version_line(r, line, sizeof line, &col);
+	int nl = text_wrap_lines(line, W, TS_BODY, 2, X, y + 10, col, true);
+	bool n3ds = false;
+	APT_CheckNew3DS(&n3ds);
+	if (r->n3ds_only && !n3ds && nl < 2)
+		text_draw_clip(_("Este juego es solo para New 3DS."), X, y + 10 + text_lineh(TS_BODY), W, TS_BODY, T.warn);
+	snprintf(line, sizeof line, _("ID %016llX · pedido desde %s"), (unsigned long long)r->tid, r->device);
+	text_draw_clip(line, X, y + 52, W, TS_SUB, T.text3);
+}
+
+// tarjeta de abajo: Instalar / Solo guardar / Rechazar (con varios, para todos)
+#define INS_BX 16.0f
+#define INS_BW (BOT_W - 32.0f)
+static void ins_button(float y, const char *glyph, const char *label, u32 fg, u32 bg, bool on)
+{
+	bool p = on && touch_in(INS_BX, y, INS_BW, 36);
+	draw_rrect(INS_BX, y, INS_BW, 36, 18, p ? col_lerp(bg, T.text, 0.15f) : on ? bg : T.surface2);
+	char t[96];
+	snprintf(t, sizeof t, "%s %s", glyph, label);
+	text_draw_center(t, BOT_W / 2, y + (36 - text_lineh(0.48f)) / 2, 0.48f, on ? fg : T.text3);
+}
+
+static void install_card(void)
+{
+	U.ins_anim = approach(U.ins_anim, U.ins_pend ? 1 : 0, 14);
+	if (U.ins_anim < 0.01f)
+		return;
+	const InsReq *r = ins_first_pending();
+	float a = ease_out_cubic(U.ins_anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	float y = 26 + (1 - a) * 30;
+	draw_rrect(10, y + 3, BOT_W - 20, SCR_H - y - 10, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, SCR_H - y - 10, 16, T.surface);
+	if (!r)
+		return;
+	char title[96];
+	if (U.ins_pend > 1)
+		snprintf(title, sizeof title, _("%d CIA para instalar"), U.ins_pend);
+	else
+		util_strlcpy(title, _("¿Instalar este CIA?"), sizeof title);
+	text_draw_center(title, BOT_W / 2, y + 12, TS_TITLE, T.text);
+	// nombres de los que esperan
+	int shown = 0;
+	for (int i = 0; i < U.ins_n && shown < 2; i++)
+		if (U.ins[i].st == INS_PENDING) {
+			text_draw_center_clip(U.ins[i].title, BOT_W / 2, y + 36 + shown * 16, BOT_W - 60, TS_SUB, T.text3);
+			shown++;
+		}
+	bool can = false;
+	for (int i = 0; i < U.ins_n; i++)
+		can |= U.ins[i].st == INS_PENDING && ins_can(&U.ins[i]);
+	float by = y + 76;
+	ins_button(by, GLYPH_A, U.ins_pend > 1 ? _("Instalar todos") : _("Instalar"), 0xFFFFFFFF, T.ok, can);
+	ins_button(by + 44, GLYPH_X, _("Solo guardar en la SD"), T.text, T.surface2, true);
+	ins_button(by + 88, GLYPH_B, _("Rechazar"), T.danger, col_alpha(T.danger, 0.16f), true);
+}
+
+// botones de la tarjeta; devuelve true si se ha decidido algo
+static bool install_input(void)
+{
+	if (!U.ins_pend || g_dialog.open)
+		return false;
+	float y = 26, by = y + 76;
+	int what = -1;
+	bool can = false;
+	for (int i = 0; i < U.ins_n; i++)
+		can |= U.ins[i].st == INS_PENDING && ins_can(&U.ins[i]);
+	if (can && ((g_kdown & KEY_A) || tap(INS_BX, by, INS_BW, 36)))
+		what = INS_ACCEPT;
+	else if ((g_kdown & KEY_X) || tap(INS_BX, by + 44, INS_BW, 36))
+		what = INS_KEEP;
+	else if ((g_kdown & KEY_B) || tap(INS_BX, by + 88, INS_BW, 36))
+		what = INS_REJECT;
+	if (what < 0)
+		return true; // la tarjeta tapa lo de debajo: no pasa nada más
+	ins_decide(-1, what);
+	ins_refresh();
+	if (what == INS_ACCEPT)
+		toast_icon(_("Instalando…"), IC_DOWNLOAD, T.ok);
+	else if (what == INS_KEEP)
+		toast_icon(_("Guardado en la SD sin instalar"), IC_FOLDER, T.accent);
+	return true;
+}
+
 // ------------------------------------------------------------ pantalla superior
 static void draw_battery(float x, float y, int pct, bool charging)
 {
@@ -496,6 +680,10 @@ static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic)
 		*head = _("Copiando");
 		*col = T.accent2;
 		*ic = IC_FOLDER;
+	} else if (x->kind == XF_INSTALL) {
+		*head = _("Instalando");
+		*col = T.ok;
+		*ic = IC_DOWNLOAD;
 	}
 	if (x->st == XS_DONE) {
 		*head = _("Completado");
@@ -516,7 +704,6 @@ static void xfer_col(float a, float dy)
 		return;
 	const Xfer *x = xs[0];
 	float tx = COL_X, y = QR_Y + dy;
-	bool up = x->kind == XF_UPLOAD;
 	const char *head;
 	u32 col;
 	IconId ic;
@@ -526,7 +713,7 @@ static void xfer_col(float a, float dy)
 	text_draw_clip(head, tx + 34, y + 4, COL_W - 34, 0.55f, col_alpha(T.text, a));
 	text_wrap_lines(x->name, COL_W, TS_BODY, 2, tx, y + 34, col_alpha(T.text, a), true);
 	char sub[96];
-	snprintf(sub, sizeof sub, up || x->kind == XF_COPY ? _("de %s") : _("a %s"), x->device);
+	snprintf(sub, sizeof sub, x->kind != XF_DOWNLOAD ? _("de %s") : _("a %s"), x->device);
 	text_draw_clip(sub, tx, y + 66, COL_W, TS_SUB, col_alpha(T.text3, a));
 
 	float frac = x->st == XS_DONE ? 1 : x->total ? (float)((double)x->done / x->total) : 0;
@@ -731,6 +918,8 @@ static void draw_top(void)
 		about_top();
 	} else if (U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE) {
 		update_top();
+	} else if (U.ins_pend) {
+		install_top();
 	} else if (!strcmp(V.srv_error, "soc")) {
 		// la red de la consola (soc:U) no arrancó: no es culpa del Wi-Fi, y se reintenta sola
 		char msg[160];
@@ -1334,6 +1523,7 @@ static void draw_bottom(void)
 	else
 		settings_main();
 	draw_tabbar();
+	install_card();
 	dialog_draw();
 	if (U.fade > 0) {
 		draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, U.fade));
@@ -1394,7 +1584,7 @@ static void watch_events(void)
 
 static void lid_and_sleep(void)
 {
-	bool busy = xfer_active() > 0 || upd_busy();
+	bool busy = xfer_active() > 0 || upd_busy() || ins_busy();
 	aptSetSleepAllowed(!busy);
 	// tapa cerrada transfiriendo: apaga la luz y sigue
 	u8 open = 1;
@@ -1428,7 +1618,7 @@ static void exit_text(char *msg, size_t n, bool *danger)
 	char name[64];
 	util_strlcpy(name, x->name, sizeof name);
 	int pct = x->total ? (int)((double)x->done * 100 / x->total) : 0;
-	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : x->kind == XF_COPY ? _("copiando") : _("enviando");
+	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : x->kind == XF_COPY ? _("copiando") : x->kind == XF_INSTALL ? _("instalando") : _("enviando");
 	if (cnt == 1)
 		snprintf(msg, n, _("Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará."), dir, name, pct);
 	else
@@ -1438,8 +1628,8 @@ static void exit_text(char *msg, size_t n, bool *danger)
 
 static void ask_exit(void)
 {
-	if (upd_busy()) {
-		toast_icon(_("Espera a que termine la actualización"), IC_DOWNLOAD, T.warn);
+	if (upd_busy() || ins_busy()) {
+		toast_icon(upd_busy() ? _("Espera a que termine la actualización") : _("Espera a que termine la instalación"), IC_DOWNLOAD, T.warn);
 		return;
 	}
 	char msg[300];
@@ -1501,6 +1691,8 @@ static void update(void)
 		}
 		return;
 	}
+	if (install_input())
+		return;
 	exit_refresh();
 	int d = dialog_update();
 	if (d >= 0) {
@@ -1570,6 +1762,7 @@ int main(int argc, char **argv)
 
 	server_start();
 	upd_init(argc > 0 ? argv[0] : NULL);
+	ins_init();
 	if (G.upd_auto)
 		upd_check();
 	U.splash = 0;
@@ -1596,6 +1789,13 @@ int main(int argc, char **argv)
 		watch_events();
 		s_events_seen = true;
 		upd_get(&U.upd);
+		static int ins_tick;
+		if (U.ins_pend || ins_busy() || ++ins_tick % 20 == 0) { // la cola solo se copia entera cuando hace falta
+			int before = U.ins_pend;
+			ins_refresh();
+			if (U.ins_pend > before && before == 0)
+				U.buttons = true; // se decide con A, X o B
+		}
 		if (U.upd.st == UPD_AVAILABLE && U.upd_seen != U.upd.rev && !(U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE)) {
 			char msg[80];
 			snprintf(msg, sizeof msg, _("Nueva versión %s disponible en Ajustes"), U.upd.latest);
@@ -1620,7 +1820,9 @@ int main(int argc, char **argv)
 	}
 
 	ops_exit();
+	ins_exit();
 	upd_exit();
+	tex_free(&U.ins_icon);
 	server_stop();
 	state_lock();
 	config_save();

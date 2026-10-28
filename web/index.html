@@ -186,6 +186,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .qsum{padding:0 16px 12px}
 .qlist{max-height:260px;overflow:auto;border-top:1px solid var(--line)}
 .queue.min .qlist{display:none}
+#insq{z-index:46}
 .qi{display:flex;gap:10px;align-items:center;padding:10px 12px 10px 16px;border-bottom:1px solid var(--line)}
 .qi:last-child{border-bottom:0}
 .qi .meta span.err{color:var(--err)}
@@ -323,6 +324,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 <button class="fab hide" id="fab"></button>
 <div class="selbar" id="selbar"></div>
 <div class="queue" id="queue"></div>
+<div class="queue" id="insq"></div>
 <div class="drop" id="drop"></div>
 <div class="toast" id="toast"></div>
 <div class="offline" id="offline"></div>
@@ -352,6 +354,7 @@ es:{
  sysQ:"Carpeta del sistema", sysD:"«%1» es necesaria para que la consola o el homebrew funcionen correctamente. ¿Quieres continuar?", cont:"Continuar",
  renT:"Renombrar", newT:"Nueva carpeta", nameErr:"Nombre no válido. No uses \\ / : * ? \" < > | ni termines el nombre en punto.",
  exists:"Ya existe «%1»", existsD:"Elige qué hacer con este archivo.", replace:"Reemplazar", skip:"Omitir", keep:"Conservar ambos", all:"Aplicar a todos",
+ insConsole:"Instalar en la consola", insSent:"Enviado a la consola: confírmalo allí.", insHead:"Instalar en la consola", insDone:"Instalaciones", st_pending:"Esperando confirmación en la consola", st_queued:"En cola", st_running:"Instalando · %1", st_done:"Instalado", st_failed:"No se instaló", st_kept:"Guardado en la SD sin instalar", st_rejected:"Rechazado en la consola", insAskT:"¿Instalar en la consola?", insAskD:"Has subido %1 CIA. La consola te pedirá confirmación antes de instalar. Si no, se quedan guardados en la SD.", insOk:"Instalar", insSelf:"Cloud3DS se actualiza desde Ajustes → Actualizaciones.", err_not_cia:"Solo se pueden instalar archivos .cia.", err_bad_cia:"La consola no reconoce este CIA. Puede estar dañado o incompleto.", err_system_title:"Por seguridad, Cloud3DS no instala títulos del sistema, DSiWare ni firmware.", err_already:"Ya está esperando confirmación en la consola.", err_full:"Hay demasiadas instalaciones pendientes en la consola.", err_newer:"Ya hay una versión más nueva instalada.", err_damaged:"El CIA está dañado.", err_am:"La consola no pudo instalarlo.", err_am_busy:"El servicio de instalación estaba ocupado. Reinicia la consola y vuelve a intentarlo.", err_canceled:"Se canceló.",
  thisDev:"Este dispositivo", renameDev:"Cambiar nombre", devNameT:"Nombre de este dispositivo", devNameD:"Así aparecerá en la consola. Déjalo vacío para usar el nombre automático.", nameSaved:"Nombre guardado",
  sysGroup:"Carpetas del sistema", highlight:"Destacar", mk0:"Sin color", mk1:"Rojo", mk2:"Naranja", mk3:"Amarillo", mk4:"Verde", mk5:"Azul", mk6:"Morado",
  renameAs:"Renombrar…", cancelAll:"Cancelar todo", merge:"Combinar", existsDirD:"Ya hay una carpeta con ese nombre. Puedes combinar su contenido.", newName:"Nuevo nombre", copy:"Copiar", move:"Mover", copyTo:"Copiar a…", moveTo:"Mover a…", pickT:"Elige la carpeta de destino", copyHere:"Copiar aquí", moveHere:"Mover aquí", copying:"Copiando %1…", copied:"Copiado", moved:"Movido", err_into_self:"No puedes copiar ni mover una carpeta dentro de sí misma.", err_busy:"Ya hay una copia en curso. Espera a que termine.", err_is_file:"Ya hay un archivo con ese nombre.", err_no_dir:"La carpeta de destino ya no existe.", err_bad_name:"Ese nombre no es válido.",
@@ -385,6 +388,7 @@ en:{
  sysQ:"System folder", sysD:"“%1” is needed for the console or homebrew to work properly. Do you want to continue?", cont:"Continue",
  renT:"Rename", newT:"New folder", nameErr:"Invalid name. Don't use \\ / : * ? \" < > | or end the name with a period.",
  exists:"“%1” already exists", existsD:"Choose what to do with this file.", replace:"Replace", skip:"Skip", keep:"Keep both", all:"Apply to all",
+ insConsole:"Install on the console", insSent:"Sent to the console: confirm it there.", insHead:"Install on the console", insDone:"Installs", st_pending:"Waiting for confirmation on the console", st_queued:"Queued", st_running:"Installing · %1", st_done:"Installed", st_failed:"Not installed", st_kept:"Saved to the SD without installing", st_rejected:"Declined on the console", insAskT:"Install on the console?", insAskD:"You uploaded %1 CIA. The console will ask for confirmation before installing. If not, they stay saved on the SD.", insOk:"Install", insSelf:"Cloud3DS is updated from Settings → Updates.", err_not_cia:"Only .cia files can be installed.", err_bad_cia:"The console doesn't recognize this CIA. It may be damaged or incomplete.", err_system_title:"For safety, Cloud3DS doesn't install system titles, DSiWare or firmware.", err_already:"It's already waiting for confirmation on the console.", err_full:"Too many installs are waiting on the console.", err_newer:"A newer version is already installed.", err_damaged:"The CIA is damaged.", err_am:"The console couldn't install it.", err_am_busy:"The install service was busy. Restart the console and try again.", err_canceled:"It was canceled.",
  thisDev:"This device", renameDev:"Rename", devNameT:"Name of this device", devNameD:"This is how it will appear on the console. Leave it empty to use the automatic name.", nameSaved:"Name saved",
  sysGroup:"System folders", highlight:"Highlight", mk0:"No color", mk1:"Red", mk2:"Orange", mk3:"Yellow", mk4:"Green", mk5:"Blue", mk6:"Purple",
  renameAs:"Rename…", cancelAll:"Cancel all", merge:"Merge", existsDirD:"A folder with that name already exists. You can merge their contents.", newName:"New name", copy:"Copy", move:"Move", copyTo:"Copy to…", moveTo:"Move to…", pickT:"Choose the destination folder", copyHere:"Copy here", moveHere:"Move here", copying:"Copying %1…", copied:"Copied", moved:"Moved", err_into_self:"You can't copy or move a folder into itself.", err_busy:"A copy is already in progress. Wait for it to finish.", err_is_file:"A file with that name already exists.", err_no_dir:"The destination folder no longer exists.", err_bad_name:"That name isn't valid.",
@@ -418,6 +422,7 @@ ja:{
  sysQ:"システムフォルダ", sysD:"「%1」は本体やHomebrewの動作に必要です。続けますか?", cont:"続ける",
  renT:"名前を変更", newT:"新しいフォルダ", nameErr:"無効な名前です。\\ / : * ? \" < > | は使えず、ピリオドで終わることもできません。",
  exists:"「%1」はすでにあります", existsD:"このファイルをどうするか選んでください。", replace:"置き換え", skip:"スキップ", keep:"両方残す", all:"すべてに適用",
+ insConsole:"本体にインストール", insSent:"本体に送りました。本体で確認してください。", insHead:"本体にインストール", insDone:"インストール", st_pending:"本体での確認を待っています", st_queued:"待機中", st_running:"インストール中 · %1", st_done:"インストール済み", st_failed:"インストールできませんでした", st_kept:"インストールせずにSDに保存", st_rejected:"本体で拒否されました", insAskT:"本体にインストールしますか?", insAskD:"%1 個のCIAをアップロードしました。インストール前に本体で確認します。しない場合はSDに保存されたままです。", insOk:"インストール", insSelf:"Cloud3DSは設定 → アップデートから更新します。", err_not_cia:"インストールできるのは.ciaファイルだけです。", err_bad_cia:"本体がこのCIAを認識できません。壊れているか不完全な可能性があります。", err_system_title:"安全のため、Cloud3DSはシステムタイトル、DSiWare、ファームウェアをインストールしません。", err_already:"すでに本体で確認を待っています。", err_full:"本体で待機中のインストールが多すぎます。", err_newer:"より新しいバージョンがインストールされています。", err_damaged:"CIAが壊れています。", err_am:"本体でインストールできませんでした。", err_am_busy:"インストールサービスが使用中でした。本体を再起動して、もう一度お試しください。", err_canceled:"キャンセルされました。",
  thisDev:"このデバイス", renameDev:"名前を変更", devNameT:"このデバイスの名前", devNameD:"本体にこの名前で表示されます。空欄にすると自動の名前になります。", nameSaved:"名前を保存しました",
  sysGroup:"システムフォルダ", highlight:"色分け", mk0:"色なし", mk1:"赤", mk2:"オレンジ", mk3:"黄", mk4:"緑", mk5:"青", mk6:"紫",
  renameAs:"名前を変更…", cancelAll:"すべてキャンセル", merge:"統合", existsDirD:"同じ名前のフォルダがあります。中身を統合できます。", newName:"新しい名前", copy:"コピー", move:"移動", copyTo:"コピー先…", moveTo:"移動先…", pickT:"移動先のフォルダを選択", copyHere:"ここにコピー", moveHere:"ここに移動", copying:"%1 をコピー中…", copied:"コピーしました", moved:"移動しました", err_into_self:"フォルダをその中にコピー・移動することはできません。", err_busy:"コピー中です。終わるまでお待ちください。", err_is_file:"同じ名前のファイルがあります。", err_no_dir:"移動先のフォルダがもうありません。", err_bad_name:"その名前は使えません。",
@@ -736,6 +741,7 @@ function renderSel(){
  b.innerHTML=`<span>${n}</span><span class="n">${t("sel","").trim()}</span>`+
   `<button id="sAll">${svg("selall")}${t("all2")}</button>`+
   (files.length?`<button id="sDl">${svg("down")}</button>`:"")+
+  (!S.info.readonly&&files.length&&files.length===n&&files.every(i=>ext(i.n)==="cia")?`<button id="sIns" title="${t("insConsole")}">${svg("app")}</button>`:"")+
   (S.info.readonly?"":`<button id="sMv" title="${t("moveTo")}">${svg("mv")}</button><button id="sCp" title="${t("copyTo")}">${svg("copy")}</button><button id="sDel">${svg("trash")}</button>`)+
   `<button id="sX">${svg("x")}</button>`;
 }
@@ -745,6 +751,7 @@ $("#selbar").addEventListener("click",e=>{
  if(id==="sAll"){sorted().forEach(i=>S.sel.add(i.n));render()}
  if(id==="sDl"){const f=[...S.sel].map(itemByName).filter(i=>i&&!i.d);f.forEach((it,i)=>setTimeout(()=>download(join(S.path,it.n)),i*700))}
  if(id==="sDel"){const list=[...S.sel].map(itemByName).filter(Boolean);confirmDelete(list)}
+ if(id==="sIns"){const l=[...S.sel].map(itemByName).filter(i=>i&&!i.d).map(i=>join(S.path,i.n));S.sel.clear();render();requestInstall(l)}
  if(id==="sMv"||id==="sCp"){const list=[...S.sel].map(itemByName).filter(Boolean);transfer(id==="sMv"?"move":"copy",list)}
 });
 
@@ -776,6 +783,7 @@ function openSheet(it){
   ${it.d?"":(k==="img"||k==="vid"||k==="txt")?`<button class="act" data-a="view">${svg("eye")}${t("view")}</button>`:""}
   ${it.d?"":`<button class="act" data-a="dl">${svg("down")}${t("download")}</button>`}
   ${ro?"":isProt(p)?`<div class="act off">${svg("lock")}<span><b>${t("protT")}</b><small>${t("protD")}</small></span></div>`:`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act" data-a="mv">${svg("mv")}${t("moveTo")}</button><button class="act" data-a="cp">${svg("copy")}${t("copyTo")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
+  ${!ro&&!it.d&&ext(it.n)==="cia"?`<button class="act" data-a="ins">${svg("app")}${t("insConsole")}</button>`:""}
   <button class="act" data-a="sel">${svg("selall")}${t("select")}</button>
   <div class="marks">${svg("tag")}<b>${t("highlight")}</b>${[0,1,2,3,4,5,6].map(c=>`<button class="swt mk${c}${(it.c||0)===c?" on":""}" data-mk="${c}" title="${t("mk"+c)}"></button>`).join("")}</div>
  </div>`);
@@ -783,7 +791,7 @@ function openSheet(it){
   const mk=e.target.closest("[data-mk]");
   if(mk){const c=+mk.dataset.mk;m.close();try{await api("POST","mark",{p,c});it.c=c||undefined;render()}catch(err){toast(errText(err))}return}
   const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
-  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n);if(a==="mv")transfer("move",[it]);if(a==="cp")transfer("copy",[it])});
+  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n);if(a==="mv")transfer("move",[it]);if(a==="cp")transfer("copy",[it]);if(a==="ins")requestInstall([p])});
 }
 function ask({title,text,ok,danger,input,value,check}){
  return new Promise(res=>{
@@ -833,6 +841,37 @@ async function confirmDelete(list){
  if(!errs)toast(t("deleted"));
  S.sel.clear();go(S.path,true);refreshInfo();
 }
+/* ---------- instalar CIA en la consola ---------- */
+const IQ={ids:new Set(),items:[],timer:0};
+async function requestInstall(paths){
+ let n=0;
+ for(const p of paths){try{const r=await api("POST","install",{p});IQ.ids.add(r.id);n++}catch(e){toast(base(p)+": "+errText(e))}}
+ if(n){toast(t("insSent"));pollIns()}
+}
+async function pollIns(){
+ clearTimeout(IQ.timer);
+ try{const r=await api("GET","installs");IQ.items=r.items.filter(i=>IQ.ids.has(i.id))}catch(e){}
+ renderIns();
+ const live=IQ.items.some(i=>i.st==="pending"||i.st==="queued"||i.st==="running");
+ if(live)IQ.timer=setTimeout(pollIns,1200);
+}
+function renderIns(){
+ const el=$("#insq"),items=IQ.items;
+ if(!items.length){el.classList.remove("show");return}
+ el.classList.add("show");
+ const live=items.some(i=>i.st==="pending"||i.st==="queued"||i.st==="running");
+ const row=i=>{
+  const pct=i.size?i.done/i.size*100:0;
+  const st=i.st==="running"?t("st_running",pct.toFixed(0)+"%"):i.st==="failed"?`<span class="err">${esc(t("st_failed")+(i.error?": "+errText({code:i.error}):""))}</span>`:
+   i.st==="done"?`<span class="ok">${t("st_done")} · v${esc(i.ver)}</span>`:
+   i.st==="kept"&&(i.newer||i.self)?t("st_kept")+" · "+(i.self?t("insSelf"):t("err_newer")):t("st_"+i.st);
+  return `<div class="qi"><div class="ic app">${svg("app")}</div><div class="meta"><b>${esc(i.title)}</b><span>${st}</span>${i.st==="running"?`<div class="pbar"><i style="width:${pct.toFixed(1)}%"></i></div>`:""}</div></div>`;
+ };
+ el.innerHTML=`<div class="qh"><div class="meta"><b>${live?t("insHead"):t("insDone")}</b><span class="muted">${items.length===1?"":items.length+" CIA"}</span></div>
+  ${live?"":`<button class="more" data-iclose="1">${svg("x")}</button>`}</div><div class="qlist">${items.map(row).join("")}</div>`;
+}
+$("#insq").addEventListener("click",e=>{if(e.target.closest("[data-iclose]")){IQ.ids.clear();IQ.items=[];renderIns()}});
+
 /* ---------- copiar y mover ---------- */
 function pickFolder(kind){
  return new Promise(res=>{
@@ -984,6 +1023,7 @@ function enqueue(files,dest){
 }
 async function runQueue(){
  Q.running=true;
+ const first=Q.items.findIndex(i=>i.state==="queued");
  let forceSys=null;
  for(const it of Q.items){
   if(it.state!=="queued")continue;
@@ -998,6 +1038,12 @@ async function runQueue(){
  Q.running=false;
  renderQueue();
  go(S.path,true);refreshInfo();
+ // si se subieron CIA, la web ofrece instalarlos (la consola confirma igualmente)
+ const cias=Q.items.slice(Math.max(first,0)).filter(i=>i.state==="done"&&/\.cia$/i.test(i.name)).map(i=>i.path);
+ if(cias.length&&!S.info.readonly){
+  const ok=await ask({title:t("insAskT"),text:t("insAskD",cias.length),ok:t("insOk")});
+  if(ok){if(!Q.items.some(i=>i.state==="run"||i.state==="queued")){Q.items=[];renderQueue()}requestInstall(cias)}
+ }
 }
 function uploadOne(it,opt){
  return new Promise(resolve=>{
