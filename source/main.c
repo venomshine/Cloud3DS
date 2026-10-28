@@ -804,21 +804,68 @@ static void mini_strip(float a)
 }
 
 // debajo de la tira: las transferencias a lo ancho o una pista para volver a abrir el QR
+// debajo de la tira, con el QR cerrado: toda la cola (transferencias, copias e instalaciones)
 static void mini_body(float a)
 {
 	if (a <= 0.01f)
 		return;
-	const Xfer *xs[1];
 	float y = CARD_Y + MINI_H + 10, h = SCR_H - 8 - y;
-	if (visible_xfers(xs, 1)) {
-		draw_rrect(CARD_X, y + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
-		draw_rrect(CARD_X, y, CARD_W, h, 16, col_alpha(T.surface, a));
-		xfer_wide(CARD_X + 16, y + 14, CARD_W - 32, a);
-	} else {
+	const Xfer *xs[MAX_XFERS];
+	int nx = visible_xfers(xs, MAX_XFERS);
+	const InsReq *wait[MAX_INS];
+	int nw = 0;
+	for (int i = 0; i < U.ins_n; i++)
+		if (U.ins[i].st == INS_PENDING || U.ins[i].st == INS_QUEUED)
+			wait[nw++] = &U.ins[i];
+	if (!nx && !nw) {
 		draw_halo(TOP_W / 2, y + 44, 70, 0.25f * a);
 		draw_cloud(TOP_W / 2, y + 44, 22, a);
 		text_draw_center(_("Tu nube está lista"), TOP_W / 2, y + 76, TS_BODY, col_alpha(T.text2, a));
 		text_draw_center(_("Pulsa SELECT para ver el código QR"), TOP_W / 2, y + 98, TS_SUB, col_alpha(T.text3, a));
+		return;
+	}
+	if (nx == 1 && !nw) { // una sola: a lo grande
+		draw_rrect(CARD_X, y + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+		draw_rrect(CARD_X, y, CARD_W, h, 16, col_alpha(T.surface, a));
+		xfer_wide(CARD_X + 16, y + 14, CARD_W - 32, a);
+		return;
+	}
+	draw_rrect(CARD_X, y + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28, RH = 36;
+	char head[48];
+	snprintf(head, sizeof head, _("En curso: %d"), nx + nw);
+	text_draw_clip(head, X, y + 8, W, TS_SUB, col_alpha(T.text3, a));
+	float ry = y + 26;
+	int shown = 0, max = (int)((h - 30) / RH);
+	for (int i = 0; i < nx && shown < max; i++, shown++, ry += RH) {
+		const Xfer *x = xs[i];
+		const char *hd;
+		u32 col;
+		IconId ic;
+		xfer_head(x, &hd, &col, &ic);
+		float frac = x->st == XS_DONE ? 1 : x->total ? (float)((double)x->done / x->total) : 0;
+		draw_circle(X + 12, ry + 14, 11, col_alpha(col, a));
+		draw_icon(ic, X + 12, ry + 14, 12, col_alpha(0xFFFFFFFF, a));
+		char pc[8], sub[96];
+		snprintf(pc, sizeof pc, "%d%%", (int)(frac * 100));
+		text_draw_clip(x->name, X + 30, ry + 1, W - 80, TS_BODY, col_alpha(T.text, a));
+		text_draw_right(pc, X + W, ry + 1, TS_BODY, col_alpha(T.accent, a));
+		snprintf(sub, sizeof sub, "%s · %s", hd, x->device);
+		text_draw_clip(sub, X + 30, ry + 17, W - 30 - 90, TS_SUB, col_alpha(T.text3, a));
+		brand_bar(X + W - 84, ry + 21, 84, 5, frac);
+	}
+	for (int i = 0; i < nw && shown < max; i++, shown++, ry += RH) {
+		draw_circle(X + 12, ry + 14, 11, col_alpha(T.surface2, a));
+		draw_icon(IC_GEM, X + 12, ry + 14, 12, col_alpha(T.ok, a));
+		text_draw_clip(wait[i]->title, X + 30, ry + 1, W - 30, TS_BODY, col_alpha(T.text, a));
+		text_draw_clip(wait[i]->st == INS_PENDING ? _("Esperando a que lo confirmes") : _("En cola para instalar"), X + 30, ry + 17, W - 30,
+		               TS_SUB, col_alpha(T.text3, a));
+	}
+	if (nx + nw > shown) {
+		char more[32];
+		snprintf(more, sizeof more, _("y %d más"), nx + nw - shown);
+		text_draw_right(more, X + W, y + 8, TS_SUB, col_alpha(T.text3, a));
 	}
 }
 

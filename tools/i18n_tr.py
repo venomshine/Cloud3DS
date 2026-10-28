@@ -437,4 +437,151 @@ TR = {
     "Espera a que termine la instalación":
         ("Wait for the install to finish",
          "インストールが終わるまでお待ちください"),
+    "En curso: %d":
+        ("In progress: %d",
+         "進行中: %d"),
+    "Esperando a que lo confirmes":
+        ("Waiting for your confirmation",
+         "確認待ち"),
+    "En cola para instalar":
+        ("Queued to install",
+         "インストール待ち"),
+    "Inicio":
+        ("Home",
+         "ホーム"),
+    "Capturas":
+        ("Screenshots",
+         "スクショ"),
+    "Fotos":
+        ("Photos",
+         "写真"),
+    "CIAs":
+        ("CIAs",
+         "CIA"),
+    "Homebrew":
+        ("Homebrew",
+         "Homebrew"),
+    "Partidas":
+        ("Saves",
+         "セーブ"),
+    "Aún no hay copias de tus partidas: hazlas con Checkpoint o JKSM":
+        ("No save backups yet: make them with Checkpoint or JKSM",
+         "セーブのバックアップはまだありません。CheckpointかJKSMで作成してください"),
+    "1 elemento":
+        ("1 item",
+         "1件"),
+    "%d elementos":
+        ("%d items",
+         "%d件"),
+    "CARPETAS DEL SISTEMA":
+        ("SYSTEM FOLDERS",
+         "システムフォルダ"),
+    "Carpeta":
+        ("Folder",
+         "フォルダ"),
+    "No se pudo abrir esta carpeta":
+        ("Couldn't open this folder",
+         "このフォルダを開けませんでした"),
+    "Carpeta vacía":
+        ("Empty folder",
+         "空のフォルダ"),
+    "Mover a…":
+        ("Move to…",
+         "移動…"),
+    "Copiar a…":
+        ("Copy to…",
+         "コピー…"),
+    "Destacar":
+        ("Highlight",
+         "色分け"),
+    "Por seguridad, no se instalan títulos del sistema":
+        ("For safety, system titles aren't installed",
+         "安全のため、システムタイトルはインストールしません"),
+    "Ya está esperando en la consola":
+        ("It's already waiting on the console",
+         "すでに本体で待機中です"),
+    "La consola no reconoce este CIA":
+        ("The console doesn't recognize this CIA",
+         "本体がこのCIAを認識できません"),
+    "Cloud3DS se actualiza desde Ajustes → Actualizaciones":
+        ("Cloud3DS is updated from Settings → Updates",
+         "Cloud3DSは設定 → アップデートから更新します"),
+    "Ya tienes una versión más nueva instalada":
+        ("You already have a newer version installed",
+         "より新しいバージョンがインストールされています"),
+    "Se eliminarán «%s» y todo su contenido. Esta acción no se puede deshacer.":
+        ("“%s” and everything in it will be deleted. This can't be undone.",
+         "「%s」とその中身がすべて削除されます。元に戻せません。"),
+    "Se eliminará «%s» de la tarjeta SD. Esta acción no se puede deshacer.":
+        ("“%s” will be deleted from the SD card. This can't be undone.",
+         "「%s」をSDカードから削除します。元に戻せません。"),
+    "¿Eliminar?":
+        ("Delete?",
+         "削除しますか?"),
+    "Ve a la carpeta de destino y pulsa X":
+        ("Go to the destination folder and press X",
+         "移動先のフォルダでXを押してください"),
+    "Mover aquí":
+        ("Move here",
+         "ここに移動"),
+    "Copiar aquí":
+        ("Copy here",
+         "ここにコピー"),
+    "No puedes meter una carpeta dentro de sí misma":
+        ("You can't put a folder inside itself",
+         "フォルダをその中に入れることはできません"),
+    "Carpeta protegida: elige otra":
+        ("Protected folder: choose another",
+         "保護されたフォルダです。別のフォルダを選んでください"),
+    "Ya existe «%s» aquí. Se guardará con otro nombre, como «%s (2)».":
+        ("“%s” already exists here. It will be saved with another name, like “%s (2)”.",
+         "「%s」はすでにあります。「%s (2)」のような別の名前で保存します。"),
+    "Ya existe":
+        ("Already exists",
+         "すでにあります"),
+    "Conservar ambos":
+        ("Keep both",
+         "両方残す"),
+    "No se pudo mover":
+        ("Couldn't move it",
+         "移動できませんでした"),
+    "Copiando…":
+        ("Copying…",
+         "コピー中…"),
+    "Ya hay una copia en curso":
+        ("A copy is already in progress",
+         "すでにコピー中です"),
+    "No hay espacio suficiente en la SD":
+        ("Not enough space on the SD",
+         "SDカードの空き容量が足りません"),
+    "No se pudo copiar":
+        ("Couldn't copy it",
+         "コピーできませんでした"),
+    "Elige un archivo para ver su información":
+        ("Choose a file to see its details",
+         "ファイルを選ぶと情報が表示されます"),
+    "Carpeta del sistema: no la borres ni la cambies si no sabes para qué sirve.":
+        ("System folder: don't delete or change it unless you know what it's for.",
+         "システムフォルダです。用途がわからない場合は削除や変更をしないでください。"),
+    "A abrir · Y opciones":
+        ("A open · Y options",
+         "Aで開く · Yでオプション"),
+    "A o Y: opciones":
+        ("A or Y: options",
+         "AかY: オプション"),
+    "Archivos":
+        ("Files",
+         "ファイル"),
+    "Nuevo nombre":
+        ("New name",
+         "新しい名前"),
+    "Ese nombre no es válido":
+        ("That name isn't valid",
+         "その名前は使えません"),
+    "Ya existe un archivo con ese nombre":
+        ("A file with that name already exists",
+         "同じ名前のファイルがあります"),
+    "No se pudo renombrar":
+        ("Couldn't rename it",
+         "名前を変更できませんでした"),
 }
