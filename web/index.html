@@ -323,6 +323,7 @@ es:{
  sortName:"Nombre", sortDate:"Fecha", sortSize:"Tamaño", search:"Buscar aquí",
  emptyT:"Carpeta vacía", emptyD:"Arrastra archivos aquí o pulsa Subir.", emptyRO:"No hay nada en esta carpeta.",
  noMatch:"Nada coincide con «%1».", missingT:"Esta carpeta aún no existe", missingD:"Puedes crearla ahora y subir tus archivos.", create:"Crear carpeta",
+ savesT:"Aún no hay copias de tus partidas", savesD:"Las partidas de los juegos van cifradas dentro de «Nintendo 3DS» y no se pueden abrir como archivos. Haz una copia con Checkpoint o JKSM en la consola y aparecerá aquí.",
  items:"%1 elementos", item:"1 elemento", folder:"Carpeta",
  download:"Descargar", view:"Ver", rename:"Renombrar", del:"Eliminar", cancel:"Cancelar", ok:"Aceptar", save:"Guardar",
  delQ:"¿Eliminar «%1»?", delQn:"¿Eliminar %1 elementos?", delD:"Se borrará de la tarjeta SD de la consola. No se puede deshacer.",
@@ -352,6 +353,7 @@ en:{
  sortName:"Name", sortDate:"Date", sortSize:"Size", search:"Search here",
  emptyT:"Empty folder", emptyD:"Drag files here or tap Upload.", emptyRO:"There's nothing in this folder.",
  noMatch:"Nothing matches “%1”.", missingT:"This folder doesn't exist yet", missingD:"You can create it now and upload your files.", create:"Create folder",
+ savesT:"No save backups yet", savesD:"Game saves are encrypted inside “Nintendo 3DS” and can't be opened as files. Back them up with Checkpoint or JKSM on the console and they'll show up here.",
  items:"%1 items", item:"1 item", folder:"Folder",
  download:"Download", view:"View", rename:"Rename", del:"Delete", cancel:"Cancel", ok:"OK", save:"Save",
  delQ:"Delete “%1”?", delQn:"Delete %1 items?", delD:"It will be erased from the console's SD card. This can't be undone.",
@@ -381,6 +383,7 @@ ja:{
  sortName:"名前", sortDate:"日付", sortSize:"サイズ", search:"このフォルダを検索",
  emptyT:"空のフォルダ", emptyD:"ここにファイルをドラッグするか、アップロードを押してください。", emptyRO:"このフォルダには何もありません。",
  noMatch:"「%1」に一致するものはありません。", missingT:"このフォルダはまだありません", missingD:"今すぐ作成してファイルをアップロードできます。", create:"フォルダを作成",
+ savesT:"セーブデータのバックアップはまだありません", savesD:"ゲームのセーブデータは「Nintendo 3DS」の中で暗号化されていて、ファイルとして開けません。本体でCheckpointかJKSMを使ってバックアップすると、ここに表示されます。",
  items:"%1 項目", item:"1 項目", folder:"フォルダ",
  download:"ダウンロード", view:"表示", rename:"名前を変更", del:"削除", cancel:"キャンセル", ok:"OK", save:"保存",
  delQ:"「%1」を削除しますか?", delQn:"%1 項目を削除しますか?", delD:"本体のSDカードから削除されます。元に戻せません。",
@@ -542,9 +545,12 @@ async function tryPin(pin){
 }
 
 /* ---------- app ---------- */
-const S={path:"/",items:[],sort:"name",asc:true,view:"list",sel:new Set(),info:{},filter:"",missing:false,system:false,loading:false};
+const S={nosaves:false,path:"/",items:[],sort:"name",asc:true,view:"list",sel:new Set(),info:{},filter:"",missing:false,system:false,loading:false};
 try{S.view=localStorage.getItem("c3d_view")||"list";S.sort=localStorage.getItem("c3d_sort")||"name"}catch(e){}
-const PLACES=[["/","home","home"],["/luma/screenshots","shots","cam"],["/DCIM","photos","pic"],["/cias","cias","box"],["/3ds","hb","game"],["/3ds/Checkpoint/saves","saves","save"]];
+const PLACES=[["/","home","home"],["/luma/screenshots","shots","cam"],["/DCIM","photos","pic"],["/cias","cias","box"],["/3ds","hb","game"],["@saves","saves","save"]];
+// las partidas solo existen como archivos si se copian con un gestor: se abre el que haya en la SD
+const SAVE_DIRS=["/3ds/Checkpoint/saves","/JKSV/Saves","/JKSV"];
+const inSaves=p=>S.nosaves||SAVE_DIRS.some(d=>p===d||p.startsWith(d+"/"));
 
 function startApp(){
  $("#login").classList.add("hide");$("#app").classList.remove("hide");$("#fab").classList.remove("hide");
@@ -564,8 +570,16 @@ async function refreshInfo(){
   if(prev!==S.info.protect+"/"+S.info.readonly&&!S.loading)render();else renderChrome();
  }catch(e){}
 }
+async function goSaves(){
+ for(const p of SAVE_DIRS){
+  try{await api("GET","list",{p});go(p);return}
+  catch(e){if(e.code!=="not_found"){toast(errText(e));return}}
+ }
+ S.sel.clear();S.filter="";S.items=[];S.missing=false;S.nosaves=true;render();
+}
 async function go(p,replace){
- S.path=p;S.sel.clear();S.filter="";$("#q").value="";$("#search").classList.remove("open");
+ if(p==="@saves"){goSaves();return}
+ S.path=p;S.nosaves=false;S.sel.clear();S.filter="";$("#q").value="";$("#search").classList.remove("open");
  history[replace?"replaceState":"pushState"]({p},"","#p="+encodeURIComponent(p));
  S.loading=true;render();
  try{
@@ -593,7 +607,7 @@ function sorted(){
 }
 function renderChrome(){
  const ro=!!S.info.readonly;
- $("#chips").innerHTML=PLACES.map(([p,k,ic])=>`<button class="chip${S.path===p?" on":""}" data-p="${esc(p)}">${svg(ic)}${t(k)}</button>`).join("");
+ $("#chips").innerHTML=PLACES.map(([p,k,ic])=>`<button class="chip${(p==="@saves"?inSaves(S.path):S.path===p&&!S.nosaves)?" on":""}" data-p="${esc(p)}">${svg(ic)}${t(k)}</button>`).join("");
  let b="";
  if(ro)b+=`<div class="banner warn">${svg("lock")}${t("ro")}</div>`;
  else if(S.system&&S.path!=="/")b+=`<div class="banner warn">${svg("warn")}${t("sysHere")}</div>`;
@@ -627,6 +641,10 @@ function render(){
  renderChrome();
  const L=$("#list");
  if(S.loading){L.innerHTML=`<div class="loading"><span class="spin"></span></div>`;return}
+ if(S.nosaves){
+  L.innerHTML=`<div class="empty"><div class="big">${svg("save")}</div><b>${t("savesT")}</b>${t("savesD")}</div>`;
+  return;
+ }
  if(S.missing){
   L.innerHTML=`<div class="empty"><div class="big">${svg("folder")}</div><b>${t("missingT")}</b>${t("missingD")}<br><br>${S.info.readonly?"":`<button class="btn pri" id="mkMissing">${svg("plusf")}${t("create")}</button>`}</div>`;
   return;
