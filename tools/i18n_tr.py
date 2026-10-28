@@ -659,6 +659,39 @@ TR = {
     'Abrir':
         ('Open',
          '開く'),
+    'Desconectado':
+        ('Offline',
+         'オフライン'),
+    'Móvil':
+        ('Phone',
+         'スマホ'),
+    'Tableta':
+        ('Tablet',
+         'タブレット'),
+    'Ordenador':
+        ('Computer',
+         'パソコン'),
+    'IP':
+        ('IP',
+         'IP'),
+    'Última IP':
+        ('Last IP',
+         '最後のIP'),
+    'Puesto a mano':
+        ('Set by you',
+         '手動で設定'),
+    'Dado por la red':
+        ('From the network',
+         'ネットワークから取得'),
+    'Según el navegador':
+        ('From the browser',
+         'ブラウザから推定'),
+    'Nombre':
+        ('Name',
+         '名前'),
+    'Vinculado':
+        ('Paired',
+         '登録日'),
     'Última vez':
         ('Last seen',
          '最終接続'),

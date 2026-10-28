@@ -78,6 +78,7 @@ static struct {
 	bool lid_off;
 	bool want_pin;               // abrir el teclado del PIN fuera del dibujo
 	int want_rename;             // dispositivo a renombrar con el teclado (-1 = ninguno)
+	char dev_tok[33];            // dispositivo elegido en la lista: su información sale arriba
 	bool want_frename;           // renombrar el archivo elegido en Archivos
 	bool want_fnew;              // crear una carpeta en Archivos
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
@@ -924,6 +925,7 @@ static void splash_bot(float alpha)
 static void files_top(float a);
 static void vw_top(void);
 static bool vw_is_open(void);
+static bool device_top(float a);
 
 static void draw_top(void)
 {
@@ -986,7 +988,7 @@ static void draw_top(void)
 			install_top(mini);
 		else if (U.tab == TAB_FILES && mini > 0.01f)
 			files_top(mini);
-		else
+		else if (!(U.tab == TAB_DEVICES && mini > 0.01f && device_top(mini)))
 			mini_body(mini);
 	}
 	toast_draw_top();
@@ -1164,19 +1166,24 @@ static void tab_devices(void)
 			continue;
 		const Device *d = &V.dev[idx[i]];
 		bool on = dev_online(d);
-		// botón Expulsar a la derecha (se comprueba antes que la fila)
+		// a la derecha, Renombrar (lápiz) y Desvincular; se comprueban antes que la fila
 		float bw = 74, bh = 26, bx = BOT_W - 14 - bw, by = y + (RH - bh) / 2;
-		bool bt = !g_dialog.open && tap(bx, by, bw, bh) && g_touch.sy >= VIEW_Y;
+		float ex = bx - 8 - bh;
+		bool vis = g_touch.sy >= VIEW_Y && !g_dialog.open;
+		bool bt = vis && tap(bx, by, bw, bh);
+		bool et = vis && tap(ex, by, bh, bh);
 		bool rt = false;
-		if (!bt)
+		if (!bt && !et)
 			rt = row(l, i, y, RH);
+		if (!U.buttons && !strcmp(U.dev_tok, d->token))
+			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
 		draw_circle(28, y + RH / 2, 13, T.surface2);
 		draw_icon(dev_icon(d), 28, y + RH / 2, 16, on ? T.ok : T.text3);
 		if (on) {
 			draw_circle(38, y + RH / 2 + 9, 4.5f, T.bg);
 			draw_circle(38, y + RH / 2 + 9, 3, T.ok);
 		}
-		text_draw_clip(d->name, 50, y + 7, bx - 58, TS_BODY, T.text);
+		text_draw_clip(d->name, 50, y + 7, ex - 58, TS_BODY, T.text);
 		// debajo, el estado y el modelo si el nombre ya no lo dice («iPhone de Mario» · iPhone · Safari)
 		char sub[128], st[64], when[24];
 		if (on)
@@ -1189,14 +1196,21 @@ static void tab_devices(void)
 			snprintf(sub, sizeof sub, "%s · %s", st, d->model);
 		else
 			snprintf(sub, sizeof sub, "%s · %s", st, d->ip);
-		text_draw_clip(sub, 50, y + 24, bx - 58, TS_SUB, on ? T.ok : T.text3);
+		text_draw_clip(sub, 50, y + 24, ex - 58, TS_SUB, on ? T.ok : T.text3);
+		bool ep = touch_in(ex, by, bh, bh);
+		draw_circle(ex + bh / 2, by + bh / 2, bh / 2, ep ? T.divider : T.surface2);
+		draw_icon(IC_PEN, ex + bh / 2, by + bh / 2, 13, T.text2);
 		bool bp = touch_in(bx, by, bw, bh);
 		draw_rrect(bx, by, bw, bh, bh / 2, col_alpha(T.danger, bp ? 0.35f : 0.16f));
 		text_draw_center(_("Desvincular"), bx + bw / 2, by + (bh - text_lineh(TS_SUB)) / 2, TS_SUB, T.danger);
-		if (bt || (U.buttons && !g_dialog.open && l->sel == i && (g_kdown & KEY_X)))
+		// con botones, el elegido es el resaltado; Y renombra y X desvincula
+		bool mine = U.buttons && !g_dialog.open && l->sel == i;
+		if (bt || (mine && (g_kdown & KEY_X)))
 			ask_revoke(idx[i]);
-		else if (rt || activate(l, i))
+		else if (et || (mine && (g_kdown & KEY_Y)))
 			U.want_rename = idx[i];
+		if (rt || mine)
+			util_strlcpy(U.dev_tok, d->token, sizeof U.dev_tok);
 	}
 	gfx_clip_off();
 }
@@ -2346,6 +2360,60 @@ static void files_top(float a)
 	char full[700];
 	f_full(F.v[F.sel].idx, full, sizeof full);
 	text_draw_clip(full, X, by, W - hw - 12, TS_SUB, col_alpha(T.text3, a));
+}
+
+// pantalla de arriba en Dispositivos con el QR cerrado: la información del elegido
+static bool device_top(float a)
+{
+	const Device *d = NULL;
+	for (int i = 0; i < MAX_DEVICES && !d; i++)
+		if (V.dev[i].used && !strcmp(V.dev[i].token, U.dev_tok))
+			d = &V.dev[i];
+	if (!d) { // aún no se eligió ninguno: el primero de la lista
+		int idx[MAX_DEVICES];
+		if (!device_order(idx))
+			return false;
+		d = &V.dev[idx[0]];
+	}
+	bool on = dev_online(d);
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28;
+	// icono grande con el estado, y al lado el nombre y el modelo
+	float cx = X + 24, cy = y0 + 36;
+	draw_circle(cx, cy, 24, col_alpha(on ? col_alpha(T.ok, 0.18f) : T.surface2, a));
+	draw_icon(dev_icon(d), cx, cy, 28, col_alpha(on ? T.ok : T.text3, a));
+	float rx = X + 62, rw = X + W - rx;
+	char v[96], when[24];
+	text_draw_clip(d->name, rx, y0 + 14, rw, TS_TITLE, col_alpha(T.text, a));
+	if (!on && d->last_seen) {
+		util_fmt_when(when, sizeof when, d->last_seen);
+		snprintf(v, sizeof v, _("Visto: %s"), when);
+	}
+	text_draw_clip(on ? _("Conectado ahora") : d->last_seen ? v : _("Desconectado"), rx, y0 + 14 + text_lineh(TS_TITLE) + 2, rw, TS_SUB,
+	               col_alpha(on ? T.ok : T.text3, a));
+	float y = y0 + 74;
+	const char *kind = d->kind == 0 ? _("Móvil") : d->kind == 2 ? _("Tableta") : _("Ordenador");
+	if (d->model[0])
+		snprintf(v, sizeof v, "%s · %s", kind, d->model);
+	else
+		util_strlcpy(v, kind, sizeof v);
+	y = info_row(X, y, W, _("Tipo"), v, T.text2, a);
+	if (d->ip[0])
+		y = info_row(X, y, W, on ? _("IP") : _("Última IP"), d->ip, T.text2, a);
+	const char *src = d->named == NAME_CUSTOM ? _("Puesto a mano") : d->named == NAME_FOUND ? _("Dado por la red") : _("Según el navegador");
+	y = info_row(X, y, W, _("Nombre"), src, T.text2, a);
+	if (d->created) {
+		f_fmt_date(v, sizeof v, d->created);
+		y = info_row(X, y, W, _("Vinculado"), v, T.text2, a);
+	}
+	float by = y0 + h - 22;
+	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	char hint[96];
+	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_Y, _("Renombrar"), GLYPH_X, _("Desvincular"));
+	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
+	return true;
 }
 
 static void set_flag(bool *f)
