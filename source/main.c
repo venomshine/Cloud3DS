@@ -44,7 +44,7 @@
 #define VIEW_Y   32
 #define VIEW_H   (SCR_H - TABBAR_H - VIEW_Y)
 
-#define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Todo ocurre en tu red local; nada pasa por Internet."
+#define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones."
 
 enum { TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
 enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE };

@@ -1,7 +1,7 @@
 /* Generado por tools/gen_i18n.py: no editar a mano */
 static const TrEntry TR_TAB[] = {
 	{"Sistema", "System", "システム"},
-	{"Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Todo ocurre en tu red local; nada pasa por Internet.", "Your local cloud for Nintendo 3DS. Manage the SD card from your phone or PC just by scanning a QR code: no apps, no cables and no setup. Everything happens on your local network; nothing goes through the Internet.", "3DSのローカルクラウド。QRを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。インターネットは通りません。"},
+	{"Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones.", "Your local cloud for Nintendo 3DS. Manage the SD card from your phone or PC just by scanning a QR code: no apps, no cables and no setup. Your files never leave your local network; GitHub is only checked for updates.", "3DSのローカルクラウド。QRを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。ファイルはネットワークの外に出ません(GitHubはアップデート確認のみ)。"},
 	{"Recibido", "Received", "受信"},
 	{"Enviado", "Sent", "送信"},
 	{"Transferencia incompleta", "Transfer incomplete", "転送が完了しませんでした"},

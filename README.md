@@ -45,7 +45,7 @@ Necesitas una consola con homebrew (por ejemplo, con [3ds.hacks.guide](https://3
 
 **Actualizaciones:** Cloud3DS busca versiones nuevas al abrirse. Cuando haya una, ve a **Ajustes → Actualizaciones** y pulsa **Actualizar**: la descarga, comprueba que es el archivo original y la instala, sin FBI ni cables.
 
-El móvil o el PC tienen que estar en **la misma red** que la consola. En algunas Wi-Fi públicas los dispositivos no se pueden ver entre sí; ahí no funcionará. Todo se queda en tu red: nada pasa por Internet.
+El móvil o el PC tienen que estar en **la misma red** que la consola. En algunas Wi-Fi públicas los dispositivos no se pueden ver entre sí; ahí no funcionará. Tus archivos no salen de tu red: nada pasa por Internet. La app solo se conecta a GitHub para buscar actualizaciones, y eso se puede desactivar en Ajustes.
 
 ## Funciones
 
