@@ -42,7 +42,7 @@
 #define VIEW_Y   32
 #define VIEW_H   (SCR_H - TABBAR_H - VIEW_Y)
 
-#define ABOUT_TEXT "Tu nube local para Nintendo 3DS: maneja la tarjeta SD desde el móvil o el PC con solo escanear un QR. Sin apps, sin cables y sin configurar nada. Todo se queda en tu red: nada pasa por Internet."
+#define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Todo ocurre en tu red local; nada pasa por Internet."
 
 enum { TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
 enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN };
@@ -137,7 +137,7 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 		break;
 	case EV_UPLOAD_FAIL:
 		*ic = IC_CLOSE; *col = T.danger;
-		snprintf(sub, sn, "%s · %s", _("No se completó"), e->device);
+		snprintf(sub, sn, "%s · %s", _("Transferencia incompleta"), e->device);
 		break;
 	case EV_MKDIR:
 		*ic = IC_FOLDER; *col = T.warn;
@@ -158,7 +158,7 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 		break;
 	case EV_REVOKED:
 		*ic = IC_LOGOUT; *col = T.text3;
-		util_strlcpy(title, _("Dispositivo expulsado"), tn);
+		util_strlcpy(title, _("Dispositivo desvinculado"), tn);
 		util_strlcpy(sub, e->device, sn);
 		break;
 	default: {
@@ -348,7 +348,7 @@ static void connect_col(float a, float dy)
 {
 	float x = COL_X, y = QR_Y + dy;
 	text_draw_clip(_("Escanea con tu móvil"), x, y + 2, COL_W, 0.55f, col_alpha(T.text, a));
-	int nl = text_wrap_lines(_("La cámara abre tu nube al instante. Mismo Wi-Fi que la consola."), COL_W, TS_SUB, 3, x,
+	int nl = text_wrap_lines(_("Ábrelo con la cámara. Tu móvil debe estar en la misma red Wi-Fi."), COL_W, TS_SUB, 3, x,
 	                         y + 24, col_alpha(T.text3, a), true);
 	// en japonés las líneas son más altas: la raya y lo que sigue bajan lo que haga falta (hasta el PIN)
 	float dy2 = fmaxf(0, y + 24 + nl * text_lineh(TS_SUB) + 4 - (y + 66));
@@ -386,7 +386,7 @@ static void xfer_col(float a, float dy)
 		col = T.ok;
 		ic = IC_CHECK;
 	} else if (x->st != XS_RUNNING) {
-		head = _("No se completó");
+		head = _("Transferencia incompleta");
 		col = T.danger;
 		ic = IC_CLOSE;
 	}
@@ -429,9 +429,9 @@ static void about_top(void)
 	const float X = 222, W = TOP_W - X - 16;
 	if (sel >= AB_GITHUB && sel <= AB_KOFI) {
 		static const char *const NAMES[3] = {"GitHub", "Discord", "Ko-fi"};
-		const char *desc[3] = {_("Código y nuevas versiones. Si algo falla, abre un issue y lo reviso."),
-		                       _("Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones."),
-		                       _("Si te gusta Cloud3DS, invítame a un café: ayuda muchísimo.")};
+		const char *desc[3] = {_("Código fuente y nuevas versiones. Si encuentras un error, abre un issue y lo revisaré."),
+		                       _("Únete a la comunidad: soporte, ideas y novedades de cada versión."),
+		                       _("Si Cloud3DS te resulta útil, puedes invitarme a un café. Me ayuda a seguir mejorándolo.")};
 		int k = sel - AB_GITHUB;
 		/* el QR con su marco blanco termina en x≈212: el texto empieza 24 px después */
 		const float QX = 236, QW = TOP_W - QX - 14;
@@ -460,7 +460,7 @@ static void about_top(void)
 		text_draw_center(vb, LX, 178, TS_SUB, T.text2);
 		text_draw(_("Gracias por usar!"), X, 18, TS_TITLE, T.text);
 		// los dos textos tienen que caber antes de la licencia: si no (japonés), se reduce un poco la letra
-		const char *t1 = _(ABOUT_TEXT), *t2 = _("Si encuentras algún problema, escríbeme por GitHub o Discord.");
+		const char *t1 = _(ABOUT_TEXT), *t2 = _("¿Algún problema? Escríbeme por GitHub o Discord.");
 		float sc = 0.42f;
 		while (sc > 0.34f && 46 + (text_wrap_lines(t1, W, sc, 12, 0, 0, 0, false) + text_wrap_lines(t2, W, sc, 4, 0, 0, 0, false)) *
 		                              text_lineh(sc) + 8 > 212)
@@ -518,17 +518,17 @@ static void draw_top(void)
 	} else if (!strcmp(V.srv_error, "soc")) {
 		// la red de la consola (soc:U) no arrancó: no es culpa del Wi-Fi, y se reintenta sola
 		char msg[160];
-		snprintf(msg, sizeof msg, _("La red de la consola no respondió (error %08lX). Reintentando sola…"),
+		snprintf(msg, sizeof msg, _("El servicio de red de la consola no responde (error %08lX). Reintentando automáticamente…"),
 		         (unsigned long)V.net_err);
 		card_message(IC_REFRESH, T.warn, _("Iniciando la red"), msg);
 	} else if (!V.ip && V.wifi == 3) {
-		card_message(IC_WIFI, T.accent, _("Conectado al Wi-Fi"), _("Esperando a que el router dé una IP a la consola…"));
+		card_message(IC_WIFI, T.accent, _("Conectado al Wi-Fi"), _("Esperando a que el router asigne una dirección IP…"));
 	} else if (!V.ip) {
 		card_message(IC_WIFI_OFF, T.text3, _("Sin conexión Wi-Fi"),
-		             _("Conecta la consola a tu Wi-Fi. Si no tienes router, usa el punto de acceso de tu móvil."));
+		             _("Conecta la consola a una red Wi-Fi. Si no tienes router, puedes usar el punto de acceso de tu móvil."));
 	} else if (V.srv_error[0]) {
-		card_message(IC_INFO, T.warn, _("No se pudo abrir el servidor"),
-		             _("Cierra otras apps de red (como FTPD) y vuelve a abrir Cloud3DS."));
+		card_message(IC_INFO, T.warn, _("No se pudo iniciar el servidor"),
+		             _("Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS."));
 	} else if (!V.running) {
 		card();
 		draw_arc(TOP_W / 2, CARD_Y + 80, 16, 3, g_time * 6, g_time * 6 + 4.2f, T.accent);
@@ -644,7 +644,7 @@ static void tab_activity(void)
 		draw_circle(cx, cy, 12, p ? col_alpha(T.danger, 0.35f) : T.surface);
 		draw_icon(IC_TRASH, cx, cy, 14, T.danger);
 		if (!g_dialog.open && (tap(cx - 14, cy - 14, 28, 28) || (g_kdown & KEY_Y)))
-			dialog_open(DLG_CLEAR, _("¿Borrar el historial?"), _("Se borra la lista de actividad. Tus archivos no se tocan."),
+			dialog_open(DLG_CLEAR, _("¿Borrar el historial?"), _("Se borrará la lista de actividad. Tus archivos no se modifican."),
 			            _("Borrar"), true);
 		hx = cx - 20;
 	}
@@ -665,7 +665,7 @@ static void tab_activity(void)
 	int rows = n;
 	list_update(l, rows, RH);
 	if (!n) {
-		empty_state(IC_CLOUD, _("Todo listo"), _("Sube algo desde tu móvil o tu PC y aparecerá aquí."));
+		empty_state(IC_CLOUD, _("Todo listo"), _("Aquí verás lo que subas o descargues desde tu móvil o tu PC."));
 		return;
 	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
@@ -694,7 +694,7 @@ static void ask_revoke(int d)
 	char msg[200];
 	snprintf(msg, sizeof msg, _("%s tendrá que volver a escanear el QR o escribir el PIN."), V.dev[d].name);
 	U.dlg_arg = d;
-	dialog_open(DLG_REVOKE, _("¿Expulsar dispositivo?"), msg, _("Expulsar"), true);
+	dialog_open(DLG_REVOKE, _("¿Desvincular este dispositivo?"), msg, _("Desvincular"), true);
 }
 
 static void tab_devices(void)
@@ -712,7 +712,7 @@ static void tab_devices(void)
 	const float RH = 44;
 	list_update(l, n, RH);
 	if (!n) {
-		empty_state(IC_DEVICES, _("Sin dispositivos"), _("Escanea el QR de arriba con tu móvil para vincularlo."));
+		empty_state(IC_DEVICES, _("Sin dispositivos"), _("Escanea el código QR de la pantalla superior para vincular tu móvil."));
 		return;
 	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
@@ -744,7 +744,7 @@ static void tab_devices(void)
 		text_draw_clip(sub, 50, y + 24, bx - 58, TS_SUB, on ? T.ok : T.text3);
 		bool bp = touch_in(bx, by, bw, bh);
 		draw_rrect(bx, by, bw, bh, bh / 2, col_alpha(T.danger, bp ? 0.35f : 0.16f));
-		text_draw_center(_("Expulsar"), bx + bw / 2, by + (bh - text_lineh(TS_SUB)) / 2, TS_SUB, T.danger);
+		text_draw_center(_("Desvincular"), bx + bw / 2, by + (bh - text_lineh(TS_SUB)) / 2, TS_SUB, T.danger);
 		if (bt || activate(l, i))
 			ask_revoke(idx[i]);
 	}
@@ -768,7 +768,7 @@ static void settings_action(int i)
 	switch (i) {
 	case SET_READONLY:
 		set_flag(&G.readonly);
-		toast_icon(V.readonly ? _("Solo lectura activado") : _("Lectura y escritura activadas"), IC_LOCK, T.warn);
+		toast_icon(V.readonly ? _("Modo solo lectura activado") : _("Modo solo lectura desactivado"), IC_LOCK, T.warn);
 		break;
 	case SET_PROTECT:
 		set_flag(&G.protect_sys);
@@ -819,14 +819,14 @@ static void settings_main(void)
 		bool chev = false;
 		switch (i) {
 		case SET_READONLY:
-			title = _("Solo lectura"); sub = _("Solo se podrá ver y descargar"); ic = IC_LOCK; col = T.warn;
+			title = _("Solo lectura"); sub = _("Los dispositivos solo podrán ver y descargar"); ic = IC_LOCK; col = T.warn;
 			break;
 		case SET_PROTECT:
-			title = _("Proteger carpetas del sistema"); sub = _("No deja borrar Nintendo 3DS, 3ds, luma…");
+			title = _("Proteger carpetas del sistema"); sub = _("Impide borrar Nintendo 3DS, 3ds, luma…");
 			ic = IC_SHIELD; col = T.danger;
 			break;
 		case SET_PIN:
-			title = _("PIN"); sub = _("Siempre el mismo hasta que lo cambies"); ic = IC_KEY; col = T.accent2; val = V.pin;
+			title = _("PIN"); sub = _("Se mantiene hasta que lo cambies"); ic = IC_KEY; col = T.accent2; val = V.pin;
 			chev = true;
 			break;
 		case SET_LANG:
@@ -843,7 +843,7 @@ static void settings_main(void)
 			sub = vbuf;
 			break;
 		case SET_EXIT:
-			title = _("Salir"); sub = _("También con START"); ic = IC_POWER; col = T.danger;
+			title = _("Salir"); sub = _("O pulsa START"); ic = IC_POWER; col = T.danger;
 			break;
 		}
 		row_icon(28, y + RH / 2, ic, col);
@@ -918,19 +918,19 @@ static void settings_pin(void)
 		bool t = row(l, i, y, RH);
 		row_icon(28, y + RH / 2, i == PIN_CUSTOM ? IC_KEY : IC_REFRESH, T.accent2);
 		text_draw_clip(i == PIN_CUSTOM ? _("Elegir mi PIN") : _("PIN aleatorio nuevo"), 50, y + 6, 230, TS_BODY, T.text);
-		text_draw_clip(i == PIN_CUSTOM ? _("Cuatro cifras fáciles de recordar") : _("La consola elige uno al azar"),
+		text_draw_clip(i == PIN_CUSTOM ? _("Elige cuatro cifras fáciles de recordar") : _("La consola genera uno al azar"),
 		               50, y + 23, 230, TS_SUB, T.text3);
 		if (t || activate(l, i)) {
 			if (i == PIN_CUSTOM)
 				U.want_pin = true;
 			else
 				dialog_open(DLG_NEWPIN, _("¿Crear un PIN nuevo?"),
-				            _("El PIN y el QR actuales dejarán de servir. Los dispositivos ya vinculados siguen conectados."),
+				            _("El PIN y el código QR actuales dejarán de funcionar. Los dispositivos vinculados seguirán conectados."),
 				            _("Cambiar"), false);
 		}
 	}
 	float y = VIEW_Y + PIN_COUNT * RH + 10 - l->off;
-	text_wrap_lines(_("Al cambiarlo, el QR también se renueva. Los dispositivos ya vinculados siguen conectados."),
+	text_wrap_lines(_("Al cambiar el PIN también se renueva el código QR. Los dispositivos vinculados seguirán conectados."),
 	                BOT_W - 40, TS_SUB, 3, 20, y, T.text3, true);
 }
 
@@ -943,7 +943,7 @@ static void settings_about(void)
 	static const IconId IC[AB_COUNT] = {IC_CLOUD, IC_CODE, IC_CHAT, IC_HEART};
 	const u32 COL[AB_COUNT] = {T.accent, col_hex(0x6E7681), col_hex(0x5865F2), col_hex(0xFF5E5B)};
 	const char *title[AB_COUNT] = {"Cloud3DS " APP_VERSION, "GitHub", "Discord", "Ko-fi"};
-	const char *sub[AB_COUNT] = {_("Gracias por usar!"), _("Código y avisos de errores"), _("Comunidad y ayuda"),
+	const char *sub[AB_COUNT] = {_("Gracias por usar!"), _("Código fuente e informes de errores"), _("Comunidad y ayuda"),
 	                             _("Invítame a un café")};
 	for (int i = 0; i < AB_COUNT; i++) {
 		float y = VIEW_Y + i * RH - l->off;
@@ -1028,7 +1028,7 @@ static void handle_dialog(int ctx, bool ok)
 	s_hist_head = V.hist_head;
 	state_unlock();
 	if (ctx == DLG_NEWPIN)
-		toast_icon(_("PIN y QR nuevos listos"), IC_KEY, T.accent2);
+		toast_icon(_("Nuevo PIN y código QR generados"), IC_KEY, T.accent2);
 }
 
 static void watch_events(void)
@@ -1042,12 +1042,12 @@ static void watch_events(void)
 			snprintf(msg, sizeof msg, _("Vinculado: %s"), e->device);
 			toast_icon(msg, IC_LINK, T.accent2);
 		} else if (e->kind == EV_PIN_LOCK) {
-			toast_icon(_("PIN bloqueado por intentos fallidos"), IC_LOCK, T.warn);
+			toast_icon(_("Acceso bloqueado por intentos fallidos"), IC_LOCK, T.warn);
 		} else if (e->kind == EV_DELETE) {
 			snprintf(msg, sizeof msg, _("Eliminado: %s"), e->name);
 			toast_icon(msg, IC_TRASH, T.danger);
 		} else if (e->kind == EV_UPLOAD_FAIL) {
-			snprintf(msg, sizeof msg, _("No se completó: %s"), e->name);
+			snprintf(msg, sizeof msg, _("Transferencia incompleta: %s"), e->name);
 			toast_icon(msg, IC_CLOSE, T.danger);
 		}
 	}

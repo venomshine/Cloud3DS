@@ -3,33 +3,43 @@
 TR = {
     "Intentos de PIN fallidos": ("Failed PIN attempts", "PINの入力ミス"),
     "Bloqueado %s · %s": ("Locked %s · %s", "%s ロック · %s"),
-    "PIN bloqueado por intentos fallidos": ("PIN locked after failed attempts", "入力ミスが多いためPINをロック"),
-    "Siempre el mismo hasta que lo cambies": ("Stays the same until you change it", "変更するまで同じです"),
+    "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Todo ocurre en tu red local; nada pasa por Internet.":
+        ("Your local cloud for Nintendo 3DS. Manage the SD card from your phone or PC just by scanning a QR code: no apps, no cables and no setup. Everything happens on your local network; nothing goes through the Internet.",
+         "3DSのローカルクラウド。QRを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。インターネットは通りません。"),
+    "Transferencia incompleta":
+        ("Transfer incomplete",
+         "転送が完了しませんでした"),
     "Elegir mi PIN": ("Choose my PIN", "PINを自分で決める"),
     "PIN aleatorio nuevo": ("New random PIN", "ランダムな新しいPIN"),
-    "Cuatro cifras fáciles de recordar": ("Four easy-to-remember digits", "覚えやすい4桁の数字"),
-    "La consola elige uno al azar": ("The console picks one at random", "本体がランダムに決めます"),
-    "Al cambiarlo, el QR también se renueva. Los dispositivos ya vinculados siguen conectados.":
-        ("Changing it also renews the QR code. Paired devices stay connected.",
-         "変更するとQRコードも新しくなります。登録済みの端末は接続されたままです。"),
+    "Transferencia incompleta: %s":
+        ("Transfer incomplete: %s",
+         "未完了: %s"),
+    "Dispositivo desvinculado":
+        ("Device unpaired",
+         "デバイスを解除"),
+    "¿Desvincular este dispositivo?":
+        ("Unpair this device?",
+         "デバイスを解除しますか?"),
     "PIN de 4 cifras": ("4-digit PIN", "4桁のPIN"),
     "PIN guardado": ("PIN saved", "PINを保存しました"),
     "Gracias por usar!": ("Thanks for using!", "ご利用ありがとう!"),
-    "Código y avisos de errores": ("Code and bug reports", "コードと不具合の報告"),
+    "Desvincular":
+        ("Unpair",
+         "解除"),
     "Comunidad y ayuda": ("Community and help", "コミュニティとサポート"),
-    "Código y nuevas versiones. Si algo falla, abre un issue y lo reviso.":
-        ("Code and new versions. If something breaks, open an issue and I'll look into it.",
-         "コードと新しいバージョン。不具合があればissueを立ててください。確認します。"),
-    "Únete a la comunidad: dudas, problemas, ideas y avisos de actualizaciones.":
-        ("Join the community: questions, problems, ideas and update news.",
-         "コミュニティに参加: 質問、不具合、アイデア、アップデート情報。"),
-    "Si encuentras algún problema, escríbeme por GitHub o Discord.":
-        ("Found a problem? Let me know on GitHub or Discord.",
-         "問題があれば、GitHubかDiscordで教えてください。"),
-    "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
-    "La cámara abre tu nube al instante. Mismo Wi-Fi que la consola.":
-        ("Your camera opens your cloud instantly. Same Wi-Fi as the console.",
+    "Ábrelo con la cámara. Tu móvil debe estar en la misma red Wi-Fi.":
+        ("Open it with your camera. Your phone must be on the same Wi-Fi network.",
          "カメラで読み取るだけ。本体と同じWi-Fiで使えます。"),
+    "Código fuente y nuevas versiones. Si encuentras un error, abre un issue y lo revisaré.":
+        ("Source code and new versions. If you find a bug, open an issue and I'll look into it.",
+         "コードと新しいバージョン。不具合があればissueを立ててください。確認します。"),
+    "Únete a la comunidad: soporte, ideas y novedades de cada versión.":
+        ("Join the community: support, ideas and news about every version.",
+         "コミュニティに参加: サポート、アイデア、各バージョンの最新情報。"),
+    "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
+    "Si Cloud3DS te resulta útil, puedes invitarme a un café. Me ayuda a seguir mejorándolo.":
+        ("If Cloud3DS is useful to you, you can buy me a coffee. It helps me keep improving it.",
+         "Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!"),
     "O escribe en el navegador:": ("Or type in your browser:", "またはブラウザで入力:"),
     "PIN": ("PIN", "PIN"),
     "Recibido de %s": ("Received from %s", "%s から受信"),
@@ -46,50 +56,63 @@ TR = {
     "Escanea para unirte al Discord de la comunidad.":
         ("Scan to join the community Discord.", "スキャンしてコミュニティのDiscordに参加。"),
     "Sin conexión Wi-Fi": ("No Wi-Fi connection", "Wi-Fiに接続されていません"),
-    "Conecta la consola a tu Wi-Fi. Si no tienes router, usa el punto de acceso de tu móvil.":
-        ("Connect the console to your Wi-Fi. No router? Use your phone's hotspot.",
-         "本体をWi-Fiに接続してください。ルーターがない場合はスマホのテザリングを使えます。"),
-    "No se pudo abrir el servidor": ("Couldn't start the server", "サーバーを開始できません"),
-    "Cierra otras apps de red (como FTPD) y vuelve a abrir Cloud3DS.":
-        ("Close other network apps (like FTPD) and reopen Cloud3DS.",
-         "他のネットワークアプリ(FTPDなど)を閉じて、Cloud3DSを開き直してください。"),
+    "¿Algún problema? Escríbeme por GitHub o Discord.":
+        ("Any problems? Write to me on GitHub or Discord.",
+         "問題があれば、GitHubかDiscordで教えてください。"),
+    "El servicio de red de la consola no responde (error %08lX). Reintentando automáticamente…":
+        ("The console's network service isn't responding (error %08lX). Retrying automatically…",
+         "本体のネットワークが応答しません(エラー %08lX)。自動で再試行中…"),
+    "Esperando a que el router asigne una dirección IP…":
+        ("Waiting for the router to assign an IP address…",
+         "ルーターからIPアドレスを取得中…"),
     "Preparando tu nube…": ("Getting your cloud ready…", "クラウドを準備中…"),
     "Recibido": ("Received", "受信"),
     "Enviado": ("Sent", "送信"),
-    "No se completó": ("Not completed", "未完了"),
+    "Conecta la consola a una red Wi-Fi. Si no tienes router, puedes usar el punto de acceso de tu móvil.":
+        ("Connect the console to a Wi-Fi network. If you don't have a router, you can use your phone's hotspot.",
+         "本体をWi-Fiに接続してください。ルーターがない場合はスマホのテザリングを使えます。"),
     "Carpeta creada": ("Folder created", "フォルダ作成"),
     "Renombrado": ("Renamed", "名前変更"),
     "Eliminado": ("Deleted", "削除"),
     "Nuevo dispositivo vinculado": ("New device paired", "新しいデバイスを登録"),
-    "Dispositivo expulsado": ("Device removed", "デバイスを解除"),
+    "No se pudo iniciar el servidor":
+        ("Couldn't start the server",
+         "サーバーを開始できません"),
     "PIN cambiado por seguridad": ("PIN changed for security", "安全のためPINを変更"),
     "Demasiados intentos fallidos": ("Too many failed attempts", "失敗回数が多すぎます"),
     "Actividad": ("Activity", "履歴"),
     "Todo listo": ("All set", "準備完了"),
-    "Sube algo desde tu móvil o tu PC y aparecerá aquí.":
-        ("Upload something from your phone or PC and it will show up here.",
-         "スマホやPCからアップロードするとここに表示されます。"),
+    "Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS.":
+        ("Close other network apps (such as FTPD) and reopen Cloud3DS.",
+         "他のネットワークアプリ(FTPDなど)を閉じて、Cloud3DSを開き直してください。"),
     "%d conectado": ("%d online", "%d 台接続中"),
     "%d conectados": ("%d online", "%d 台接続中"),
     "Dispositivos": ("Devices", "デバイス"),
     "Sin dispositivos": ("No devices", "デバイスなし"),
-    "Escanea el QR de arriba con tu móvil para vincularlo.":
-        ("Scan the QR code above with your phone to pair it.", "上のQRコードをスマホで読み取って登録します。"),
+    "Se borrará la lista de actividad. Tus archivos no se modifican.":
+        ("The activity list will be cleared. Your files aren't changed.",
+         "履歴の一覧だけを消去します。ファイルはそのままです。"),
     "%s tendrá que volver a escanear el QR o escribir el PIN.":
         ("%s will need to scan the QR code or enter the PIN again.", "%s は再びQRコードの読み取りかPINの入力が必要になります。"),
-    "¿Expulsar dispositivo?": ("Remove device?", "デバイスを解除しますか?"),
-    "Expulsar": ("Remove", "解除"),
+    "Aquí verás lo que subas o descargues desde tu móvil o tu PC.":
+        ("Files you upload or download from your phone or PC will appear here.",
+         "スマホやPCからアップロードするとここに表示されます。"),
+    "Escanea el código QR de la pantalla superior para vincular tu móvil.":
+        ("Scan the QR code on the top screen to pair your phone.",
+         "上のQRコードをスマホで読み取って登録します。"),
     "Conectado ahora": ("Online now", "接続中"),
     "Visto: %s": ("Seen: %s", "最終: %s"),
     "Sistema": ("System", "システム"),
     "¿Crear un PIN nuevo?": ("Create a new PIN?", "新しいPINを作成しますか?"),
-    "El PIN y el QR actuales dejarán de servir. Los dispositivos ya vinculados siguen conectados.":
-        ("The current PIN and QR code will stop working. Paired devices stay connected.",
-         "現在のPINとQRコードは使えなくなります。登録済みのデバイスはそのまま使えます。"),
+    "Modo solo lectura activado":
+        ("Read-only mode on",
+         "読み取り専用にしました"),
     "Cambiar": ("Change", "変更"),
     "Ajustes": ("Settings", "設定"),
     "Solo lectura": ("Read-only", "読み取り専用"),
-    "Solo se podrá ver y descargar": ("Devices can only view and download", "閲覧とダウンロードのみ"),
+    "Modo solo lectura desactivado":
+        ("Read-only mode off",
+         "読み取り専用を解除しました"),
     "Proteger carpetas del sistema": ("Protect system folders", "システムフォルダを保護"),
     "Pide confirmación en Nintendo 3DS, luma…": ("Asks first in Nintendo 3DS, luma…", "Nintendo 3DSやlumaでは確認します"),
     "PIN nuevo": ("New PIN", "新しいPIN"),
@@ -101,8 +124,12 @@ TR = {
     "Acerca de Cloud3DS": ("About Cloud3DS", "Cloud3DSについて"),
     "Mira la pantalla de arriba": ("Look at the top screen", "上画面をご覧ください"),
     "Salir": ("Exit", "終了"),
-    "También con START": ("Or press START", "STARTでも終了"),
-    "PIN y QR nuevos listos": ("New PIN and QR ready", "新しいPINとQRができました"),
+    "Los dispositivos solo podrán ver y descargar":
+        ("Devices can only view and download",
+         "閲覧とダウンロードのみ"),
+    "Impide borrar Nintendo 3DS, 3ds, luma…":
+        ("Prevents deleting Nintendo 3DS, 3ds, luma…",
+         "Nintendo 3DS、3ds、lumaなどを削除不可に"),
     "Vinculado: %s": ("Paired: %s", "登録: %s"),
     "Eliminado: %s": ("Deleted: %s", "削除: %s"),
     "¿Salir de Cloud3DS?": ("Exit Cloud3DS?", "Cloud3DSを終了しますか?"),
@@ -118,12 +145,13 @@ TR = {
         ("%d transfers in progress (%s “%s”, %d%%, and %d more). They will be canceled if you exit.",
          "転送中のファイルが%d件あります(%s「%s」%d%%、ほか%d件)。終了するとキャンセルされます。"),
     "Iniciando la red": ("Starting the network", "ネットワークを準備中"),
-    "La red de la consola no respondió (error %08lX). Reintentando sola…":
-        ("The console's network didn't respond (error %08lX). Retrying on its own…",
-         "本体のネットワークが応答しません(エラー %08lX)。自動で再試行中…"),
+    "Se mantiene hasta que lo cambies":
+        ("Stays the same until you change it",
+         "変更するまで同じです"),
     "Conectado al Wi-Fi": ("Connected to Wi-Fi", "Wi-Fiに接続済み"),
-    "Esperando a que el router dé una IP a la consola…":
-        ("Waiting for the router to give the console an IP…", "ルーターからIPアドレスを取得中…"),
+    "O pulsa START":
+        ("Or press START",
+         "STARTでも終了"),
     "Cancelar": ("Cancel", "キャンセル"),
     "Hoy": ("Today", "今日"),
     "Ayer": ("Yesterday", "昨日"),
@@ -156,10 +184,16 @@ TR = {
     'Únete a la comunidad': ('Join the community', 'コミュニティに参加'),
     'Invítame a un café': ('Buy me a coffee', 'コーヒーをおごる'),
     'Gracias por usarlo': ('Thanks for using it', 'ご利用ありがとうございます'),
-    'Solo lectura activado': ('Read-only on', '読み取り専用にしました'),
-    'Lectura y escritura activadas': ('Read and write on', '読み書きできるようにしました'),
+    "Elige cuatro cifras fáciles de recordar":
+        ("Choose four easy-to-remember digits",
+         "覚えやすい4桁の数字"),
+    "La consola genera uno al azar":
+        ("The console generates one at random",
+         "本体がランダムに作成します"),
     '¿Borrar el historial?': ('Clear history?', '履歴を消去しますか?'),
-    'Se borra la lista de actividad. Tus archivos no se tocan.': ("The activity list is cleared. Your files aren't touched.", '履歴の一覧だけを消去します。ファイルはそのままです。'),
+    "El PIN y el código QR actuales dejarán de funcionar. Los dispositivos vinculados seguirán conectados.":
+        ("The current PIN and QR code will stop working. Paired devices will stay connected.",
+         "現在のPINとQRコードは使えなくなります。登録済みのデバイスはそのまま使えます。"),
     'Borrar': ('Clear', '消去'),
     'Sin Wi-Fi': ('No Wi-Fi', 'Wi-Fiなし'),
     'Error': ('Error', 'エラー'),
@@ -182,7 +216,9 @@ TR = {
     'y %d más': ('and %d more', 'ほか %d 件'),
     'Código, novedades y nuevas versiones de mis proyectos.': ('Code, news and new versions of my projects.', 'プロジェクトのコード、最新情報、新バージョン。'),
     'Únete a la comunidad: dudas, ideas y avisos de actualizaciones.': ('Join the community: questions, ideas and update news.', 'コミュニティに参加: 質問、アイデア、更新のお知らせ。'),
-    'Si te gusta Cloud3DS, invítame a un café: ayuda muchísimo.': ('If you like Cloud3DS, buy me a coffee. It helps a lot!', 'Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!'),
+    "Al cambiar el PIN también se renueva el código QR. Los dispositivos vinculados seguirán conectados.":
+        ("Changing the PIN also renews the QR code. Paired devices will stay connected.",
+         "変更するとQRコードも新しくなります。登録済みの端末は接続されたままです。"),
     'Escanéalo con tu teléfono': ('Scan it with your phone', 'スマホで読み取ってください'),
     'v%s · hecho por %s': ('v%s · made by %s', 'v%s · 制作: %s'),
     'Toca para expulsarlo: tendrá que volver a escanear el QR o escribir el PIN.': ('Tap to remove it: it will need to scan the QR code or enter the PIN again.', 'タップで解除。再びQRコードかPINが必要になります。'),
@@ -196,20 +232,24 @@ TR = {
     'Conectados': ('Online', '接続中'),
     'Espacio libre': ('Free space', '空き容量'),
     'Aquí verás lo que suban o descarguen': ('Uploads and downloads will show up here', 'アップロードやダウンロードがここに表示されます'),
-    'No se completó: %s': ('Not completed: %s', '未完了: %s'),
+    "Código fuente e informes de errores":
+        ("Source code and bug reports",
+         "コードと不具合の報告"),
     'No fijar': ('Unpin', '固定を解除'),
     'Fijar': ('Pin', '固定'),
     'Renombrar': ('Rename', '名前を変更'),
     'Eliminar': ('Delete', '削除'),
     'Aceptar': ('OK', 'OK'),
-    "Tu nube local para Nintendo 3DS: maneja la tarjeta SD desde el móvil o el PC con solo escanear un QR. Sin apps, sin cables y sin configurar nada. Todo se queda en tu red: nada pasa por Internet.":
-        ("Your local cloud for Nintendo 3DS: manage the SD card from your phone or PC just by scanning a QR code. No apps, no cables and nothing to set up. Everything stays on your network: nothing goes through the Internet.",
-         "3DSのローカルクラウド。QRを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。インターネットは通りません。"),
+    "Nuevo PIN y código QR generados":
+        ("New PIN and QR code generated",
+         "新しいPINとQRができました"),
     "Código y nuevas versiones": ("Code and new versions", "コードと新バージョン"),
     "Elige uno para ver su QR arriba": ("Pick one to see its QR code above", "選ぶと上画面にQRを表示"),
     "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
     "Escanéalo con tu móvil": ("Scan it with your phone", "スマホでスキャン"),
     "Qué es y para qué sirve": ("What it is and what it's for", "このアプリについて"),
     "Software libre · licencia GPL-3.0": ("Free software · GPL-3.0 license", "フリーソフト · GPL-3.0"),
-    "No deja borrar Nintendo 3DS, 3ds, luma…": ("Can't delete Nintendo 3DS, 3ds, luma…", "Nintendo 3DS、3ds、lumaなどを削除不可に"),
+    "Acceso bloqueado por intentos fallidos":
+        ("Access locked after failed attempts",
+         "入力ミスが多いためロックしました"),
 }
