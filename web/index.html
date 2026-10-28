@@ -331,6 +331,7 @@ es:{
  sysQ:"Carpeta del sistema", sysD:"«%1» es necesaria para que la consola o el homebrew funcionen correctamente. ¿Quieres continuar?", cont:"Continuar",
  renT:"Renombrar", newT:"Nueva carpeta", nameErr:"Nombre no válido. No uses \\ / : * ? \" < > | ni termines el nombre en punto.",
  exists:"Ya existe «%1»", existsD:"Elige qué hacer con este archivo.", replace:"Reemplazar", skip:"Omitir", keep:"Conservar ambos", all:"Aplicar a todos",
+ renameAs:"Renombrar…", cancelAll:"Cancelar todo", merge:"Combinar", existsDirD:"Ya hay una carpeta con ese nombre. Puedes combinar su contenido.", newName:"Nuevo nombre", 
  ro:"Modo solo lectura: puedes ver y descargar archivos, pero no modificarlos.", sysHere:"Estás en una carpeta del sistema. Modifícala con precaución.",
  uploading:"Subiendo %1 de %2", uploadsDone:"Subidas terminadas", upDone:"%1 subidos", left:"quedan %1", queued:"En cola",
  done:"Completado", failed:"Error", canceled:"Cancelado", skipped:"Omitido",
@@ -361,6 +362,7 @@ en:{
  sysQ:"System folder", sysD:"“%1” is needed for the console or homebrew to work properly. Do you want to continue?", cont:"Continue",
  renT:"Rename", newT:"New folder", nameErr:"Invalid name. Don't use \\ / : * ? \" < > | or end the name with a period.",
  exists:"“%1” already exists", existsD:"Choose what to do with this file.", replace:"Replace", skip:"Skip", keep:"Keep both", all:"Apply to all",
+ renameAs:"Rename…", cancelAll:"Cancel all", merge:"Merge", existsDirD:"A folder with that name already exists. You can merge their contents.", newName:"New name", 
  ro:"Read-only mode: you can view and download files, but not change them.", sysHere:"You're in a system folder. Change it with care.",
  uploading:"Uploading %1 of %2", uploadsDone:"Uploads finished", upDone:"%1 uploaded", left:"%1 left", queued:"Queued",
  done:"Done", failed:"Error", canceled:"Canceled", skipped:"Skipped",
@@ -391,6 +393,7 @@ ja:{
  sysQ:"システムフォルダ", sysD:"「%1」は本体やHomebrewの動作に必要です。続けますか?", cont:"続ける",
  renT:"名前を変更", newT:"新しいフォルダ", nameErr:"無効な名前です。\\ / : * ? \" < > | は使えず、ピリオドで終わることもできません。",
  exists:"「%1」はすでにあります", existsD:"このファイルをどうするか選んでください。", replace:"置き換え", skip:"スキップ", keep:"両方残す", all:"すべてに適用",
+ renameAs:"名前を変更…", cancelAll:"すべてキャンセル", merge:"統合", existsDirD:"同じ名前のフォルダがあります。中身を統合できます。", newName:"新しい名前", 
  ro:"読み取り専用モード: ファイルの表示とダウンロードはできますが、変更はできません。", sysHere:"システムフォルダです。変更には注意してください。",
  uploading:"アップロード中 %1 / %2", uploadsDone:"アップロード完了", upDone:"%1 件アップロード", left:"残り %1", queued:"待機中",
  done:"完了", failed:"エラー", canceled:"キャンセル", skipped:"スキップ",
@@ -472,7 +475,7 @@ let toastT;
 function toast(msg){const e=$("#toast");e.textContent=msg;e.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove("show"),2600)}
 
 /* ---------- API ---------- */
-class ApiErr extends Error{constructor(code,status){super(code);this.code=code;this.status=status}}
+class ApiErr extends Error{constructor(code,status,j){super(code);this.code=code;this.status=status;this.j=j||{}}}
 async function api(method,ep,params={},body){
  const q=new URLSearchParams(params).toString();
  let r;
@@ -481,7 +484,7 @@ async function api(method,ep,params={},body){
  setOffline(false);
  let j={};try{j=await r.json()}catch(e){}
  if(r.status===401&&ep!=="login"){showLogin(false,j.error==="revoked");throw new ApiErr("auth",401)}
- if(!r.ok)throw new ApiErr(j.error||String(r.status),r.status);
+ if(!r.ok)throw new ApiErr(j.error||String(r.status),r.status,j);
  return j;
 }
 function errText(e){const k="err_"+(e.code||"");return TX[k]||L.es[k]?t(k):t("err",e.code||e.message)}
@@ -895,9 +898,12 @@ function uploadOne(it,opt){
    let j={};try{j=JSON.parse(x.responseText)}catch(e){}
    if(x.status===200){it.state="done";it.done=it.file.size;Q.doneCount++;resolve();return}
    if(x.status===409&&j.error==="exists"){
-    const pol=Q.policy||await conflict(it.name);
-    if(pol==="replace"){resolve(await uploadOne(it,{...opt,ow:1}));return}
-    if(pol==="keep"){it.path=freeName(it.path);it.name=base(it.path);resolve(await uploadOne(it,opt));return}
+    let r=Q.policy?{act:Q.policy}:await conflict(it.name,false);
+    if(r.all)Q.policy=r.act;
+    if(r.act==="replace"){resolve(await uploadOne(it,{...opt,ow:1}));return}
+    if(r.act==="keep"){it.path=freeName(it.path);it.name=base(it.path);resolve(await uploadOne(it,opt));return}
+    if(r.act==="rename"){it.path=join(parent(it.path),r.name);it.name=r.name;resolve(await uploadOne(it,opt));return}
+    if(r.act==="cancel"){Q.items.forEach(i=>{if(i.state==="queued")i.state="canceled"});it.state="canceled";resolve();return}
     it.state="skipped";resolve();return;
    }
    if(x.status===401){showLogin();}
@@ -909,21 +915,27 @@ function uploadOne(it,opt){
   renderQueue();
  });
 }
-function freeName(p){
+function freeName(p,peek){
  const d=parent(p),n=base(p),i=n.lastIndexOf("."),b=i>0?n.slice(0,i):n,e=i>0?n.slice(i):"";
  const names=new Set(S.items.map(x=>x.n.toLowerCase()));let k=2,c;
  do{c=`${b} (${k++})${e}`}while(names.has(c.toLowerCase())&&k<999);
- names.add(c.toLowerCase());S.items.push({n:c});
+ if(!peek)S.items.push({n:c});
  return join(d,c);
 }
-function conflict(name){
+// conflicto: reemplazar (o combinar, si es carpeta), renombrar, conservar ambos, omitir o cancelar todo
+function conflict(name,dir){
  return new Promise(res=>{
-  const m=modal(`<div class="dlg"><h3>${esc(t("exists",name))}</h3><p>${t("existsD")}</p>
+  const m=modal(`<div class="dlg"><h3>${esc(t("exists",name))}</h3><p>${dir?t("existsDirD"):t("existsD")}</p>
    <label><input type="checkbox" id="cAll"> ${t("all")}</label>
-   <div class="btns col"><button class="btn pri" data-c="replace">${t("replace")}</button><button class="btn" data-c="keep">${t("keep")}</button><button class="btn" data-c="skip">${t("skip")}</button></div></div>`,true);
+   <div class="btns col"><button class="btn pri" data-c="replace">${dir?t("merge"):t("replace")}</button><button class="btn" data-c="rename">${t("renameAs")}</button><button class="btn" data-c="keep">${t("keep")}</button><button class="btn" data-c="skip">${t("skip")}</button><button class="btn dng" data-c="cancel">${t("cancelAll")}</button></div></div>`,true);
   let done=false;
-  m.el.addEventListener("click",e=>{const c=e.target.closest("[data-c]");if(!c)return;done=true;if(m.el.querySelector("#cAll").checked)Q.policy=c.dataset.c;m.close();res(c.dataset.c)});
-  const obs=new MutationObserver(()=>{if(!document.body.contains(m.el)){obs.disconnect();if(!done)res("skip")}});obs.observe(document.body,{childList:true});
+  m.el.addEventListener("click",async e=>{const c=e.target.closest("[data-c]");if(!c)return;done=true;const all=m.el.querySelector("#cAll").checked;m.close();
+   let act=c.dataset.c,nn=null;
+   if(act==="rename"){nn=await ask({title:t("newName"),input:true,value:base(freeName(name,true)),ok:t("save")});
+    if(nn==null){res({act:"skip"});return}
+    if(!validName(nn)){toast(t("nameErr"));res({act:"skip"});return}}
+   res({act,name:nn,all:all&&act!=="rename"&&act!=="cancel"})});
+  const obs=new MutationObserver(()=>{if(!document.body.contains(m.el)){obs.disconnect();if(!done)res({act:"skip"})}});obs.observe(document.body,{childList:true});
  });
 }
 let rqT=0;
