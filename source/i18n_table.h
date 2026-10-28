@@ -28,6 +28,8 @@ static const TrEntry TR_TAB[] = {
 	{"%s de %s", "%s of %s", "%s / %s"},
 	{"%s · quedan %s", "%s · %s left", "%s · 残り %s"},
 	{"y %d más", "and %d more", "ほか %d 件"},
+	{"Tu nube está lista", "Your cloud is ready", "クラウドの準備ができました"},
+	{"Pulsa SELECT para ver el código QR", "Press SELECT to show the QR code", "SELECTでQRコードを表示"},
 	{"Código fuente y nuevas versiones. Si encuentras un error, abre un issue y lo revisaré.", "Source code and new versions. If you find a bug, open an issue and I'll look into it.", "コードと新しいバージョン。不具合があればissueを立ててください。確認します。"},
 	{"Únete a la comunidad: soporte, ideas y novedades de cada versión.", "Join the community: support, ideas and news about every version.", "コミュニティに参加: サポート、アイデア、各バージョンの最新情報。"},
 	{"Si Cloud3DS te resulta útil, puedes invitarme a un café. Me ayuda a seguir mejorándolo.", "If Cloud3DS is useful to you, you can buy me a coffee. It helps me keep improving it.", "Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!"},

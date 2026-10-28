@@ -69,6 +69,7 @@ static struct {
 	float fade;                  // fundido de la presentación a la app (1 -> 0)
 	bool lid_off;
 	bool want_pin;               // abrir el teclado del PIN fuera del dibujo
+	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 } U;
 
 static AppState V;               // copia del estado para dibujar sin el cerrojo
@@ -327,20 +328,19 @@ static void card_message(IconId ic, u32 icc, const char *title, const char *text
 	wrap_center(text, TOP_W / 2, CARD_Y + 134, 300, 0.42f, 3, T.text3);
 }
 
-static void draw_status(void)
+static void draw_status(float x, float y, float w, float a)
 {
-	float y = QR_Y + QR_S - 12;
 	int on = online_count();
 	if (on) {
 		char s[48];
 		snprintf(s, sizeof s, on == 1 ? _("%d dispositivo conectado") : _("%d dispositivos conectados"), on);
-		draw_circle(COL_X + 4, y + 7, 4, T.ok);
-		text_draw_clip(s, COL_X + 14, y, COL_W - 14, TS_SUB, T.ok);
+		draw_circle(x + 4, y + 7, 4, col_alpha(T.ok, a));
+		text_draw_clip(s, x + 14, y, w - 14, TS_SUB, col_alpha(T.ok, a));
 	} else {
 		int dots = (int)(g_time * 2) % 4;
-		char w[48];
-		snprintf(w, sizeof w, _("Esperando conexión%.*s"), dots, "...");
-		text_draw_clip(w, COL_X, y, COL_W, TS_SUB, T.text3);
+		char t[48];
+		snprintf(t, sizeof t, _("Esperando conexión%.*s"), dots, "...");
+		text_draw_clip(t, x, y, w, TS_SUB, col_alpha(T.text3, a));
 	}
 }
 
@@ -369,6 +369,23 @@ static void connect_col(float a, float dy)
 	}
 }
 
+static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic)
+{
+	bool up = x->kind == XF_UPLOAD;
+	*head = up ? _("Recibiendo") : _("Enviando");
+	*col = up ? T.ok : T.accent;
+	*ic = up ? IC_DOWNLOAD : IC_UPLOAD; // la consola recibe (↓) o envía (↑)
+	if (x->st == XS_DONE) {
+		*head = _("Completado");
+		*col = T.ok;
+		*ic = IC_CHECK;
+	} else if (x->st != XS_RUNNING) {
+		*head = _("Transferencia incompleta");
+		*col = T.danger;
+		*ic = IC_CLOSE;
+	}
+}
+
 static void xfer_col(float a, float dy)
 {
 	const Xfer *xs[3];
@@ -378,18 +395,10 @@ static void xfer_col(float a, float dy)
 	const Xfer *x = xs[0];
 	float tx = COL_X, y = QR_Y + dy;
 	bool up = x->kind == XF_UPLOAD;
-	const char *head = up ? _("Recibiendo") : _("Enviando");
-	u32 col = up ? T.ok : T.accent;
-	IconId ic = up ? IC_DOWNLOAD : IC_UPLOAD; // la consola recibe (↓) o envía (↑)
-	if (x->st == XS_DONE) {
-		head = _("Completado");
-		col = T.ok;
-		ic = IC_CHECK;
-	} else if (x->st != XS_RUNNING) {
-		head = _("Transferencia incompleta");
-		col = T.danger;
-		ic = IC_CLOSE;
-	}
+	const char *head;
+	u32 col;
+	IconId ic;
+	xfer_head(x, &head, &col, &ic);
 	draw_circle(tx + 13, y + 13, 13, col_alpha(col, a));
 	draw_icon(ic, tx + 13, y + 13, 15, col_alpha(0xFFFFFFFF, a));
 	text_draw_clip(head, tx + 34, y + 4, COL_W - 34, 0.55f, col_alpha(T.text, a));
@@ -418,6 +427,89 @@ static void xfer_col(float a, float dy)
 		char more[48];
 		snprintf(more, sizeof more, _("y %d más"), n - 1);
 		text_draw_clip(more, tx, y + 132, COL_W, TS_SUB, col_alpha(T.text3, a));
+	}
+}
+
+// transferencia a lo ancho, para la pantalla con el QR minimizado
+static void xfer_wide(float x0, float y, float w, float a)
+{
+	const Xfer *xs[3];
+	int n = visible_xfers(xs, 3);
+	if (!n)
+		return;
+	const Xfer *x = xs[0];
+	const char *head;
+	u32 col;
+	IconId ic;
+	xfer_head(x, &head, &col, &ic);
+	float frac = x->st == XS_DONE ? 1 : x->total ? (float)((double)x->done / x->total) : 0;
+	char pc[12], line[96], d[24], t[24];
+	snprintf(pc, sizeof pc, "%d%%", (int)(frac * 100));
+	draw_circle(x0 + 13, y + 13, 13, col_alpha(col, a));
+	draw_icon(ic, x0 + 13, y + 13, 15, col_alpha(0xFFFFFFFF, a));
+	float pw = text_width(pc, 0.62f);
+	text_draw_clip(head, x0 + 34, y + 4, w - 34 - pw - 10, 0.55f, col_alpha(T.text, a));
+	text_draw_right(pc, x0 + w, y + 2, 0.62f, col_alpha(T.accent, a));
+	text_draw_clip(x->name, x0, y + 32, w, TS_BODY, col_alpha(T.text, a));
+	snprintf(line, sizeof line, x->kind == XF_UPLOAD ? _("de %s") : _("a %s"), x->device);
+	text_draw_clip(line, x0, y + 52, w, TS_SUB, col_alpha(T.text3, a));
+	brand_bar(x0, y + 72, w, 8, frac);
+	util_fmt_size(d, sizeof d, x->done);
+	util_fmt_size(t, sizeof t, x->total);
+	snprintf(line, sizeof line, _("%s de %s"), d, t);
+	text_draw_clip(line, x0, y + 86, w / 2, TS_SUB, col_alpha(T.text2, a));
+	if (x->st == XS_RUNNING && x->speed > 0) {
+		char sp[24], eta[24];
+		util_fmt_speed(sp, sizeof sp, x->speed);
+		util_fmt_eta(eta, sizeof eta, (x->total - x->done) / x->speed);
+		snprintf(line, sizeof line, _("%s · quedan %s"), sp, eta);
+		text_draw_right(line, x0 + w, y + 86, TS_SUB, col_alpha(T.text3, a));
+	}
+	if (n > 1) {
+		snprintf(line, sizeof line, _("y %d más"), n - 1);
+		text_draw_clip(line, x0, y + 104, w, TS_SUB, col_alpha(T.text3, a));
+	}
+}
+
+#define MINI_H 52
+
+// tira compacta: dirección, PIN y estado; el resto de la pantalla queda libre
+static void mini_strip(float a)
+{
+	float y = CARD_Y;
+	draw_circle(CARD_X + 26, y + MINI_H / 2, 15, col_alpha(T.surface2, a));
+	draw_icon(IC_QR, CARD_X + 26, y + MINI_H / 2, 16, col_alpha(T.accent, a));
+	char url[48];
+	url_text(url, sizeof url, false);
+	const float PX = CARD_X + CARD_W - 12 - 4 * 25; // casillas del PIN a la derecha
+	float lx = CARD_X + 50, lw = PX - 34 - lx;
+	text_draw_clip(url, lx, y + 7, lw, 0.6f, col_alpha(T.accent, a));
+	draw_status(lx, y + 30, lw, a);
+	text_draw_right(_("PIN"), PX - 6, y + (MINI_H - text_lineh(TS_SUB)) / 2, TS_SUB, col_alpha(T.text3, a));
+	for (int i = 0; i < 4; i++) {
+		float bx = PX + i * 25, by = y + 12;
+		draw_rrect(bx, by, 22, 28, 7, col_alpha(T.surface2, a));
+		char d[2] = {V.pin[i], 0};
+		text_draw_center(d, bx + 11, by + (28 - text_lineh(0.56f)) / 2, 0.56f, col_alpha(T.text, a));
+	}
+}
+
+// debajo de la tira: las transferencias a lo ancho o una pista para volver a abrir el QR
+static void mini_body(float a)
+{
+	if (a <= 0.01f)
+		return;
+	const Xfer *xs[1];
+	float y = CARD_Y + MINI_H + 10, h = SCR_H - 8 - y;
+	if (visible_xfers(xs, 1)) {
+		draw_rrect(CARD_X, y + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+		draw_rrect(CARD_X, y, CARD_W, h, 16, col_alpha(T.surface, a));
+		xfer_wide(CARD_X + 16, y + 14, CARD_W - 32, a);
+	} else {
+		draw_halo(TOP_W / 2, y + 44, 70, 0.25f * a);
+		draw_cloud(TOP_W / 2, y + 44, 22, a);
+		text_draw_center(_("Tu nube está lista"), TOP_W / 2, y + 76, TS_BODY, col_alpha(T.text2, a));
+		text_draw_center(_("Pulsa SELECT para ver el código QR"), TOP_W / 2, y + 98, TS_SUB, col_alpha(T.text3, a));
 	}
 }
 
@@ -534,20 +626,32 @@ static void draw_top(void)
 		draw_arc(TOP_W / 2, CARD_Y + 80, 16, 3, g_time * 6, g_time * 6 + 4.2f, T.accent);
 		text_draw_center(_("Preparando tu nube…"), TOP_W / 2, CARD_Y + 114, TS_BODY, T.text3);
 	} else {
-		card();
-		char url[64], qr[96];
-		url_text(url, sizeof url, true);
-		snprintf(qr, sizeof qr, "%s/#k=%s", url, V.qr_key);
-		draw_qr(qr, QR_X, QR_Y, QR_S, 1);
-		const Xfer *xs[1];
-		bool busy = visible_xfers(xs, 1) > 0;
-		U.busy = approach(U.busy, busy ? 1 : 0, 9);
-		float b = ease_in_out(U.busy);
-		if (b < 0.99f)
-			connect_col(1 - b, -b * 10);
-		if (b > 0.01f)
-			xfer_col(b, (1 - b) * 10);
-		draw_status();
+		// la tarjeta se encoge hasta la tira compacta (SELECT o el botón del QR abajo)
+		U.qr_anim = approach(U.qr_anim, V.qr_min ? 0 : 1, 10);
+		float k = ease_in_out(U.qr_anim), full = clampf(k * 1.6f - 0.6f, 0, 1), mini = clampf(1 - k * 1.6f, 0, 1);
+		float h = MINI_H + (CARD_H - MINI_H) * k;
+		draw_rrect(CARD_X, CARD_Y + 3, CARD_W, h, 16, T.shadow);
+		draw_rrect(CARD_X, CARD_Y, CARD_W, h, 16, T.surface);
+		gfx_clip(CARD_X, CARD_Y, CARD_W, h);
+		if (full > 0.01f) {
+			char url[64], qr[96];
+			url_text(url, sizeof url, true);
+			snprintf(qr, sizeof qr, "%s/#k=%s", url, V.qr_key);
+			draw_qr(qr, QR_X, QR_Y, QR_S, full);
+			const Xfer *xs[1];
+			bool busy = visible_xfers(xs, 1) > 0;
+			U.busy = approach(U.busy, busy ? 1 : 0, 9);
+			float b = ease_in_out(U.busy);
+			if (b < 0.99f)
+				connect_col((1 - b) * full, -b * 10);
+			if (b > 0.01f)
+				xfer_col(b * full, (1 - b) * 10);
+			draw_status(COL_X, QR_Y + QR_S - 12, COL_W, full);
+		}
+		if (mini > 0.01f)
+			mini_strip(mini);
+		gfx_clip_off();
+		mini_body(mini);
 	}
 	toast_draw_top();
 	if (U.fade > 0) {
@@ -956,13 +1060,35 @@ static void settings_about(void)
 	}
 }
 
+static void qr_toggle(void)
+{
+	state_lock();
+	G.qr_min = !G.qr_min;
+	G.dirty_cfg = true;
+	G.rev++;
+	memcpy(&V, &G, sizeof G);
+	state_unlock();
+}
+
 static void draw_tabbar(void)
 {
 	float y = SCR_H - TABBAR_H;
 	draw_rect(0, y, BOT_W, TABBAR_H, T.surface);
 	draw_rect(0, y, BOT_W, 1, T.divider);
-	float tw = BOT_W / (float)TAB_COUNT;
+	// a la derecha, el botón que minimiza o abre el QR de arriba (como SELECT)
+	const float QB = 44;
+	float tw = (BOT_W - QB) / (float)TAB_COUNT;
 	U.tab_anim = approach(U.tab_anim, U.tab, 16);
+	{
+		float qx = BOT_W - QB, cy = y + TABBAR_H / 2 + 1;
+		draw_rect(qx, y + 9, 1, TABBAR_H - 18, T.divider);
+		bool p = touch_in(qx, y, QB, TABBAR_H);
+		bool open = !V.qr_min;
+		draw_rrect(qx + 7, cy - 14, QB - 14, 28, 9, open ? col_alpha(T.accent, p ? 0.35f : 0.18f) : (p ? T.surface2 : T.surface));
+		draw_icon(IC_QR, qx + QB / 2, cy, 16, open ? T.accent : T.text3);
+		if (!g_dialog.open && tap(qx, y, QB, TABBAR_H))
+			qr_toggle();
+	}
 	draw_rrect(U.tab_anim * tw + tw / 2 - 16, y + 2, 32, 3, 1.5f, T.accent);
 	static const IconId ics[TAB_COUNT] = {IC_CLOCK, IC_DEVICES, IC_GEAR};
 	const char *names[TAB_COUNT] = {_("Actividad"), _("Dispositivos"), _("Ajustes")};
@@ -1167,6 +1293,8 @@ static void update(void)
 	}
 	if (g_kdown & KEY_START)
 		ask_exit();
+	if (g_kdown & KEY_SELECT)
+		qr_toggle();
 }
 
 static aptHookCookie hook;
@@ -1211,6 +1339,7 @@ int main(void)
 
 	server_start();
 	U.splash = 0;
+	U.qr_anim = G.qr_min ? 0 : 1;
 
 	u64 last_save = util_ms();
 	while (aptMainLoop() && !U.quit) {

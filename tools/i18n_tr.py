@@ -252,4 +252,6 @@ TR = {
     "Acceso bloqueado por intentos fallidos":
         ("Access locked after failed attempts",
          "入力ミスが多いためロックしました"),
+    "Tu nube está lista": ("Your cloud is ready", "クラウドの準備ができました"),
+    "Pulsa SELECT para ver el código QR": ("Press SELECT to show the QR code", "SELECTでQRコードを表示"),
 }

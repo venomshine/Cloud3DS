@@ -232,6 +232,7 @@ void config_load(void)
 	G.light = jbool(r, "light", false);
 	G.readonly = jbool(r, "readonly", false);
 	G.protect_sys = jbool(r, "protect_sys", true);
+	G.qr_min = jbool(r, "qr_min", false);
 	const char *pin = jstr(r, "pin"), *key = jstr(r, "qr_key");
 	bool keep = strlen(pin) == 4 && strspn(pin, "0123456789") == 4 && strlen(key) == 8 && strspn(key, "0123456789abcdef") == 8;
 	if (keep) {
@@ -277,6 +278,7 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "light", G.light);
 	cJSON_AddBoolToObject(r, "readonly", G.readonly);
 	cJSON_AddBoolToObject(r, "protect_sys", G.protect_sys);
+	cJSON_AddBoolToObject(r, "qr_min", G.qr_min);
 	cJSON_AddStringToObject(r, "pin", G.pin);
 	cJSON_AddStringToObject(r, "qr_key", G.qr_key);
 	cJSON *devs = cJSON_AddArrayToObject(r, "devices");

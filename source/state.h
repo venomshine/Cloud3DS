@@ -69,6 +69,7 @@ typedef struct {
 	bool light;       /* tema claro */
 	bool readonly;
 	bool protect_sys; /* pedir confirmación en carpetas del sistema */
+	bool qr_min;      /* tarjeta del QR minimizada */
 
 	/* servidor */
 	char console[48]; /* «3DS de Mario» */
