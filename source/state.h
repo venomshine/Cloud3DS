@@ -84,6 +84,7 @@ typedef struct {
 	bool readonly;
 	bool protect_sys; /* pedir confirmación en carpetas del sistema */
 	bool qr_min;      /* tarjeta del QR minimizada */
+	bool upd_auto;    /* buscar actualizaciones al abrir */
 
 	/* servidor */
 	char console[48]; /* «3DS de Mario» */

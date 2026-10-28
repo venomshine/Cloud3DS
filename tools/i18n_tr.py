@@ -260,4 +260,118 @@ TR = {
     "copiando": ("copying", "コピー中"),
     "Nombre del dispositivo (vacío: automático)": ("Device name (empty: automatic)", "デバイス名(空欄で自動)"),
     "Nombre guardado": ("Name saved", "名前を保存しました"),
+    "Sin conexión a Internet. Comprueba el Wi-Fi e inténtalo de nuevo.":
+        ("No Internet connection. Check the Wi-Fi and try again.",
+         "インターネットに接続されていません。Wi-Fiを確認して、もう一度お試しください。"),
+    "No se pudo verificar la conexión segura. Comprueba la fecha y la hora de la consola.":
+        ("Couldn't verify the secure connection. Check the console's date and time.",
+         "安全な接続を確認できませんでした。本体の日付と時刻を確認してください。"),
+    "GitHub ha limitado las consultas por ahora. Inténtalo de nuevo en unos minutos.":
+        ("GitHub is limiting requests right now. Try again in a few minutes.",
+         "GitHubが一時的にアクセスを制限しています。数分後にもう一度お試しください。"),
+    "Todavía no hay versiones publicadas.":
+        ("No versions have been published yet.",
+         "まだ公開されたバージョンはありません。"),
+    "El archivo descargado no coincide con su SHA-256 y no se ha instalado.":
+        ("The downloaded file doesn't match its SHA-256, so it wasn't installed.",
+         "ダウンロードしたファイルがSHA-256と一致しないため、インストールしませんでした。"),
+    "La consola no pudo instalar la actualización. Prueba de nuevo o instálala con FBI.":
+        ("The console couldn't install the update. Try again or install it with FBI.",
+         "本体がアップデートをインストールできませんでした。もう一度試すか、FBIでインストールしてください。"),
+    "No se pudo escribir en la tarjeta SD.":
+        ("Couldn't write to the SD card.",
+         "SDカードに書き込めませんでした。"),
+    "No se pudo completar. Inténtalo de nuevo más tarde.":
+        ("Couldn't finish. Try again later.",
+         "完了できませんでした。後でもう一度お試しください。"),
+    "Buscando actualizaciones…":
+        ("Checking for updates…",
+         "アップデートを確認中…"),
+    "Cloud3DS está al día":
+        ("Cloud3DS is up to date",
+         "Cloud3DSは最新です"),
+    "Hay una versión nueva":
+        ("A new version is available",
+         "新しいバージョンがあります"),
+    "Descargando la actualización":
+        ("Downloading the update",
+         "アップデートをダウンロード中"),
+    "Instalando la actualización":
+        ("Installing the update",
+         "アップデートをインストール中"),
+    "Actualización instalada":
+        ("Update installed",
+         "アップデートをインストールしました"),
+    "No se pudo actualizar":
+        ("Couldn't update",
+         "アップデートできませんでした"),
+    "Actualizaciones":
+        ("Updates",
+         "アップデート"),
+    "Instalada: v%s · Última: v%s":
+        ("Installed: v%s · Latest: v%s",
+         "インストール済み: v%s · 最新: v%s"),
+    "Instalada: v%s":
+        ("Installed: v%s",
+         "インストール済み: v%s"),
+    "No apagues la consola ni cierres Cloud3DS hasta que termine.":
+        ("Don't turn off the console or close Cloud3DS until it finishes.",
+         "終わるまで本体の電源を切ったり、Cloud3DSを閉じたりしないでください。"),
+    "Cierra Cloud3DS y vuelve a abrirlo para usar la nueva versión.":
+        ("Close Cloud3DS and open it again to use the new version.",
+         "新しいバージョンを使うには、Cloud3DSを閉じてもう一度開いてください。"),
+    "Reinicia Cloud3DS para usar la nueva versión.":
+        ("Restart Cloud3DS to use the new version.",
+         "新しいバージョンを使うには、Cloud3DSを再起動してください。"),
+    "Esta versión no incluye el archivo de comprobación (Cloud3DS.sha256), así que no se puede instalar desde aquí.":
+        ("This version doesn't include the checksum file (Cloud3DS.sha256), so it can't be installed from here.",
+         "このバージョンには確認用ファイル(Cloud3DS.sha256)がないため、ここからはインストールできません。"),
+    "Novedades":
+        ("What's new",
+         "新機能"),
+    "Cloud3DS busca versiones nuevas en GitHub. Antes de instalar, comprueba que el archivo descargado es el original (SHA-256).":
+        ("Cloud3DS checks GitHub for new versions. Before installing, it verifies that the downloaded file is the original (SHA-256).",
+         "Cloud3DSはGitHubで新しいバージョンを確認します。インストール前に、ダウンロードしたファイルが本物か(SHA-256)を確認します。"),
+    "Buscar versiones nuevas":
+        ("Check for new versions",
+         "新しいバージョンを確認"),
+    "Buscar al abrir la app":
+        ("Check when the app opens",
+         "起動時に確認"),
+    "Consulta GitHub en segundo plano":
+        ("Checks GitHub in the background",
+         "バックグラウンドでGitHubを確認"),
+    "Actualizar a la versión %s":
+        ("Update to version %s",
+         "バージョン%sにアップデート"),
+    "Se descarga, se comprueba y se instala":
+        ("Downloaded, verified and installed",
+         "ダウンロード、確認、インストール"),
+    "Reiniciar Cloud3DS":
+        ("Restart Cloud3DS",
+         "Cloud3DSを再起動"),
+    "Para usar la nueva versión":
+        ("To use the new version",
+         "新しいバージョンを使うために"),
+    "Buscar actualizaciones":
+        ("Check for updates",
+         "アップデートを確認"),
+    "Versión instalada: v%s":
+        ("Installed version: v%s",
+         "インストール済み: v%s"),
+    "Se descargará la versión %s desde GitHub, se comprobará y se instalará. No apagues la consola mientras tanto.":
+        ("Version %s will be downloaded from GitHub, verified and installed. Don't turn off the console in the meantime.",
+         "バージョン%sをGitHubからダウンロードし、確認してインストールします。その間、本体の電源を切らないでください。"),
+    "¿Actualizar Cloud3DS?":
+        ("Update Cloud3DS?",
+         "Cloud3DSをアップデートしますか?"),
+    "Actualizar":
+        ("Update",
+         "アップデート"),
+    "Espera a que termine la actualización":
+        ("Wait for the update to finish",
+         "アップデートが終わるまでお待ちください"),
+    "Nueva versión %s disponible en Ajustes":
+        ("Version %s is available in Settings",
+         "新しいバージョン%sを設定から入手できます"),
 }

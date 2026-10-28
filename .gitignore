@@ -8,3 +8,4 @@ romfs/web/index.html.gz
 /dist/
 __pycache__/
 romfs/gfx/
+Cloud3DS.sha256

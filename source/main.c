@@ -10,6 +10,7 @@
 #include "fsx.h"
 #include "i18n.h"
 #include "ops.h"
+#include "update.h"
 #include "server.h"
 #include "state.h"
 #include "ui.h"
@@ -46,11 +47,11 @@
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Todo ocurre en tu red local; nada pasa por Internet."
 
 enum { TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
-enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN };
+enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
-enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_ABOUT, SET_EXIT, SET_COUNT };
+enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE };
 
 typedef struct {
 	float off, target;
@@ -60,7 +61,7 @@ typedef struct {
 static struct {
 	int tab, page;
 	float tab_anim;
-	List list[TAB_COUNT + 3];   // una por pestaña y por subpágina de Ajustes
+	List list[TAB_COUNT + 4];   // una por pestaña y por subpágina de Ajustes
 	bool buttons;                // la última interacción fue con botones (se ve la selección)
 	float busy;                  // 0 = datos de conexión, 1 = transferencia
 	float t_ro, t_prot;          // animación de los interruptores
@@ -72,6 +73,9 @@ static struct {
 	bool want_pin;               // abrir el teclado del PIN fuera del dibujo
 	int want_rename;             // dispositivo a renombrar con el teclado (-1 = ninguno)
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
+	float t_upd;                 // interruptor «Buscar al abrir»
+	UpdInfo upd;                 // estado de las actualizaciones (copia por frame)
+	u32 upd_seen;                // para avisar una sola vez de una versión nueva
 } U;
 
 static AppState V;               // copia del estado para dibujar sin el cerrojo
@@ -263,6 +267,109 @@ static void wrap_center(const char *text, float cx, float y, float maxw, float s
 		while (*p == ' ') p++;
 		text_draw_center(line, cx, y + l * text_lineh(sc), sc, c);
 	}
+}
+
+// ------------------------------------------------------------ actualizaciones
+static void card(void);
+
+static const char *upd_err_text(const char *e)
+{
+	if (!strcmp(e, "offline"))
+		return _("Sin conexión a Internet. Comprueba el Wi-Fi e inténtalo de nuevo.");
+	if (!strcmp(e, "tls"))
+		return _("No se pudo verificar la conexión segura. Comprueba la fecha y la hora de la consola.");
+	if (!strcmp(e, "rate"))
+		return _("GitHub ha limitado las consultas por ahora. Inténtalo de nuevo en unos minutos.");
+	if (!strcmp(e, "no_release"))
+		return _("Todavía no hay versiones publicadas.");
+	if (!strcmp(e, "sha"))
+		return _("El archivo descargado no coincide con su SHA-256 y no se ha instalado.");
+	if (!strcmp(e, "am"))
+		return _("La consola no pudo instalar la actualización. Prueba de nuevo o instálala con FBI.");
+	if (!strcmp(e, "io"))
+		return _("No se pudo escribir en la tarjeta SD.");
+	return _("No se pudo completar. Inténtalo de nuevo más tarde.");
+}
+
+static const char *upd_title(void)
+{
+	switch (U.upd.st) {
+	case UPD_CHECKING: return _("Buscando actualizaciones…");
+	case UPD_LATEST: return _("Cloud3DS está al día");
+	case UPD_AVAILABLE: return _("Hay una versión nueva");
+	case UPD_DOWNLOADING: return _("Descargando la actualización");
+	case UPD_INSTALLING: return _("Instalando la actualización");
+	case UPD_DONE: return _("Actualización instalada");
+	case UPD_ERROR: return _("No se pudo actualizar");
+	default: return _("Actualizaciones");
+	}
+}
+
+// pantalla de arriba en Ajustes → Actualizaciones: versiones, novedades y progreso
+static void update_top(void)
+{
+	card();
+	const float X = CARD_X + 18, W = CARD_W - 36;
+	bool busy = U.upd.st == UPD_DOWNLOADING || U.upd.st == UPD_INSTALLING || U.upd.st == UPD_CHECKING;
+	u32 col = U.upd.st == UPD_ERROR ? T.danger : U.upd.st == UPD_AVAILABLE || U.upd.st == UPD_DONE ? T.ok : T.accent;
+	draw_circle(X + 16, CARD_Y + 30, 16, col);
+	if (busy)
+		draw_arc(X + 16, CARD_Y + 30, 9, 2.2f, g_time * 6, g_time * 6 + 4.2f, 0xFFFFFFFF);
+	else
+		draw_icon(U.upd.st == UPD_ERROR ? IC_CLOSE : U.upd.st == UPD_LATEST || U.upd.st == UPD_DONE ? IC_CHECK : IC_DOWNLOAD,
+		          X + 16, CARD_Y + 30, 18, 0xFFFFFFFF);
+	text_draw_clip(upd_title(), X + 42, CARD_Y + 14, W - 42, TS_TITLE, T.text);
+	char v[96];
+	if (U.upd.latest[0])
+		snprintf(v, sizeof v, _("Instalada: v%s · Última: v%s"), APP_VERSION, U.upd.latest);
+	else
+		snprintf(v, sizeof v, _("Instalada: v%s"), APP_VERSION);
+	text_draw_clip(v, X + 42, CARD_Y + 34, W - 42, TS_SUB, T.text3);
+	float y = CARD_Y + 60;
+	draw_rect(X, y, W, 1, T.divider);
+	y += 10;
+	if (U.upd.st == UPD_DOWNLOADING || U.upd.st == UPD_INSTALLING) {
+		float frac = U.upd.total ? (float)((double)U.upd.done / U.upd.total) : 0;
+		brand_bar(X, y + 4, W, 8, frac);
+		char a[24], b[24], line[80];
+		util_fmt_size(a, sizeof a, U.upd.done);
+		util_fmt_size(b, sizeof b, U.upd.total);
+		snprintf(line, sizeof line, _("%s de %s"), a, b);
+		text_draw_clip(line, X, y + 18, W, TS_SUB, T.text2);
+		text_wrap_lines(_("No apagues la consola ni cierres Cloud3DS hasta que termine."), W, TS_SUB, 2, X, y + 40, T.text3, true);
+		return;
+	}
+	if (U.upd.st == UPD_ERROR) {
+		text_wrap_lines(upd_err_text(U.upd.err), W, TS_BODY, 4, X, y, T.text2, true);
+		return;
+	}
+	if (U.upd.st == UPD_DONE) {
+		text_wrap_lines(envIsHomebrew() ? _("Cierra Cloud3DS y vuelve a abrirlo para usar la nueva versión.")
+		                                : _("Reinicia Cloud3DS para usar la nueva versión."),
+		                W, TS_BODY, 3, X, y, T.text2, true);
+		return;
+	}
+	if (U.upd.st == UPD_AVAILABLE && !U.upd.has_file) {
+		text_wrap_lines(_("Esta versión no incluye el archivo de comprobación (Cloud3DS.sha256), así que no se puede instalar desde aquí."),
+		                W, TS_BODY, 4, X, y, T.text2, true);
+		return;
+	}
+	if (U.upd.st == UPD_AVAILABLE && U.upd.notes[0]) {
+		// novedades de la release, sin los símbolos de Markdown
+		char notes[1500];
+		int o = 0;
+		for (const char *p = U.upd.notes; *p && o < (int)sizeof notes - 1; p++) {
+			if (*p == '#' || *p == '*' || *p == '`' || *p == '\r' || *p == '_')
+				continue;
+			notes[o++] = *p;
+		}
+		notes[o] = 0;
+		text_draw_clip(_("Novedades"), X, y, W, TS_SUB, T.text3);
+		text_wrap_lines(notes, W, 0.42f, 8, X, y + 16, T.text2, true);
+		return;
+	}
+	text_wrap_lines(_("Cloud3DS busca versiones nuevas en GitHub. Antes de instalar, comprueba que el archivo descargado es el original (SHA-256)."),
+	                W, TS_BODY, 4, X, y, T.text3, true);
 }
 
 // ------------------------------------------------------------ pantalla superior
@@ -622,6 +729,8 @@ static void draw_top(void)
 		draw_header();
 	if (about) {
 		about_top();
+	} else if (U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE) {
+		update_top();
 	} else if (!strcmp(V.srv_error, "soc")) {
 		// la red de la consola (soc:U) no arrancó: no es culpa del Wi-Fi, y se reintenta sola
 		char msg[160];
@@ -684,6 +793,8 @@ static List *cur_list(void)
 		return &U.list[TAB_COUNT + 1];
 	if (U.tab == TAB_SETTINGS && U.page == PAGE_PIN)
 		return &U.list[TAB_COUNT + 2];
+	if (U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE)
+		return &U.list[TAB_COUNT + 3];
 	return &U.list[U.tab];
 }
 
@@ -914,6 +1025,13 @@ static void settings_action(int i)
 		set_flag(&G.light);
 		theme_set(!V.light);
 		break;
+	case SET_UPDATE:
+		U.page = PAGE_UPDATE;
+		U.list[TAB_COUNT + 3].sel = 0;
+		U.list[TAB_COUNT + 3].off = U.list[TAB_COUNT + 3].target = 0;
+		if (U.upd.st == UPD_IDLE || U.upd.st == UPD_ERROR)
+			upd_check();
+		break;
 	case SET_ABOUT:
 		U.page = PAGE_ABOUT;
 		U.list[TAB_COUNT + 1].sel = AB_APP;
@@ -963,6 +1081,15 @@ static void settings_main(void)
 			break;
 		case SET_THEME:
 			title = _("Tema"); ic = IC_PALETTE; col = T.accent2; val = V.light ? _("Claro") : _("Oscuro");
+			break;
+		case SET_UPDATE:
+			title = _("Actualizaciones"); ic = IC_REFRESH; col = T.ok; chev = true;
+			sub = U.upd.st == UPD_AVAILABLE ? _("Hay una versión nueva") : U.upd.st == UPD_LATEST ? _("Cloud3DS está al día")
+			    : U.upd.st == UPD_CHECKING ? _("Buscando actualizaciones…") : _("Buscar versiones nuevas");
+			if (U.upd.st == UPD_AVAILABLE) {
+				snprintf(vbuf, sizeof vbuf, "v%s", U.upd.latest);
+				val = vbuf;
+			}
 			break;
 		case SET_ABOUT:
 			title = _("Acerca de Cloud3DS"); ic = IC_INFO; col = T.text3; chev = true;
@@ -1061,6 +1188,63 @@ static void settings_pin(void)
 	                BOT_W - 40, TS_SUB, 3, 20, y, T.text3, true);
 }
 
+static void settings_update(void)
+{
+	List *l = cur_list();
+	tab_header(_("Actualizaciones"), true);
+	const float RH = 44;
+	list_update(l, 2, RH);
+	U.t_upd = approach(U.t_upd, V.upd_auto ? 1 : 0, 14);
+	bool busy = U.upd.st == UPD_DOWNLOADING || U.upd.st == UPD_INSTALLING || U.upd.st == UPD_CHECKING;
+	for (int i = 0; i < 2; i++) {
+		float y = VIEW_Y + i * RH - l->off;
+		bool t = row(l, i, y, RH);
+		const char *title, *sub;
+		char tb[64];
+		IconId ic;
+		u32 col;
+		if (i == 1) {
+			title = _("Buscar al abrir la app");
+			sub = _("Consulta GitHub en segundo plano");
+			ic = IC_CLOCK, col = T.accent2;
+			toggle(BOT_W - 52, y + RH / 2 - 10, U.t_upd);
+		} else if (U.upd.st == UPD_AVAILABLE && U.upd.has_file) {
+			snprintf(tb, sizeof tb, _("Actualizar a la versión %s"), U.upd.latest);
+			title = tb, sub = _("Se descarga, se comprueba y se instala");
+			ic = IC_DOWNLOAD, col = T.ok;
+		} else if (U.upd.st == UPD_DONE && !envIsHomebrew()) {
+			title = _("Reiniciar Cloud3DS"), sub = _("Para usar la nueva versión");
+			ic = IC_REFRESH, col = T.ok;
+		} else {
+			title = _("Buscar actualizaciones");
+			snprintf(tb, sizeof tb, _("Versión instalada: v%s"), APP_VERSION);
+			sub = tb, ic = IC_REFRESH, col = busy ? T.text3 : T.accent;
+		}
+		row_icon(28, y + RH / 2, ic, col);
+		text_draw_clip(title, 50, y + 6, i == 1 ? BOT_W - 120 : BOT_W - 66, TS_BODY, busy && i == 0 ? T.text3 : T.text);
+		text_draw_clip(sub, 50, y + 23, i == 1 ? BOT_W - 120 : BOT_W - 66, TS_SUB, T.text3);
+		if (!(t || activate(l, i)))
+			continue;
+		if (i == 1) {
+			set_flag(&G.upd_auto);
+		} else if (busy) {
+			continue;
+		} else if (U.upd.st == UPD_AVAILABLE && U.upd.has_file) {
+			char msg[200];
+			snprintf(msg, sizeof msg, _("Se descargará la versión %s desde GitHub, se comprobará y se instalará. No apagues la consola mientras tanto."),
+			         U.upd.latest);
+			dialog_open(DLG_UPDATE, _("¿Actualizar Cloud3DS?"), msg, _("Actualizar"), false);
+		} else if (U.upd.st == UPD_DONE) {
+			if (!envIsHomebrew()) {
+				aptSetChainloaderToSelf(); // vuelve a abrir Cloud3DS, ya con la versión nueva
+				U.quit = true;
+			}
+		} else {
+			upd_check();
+		}
+	}
+}
+
 static void settings_about(void)
 {
 	List *l = cur_list();
@@ -1145,6 +1329,8 @@ static void draw_bottom(void)
 		settings_about();
 	else if (U.page == PAGE_PIN)
 		settings_pin();
+	else if (U.page == PAGE_UPDATE)
+		settings_update();
 	else
 		settings_main();
 	draw_tabbar();
@@ -1170,6 +1356,8 @@ static void handle_dialog(int ctx, bool ok)
 		G.dirty_cfg = true;
 	} else if (ctx == DLG_EXIT) {
 		U.quit = true;
+	} else if (ctx == DLG_UPDATE) {
+		upd_install();
 	}
 	G.rev++;
 	memcpy(&V, &G, sizeof G);
@@ -1206,7 +1394,7 @@ static void watch_events(void)
 
 static void lid_and_sleep(void)
 {
-	bool busy = xfer_active() > 0;
+	bool busy = xfer_active() > 0 || upd_busy();
 	aptSetSleepAllowed(!busy);
 	// tapa cerrada transfiriendo: apaga la luz y sigue
 	u8 open = 1;
@@ -1250,6 +1438,10 @@ static void exit_text(char *msg, size_t n, bool *danger)
 
 static void ask_exit(void)
 {
+	if (upd_busy()) {
+		toast_icon(_("Espera a que termine la actualización"), IC_DOWNLOAD, T.warn);
+		return;
+	}
 	char msg[300];
 	bool danger;
 	exit_text(msg, sizeof msg, &danger);
@@ -1327,7 +1519,7 @@ static void update(void)
 	}
 	// atrás: de una subpágina a Ajustes (y la pantalla de arriba vuelve al QR)
 	if (U.page != PAGE_MAIN && ((g_kdown & KEY_B) || tap(0, 0, 170, VIEW_Y))) {
-		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : SET_ABOUT;
+		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : U.page == PAGE_UPDATE ? SET_UPDATE : SET_ABOUT;
 		U.page = PAGE_MAIN;
 	}
 	if (g_kdown & KEY_START)
@@ -1360,7 +1552,7 @@ static void load_console_name(void)
 		util_strlcpy(G.console, "Nintendo 3DS", sizeof G.console);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	osSetSpeedupEnable(true);
 	romfsInit();
@@ -1377,6 +1569,9 @@ int main(void)
 	hidSetRepeatParameters(18, 5);
 
 	server_start();
+	upd_init(argc > 0 ? argv[0] : NULL);
+	if (G.upd_auto)
+		upd_check();
 	U.splash = 0;
 	U.qr_anim = G.qr_min ? 0 : 1;
 	U.want_rename = -1;
@@ -1400,6 +1595,14 @@ int main(void)
 
 		watch_events();
 		s_events_seen = true;
+		upd_get(&U.upd);
+		if (U.upd.st == UPD_AVAILABLE && U.upd_seen != U.upd.rev && !(U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE)) {
+			char msg[80];
+			snprintf(msg, sizeof msg, _("Nueva versión %s disponible en Ajustes"), U.upd.latest);
+			toast_icon(msg, IC_DOWNLOAD, T.ok);
+		}
+		if (U.upd.st == UPD_AVAILABLE)
+			U.upd_seen = U.upd.rev;
 		lid_and_sleep();
 		update();
 
@@ -1417,6 +1620,7 @@ int main(void)
 	}
 
 	ops_exit();
+	upd_exit();
 	server_stop();
 	state_lock();
 	config_save();

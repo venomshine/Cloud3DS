@@ -35,6 +35,9 @@ Las siguientes partes conservan sus propias licencias:
 - `lib/cJSON.*` — [cJSON](https://github.com/DaveGamble/cJSON), licencia MIT.
 - `lib/qrcodegen.*` — [QR Code generator](https://github.com/nayuki/QR-Code-generator) de Project Nayuki, licencia MIT.
 - [libctru, citro2d y citro3d](https://github.com/devkitPro) (enlazadas al compilar), licencia zlib.
+- [libcurl](https://curl.se/) (enlazada al compilar), licencia curl (tipo MIT).
+- [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (enlazada al compilar), licencia Apache-2.0.
+- `romfs/certs/cacert.pem` — [certificados raíz de Mozilla](https://curl.se/docs/caextract.html), licencia MPL-2.0.
 
 ---
 

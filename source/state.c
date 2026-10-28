@@ -25,6 +25,7 @@ void state_init(void)
 	memset(&G, 0, sizeof G);
 	G.protect_sys = true;
 	G.wifi = -1;
+	G.upd_auto = true;
 	pin_regen();
 }
 
@@ -314,6 +315,7 @@ void config_load(void)
 	G.readonly = jbool(r, "readonly", false);
 	G.protect_sys = jbool(r, "protect_sys", true);
 	G.qr_min = jbool(r, "qr_min", false);
+	G.upd_auto = jbool(r, "upd_auto", true);
 	const char *pin = jstr(r, "pin"), *key = jstr(r, "qr_key");
 	bool keep = strlen(pin) == 4 && strspn(pin, "0123456789") == 4 && strlen(key) == 8 && strspn(key, "0123456789abcdef") == 8;
 	if (keep) {
@@ -372,6 +374,7 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "readonly", G.readonly);
 	cJSON_AddBoolToObject(r, "protect_sys", G.protect_sys);
 	cJSON_AddBoolToObject(r, "qr_min", G.qr_min);
+	cJSON_AddBoolToObject(r, "upd_auto", G.upd_auto);
 	cJSON_AddStringToObject(r, "pin", G.pin);
 	cJSON_AddStringToObject(r, "qr_key", G.qr_key);
 	cJSON *devs = cJSON_AddArrayToObject(r, "devices");

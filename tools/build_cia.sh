@@ -14,3 +14,6 @@ mkdir -p build
 "$MAKEROM" -f cia -o Cloud3DS.cia -elf Cloud3DS.elf -rsf cia/cloud3ds.rsf -icon build/icon.icn \
 	-banner build/banner.bnr -exefslogo -target t -ver "$NUM"
 echo "Cloud3DS.cia v$VER (-ver $NUM)"
+# lista de SHA-256 para la release: la app la usa para comprobar las actualizaciones
+sha256sum Cloud3DS.cia Cloud3DS.3dsx > Cloud3DS.sha256
+echo "Cloud3DS.sha256 (súbelo a la release junto al .cia y el .3dsx)"
