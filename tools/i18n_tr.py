@@ -106,8 +106,17 @@ TR = {
     "Vinculado: %s": ("Paired: %s", "登録: %s"),
     "Eliminado: %s": ("Deleted: %s", "削除: %s"),
     "¿Salir de Cloud3DS?": ("Exit Cloud3DS?", "Cloud3DSを終了しますか?"),
-    "Hay transferencias en curso y se cancelarán.":
-        ("Transfers in progress will be canceled.", "転送中のファイルはキャンセルされます。"),
+    "Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrirla.":
+        ("Your cloud won't be available on your phone or PC until you open it again.",
+         "もう一度開くまで、スマホやPCからは使えなくなります。"),
+    "recibiendo": ("receiving", "受信中"),
+    "enviando": ("sending", "送信中"),
+    "Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará.":
+        ("1 transfer in progress (%s “%s”, %d%%). It will be canceled if you exit.",
+         "転送中のファイルが1件あります(%s「%s」%d%%)。終了するとキャンセルされます。"),
+    "Hay %d transferencias en curso (%s «%s», %d%%, y %d más). Si sales, se cancelarán.":
+        ("%d transfers in progress (%s “%s”, %d%%, and %d more). They will be canceled if you exit.",
+         "転送中のファイルが%d件あります(%s「%s」%d%%、ほか%d件)。終了するとキャンセルされます。"),
     "Iniciando la red": ("Starting the network", "ネットワークを準備中"),
     "La red de la consola no respondió (error %08lX). Reintentando sola…":
         ("The console's network didn't respond (error %08lX). Retrying on its own…",

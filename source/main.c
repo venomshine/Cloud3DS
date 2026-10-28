@@ -754,6 +754,8 @@ static void set_flag(bool *f)
 	state_unlock();
 }
 
+static void ask_exit(void);
+
 static void settings_action(int i)
 {
 	switch (i) {
@@ -784,7 +786,7 @@ static void settings_action(int i)
 		U.list[TAB_COUNT + 1].off = U.list[TAB_COUNT + 1].target = 0;
 		break;
 	case SET_EXIT:
-		U.quit = true;
+		ask_exit(); // el mismo diálogo que START
 		break;
 	}
 }
@@ -1066,9 +1068,43 @@ static void lid_and_sleep(void)
 	}
 }
 
+// salir siempre pregunta; si hay transferencias lo dice bien claro (y se actualiza mientras está abierto)
+static void exit_text(char *msg, size_t n, bool *danger)
+{
+	const Xfer *x = NULL;
+	int cnt = 0;
+	for (int i = 0; i < MAX_XFERS; i++)
+		if (V.xfers[i].st == XS_RUNNING && cnt++ == 0)
+			x = &V.xfers[i];
+	*danger = cnt > 0;
+	if (!cnt) {
+		util_strlcpy(msg, _("Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrirla."), n);
+		return;
+	}
+	char name[64];
+	util_strlcpy(name, x->name, sizeof name);
+	int pct = x->total ? (int)((double)x->done * 100 / x->total) : 0;
+	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : _("enviando");
+	if (cnt == 1)
+		snprintf(msg, n, _("Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará."), dir, name, pct);
+	else
+		snprintf(msg, n, _("Hay %d transferencias en curso (%s «%s», %d%%, y %d más). Si sales, se cancelarán."), cnt, dir,
+		         name, pct, cnt - 1);
+}
+
 static void ask_exit(void)
 {
-	dialog_open(DLG_EXIT, _("¿Salir de Cloud3DS?"), _("Hay transferencias en curso y se cancelarán."), _("Salir"), true);
+	char msg[300];
+	bool danger;
+	exit_text(msg, sizeof msg, &danger);
+	dialog_open(DLG_EXIT, _("¿Salir de Cloud3DS?"), msg, _("Salir"), danger);
+}
+
+static void exit_refresh(void)
+{
+	if (!g_dialog.open || g_dialog.ctx != DLG_EXIT)
+		return;
+	exit_text(g_dialog.msg, sizeof g_dialog.msg, &g_dialog.danger);
 }
 
 static void update(void)
@@ -1101,6 +1137,7 @@ static void update(void)
 		}
 		return;
 	}
+	exit_refresh();
 	int d = dialog_update();
 	if (d >= 0) {
 		handle_dialog(g_dialog.ctx, d == 1);
@@ -1121,16 +1158,8 @@ static void update(void)
 		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : SET_ABOUT;
 		U.page = PAGE_MAIN;
 	}
-	if (g_kdown & KEY_START) {
-		if (xfer_active())
-			ask_exit();
-		else
-			U.quit = true;
-	}
-	if (U.quit && xfer_active()) {
-		U.quit = false;
+	if (g_kdown & KEY_START)
 		ask_exit();
-	}
 }
 
 static aptHookCookie hook;
