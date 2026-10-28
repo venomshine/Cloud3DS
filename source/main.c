@@ -348,16 +348,18 @@ static void connect_col(float a, float dy)
 {
 	float x = COL_X, y = QR_Y + dy;
 	text_draw_clip(_("Escanea con tu móvil"), x, y + 2, COL_W, 0.55f, col_alpha(T.text, a));
-	text_wrap_lines(_("La cámara abre tu nube al instante. Mismo Wi-Fi que la consola."), COL_W, TS_SUB, 3, x, y + 24,
-	                col_alpha(T.text3, a), true);
-	draw_rect(x, y + 66, COL_W, 1, col_alpha(T.divider, a));
-	text_draw_clip(_("O escribe en el navegador:"), x, y + 74, COL_W, TS_SUB, col_alpha(T.text3, a));
+	int nl = text_wrap_lines(_("La cámara abre tu nube al instante. Mismo Wi-Fi que la consola."), COL_W, TS_SUB, 3, x,
+	                         y + 24, col_alpha(T.text3, a), true);
+	// en japonés las líneas son más altas: la raya y lo que sigue bajan lo que haga falta (hasta el PIN)
+	float dy2 = fmaxf(0, y + 24 + nl * text_lineh(TS_SUB) + 4 - (y + 66));
+	draw_rect(x, y + 66 + dy2, COL_W, 1, col_alpha(T.divider, a));
+	text_draw_clip(_("O escribe en el navegador:"), x, y + 74 + dy2, COL_W, TS_SUB, col_alpha(T.text3, a));
 	char url[48];
 	url_text(url, sizeof url, false);
 	float s = 0.64f;
 	while (s > 0.44f && text_width(url, s) > COL_W)
 		s -= 0.02f;
-	text_draw(url, x, y + 90, s, col_alpha(T.accent, a));
+	text_draw(url, x, y + 74 + dy2 + fmaxf(16, text_lineh(TS_SUB) + 2), s, col_alpha(T.accent, a));
 	text_draw(_("PIN"), x, y + 132, TS_SUB, col_alpha(T.text3, a));
 	for (int i = 0; i < 4; i++) {
 		float bx = x + 30 + i * 31, by = y + 122;
@@ -457,9 +459,14 @@ static void about_top(void)
 		snprintf(vb, sizeof vb, _("v%s · hecho por %s"), APP_VERSION, "VENOMSHiNE");
 		text_draw_center(vb, LX, 178, TS_SUB, T.text2);
 		text_draw(_("Gracias por usar!"), X, 18, TS_TITLE, T.text);
-		int n = text_wrap_lines(_(ABOUT_TEXT), W, 0.42f, 9, X, 46, T.text2, true);
-		text_wrap_lines(_("Si encuentras algún problema, escríbeme por GitHub o Discord."), W, 0.42f, 3, X,
-		                54 + n * text_lineh(0.42f), T.accent, true);
+		// los dos textos tienen que caber antes de la licencia: si no (japonés), se reduce un poco la letra
+		const char *t1 = _(ABOUT_TEXT), *t2 = _("Si encuentras algún problema, escríbeme por GitHub o Discord.");
+		float sc = 0.42f;
+		while (sc > 0.34f && 46 + (text_wrap_lines(t1, W, sc, 12, 0, 0, 0, false) + text_wrap_lines(t2, W, sc, 4, 0, 0, 0, false)) *
+		                              text_lineh(sc) + 8 > 212)
+			sc -= 0.01f;
+		int n = text_wrap_lines(t1, W, sc, 12, X, 46, T.text2, true);
+		text_wrap_lines(t2, W, sc, 4, X, 54 + n * text_lineh(sc), T.accent, true);
 		text_draw_clip(_("Software libre · licencia GPL-3.0"), X, 216, W, TS_SUB, T.text3);
 	}
 }

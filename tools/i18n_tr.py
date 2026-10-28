@@ -29,7 +29,7 @@ TR = {
     "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
     "La cámara abre tu nube al instante. Mismo Wi-Fi que la consola.":
         ("Your camera opens your cloud instantly. Same Wi-Fi as the console.",
-         "カメラで読み取るとすぐに開きます。本体と同じWi-Fiに接続してください。"),
+         "カメラで読み取るだけ。本体と同じWi-Fiで使えます。"),
     "O escribe en el navegador:": ("Or type in your browser:", "またはブラウザで入力:"),
     "PIN": ("PIN", "PIN"),
     "Recibido de %s": ("Received from %s", "%s から受信"),
@@ -204,12 +204,12 @@ TR = {
     'Aceptar': ('OK', 'OK'),
     "Tu nube local para Nintendo 3DS: maneja la tarjeta SD desde el móvil o el PC con solo escanear un QR. Sin apps, sin cables y sin configurar nada. Todo se queda en tu red: nada pasa por Internet.":
         ("Your local cloud for Nintendo 3DS: manage the SD card from your phone or PC just by scanning a QR code. No apps, no cables and nothing to set up. Everything stays on your network: nothing goes through the Internet.",
-         "Nintendo 3DSのためのローカルクラウド。QRコードを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。すべてあなたのネットワーク内で完結し、インターネットは通りません。"),
+         "3DSのローカルクラウド。QRを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。インターネットは通りません。"),
     "Código y nuevas versiones": ("Code and new versions", "コードと新バージョン"),
     "Elige uno para ver su QR arriba": ("Pick one to see its QR code above", "選ぶと上画面にQRを表示"),
     "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
-    "Escanéalo con tu móvil": ("Scan it with your phone", "スマホで読み取ってください"),
+    "Escanéalo con tu móvil": ("Scan it with your phone", "スマホでスキャン"),
     "Qué es y para qué sirve": ("What it is and what it's for", "このアプリについて"),
-    "Software libre · licencia GPL-3.0": ("Free software · GPL-3.0 license", "フリーソフトウェア · GPL-3.0"),
+    "Software libre · licencia GPL-3.0": ("Free software · GPL-3.0 license", "フリーソフト · GPL-3.0"),
     "No deja borrar Nintendo 3DS, 3ds, luma…": ("Can't delete Nintendo 3DS, 3ds, luma…", "Nintendo 3DS、3ds、lumaなどを削除不可に"),
 }
