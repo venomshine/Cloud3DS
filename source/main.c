@@ -47,6 +47,7 @@
 #define VIEW_Y   32
 #define VIEW_H   (SCR_H - TABBAR_H - VIEW_Y)
 #define QR_PAD   24 // el botón del QR sobresale de la barra
+#define MINI_H   30 // tira de arriba con el QR cerrado
 
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones."
 
@@ -67,7 +68,6 @@ static struct {
 	float tab_anim;
 	List list[TAB_COUNT + 4];   // una por pestaña y por subpágina de Ajustes
 	bool buttons;                // la última interacción fue con botones (se ve la selección)
-	float busy;                  // 0 = datos de conexión, 1 = transferencia
 	float t_ro, t_prot;          // animación de los interruptores
 	int dlg_arg;
 	bool quit;
@@ -446,44 +446,45 @@ static void ins_refresh(void)
 	}
 }
 
-// pantalla de arriba mientras hay CIA esperando: los datos del primero
-static void install_top(void)
+// con el QR cerrado y CIA esperando: los datos del primero, debajo de la tira
+static void install_top(float a)
 {
 	const InsReq *r = ins_first_pending();
 	if (!r)
 		return;
-	card();
-	const float X = CARD_X + 18, W = CARD_W - 36;
-	float ix = X, iy = CARD_Y + 18;
-	draw_rrect(ix - 2, iy - 2, 100, 100, 18, T.surface2);
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 16, W = CARD_W - 32;
+	float ix = X, iy = y0 + 14;
+	draw_rrect(ix - 2, iy - 2, 76, 76, 16, col_alpha(T.surface2, a));
 	if (U.ins_icon.ok)
-		draw_texture(&U.ins_icon, ix + 2, iy + 2, 92, 92, 1);
+		draw_texture(&U.ins_icon, ix + 2, iy + 2, 68, 68, a);
 	else
-		draw_icon(IC_GEM, ix + 48, iy + 48, 44, T.text3);
-	float tx = ix + 114, tw = X + W - tx;
-	text_draw_clip(_("Instalar en la consola"), tx, iy, tw, TS_SUB, T.accent);
+		draw_icon(IC_GEM, ix + 36, iy + 36, 34, col_alpha(T.text3, a));
+	float tx = ix + 88, tw = X + W - tx;
+	text_draw_clip(_("Instalar en la consola"), tx, iy, tw, TS_SUB, col_alpha(T.accent, a));
 	if (U.ins_pend > 1) {
 		char more[48];
 		snprintf(more, sizeof more, _("y %d más esperando"), U.ins_pend - 1);
-		text_draw_right(more, X + W, iy, TS_SUB, T.text3);
+		text_draw_right(more, X + W, iy, TS_SUB, col_alpha(T.text3, a));
 	}
-	text_wrap_lines(r->title, tw, TS_TITLE, 2, tx, iy + 16, T.text, true);
-	text_draw_clip(r->publisher, tx, iy + 56, tw, TS_SUB, T.text3);
+	text_wrap_lines(r->title, tw, TS_TITLE, 2, tx, iy + 16, col_alpha(T.text, a), true);
 	char line[160], sz[24];
 	util_fmt_size(sz, sizeof sz, r->size);
-	snprintf(line, sizeof line, "%s · %s", sz, r->file);
-	text_draw_clip(line, tx, iy + 74, tw, TS_SUB, T.text3);
-	float y = CARD_Y + 130;
-	draw_rect(X, y, W, 1, T.divider);
+	snprintf(line, sizeof line, "%s%s%s · %s", r->publisher, r->publisher[0] ? " · " : "", sz, r->file);
+	text_draw_clip(line, tx, iy + 56, tw, TS_SUB, col_alpha(T.text3, a));
+	float y = iy + 84;
+	draw_rect(X, y, W, 1, col_alpha(T.divider, a));
 	u32 col;
 	ins_version_line(r, line, sizeof line, &col);
-	int nl = text_wrap_lines(line, W, TS_BODY, 2, X, y + 10, col, true);
+	int nl = text_wrap_lines(line, W, TS_BODY, 2, X, y + 8, col_alpha(col, a), true);
 	bool n3ds = false;
 	APT_CheckNew3DS(&n3ds);
 	if (r->n3ds_only && !n3ds && nl < 2)
-		text_draw_clip(_("Este juego es solo para New 3DS."), X, y + 10 + text_lineh(TS_BODY), W, TS_BODY, T.warn);
+		text_draw_clip(_("Este juego es solo para New 3DS."), X, y + 8 + text_lineh(TS_BODY), W, TS_BODY, col_alpha(T.warn, a));
 	snprintf(line, sizeof line, _("ID %016llX · pedido desde %s"), (unsigned long long)r->tid, r->device);
-	text_draw_clip(line, X, y + 52, W, TS_SUB, T.text3);
+	text_draw_clip(line, X, y0 + h - 22, W, TS_SUB, col_alpha(T.text3, a));
 }
 
 // tarjeta de abajo: Instalar / Solo guardar / Rechazar (con varios, para todos)
@@ -611,7 +612,7 @@ static void draw_header(void)
 	util_fmt_today(day, sizeof day);
 	text_draw_right(day, rx, 4, TS_HDR, T.text3);
 	const Xfer *xs[1];
-	if (visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING) {
+	if (V.qr_min && visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING) {
 		float p = g_time * 1.2f;
 		draw_grad_h(0, HDR_H, TOP_W, 2, col_alpha(brand_grad(p), 0.9f), col_alpha(brand_grad(p + 0.5f), 0.9f));
 	}
@@ -700,49 +701,6 @@ static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic)
 	}
 }
 
-static void xfer_col(float a, float dy)
-{
-	const Xfer *xs[3];
-	int n = visible_xfers(xs, 3);
-	if (!n)
-		return;
-	const Xfer *x = xs[0];
-	float tx = COL_X, y = QR_Y + dy;
-	const char *head;
-	u32 col;
-	IconId ic;
-	xfer_head(x, &head, &col, &ic);
-	draw_circle(tx + 13, y + 13, 13, col_alpha(col, a));
-	draw_icon(ic, tx + 13, y + 13, 15, col_alpha(0xFFFFFFFF, a));
-	text_draw_clip(head, tx + 34, y + 4, COL_W - 34, 0.55f, col_alpha(T.text, a));
-	text_wrap_lines(x->name, COL_W, TS_BODY, 2, tx, y + 34, col_alpha(T.text, a), true);
-	char sub[96];
-	snprintf(sub, sizeof sub, x->kind != XF_DOWNLOAD ? _("de %s") : _("a %s"), x->device);
-	text_draw_clip(sub, tx, y + 66, COL_W, TS_SUB, col_alpha(T.text3, a));
-
-	float frac = x->st == XS_DONE ? 1 : x->total ? (float)((double)x->done / x->total) : 0;
-	brand_bar(tx, y + 86, COL_W, 8, frac);
-	char d[24], t[24], line[80], pc[12];
-	util_fmt_size(d, sizeof d, x->done);
-	util_fmt_size(t, sizeof t, x->total);
-	snprintf(line, sizeof line, _("%s de %s"), d, t);
-	text_draw_clip(line, tx, y + 100, COL_W - 40, TS_SUB, col_alpha(T.text2, a));
-	snprintf(pc, sizeof pc, "%d%%", (int)(frac * 100));
-	text_draw_right(pc, tx + COL_W, y + 99, TS_BODY, col_alpha(T.accent, a));
-	if (x->st == XS_RUNNING && x->speed > 0) {
-		char sp[24], eta[24];
-		util_fmt_speed(sp, sizeof sp, x->speed);
-		util_fmt_eta(eta, sizeof eta, (x->total - x->done) / x->speed);
-		snprintf(line, sizeof line, _("%s · quedan %s"), sp, eta);
-		text_draw_clip(line, tx, y + 116, COL_W, TS_SUB, col_alpha(T.text3, a));
-	}
-	if (n > 1) {
-		char more[48];
-		snprintf(more, sizeof more, _("y %d más"), n - 1);
-		text_draw_clip(more, tx, y + 132, COL_W, TS_SUB, col_alpha(T.text3, a));
-	}
-}
-
 // transferencia a lo ancho, para la pantalla con el QR minimizado
 static void xfer_wide(float x0, float y, float w, float a)
 {
@@ -784,27 +742,26 @@ static void xfer_wide(float x0, float y, float w, float a)
 	}
 }
 
-#define MINI_H 52
 
 // tira compacta: dirección, PIN y estado; el resto de la pantalla queda libre
 static void mini_strip(float a)
 {
-	float y = CARD_Y;
-	draw_circle(CARD_X + 26, y + MINI_H / 2, 15, col_alpha(T.surface2, a));
-	draw_icon(IC_QR, CARD_X + 26, y + MINI_H / 2, 16, col_alpha(T.accent, a));
-	char url[48];
+	// una sola línea: dirección y estado a la izquierda, PIN a la derecha
+	float y = CARD_Y, cy = y + MINI_H / 2;
+	draw_icon(IC_QR, CARD_X + 18, cy, 13, col_alpha(T.accent, a));
+	char url[48], pin[16];
 	url_text(url, sizeof url, false);
-	const float PX = CARD_X + CARD_W - 12 - 4 * 25; // casillas del PIN a la derecha
-	float lx = CARD_X + 50, lw = PX - 34 - lx;
-	text_draw_clip(url, lx, y + 7, lw, 0.6f, col_alpha(T.accent, a));
-	draw_status(lx, y + 30, lw, a);
-	text_draw_right(_("PIN"), PX - 6, y + (MINI_H - text_lineh(TS_SUB)) / 2, TS_SUB, col_alpha(T.text3, a));
-	for (int i = 0; i < 4; i++) {
-		float bx = PX + i * 25, by = y + 12;
-		draw_rrect(bx, by, 22, 28, 7, col_alpha(T.surface2, a));
-		char d[2] = {V.pin[i], 0};
-		text_draw_center(d, bx + 11, by + (28 - text_lineh(0.56f)) / 2, 0.56f, col_alpha(T.text, a));
-	}
+	const float sc = 0.52f;
+	float lx = CARD_X + 34;
+	text_draw(url, lx, cy - text_lineh(sc) / 2, sc, col_alpha(T.accent, a));
+	snprintf(pin, sizeof pin, "%s", V.pin);
+	float pw = text_width(pin, sc) + 16, px = CARD_X + CARD_W - 10 - pw;
+	draw_rrect(px, y + 5, pw, MINI_H - 10, (MINI_H - 10) / 2, col_alpha(T.surface2, a));
+	text_draw_center(pin, px + pw / 2, cy - text_lineh(sc) / 2, sc, col_alpha(T.text, a));
+	float lw = text_width(_("PIN"), TS_SUB);
+	text_draw(_("PIN"), px - 6 - lw, cy - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.text3, a));
+	float sx = lx + text_width(url, sc) + 14;
+	draw_status(sx, cy - 7, px - 12 - lw - sx, a);
 }
 
 // debajo de la tira: las transferencias a lo ancho o una pista para volver a abrir el QR
@@ -971,8 +928,6 @@ static void draw_top(void)
 		about_top();
 	} else if (U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE) {
 		update_top();
-	} else if (U.ins_pend) {
-		install_top();
 	} else if (!strcmp(V.srv_error, "soc")) {
 		// la red de la consola (soc:U) no arrancó: no es culpa del Wi-Fi, y se reintenta sola
 		char msg[160];
@@ -1003,21 +958,17 @@ static void draw_top(void)
 			char url[64], qr[96];
 			url_text(url, sizeof url, true);
 			snprintf(qr, sizeof qr, "%s/#k=%s", url, V.qr_key);
+			// con el QR abierto, solo el QR y cómo conectarse: lo demás se ve con el QR cerrado
 			draw_qr(qr, QR_X, QR_Y, QR_S, full);
-			const Xfer *xs[1];
-			bool busy = visible_xfers(xs, 1) > 0;
-			U.busy = approach(U.busy, busy ? 1 : 0, 9);
-			float b = ease_in_out(U.busy);
-			if (b < 0.99f)
-				connect_col((1 - b) * full, -b * 10);
-			if (b > 0.01f)
-				xfer_col(b * full, (1 - b) * 10);
+			connect_col(full, 0);
 			draw_status(COL_X, QR_Y + QR_S - 12, COL_W, full);
 		}
 		if (mini > 0.01f)
 			mini_strip(mini);
 		gfx_clip_off();
-		if (U.tab == TAB_FILES && mini > 0.01f)
+		if (mini > 0.01f && U.ins_pend)
+			install_top(mini);
+		else if (U.tab == TAB_FILES && mini > 0.01f)
 			files_top(mini);
 		else
 			mini_body(mini);
@@ -2503,6 +2454,8 @@ static void update(void)
 		}
 		return;
 	}
+	if ((g_kdown & KEY_SELECT) && U.ins_pend) // el QR se abre y se cierra siempre, también con la tarjeta de instalar
+		qr_toggle();
 	if (install_input())
 		return;
 	exit_refresh();
