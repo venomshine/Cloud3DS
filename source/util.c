@@ -177,7 +177,22 @@ int util_battery(bool *charging)
 
 u32 util_ip(void)
 {
-	return (u32)gethostid();
+	/* sin sesión de soc:U, gethostid() devuelve -1 (255.255.255.255), no 0 */
+	long id = gethostid();
+	return id == -1 ? 0 : (u32)id;
+}
+
+int util_wifi_status(void)
+{
+	/* ac:u solo se abre un momento: el sistema también lo usa */
+	u32 st = 0;
+	int r = -1;
+	if (R_SUCCEEDED(acInit())) {
+		if (R_SUCCEEDED(ACU_GetStatus(&st)))
+			r = (int)st;
+		acExit();
+	}
+	return r;
 }
 
 void util_rand_bytes(void *buf, size_t n)

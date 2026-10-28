@@ -76,6 +76,8 @@ typedef struct {
 	int  port;
 	bool running;
 	char srv_error[96];
+	u32  net_err;     /* último código de error de socInit (0 = ninguno) */
+	int  wifi;        /* ACU_GetStatus: -1 desconocido, 1 sin conexión, 3 conectado */
 	char pin[5];
 	char qr_key[9];
 	int  pin_fails;

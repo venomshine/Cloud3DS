@@ -108,6 +108,13 @@ TR = {
     "¿Salir de Cloud3DS?": ("Exit Cloud3DS?", "Cloud3DSを終了しますか?"),
     "Hay transferencias en curso y se cancelarán.":
         ("Transfers in progress will be canceled.", "転送中のファイルはキャンセルされます。"),
+    "Iniciando la red": ("Starting the network", "ネットワークを準備中"),
+    "La red de la consola no respondió (error %08lX). Reintentando sola…":
+        ("The console's network didn't respond (error %08lX). Retrying on its own…",
+         "本体のネットワークが応答しません(エラー %08lX)。自動で再試行中…"),
+    "Conectado al Wi-Fi": ("Connected to Wi-Fi", "Wi-Fiに接続済み"),
+    "Esperando a que el router dé una IP a la consola…":
+        ("Waiting for the router to give the console an IP…", "ルーターからIPアドレスを取得中…"),
     "Cancelar": ("Cancel", "キャンセル"),
     "Hoy": ("Today", "今日"),
     "Ayer": ("Yesterday", "昨日"),

@@ -507,6 +507,14 @@ static void draw_top(void)
 		draw_header();
 	if (about) {
 		about_top();
+	} else if (!strcmp(V.srv_error, "soc")) {
+		// la red de la consola (soc:U) no arrancó: no es culpa del Wi-Fi, y se reintenta sola
+		char msg[160];
+		snprintf(msg, sizeof msg, _("La red de la consola no respondió (error %08lX). Reintentando sola…"),
+		         (unsigned long)V.net_err);
+		card_message(IC_REFRESH, T.warn, _("Iniciando la red"), msg);
+	} else if (!V.ip && V.wifi == 3) {
+		card_message(IC_WIFI, T.accent, _("Conectado al Wi-Fi"), _("Esperando a que el router dé una IP a la consola…"));
 	} else if (!V.ip) {
 		card_message(IC_WIFI_OFF, T.text3, _("Sin conexión Wi-Fi"),
 		             _("Conecta la consola a tu Wi-Fi. Si no tienes router, usa el punto de acceso de tu móvil."));

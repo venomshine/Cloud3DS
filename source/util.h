@@ -28,6 +28,7 @@ void util_battery_init(void);
 void util_battery_exit(void);
 int  util_battery(bool *charging); /* porcentaje 0-100, cacheado 5 s */
 u32  util_ip(void);                /* 0 si no hay Wi-Fi */
+int  util_wifi_status(void);       /* ACU_GetStatus: 1 sin conexión, 3 conectado; -1 si no se pudo leer */
 
 /* Cadenas */
 void util_rand_bytes(void *buf, size_t n);

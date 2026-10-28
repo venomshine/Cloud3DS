@@ -83,6 +83,7 @@ static int lfd = -1;
 static Thread thr;
 static volatile bool quit, restart;
 static u32 *soc_buf;
+static bool soc_ok;
 static u8 *page;
 static size_t page_len;
 static u8 *fbuf; /* lectura de archivos compartida: un envío por vuelta */
@@ -1396,28 +1397,80 @@ static void serve_loop(void)
 	}
 }
 
+/* soc:U puede no estar listo al abrir la app (p. ej. si la anterior aún lo está
+ * soltando): se reintenta cada pocos segundos en vez de rendirse */
+static bool net_init(void)
+{
+	int tries = 0;
+	while (!quit) {
+		Result r = socInit(soc_buf, SOC_BUFSIZE);
+		tries++;
+		if (R_SUCCEEDED(r)) {
+			util_log("socInit correcto (intento %d)", tries);
+			state_lock();
+			G.srv_error[0] = 0;
+			G.net_err = 0;
+			G.rev++;
+			state_unlock();
+			return true;
+		}
+		util_log("socInit falló: 0x%08lX (intento %d), reintento en 3 s", (unsigned long)r, tries);
+		state_lock();
+		util_strlcpy(G.srv_error, "soc", sizeof G.srv_error);
+		G.net_err = (u32)r;
+		G.rev++;
+		state_unlock();
+		for (int i = 0; i < 30 && !quit; i++)
+			svcSleepThread(100 * 1000000ll);
+	}
+	return false;
+}
+
 static void server_thread(void *arg)
 {
 	(void)arg;
+	soc_ok = net_init();
+	int last_wifi = -2;
+	u64 last_wifi_t = 0;
+	bool logged_noip = false;
 	while (!quit) {
 		restart = false;
 		u32 ip = util_ip();
+		/* estado real del Wi-Fi (ac:u), para el log y para la pantalla */
+		u64 now = util_ms();
+		int wifi = last_wifi;
+		if (!ip && (now - last_wifi_t > 2000 || last_wifi == -2)) {
+			wifi = util_wifi_status();
+			last_wifi_t = now;
+		} else if (ip) {
+			wifi = 3;
+		}
+		if (wifi != last_wifi) {
+			util_log("wifi: estado %d, ip %s", wifi, ip ? inet_ntoa((struct in_addr){ip}) : "-");
+			last_wifi = wifi;
+		}
 		state_lock();
 		G.ip = ip;
+		G.wifi = wifi;
 		G.running = false;
 		G.rev++;
 		state_unlock();
 		if (!ip) {
+			if (!logged_noip) {
+				util_log("esperando IP (gethostid = 0)");
+				logged_noip = true;
+			}
 			svcSleepThread(500 * 1000000ll);
 			continue;
 		}
+		logged_noip = false;
 		int port = 0;
 		if (!open_listener(&port)) {
 			state_lock();
 			util_strlcpy(G.srv_error, "listen", sizeof G.srv_error);
 			G.rev++;
 			state_unlock();
-			util_log("no se pudo abrir el puerto");
+			util_log("no se pudo abrir el puerto (errno %d)", errno);
 			svcSleepThread(2000 * 1000000ll);
 			continue;
 		}
@@ -1445,10 +1498,12 @@ void server_start(void)
 	load_page();
 	fbuf = malloc(FILE_CHUNK);
 	soc_buf = memalign(0x1000, SOC_BUFSIZE);
-	if (!soc_buf || R_FAILED(socInit(soc_buf, SOC_BUFSIZE))) {
-		util_strlcpy(G.srv_error, "soc", sizeof G.srv_error);
+	if (!soc_buf) {
+		util_strlcpy(G.srv_error, "mem", sizeof G.srv_error);
+		util_log("sin memoria para soc:U");
 		return;
 	}
+	util_log("Cloud3DS %s: arrancando la red", APP_VERSION);
 	quit = false;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
@@ -1460,6 +1515,10 @@ void server_start(void)
 		thr = threadCreate(server_thread, NULL, 64 * 1024, prio - 1, 2, false);
 	if (!thr)
 		thr = threadCreate(server_thread, NULL, 64 * 1024, prio - 1, 0, false);
+	if (!thr) {
+		util_strlcpy(G.srv_error, "thread", sizeof G.srv_error);
+		util_log("no se pudo crear el hilo del servidor");
+	}
 }
 
 void server_stop(void)
@@ -1470,7 +1529,9 @@ void server_stop(void)
 		threadFree(thr);
 		thr = NULL;
 	}
-	socExit();
+	if (soc_ok)
+		socExit();
+	soc_ok = false;
 	free(page);
 	page = NULL;
 	free(fbuf);

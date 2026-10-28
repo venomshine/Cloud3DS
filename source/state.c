@@ -23,6 +23,7 @@ void state_init(void)
 	LightLock_Init(&lock);
 	memset(&G, 0, sizeof G);
 	G.protect_sys = true;
+	G.wifi = -1;
 	pin_regen();
 }
 
