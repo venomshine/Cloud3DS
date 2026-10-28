@@ -14,3 +14,4 @@ void i18n_apply(int setting);                      // aplica el ajuste (0 = el d
 const char *tr(const char *es);                    // texto en el idioma actual (la clave es el español)
 const char *lang_setting_name(int setting);        // "Sistema (English)", "Español"…
 #define _(s) tr(s)
+#define N_(s) s                                    // se traduce después, con tr()

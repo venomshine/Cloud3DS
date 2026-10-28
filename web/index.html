@@ -129,6 +129,9 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .ic.file{background:var(--card2);color:var(--muted)}
 .ic.vid{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
 .ic.txt{background:color-mix(in srgb,var(--a) 14%,transparent);color:var(--a)}
+.ic.sav{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.ic.zip{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.ic.rom{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
 .meta{flex:1;min-width:0}
 .meta b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meta span{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -500,8 +503,12 @@ function join(a,b){return a==="/"?"/"+b:a+"/"+b}
 function parent(p){const i=p.lastIndexOf("/");return i<=0?"/":p.slice(0,i)}
 function base(p){return p.slice(p.lastIndexOf("/")+1)}
 function ext(n){const i=n.lastIndexOf(".");return i<0?"":n.slice(i+1).toLowerCase()}
-const IMG=["png","jpg","jpeg","gif","bmp","webp"],VID=["mp4","webm","m4v","mov"],AUD=["mp3","wav","ogg","m4a"],TXT=["txt","ini","log","json","cfg","xml","md","yml","yaml","csv"];
-function kind(it){if(it.d)return"folder";const e=ext(it.n);if(IMG.includes(e))return"img";if(VID.includes(e)||AUD.includes(e))return"vid";if(TXT.includes(e))return"txt";if(["cia","3dsx","firm","3ds","cxi","nds"].includes(e))return"app";return"file"}
+const IMG=["png","jpg","jpeg","gif","bmp","webp","mpo"],VID=["mp4","webm","m4v","mov"],AUD=["mp3","wav","ogg","m4a","flac","aac","opus"],
+ TXT=["txt","ini","log","json","cfg","xml","md","yml","yaml","csv","conf","toml","nfo","srt","gm9","lua","py","sh","c","h","js","css","html","htm"],
+ ZIP=["zip","7z","rar","tar","gz","bz2","xz"],ROM=["nds","gba","gb","gbc","nes","sfc","smc","gen","sms","gg"],
+ APP=["cia","3dsx","firm","3ds","cci","cxi","tik","smdh"],SAV=["sav","srm"];
+function kind(it){if(it.d)return"folder";const e=ext(it.n);if(IMG.includes(e))return"img";if(VID.includes(e)||AUD.includes(e))return"vid";if(TXT.includes(e))return"txt";if(APP.includes(e))return"app";if(ROM.includes(e))return"rom";if(ZIP.includes(e))return"zip";if(SAV.includes(e))return"sav";return"file"}
+const kindSvg=k=>svg({folder:"folder",img:"img",vid:"vid",txt:"txt",app:"app",rom:"game",zip:"box",sav:"save"}[k]||"file");
 function validName(n){return n&&n.length<=255&&!/[\\/:*?"<>|\x00-\x1f]/.test(n)&&n!=="."&&n!==".."&&!/[. ]$/.test(n)}
 const SYS=["/nintendo 3ds","/boot.firm","/boot.3dsx","/gm9","/3ds/cloud3ds","/luma/payloads","/luma/sysmodules","/luma/titles","/luma/config.ini"];
 const isSys=p=>{p=p.toLowerCase();return p==="/luma"||p==="/3ds"||SYS.some(s=>p===s||p.startsWith(s+"/"))};
@@ -699,13 +706,13 @@ function render(){
  // las carpetas del sistema van aparte, en su propio grupo plegable
  const mine=a.filter(it=>!isSys(join(S.path,it.n))),sys=a.filter(it=>isSys(join(S.path,it.n)));
  const tile=it=>{const k=kind(it),p=join(S.path,it.n);
-   const th=k==="img"?`<img loading="lazy" src="${fileUrl(p)}" alt="">`:svg(k==="folder"?"folder":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file");
+   const th=k==="img"?`<img loading="lazy" src="${fileUrl(p)}" alt="">`:kindSvg(k);
    return `<div class="tile${S.sel.has(it.n)?" sel":""}${it.c?" mk"+it.c:""}" data-n="${esc(it.n)}"><div class="th ${k}">${th}${isProt(p)?`<span class="lockb">${svg("lock")}</span>`:""}</div><div class="nm">${esc(it.n)}</div></div>`};
  const row=it=>{const k=kind(it);
    const sub=it.d?t("folder")+(it.t?" · "+fdate(it.t):""):fsize(it.s)+(it.t?" · "+fdate(it.t):"");
    return `<div class="row${S.sel.has(it.n)?" sel":""}${it.c?" mk"+it.c:""}" data-n="${esc(it.n)}">`+
     (selMode?`<div class="chk">${svg("check")}</div>`:"")+
-    `<div class="ic ${k}">${svg(k==="folder"?"folder":k==="img"?"img":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file")}${isProt(join(S.path,it.n))?`<span class="lockb">${svg("lock")}</span>`:""}</div>`+
+    `<div class="ic ${k}">${kindSvg(k)}${isProt(join(S.path,it.n))?`<span class="lockb">${svg("lock")}</span>`:""}</div>`+
     `<div class="meta"><b>${esc(it.n)}</b><span>${sub}</span></div>`+
     `<button class="more" data-more="1">${svg("dots")}</button></div>`};
  const block=items=>!items.length?"":S.view==="grid"?`<div class="grid">${items.map(tile).join("")}</div>`:`<div class="list">${items.map(row).join("")}</div>`;
@@ -778,7 +785,7 @@ function modal(html,center){
 function openSheet(it){
  const p=join(S.path,it.n),k=kind(it),ro=S.info.readonly;
  const m=modal(`<div class="sheet"><div class="grab"></div>
-  <div class="sh"><div class="ic ${k}">${svg(k==="folder"?"folder":k==="img"?"img":k==="vid"?"vid":k==="txt"?"txt":k==="app"?"app":"file")}</div>
+  <div class="sh"><div class="ic ${k}">${kindSvg(k)}</div>
   <div class="meta"><b>${esc(it.n)}</b><span>${it.d?t("folder"):fsize(it.s)}${it.t?" · "+fdate(it.t):""}</span></div></div>
   ${it.d?"":(k==="img"||k==="vid"||k==="txt")?`<button class="act" data-a="view">${svg("eye")}${t("view")}</button>`:""}
   ${it.d?"":`<button class="act" data-a="dl">${svg("down")}${t("download")}</button>`}

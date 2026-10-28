@@ -192,6 +192,13 @@ static const char *mime_of(const char *name)
 	    {"ini", "text/plain; charset=utf-8"}, {"log", "text/plain; charset=utf-8"},
 	    {"json", "application/json"}, {"cfg", "text/plain; charset=utf-8"},
 	    {"xml", "text/plain; charset=utf-8"}, {"pdf", "application/pdf"},
+	    {"mpo", "image/jpeg"}, /* foto 3D de la cámara: el navegador enseña la primera imagen */
+	    {"m4a", "audio/mp4"},        {"flac", "audio/flac"},      {"mov", "video/quicktime"},
+	    {"md", "text/plain; charset=utf-8"},  {"csv", "text/plain; charset=utf-8"},
+	    {"yml", "text/plain; charset=utf-8"}, {"yaml", "text/plain; charset=utf-8"},
+	    {"conf", "text/plain; charset=utf-8"}, {"gm9", "text/plain; charset=utf-8"},
+	    {"lua", "text/plain; charset=utf-8"}, {"srt", "text/plain; charset=utf-8"},
+	    {"nfo", "text/plain; charset=utf-8"}, {"toml", "text/plain; charset=utf-8"},
 	};
 	const char *dot = strrchr(name, '.');
 	if (dot)

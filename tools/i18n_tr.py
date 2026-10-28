@@ -701,4 +701,196 @@ TR = {
     'No se pudo crear la carpeta':
         ("Couldn't create the folder",
          'フォルダを作成できませんでした'),
+    'Editado':
+        ('Edited',
+         '編集'),
+    'Foto 3D (MPO)':
+        ('3D photo (MPO)',
+         '3D写真(MPO)'),
+    'Vídeo de 3DS (MOFLEX)':
+        ('3DS video (MOFLEX)',
+         '3DS動画(MOFLEX)'),
+    'Sonido de 3DS (BCSTM)':
+        ('3DS sound (BCSTM)',
+         '3DSサウンド(BCSTM)'),
+    'Sonido de 3DS (BCWAV)':
+        ('3DS sound (BCWAV)',
+         '3DSサウンド(BCWAV)'),
+    'Copia de un cartucho de 3DS':
+        ('3DS cartridge dump',
+         '3DSカートリッジのダンプ'),
+    'Programa de 3DS (CXI)':
+        ('3DS program (CXI)',
+         '3DSプログラム(CXI)'),
+    'Firmware (FIRM)':
+        ('Firmware (FIRM)',
+         'ファームウェア(FIRM)'),
+    'Ticket (TIK)':
+        ('Ticket (TIK)',
+         'チケット(TIK)'),
+    'Icono de un programa (SMDH)':
+        ('Program icon (SMDH)',
+         'ソフトのアイコン(SMDH)'),
+    'Juego de Nintendo DS':
+        ('Nintendo DS game',
+         'ニンテンドーDSのソフト'),
+    'Juego de Game Boy Advance':
+        ('Game Boy Advance game',
+         'ゲームボーイアドバンスのソフト'),
+    'Juego de Game Boy':
+        ('Game Boy game',
+         'ゲームボーイのソフト'),
+    'Juego de Game Boy Color':
+        ('Game Boy Color game',
+         'ゲームボーイカラーのソフト'),
+    'Juego de NES':
+        ('NES game',
+         'ファミコンのソフト'),
+    'Juego de Super Nintendo':
+        ('Super Nintendo game',
+         'スーパーファミコンのソフト'),
+    'Texto con formato (Markdown)':
+        ('Formatted text (Markdown)',
+         '書式付きテキスト(Markdown)'),
+    'Juego de Mega Drive':
+        ('Mega Drive game',
+         'メガドライブのソフト'),
+    'Juego de Master System':
+        ('Master System game',
+         'マスターシステムのソフト'),
+    'Juego de Game Gear':
+        ('Game Gear game',
+         'ゲームギアのソフト'),
+    'Partida guardada (SAV)':
+        ('Save file (SAV)',
+         'セーブデータ(SAV)'),
+    'Partida guardada (SRM)':
+        ('Save file (SRM)',
+         'セーブデータ(SRM)'),
+    'Configuración (INI)':
+        ('Settings (INI)',
+         '設定ファイル(INI)'),
+    'Configuración (CFG)':
+        ('Settings (CFG)',
+         '設定ファイル(CFG)'),
+    'Configuración (CONF)':
+        ('Settings (CONF)',
+         '設定ファイル(CONF)'),
+    'Registro (LOG)':
+        ('Log (LOG)',
+         'ログ(LOG)'),
+    'Subtítulos (SRT)':
+        ('Subtitles (SRT)',
+         '字幕(SRT)'),
+    'Script de GodMode9':
+        ('GodMode9 script',
+         'GodMode9スクリプト'),
+    'Script de Lua':
+        ('Lua script',
+         'Luaスクリプト'),
+    'Fuente de 3DS (BCFNT)':
+        ('3DS font (BCFNT)',
+         '3DSフォント(BCFNT)'),
+    'Documento PDF':
+        ('PDF document',
+         'PDF文書'),
+    '¿Salir sin guardar?':
+        ('Leave without saving?',
+         '保存せずに閉じますか?'),
+    'Los cambios que hiciste en este archivo se perderán.':
+        ('The changes you made to this file will be lost.',
+         'このファイルの変更は失われます。'),
+    'Salir sin guardar':
+        ('Leave without saving',
+         '保存せずに閉じる'),
+    'No hay memoria para abrir este archivo':
+        ('Not enough memory to open this file',
+         'メモリが足りないため開けません'),
+    'No se pudo abrir este archivo':
+        ("Couldn't open this file",
+         'このファイルを開けませんでした'),
+    'Solo lectura: carpeta protegida':
+        ('Read-only: protected folder',
+         '読み取り専用: 保護されたフォルダ'),
+    'Solo lectura: no es un archivo de texto':
+        ('Read-only: not a text file',
+         '読み取り専用: テキストファイルではありません'),
+    'Solo lectura: el texto no está en UTF-8':
+        ("Read-only: the text isn't UTF-8",
+         '読み取り専用: UTF-8ではありません'),
+    'Solo lectura: archivo muy grande, se ve el principio':
+        ('Read-only: very large file, showing the beginning',
+         '読み取り専用: 大きすぎるため先頭のみ表示'),
+    'Solo lectura: archivo muy grande':
+        ('Read-only: very large file',
+         '読み取り専用: ファイルが大きすぎます'),
+    'Línea %d de %d · Sin guardar':
+        ('Line %d of %d · Unsaved',
+         '%d / %d 行 · 未保存'),
+    'Línea %d de %d':
+        ('Line %d of %d',
+         '%d / %d 行'),
+    'Editar':
+        ('Edit',
+         '編集'),
+    'Añadir':
+        ('Add',
+         '追加'),
+    'Página anterior':
+        ('Previous page',
+         '前のページ'),
+    'Página siguiente':
+        ('Next page',
+         '次のページ'),
+    'Guardar':
+        ('Save',
+         '保存'),
+    'Línea borrada':
+        ('Line deleted',
+         '行を削除しました'),
+    'El archivo cambió mientras lo editabas':
+        ('The file changed while you were editing it',
+         '編集中にファイルが変更されました'),
+    'Se modificó desde otro dispositivo. Si guardas, esos cambios se perderán.':
+        ('It was modified from another device. If you save, those changes will be lost.',
+         '別のデバイスで変更されました。保存するとその変更は失われます。'),
+    'Guardar igualmente':
+        ('Save anyway',
+         'それでも保存'),
+    'No se pudo guardar':
+        ("Couldn't save",
+         '保存できませんでした'),
+    'Guardado':
+        ('Saved',
+         '保存しました'),
+    'Abrir como texto':
+        ('Open as text',
+         'テキストとして開く'),
+    'Guarda o descarta los cambios primero':
+        ('Save or discard your changes first',
+         '先に変更を保存するか破棄してください'),
+    'Vídeo %s':
+        ('%s video',
+         '%s 動画'),
+    'Audio %s':
+        ('%s audio',
+         '%s 音声'),
+    'Archivo comprimido %s':
+        ('%s archive',
+         '%s 圧縮ファイル'),
+    'Fuente %s':
+        ('%s font',
+         '%s フォント'),
+    'Esta línea es demasiado larga para el teclado':
+        ('This line is too long for the keyboard',
+         'この行はキーボードで編集するには長すぎます'),
+    'Línea %d':
+        ('Line %d',
+         '%d 行目'),
+    'Línea nueva':
+        ('New line',
+         '新しい行'),
+    'Actualizado desde otro dispositivo':
+        ('Updated from another device',
+         '別のデバイスで更新されました'),
 }

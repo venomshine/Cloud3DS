@@ -1254,6 +1254,7 @@ static struct {
 	int iw, ih;        // su tamaño original
 	char app_title[64], app_pub[64]; // de un .3dsx (su SMDH)
 	int dir_count;     // elementos de la carpeta elegida
+	char preview[600]; // principio de un texto, para verlo arriba
 } F = {.path = "/", .sys_open = true, .info_for = -1, .sel = 1};
 
 static const char *chip_name(int i)
@@ -1285,28 +1286,83 @@ static const char *f_ext(const char *n)
 	return d ? d + 1 : "";
 }
 
-// tipo de archivo: icono y color, como en la web
+// tipos de archivo por extensión: icono, color y nombre (los mismos grupos que la web)
+enum { FK_OTHER, FK_IMG, FK_VIDEO, FK_AUDIO, FK_APP, FK_ROM, FK_SAVE, FK_TEXT, FK_ARCHIVE, FK_FONT, FK_DOC };
+typedef struct {
+	const char *x;
+	u8 k;
+	const char *label; // NULL: el genérico del grupo con la extensión («Imagen PNG»)
+} FType;
+static const FType FTYPES[] = {
+	{"png", FK_IMG}, {"jpg", FK_IMG}, {"jpeg", FK_IMG}, {"bmp", FK_IMG}, {"gif", FK_IMG}, {"tga", FK_IMG},
+	{"mpo", FK_IMG, N_("Foto 3D (MPO)")},
+	{"mp4", FK_VIDEO}, {"mov", FK_VIDEO}, {"avi", FK_VIDEO}, {"mkv", FK_VIDEO}, {"webm", FK_VIDEO}, {"3gp", FK_VIDEO},
+	{"moflex", FK_VIDEO, N_("Vídeo de 3DS (MOFLEX)")},
+	{"mp3", FK_AUDIO}, {"wav", FK_AUDIO}, {"ogg", FK_AUDIO}, {"m4a", FK_AUDIO}, {"flac", FK_AUDIO}, {"aac", FK_AUDIO},
+	{"opus", FK_AUDIO}, {"mid", FK_AUDIO}, {"midi", FK_AUDIO},
+	{"bcstm", FK_AUDIO, N_("Sonido de 3DS (BCSTM)")}, {"bcwav", FK_AUDIO, N_("Sonido de 3DS (BCWAV)")},
+	{"cia", FK_APP, N_("Programa instalable (CIA)")}, {"3dsx", FK_APP, N_("Homebrew (3DSX)")},
+	{"3ds", FK_APP, N_("Copia de un cartucho de 3DS")}, {"cci", FK_APP, N_("Copia de un cartucho de 3DS")},
+	{"cxi", FK_APP, N_("Programa de 3DS (CXI)")}, {"firm", FK_APP, N_("Firmware (FIRM)")},
+	{"tik", FK_APP, N_("Ticket (TIK)")}, {"smdh", FK_APP, N_("Icono de un programa (SMDH)")},
+	{"nds", FK_ROM, N_("Juego de Nintendo DS")}, {"gba", FK_ROM, N_("Juego de Game Boy Advance")},
+	{"gb", FK_ROM, N_("Juego de Game Boy")}, {"gbc", FK_ROM, N_("Juego de Game Boy Color")},
+	{"nes", FK_ROM, N_("Juego de NES")}, {"sfc", FK_ROM, N_("Juego de Super Nintendo")}, {"smc", FK_ROM, N_("Juego de Super Nintendo")},
+	{"md", FK_TEXT, N_("Texto con formato (Markdown)")}, {"gen", FK_ROM, N_("Juego de Mega Drive")},
+	{"sms", FK_ROM, N_("Juego de Master System")}, {"gg", FK_ROM, N_("Juego de Game Gear")},
+	{"sav", FK_SAVE, N_("Partida guardada (SAV)")}, {"srm", FK_SAVE, N_("Partida guardada (SRM)")},
+	{"txt", FK_TEXT}, {"ini", FK_TEXT, N_("Configuración (INI)")}, {"cfg", FK_TEXT, N_("Configuración (CFG)")},
+	{"conf", FK_TEXT, N_("Configuración (CONF)")}, {"json", FK_TEXT}, {"log", FK_TEXT, N_("Registro (LOG)")},
+	{"xml", FK_TEXT}, {"csv", FK_TEXT}, {"yml", FK_TEXT}, {"yaml", FK_TEXT}, {"toml", FK_TEXT}, {"nfo", FK_TEXT},
+	{"srt", FK_TEXT, N_("Subtítulos (SRT)")}, {"gm9", FK_TEXT, N_("Script de GodMode9")}, {"lua", FK_TEXT, N_("Script de Lua")},
+	{"py", FK_TEXT}, {"sh", FK_TEXT}, {"c", FK_TEXT}, {"h", FK_TEXT}, {"js", FK_TEXT}, {"css", FK_TEXT},
+	{"html", FK_TEXT}, {"htm", FK_TEXT},
+	{"zip", FK_ARCHIVE}, {"7z", FK_ARCHIVE}, {"rar", FK_ARCHIVE}, {"tar", FK_ARCHIVE}, {"gz", FK_ARCHIVE},
+	{"bz2", FK_ARCHIVE}, {"xz", FK_ARCHIVE},
+	{"ttf", FK_FONT}, {"otf", FK_FONT}, {"bcfnt", FK_FONT, N_("Fuente de 3DS (BCFNT)")},
+	{"pdf", FK_DOC, N_("Documento PDF")},
+};
+
+static const FType *f_type(const FEnt *e)
+{
+	const char *x = f_ext(e->name);
+	if (e->dir || !*x)
+		return NULL;
+	for (size_t i = 0; i < ARRAY_LEN(FTYPES); i++)
+		if (!strcasecmp(x, FTYPES[i].x))
+			return &FTYPES[i];
+	return NULL;
+}
+
+static int f_group(const FEnt *e)
+{
+	const FType *t = f_type(e);
+	return t ? t->k : FK_OTHER;
+}
+
+// icono y color de cada tipo, como en la web
 static void f_kind(const FEnt *e, IconId *ic, u32 *col)
 {
 	static const u32 MK[7] = {0, 0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
-	const char *x = f_ext(e->name);
 	if (e->dir) {
 		*ic = IC_FOLDER;
 		*col = e->color ? MK[e->color] : T.warn;
-	} else if (!strcasecmp(x, "png") || !strcasecmp(x, "jpg") || !strcasecmp(x, "jpeg") || !strcasecmp(x, "bmp") || !strcasecmp(x, "gif")) {
-		*ic = IC_IMAGE, *col = T.accent;
-	} else if (!strcasecmp(x, "mp4") || !strcasecmp(x, "mov") || !strcasecmp(x, "avi")) {
-		*ic = IC_CAMERA, *col = T.accent2;
-	} else if (!strcasecmp(x, "mp3") || !strcasecmp(x, "wav") || !strcasecmp(x, "ogg") || !strcasecmp(x, "m4a")) {
-		*ic = IC_SPEAKER, *col = T.accent2;
-	} else if (!strcasecmp(x, "cia") || !strcasecmp(x, "3dsx") || !strcasecmp(x, "firm") || !strcasecmp(x, "3ds") || !strcasecmp(x, "nds")) {
-		*ic = IC_GEM, *col = T.ok;
-	} else if (!strcasecmp(x, "txt") || !strcasecmp(x, "ini") || !strcasecmp(x, "json") || !strcasecmp(x, "log") || !strcasecmp(x, "cfg")) {
-		*ic = IC_NOTE, *col = T.text3;
-	} else {
-		*ic = IC_BOOK, *col = T.text3;
+		return;
 	}
-	if (!e->dir && e->color)
+	switch (f_group(e)) {
+	case FK_IMG: *ic = IC_IMAGE, *col = T.accent; break;
+	case FK_VIDEO: *ic = IC_CAMERA, *col = T.accent2; break;
+	case FK_AUDIO: *ic = IC_SPEAKER, *col = T.accent2; break;
+	case FK_APP: *ic = IC_GEM, *col = T.ok; break;
+	case FK_ROM: *ic = IC_GAMEPAD, *col = T.ok; break;
+	case FK_SAVE: *ic = IC_STAR, *col = T.warn; break;
+	case FK_TEXT: *ic = IC_NOTE, *col = T.text2; break;
+	case FK_ARCHIVE: *ic = IC_ARCHIVE, *col = T.warn; break;
+	case FK_FONT: *ic = IC_FONT, *col = T.text2; break;
+	case FK_DOC: *ic = IC_FILE, *col = T.danger; break;
+	default: *ic = IC_FILE, *col = T.text3; break;
+	}
+	if (e->color)
 		*col = MK[e->color];
 }
 
@@ -1514,6 +1570,7 @@ static bool count_cb(const FsxEntry *e, void *u)
 }
 
 static bool f_is_img(const FEnt *e);
+static bool f_is_txt(const FEnt *e);
 
 // lee lo que hace falta para la pantalla de arriba: icono y datos del CIA o .3dsx, foto en pequeño…
 static void f_info_refresh(void)
@@ -1526,6 +1583,7 @@ static void f_info_refresh(void)
 	F.app_title[0] = F.app_pub[0] = 0;
 	F.iw = F.ih = 0;
 	F.dir_count = -1;
+	F.preview[0] = 0;
 	tex_free(&F.cia_icon);
 	tex_free(&F.thumb);
 	if (idx < 0)
@@ -1547,6 +1605,31 @@ static void f_info_refresh(void)
 		}
 	} else if (!strcasecmp(f_ext(e->name), "3dsx")) {
 		read_3dsx(full, F.app_title, sizeof F.app_title, F.app_pub, sizeof F.app_pub, &F.cia_icon);
+	} else if (f_is_txt(e)) {
+		char sd[720];
+		snprintf(sd, sizeof sd, "sdmc:%s", full);
+		FILE *f = fopen(sd, "rb");
+		if (f) {
+			size_t n = fread(F.preview, 1, sizeof F.preview - 1, f);
+			fclose(f);
+			F.preview[n] = 0;
+			char *p = F.preview;
+			if (!strncmp(p, "\xEF\xBB\xBF", 3))
+				memmove(p, p + 3, strlen(p + 3) + 1);
+			size_t l = strlen(p);
+			if (n == sizeof F.preview - 1) { // se cortó: sin un carácter partido al final
+				size_t j = l;
+				while (j > 0 && l - j < 3 && ((u8)p[j - 1] & 0xC0) == 0x80)
+					j--;
+				if (j > 0 && (u8)p[j - 1] >= 0xC0)
+					p[j - 1] = 0;
+			}
+			for (char *c = p; *c; c++)
+				if (*c == '\t' || *c == '\r')
+					*c = ' ';
+			if (!util_utf8_valid(p) || memchr(p, 0, strlen(p)) != NULL)
+				p[0] = 0;
+		}
 	} else if (f_is_img(e)) {
 		u8 *px = NULL;
 		int w, h;
@@ -1583,18 +1666,12 @@ static struct {
 
 static bool f_is_img(const FEnt *e)
 {
-	const char *x = f_ext(e->name);
-	return !e->dir && (!strcasecmp(x, "png") || !strcasecmp(x, "jpg") || !strcasecmp(x, "jpeg") || !strcasecmp(x, "bmp") || !strcasecmp(x, "gif"));
+	return f_group(e) == FK_IMG;
 }
 
 static bool f_is_txt(const FEnt *e)
 {
-	static const char *const X[] = {"txt", "ini", "json", "log", "cfg", "md", "xml", "csv", "yml", "yaml"};
-	const char *x = f_ext(e->name);
-	for (size_t i = 0; !e->dir && i < ARRAY_LEN(X); i++)
-		if (!strcasecmp(x, X[i]))
-			return true;
-	return false;
+	return f_group(e) == FK_TEXT;
 }
 
 static bool vw_is_open(void)
@@ -2251,20 +2328,23 @@ static void f_type_text(const FEnt *e, char *out, size_t n)
 	char up[12] = "";
 	for (int i = 0; x[i] && i < 10; i++)
 		up[i] = (char)(x[i] >= 'a' && x[i] <= 'z' ? x[i] - 32 : x[i]);
+	const FType *t = f_type(e);
 	if (e->dir)
 		util_strlcpy(out, e->sys ? _("Carpeta del sistema") : _("Carpeta"), n);
-	else if (!strcasecmp(x, "cia"))
-		util_strlcpy(out, _("Programa instalable (CIA)"), n);
-	else if (!strcasecmp(x, "3dsx"))
-		util_strlcpy(out, _("Homebrew (3DSX)"), n);
-	else if (f_is_img(e))
-		snprintf(out, n, _("Imagen %s"), up);
-	else if (f_is_txt(e))
-		snprintf(out, n, _("Texto %s"), up);
-	else if (up[0])
+	else if (t && t->label)
+		util_strlcpy(out, tr(t->label), n);
+	else if (!t && up[0])
 		snprintf(out, n, _("Archivo %s"), up);
-	else
+	else if (!t)
 		util_strlcpy(out, _("Archivo"), n);
+	else {
+		static const char *const G[] = {
+			[FK_IMG] = N_("Imagen %s"), [FK_VIDEO] = N_("Vídeo %s"), [FK_AUDIO] = N_("Audio %s"),
+			[FK_TEXT] = N_("Texto %s"), [FK_ARCHIVE] = N_("Archivo comprimido %s"), [FK_FONT] = N_("Fuente %s"),
+		};
+		const char *g = t->k < ARRAY_LEN(G) && G[t->k] ? G[t->k] : N_("Archivo %s");
+		snprintf(out, n, tr(g), up);
+	}
 }
 
 // fila «etiqueta  valor» de la información
@@ -2301,7 +2381,11 @@ static void files_top(float a)
 		draw_texture(&F.thumb, X + (PS - F.thumb.w) / 2, py + (PS - F.thumb.h) / 2, F.thumb.w, F.thumb.h, a);
 	else if (F.cia_icon.ok)
 		draw_texture(&F.cia_icon, X + 12, py + 12, 96, 96, a);
-	else
+	else if (F.preview[0]) { // las primeras líneas, como una hoja
+		gfx_clip(X, py, PS, PS);
+		text_wrap_lines(F.preview, PS - 14, 0.34f, 12, X + 7, py + 6, col_alpha(T.text2, a), true);
+		gfx_clip_off();
+	} else
 		draw_icon(ic, X + PS / 2, py + PS / 2, 48, col_alpha(col, a));
 	// a la derecha, los datos
 	float rx = X + PS + 14, rw = X + W - rx, y = py;

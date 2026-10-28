@@ -7,7 +7,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from i18n_tr import TR
 
-KEY_RE = re.compile(r'(?:\b_|\btr|ui_pill_button)\("((?:[^"\\]|\\.)*)"[,)]')
+KEY_RE = re.compile(r'(?:\b_|\bN_|\btr|ui_pill_button)\("((?:[^"\\]|\\.)*)"[,)]')
 
 def c_str(s):
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'

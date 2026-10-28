@@ -252,5 +252,24 @@ void draw_icon(IconId id, float cx, float cy, float s, u32 c) {
         draw_circle(cx + 4 * k, cy - 2 * k, 4.5f * k, c);
         draw_tri(cx - 8.3f * k, cy, cx + 8.3f * k, cy, cx, cy + 9 * k, c);
         break;
+    case IC_FILE: // hoja con la esquina doblada
+        L(-6, -9, 2, -9); L(2, -9, 7, -4); L(7, -4, 7, 9); L(7, 9, -6, 9); L(-6, 9, -6, -9);
+        L(2, -9, 2, -4); L(2, -4, 7, -4);
+        break;
+    case IC_ARCHIVE: // caja con cremallera
+        draw_rrect_outline(cx - 8 * k, cy - 9 * k, 16 * k, 18 * k, 2 * k, th, c);
+        for (int i = 0; i < 4; i++)
+            draw_rect(cx + (i % 2 ? 0 : -2) * k, cy + (-8 + i * 2.5f) * k, 2 * k, 1.6f * k, c);
+        draw_rrect(cx - 2 * k, cy + 2 * k, 4 * k, 4 * k, 1 * k, c);
+        break;
+    case IC_GAMEPAD: // mando: cruceta y dos botones
+        draw_rrect_outline(cx - 10 * k, cy - 6 * k, 20 * k, 12 * k, 5 * k, th, c);
+        L(-6, 0, -2, 0); L(-4, -2, -4, 2);
+        draw_circle(cx + 3 * k, cy + 1 * k, 1.4f * k, c);
+        draw_circle(cx + 6 * k, cy - 1.5f * k, 1.4f * k, c);
+        break;
+    case IC_FONT: // «A» con su barra
+        L(-7, 8, 0, -8); L(0, -8, 7, 8); L(-4, 2, 4, 2);
+        break;
     }
 }

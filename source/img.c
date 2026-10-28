@@ -16,6 +16,7 @@
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_BMP
 #define STBI_ONLY_GIF
+#define STBI_ONLY_TGA
 #define STBI_NO_STDIO_WARNINGS
 #include "stb_image.h"
 
