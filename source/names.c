@@ -16,7 +16,6 @@
 #include "util.h"
 
 #include <arpa/inet.h>
-#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
@@ -181,15 +180,30 @@ static bool by_netbios(const char *ip, char *out, size_t n)
 	return false;
 }
 
+/* DNS inverso preguntando al servidor DNS que usa la consola (normalmente el router).
+ * Se hace con una pregunta UDP normal y no con gethostbyaddr(): no está claro qué
+ * formato de dirección espera soc:U ahí, y una pregunta DNS no tiene ese riesgo. */
 static bool by_router(const char *ip, char *out, size_t n)
 {
-	struct in_addr a;
-	a.s_addr = inet_addr(ip);
-	struct hostent *h = gethostbyaddr(&a, sizeof a, AF_INET);
-	if (!h || !h->h_name || !h->h_name[0] || !strcmp(h->h_name, ip))
+	u8 tab[336];
+	socklen_t tl = sizeof tab;
+	if (SOCU_GetNetworkOpt(SOL_CONFIG, NETOPT_DNS_TABLE, tab, &tl) != 0)
 		return false;
-	util_strlcpy(out, h->h_name, n);
-	return true;
+	char dns[16] = "";
+	for (size_t o = 0; o + sizeof(SOCU_DNSTableEntry) <= (size_t)tl && !dns[0]; o += sizeof(SOCU_DNSTableEntry)) {
+		const SOCU_DNSTableEntry *e = (const SOCU_DNSTableEntry *)(tab + o);
+		if (e->family == AF_INET && e->ip.s_addr)
+			util_strlcpy(dns, inet_ntoa(e->ip), sizeof dns);
+	}
+	if (!dns[0])
+		return false;
+	u8 q[128], r[1500];
+	int qn = ptr_query(q, ip, 0x0001);
+	if (!qn)
+		return false;
+	q[2] = 0x01; /* recursión deseada */
+	int rn = udp_ask(dns, 53, q, qn, r, sizeof r, 1500);
+	return rn > 0 && ptr_answer(r, rn, out, n);
 }
 
 /* «Marios-iPhone.local» → «Marios-iPhone»; «DESKTOP-AB12.lan» → «DESKTOP-AB12» */
