@@ -251,6 +251,8 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .vtop .ibtn:hover{background:#ffffff22}
 .vbody{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:pan-y}
 .vbody img,.vbody video{max-width:100%;max-height:100%;object-fit:contain;image-rendering:auto}
+.vbody .ved{color:#e8e8e8;background:#111;margin:60px 12px 12px;padding:14px;border-radius:12px;max-width:900px;width:100%;height:calc(100% - 72px);border:1px solid #333;resize:none;outline:none;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.vtop .btn.dim{opacity:.45;pointer-events:none}
 .vbody pre{color:#e8e8e8;background:#111;margin:60px 12px 12px;padding:14px;border-radius:12px;max-width:900px;width:100%;max-height:calc(100% - 72px);overflow:auto;white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
 .vnav{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;background:#ffffff22;color:#fff;display:grid;place-items:center}
 .vnav.l{left:12px}.vnav.r{right:12px}
@@ -351,7 +353,7 @@ es:{
  noMatch:"Nada coincide con «%1».", missingT:"Esta carpeta aún no existe", missingD:"Puedes crearla ahora para subir tus archivos.", create:"Crear carpeta",
  savesT:"Aún no hay copias de tus partidas", savesD:"Las partidas de los juegos van cifradas dentro de «Nintendo 3DS» y no se pueden abrir como archivos. Haz una copia con Checkpoint o JKSM en la consola y aparecerá aquí.",
  items:"%1 elementos", item:"1 elemento", folder:"Carpeta",
- download:"Descargar", view:"Ver", rename:"Renombrar", del:"Eliminar", cancel:"Cancelar", ok:"Aceptar", save:"Guardar",
+ download:"Descargar", view:"Ver", edit:"Editar", saved:"Guardado", discardT:"¿Salir sin guardar?", discardD:"Los cambios que hiciste en este archivo se perderán.", discardOk:"Salir sin guardar", rename:"Renombrar", del:"Eliminar", cancel:"Cancelar", ok:"Aceptar", save:"Guardar",
  delQ:"¿Eliminar «%1»?", delQn:"¿Eliminar %1 elementos?", delD:"Se eliminará de la tarjeta SD de la consola. Esta acción no se puede deshacer.",
  delDirD:"Se eliminarán la carpeta y todo su contenido. Esta acción no se puede deshacer.",
  sysQ:"Carpeta del sistema", sysD:"«%1» es necesaria para que la consola o el homebrew funcionen correctamente. ¿Quieres continuar?", cont:"Continuar",
@@ -385,7 +387,7 @@ en:{
  noMatch:"Nothing matches “%1”.", missingT:"This folder doesn't exist yet", missingD:"You can create it now to upload your files.", create:"Create folder",
  savesT:"No save backups yet", savesD:"Game saves are encrypted inside “Nintendo 3DS” and can't be opened as files. Back them up with Checkpoint or JKSM on the console and they'll show up here.",
  items:"%1 items", item:"1 item", folder:"Folder",
- download:"Download", view:"View", rename:"Rename", del:"Delete", cancel:"Cancel", ok:"OK", save:"Save",
+ download:"Download", view:"View", edit:"Edit", saved:"Saved", discardT:"Leave without saving?", discardD:"The changes you made to this file will be lost.", discardOk:"Leave without saving", rename:"Rename", del:"Delete", cancel:"Cancel", ok:"OK", save:"Save",
  delQ:"Delete “%1”?", delQn:"Delete %1 items?", delD:"It will be deleted from the console's SD card. This can't be undone.",
  delDirD:"The folder and everything in it will be deleted. This can't be undone.",
  sysQ:"System folder", sysD:"“%1” is needed for the console or homebrew to work properly. Do you want to continue?", cont:"Continue",
@@ -419,7 +421,7 @@ ja:{
  noMatch:"「%1」に一致するものはありません。", missingT:"このフォルダはまだありません", missingD:"今すぐ作成して、ファイルをアップロードできます。", create:"フォルダを作成",
  savesT:"セーブデータのバックアップはまだありません", savesD:"ゲームのセーブデータは「Nintendo 3DS」の中で暗号化されていて、ファイルとして開けません。本体でCheckpointかJKSMを使ってバックアップすると、ここに表示されます。",
  items:"%1 項目", item:"1 項目", folder:"フォルダ",
- download:"ダウンロード", view:"表示", rename:"名前を変更", del:"削除", cancel:"キャンセル", ok:"OK", save:"保存",
+ download:"ダウンロード", view:"表示", edit:"編集", saved:"保存しました", discardT:"保存せずに閉じますか?", discardD:"このファイルの変更は失われます。", discardOk:"保存せずに閉じる", rename:"名前を変更", del:"削除", cancel:"キャンセル", ok:"OK", save:"保存",
  delQ:"「%1」を削除しますか?", delQn:"%1 項目を削除しますか?", delD:"本体のSDカードから削除されます。元に戻せません。",
  delDirD:"フォルダとその中身がすべて削除されます。元に戻せません。",
  sysQ:"システムフォルダ", sysD:"「%1」は本体やHomebrewの動作に必要です。続けますか?", cont:"続ける",
@@ -503,6 +505,7 @@ function join(a,b){return a==="/"?"/"+b:a+"/"+b}
 function parent(p){const i=p.lastIndexOf("/");return i<=0?"/":p.slice(0,i)}
 function base(p){return p.slice(p.lastIndexOf("/")+1)}
 function ext(n){const i=n.lastIndexOf(".");return i<0?"":n.slice(i+1).toLowerCase()}
+const TXT_EDIT_MAX=512*1024; // como en la consola: más grande, solo lectura
 const IMG=["png","jpg","jpeg","gif","bmp","webp","mpo"],VID=["mp4","webm","m4v","mov"],AUD=["mp3","wav","ogg","m4a","flac","aac","opus"],
  TXT=["txt","ini","log","json","cfg","xml","md","yml","yaml","csv","conf","toml","nfo","srt","gm9","lua","py","sh","c","h","js","css","html","htm"],
  ZIP=["zip","7z","rar","tar","gz","bz2","xz"],ROM=["nds","gba","gb","gbc","nes","sfc","smc","gen","sms","gg"],
@@ -987,30 +990,76 @@ function openViewer(it){
  let idx=media.findIndex(i=>i.n===it.n);
  const v=document.createElement("div");v.className="viewer";document.body.appendChild(v);
  requestAnimationFrame(()=>v.classList.add("show"));
- const close=()=>{v.classList.remove("show");setTimeout(()=>v.remove(),200);document.removeEventListener("keydown",kd)};
+ // texto: se puede editar si es UTF-8, no es enorme y la carpeta no está protegida
+ const ED={on:false,dirty:false,bom:false,crlf:false,text:"",ok:false,p:""};
+ const shut=()=>{v.classList.remove("show");setTimeout(()=>v.remove(),200);document.removeEventListener("keydown",kd)};
+ const close=async()=>{if(ED.on&&ED.dirty&&!await ask({title:t("discardT"),text:t("discardD"),ok:t("discardOk"),danger:true}))return;shut()};
  async function show(cur){
   const p=join(S.path,cur.n),k=kind(cur);
+  ED.on=ED.dirty=ED.ok=false;ED.p=p;
   let body;
   if(k==="img")body=`<img src="${fileUrl(p)}" alt="">`;
   else if(k==="vid")body=`<video src="${fileUrl(p)}" controls autoplay playsinline></video>`;
   else body=`<pre><span class="spin"></span></pre>`;
   const nav=idx>=0&&media.length>1;
   v.innerHTML=`<div class="vtop"><button class="ibtn" data-v="x">${svg("x")}</button><b>${esc(cur.n)}</b>
+   <button class="ibtn hide" data-v="ed" title="${esc(t("edit"))}">${svg("pen")}</button>
+   <button class="btn pri hide" data-v="sv">${svg("check")}${t("save")}</button>
    <button class="ibtn" data-v="dl">${svg("down")}</button></div><div class="vbody">${body}</div>
    ${nav?`<button class="vnav l" data-v="p">${svg("left")}</button><button class="vnav r" data-v="n">${svg("right")}</button><div class="vcount">${idx+1} / ${media.length}</div>`:""}`;
   v.dataset.p=p;
-  if(k==="txt"){
-   try{const r=await fetch(fileUrl(p),{headers:{Range:"bytes=0-262143"}});const tx=await r.text();v.querySelector("pre").textContent=tx}
-   catch(e){v.querySelector("pre").textContent=t("err_net")}
+  if(k!=="img"&&k!=="vid"){
+   const pre=v.querySelector("pre");
+   try{
+    const big=cur.s>TXT_EDIT_MAX;
+    const r=await fetch(fileUrl(p),{headers:big?{Range:"bytes=0-262143"}:{}});
+    const b=new Uint8Array(await r.arrayBuffer());
+    ED.bom=b[0]===0xEF&&b[1]===0xBB&&b[2]===0xBF;
+    const raw=ED.bom?b.subarray(3):b;
+    let tx,utf8=true;
+    try{tx=new TextDecoder("utf-8",{fatal:true}).decode(raw)}catch(e){utf8=false;tx=new TextDecoder("windows-1252").decode(raw)}
+    const bin=raw.subarray(0,8192).includes(0);
+    if(bin)tx=tx.replace(/[\x00-\x08\x0b-\x1f\x7f]/g,"·");
+    ED.crlf=tx.includes("\r\n");ED.text=tx.replace(/\r\n/g,"\n");
+    pre.textContent=ED.text;
+    ED.ok=utf8&&!bin&&!big&&!S.info.readonly&&!isProt(p);
+    v.querySelector('[data-v="ed"]').classList.toggle("hide",!ED.ok);
+   }catch(e){pre.textContent=t("err_net")}
   }
  }
- const step=d=>{if(idx<0||media.length<2)return;idx=(idx+d+media.length)%media.length;show(media[idx])};
+ function edit(){
+  if(!ED.ok||ED.on)return;
+  ED.on=true;
+  const ta=document.createElement("textarea");ta.className="ved";ta.spellcheck=false;ta.value=ED.text;
+  v.querySelector("pre").replaceWith(ta);ta.focus();
+  ta.addEventListener("input",()=>{ED.dirty=true;v.querySelector('[data-v="sv"]').classList.remove("dim")});
+  v.querySelector('[data-v="ed"]').classList.add("hide");
+  v.querySelector('[data-v="sv"]').classList.remove("hide");v.querySelector('[data-v="sv"]').classList.add("dim");
+  v.querySelectorAll(".vnav,.vcount").forEach(e=>e.remove());
+ }
+ async function save(){
+  const ta=v.querySelector(".ved");if(!ta||!ED.dirty)return;
+  let body=ta.value;if(ED.crlf)body=body.replace(/\n/g,"\r\n");if(ED.bom)body="﻿"+body;
+  const q=new URLSearchParams({p:ED.p,ow:"1",ed:"1"});
+  try{
+   const r=await fetch("/api/upload?"+q,{method:"PUT",body:new Blob([body]),credentials:"same-origin"});
+   let j={};try{j=await r.json()}catch(e){}
+   if(r.status===401){showLogin();return}
+   if(!r.ok){toast(errText({code:j.error||String(r.status)}));return}
+   ED.dirty=false;ED.text=ta.value;v.querySelector('[data-v="sv"]').classList.add("dim");toast(t("saved"));go(S.path,true);
+  }catch(e){setOffline(true);toast(t("err_net"))}
+ }
+ const step=d=>{if(ED.on||idx<0||media.length<2)return;idx=(idx+d+media.length)%media.length;show(media[idx])};
  v.addEventListener("click",e=>{const a=(e.target.closest("[data-v]")||{}).dataset?.v;
-  if(a==="x")close();if(a==="dl")download(v.dataset.p);if(a==="p")step(-1);if(a==="n")step(1)});
- const kd=e=>{if(e.key==="Escape")close();if(e.key==="ArrowLeft")step(-1);if(e.key==="ArrowRight")step(1)};
+  if(a==="x")close();if(a==="dl")download(v.dataset.p);if(a==="p")step(-1);if(a==="n")step(1);if(a==="ed")edit();if(a==="sv")save()});
+ const kd=e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"&&ED.on){e.preventDefault();save();return}
+  if(e.key==="Escape"){close();return}
+  if(ED.on)return; // escribiendo: las flechas mueven el cursor
+  if(e.key==="ArrowLeft")step(-1);if(e.key==="ArrowRight")step(1)};
  document.addEventListener("keydown",kd);
  let sx=null;
- v.addEventListener("touchstart",e=>{sx=e.touches.length===1?e.touches[0].clientX:null},{passive:true});
+ v.addEventListener("touchstart",e=>{sx=e.touches.length===1&&!ED.on?e.touches[0].clientX:null},{passive:true});
  v.addEventListener("touchend",e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>60)step(dx<0?1:-1);sx=null});
  show(it);
 }

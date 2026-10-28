@@ -13,6 +13,7 @@
 #include "update.h"
 #include "install.h"
 #include "img.h"
+#include "txt.h"
 #include <time.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -58,7 +59,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER };
 
 typedef struct {
 	float off, target;
@@ -81,6 +82,7 @@ static struct {
 	char dev_tok[33];            // dispositivo elegido en la lista: su información sale arriba
 	bool want_frename;           // renombrar el archivo elegido en Archivos
 	bool want_fnew;              // crear una carpeta en Archivos
+	int want_txt;                // editor de texto: 1 editar la línea, 2 añadir una debajo
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 	float t_upd;                 // interruptor «Buscar al abrir»
 	UpdInfo upd;                 // estado de las actualizaciones (copia por frame)
@@ -189,6 +191,10 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 	case EV_MOVE:
 		*ic = IC_FOLDER; *col = T.accent2;
 		snprintf(sub, sn, "%s · %s", _("Movido"), e->device);
+		break;
+	case EV_EDIT:
+		*ic = IC_NOTE; *col = T.accent2;
+		snprintf(sub, sn, "%s · %s", _("Editado"), e->device);
 		break;
 	case EV_INSTALL:
 		*ic = IC_CHECK; *col = T.ok;
@@ -1659,9 +1665,13 @@ static struct {
 	Texture tex;
 	int w, h, ow, oh;
 	ImgResult res;
-	char *txt;
-	float scroll, target;
 	float t;           // tiempo abierto, para el pie que se desvanece
+	// texto: se ve arriba con números de línea y se edita línea a línea con el teclado
+	TxtDoc doc;
+	bool prot;         // en una carpeta protegida: solo lectura
+	int cur, top;      // línea elegida y primera línea visible arriba
+	float drag;        // arrastre en la lista de abajo
+	char path[700];
 } VW;
 
 static bool f_is_img(const FEnt *e)
@@ -1682,9 +1692,27 @@ static bool vw_is_open(void)
 static void vw_close(void)
 {
 	tex_free(&VW.tex);
-	free(VW.txt);
-	VW.txt = NULL;
+	txt_free(&VW.doc);
 	VW.kind = VW_NONE;
+}
+
+static bool vw_editable(void)
+{
+	return VW.kind == VW_TXT && VW.doc.ro == TXT_RW && !VW.prot;
+}
+
+static bool vw_dirty(void)
+{
+	return VW.kind == VW_TXT && VW.doc.dirty;
+}
+
+// cerrar el visor; si hay cambios sin guardar, se pregunta antes
+static void vw_try_close(void)
+{
+	if (vw_dirty())
+		dialog_open(DLG_TXTDISCARD, _("¿Salir sin guardar?"), _("Los cambios que hiciste en este archivo se perderán."), _("Salir sin guardar"), true);
+	else
+		vw_close();
 }
 
 static void vw_load(int idx)
@@ -1692,11 +1720,9 @@ static void vw_load(int idx)
 	char full[700];
 	f_full(idx, full, sizeof full);
 	tex_free(&VW.tex);
-	free(VW.txt);
-	VW.txt = NULL;
+	txt_free(&VW.doc);
 	VW.idx = idx;
 	VW.t = 0;
-	VW.scroll = VW.target = 0;
 	if (f_is_img(&F.e[idx])) {
 		VW.kind = VW_IMG;
 		u8 *px = NULL;
@@ -1704,29 +1730,20 @@ static void vw_load(int idx)
 		if (VW.res == IMG_OK && !tex_from_rgba(&VW.tex, px, VW.w, VW.h))
 			VW.res = IMG_BAD;
 		free(px);
-	} else {
-		VW.kind = VW_TXT;
-		char sd[720];
-		snprintf(sd, sizeof sd, "sdmc:%s", full);
-		FILE *f = fopen(sd, "rb");
-		const size_t MAX = 12 * 1024; // lo justo para leer sin que la consola vaya lenta
-		VW.txt = calloc(1, MAX + 64);
-		if (f && VW.txt) {
-			size_t n = fread(VW.txt, 1, MAX, f);
-			VW.txt[n] = 0;
-			for (size_t k = 0; k < n; k++) // tabuladores y saltos de Windows
-				if (VW.txt[k] == '\t' || VW.txt[k] == '\r')
-					VW.txt[k] = ' ';
-			if (!util_utf8_valid(VW.txt))
-				for (size_t k = 0; k < n; k++)
-					if ((u8)VW.txt[k] >= 0x80)
-						VW.txt[k] = '?';
-			if (n == MAX)
-				strcat(VW.txt, "\n…");
-		}
-		if (f)
-			fclose(f);
+		return;
 	}
+	// lo demás, como texto
+	VW.kind = VW_NONE;
+	VW.cur = VW.top = 0;
+	VW.drag = 0;
+	util_strlcpy(VW.path, full, sizeof VW.path);
+	int r = txt_load(&VW.doc, full);
+	if (r != TXT_OK) {
+		toast_icon(r == TXT_ERR_MEM ? _("No hay memoria para abrir este archivo") : _("No se pudo abrir este archivo"), IC_CLOSE, T.danger);
+		return;
+	}
+	VW.kind = VW_TXT;
+	VW.prot = V.protect_sys && fsx_is_system(full);
 }
 
 // fotos de la carpeta, para pasar con ← →
@@ -1743,6 +1760,89 @@ static void vw_step(int d)
 					F.sel = v;
 			return;
 		}
+	}
+}
+
+// una línea lista para dibujar: tabuladores como espacios y, si es enorme, solo el principio
+static void vt_line(int i, char *b, size_t n)
+{
+	size_t o = 0;
+	for (const char *p = VW.doc.ln[i]; *p && o + 5 < n; p++) {
+		if (*p == '\t') {
+			memcpy(b + o, "    ", 4);
+			o += 4;
+		} else {
+			b[o++] = *p;
+		}
+	}
+	while (o > 0 && n > 0 && o + 5 >= n && ((u8)b[o - 1] & 0xC0) == 0x80) // sin partir un carácter
+		o--;
+	if (o > 0 && o + 5 >= n && (u8)b[o - 1] >= 0xC0)
+		o--;
+	b[o] = 0;
+	if (!o)
+		strcpy(b, " ");
+}
+
+#define VT_MAXROWS 16 // una línea larguísima no ocupa más que la pantalla
+
+static float vt_gutter(void)
+{
+	char b[16];
+	snprintf(b, sizeof b, "%d", VW.doc.n);
+	return text_width(b, TS_SUB) + 16;
+}
+
+static int vt_rows(int i, float w)
+{
+	static char b[2400];
+	vt_line(i, b, sizeof b);
+	return text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, 0, 0, 0, false);
+}
+
+static int vt_visible(void)
+{
+	return (int)((SCR_H - 8) / text_lineh(TS_SUB));
+}
+
+static void vt_draw(void)
+{
+	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+	float lh = text_lineh(TS_SUB), gw = vt_gutter(), x = gw + 4, w = TOP_W - x - 12;
+	int vis = vt_visible();
+	if (VW.cur >= VW.doc.n)
+		VW.cur = VW.doc.n - 1;
+	if (VW.cur < 0)
+		VW.cur = 0;
+	// la línea elegida siempre a la vista
+	if (VW.cur < VW.top)
+		VW.top = VW.cur;
+	while (VW.top < VW.cur) {
+		int r = 0;
+		for (int i = VW.top; i <= VW.cur && r <= vis; i++)
+			r += vt_rows(i, w);
+		if (r <= vis)
+			break;
+		VW.top++;
+	}
+	draw_rect(0, 0, gw, SCR_H, T.surface);
+	static char b[2400];
+	float y = 4;
+	for (int i = VW.top; i < VW.doc.n && y < SCR_H; i++) {
+		vt_line(i, b, sizeof b);
+		int r = text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, 0, 0, 0, false);
+		bool here = i == VW.cur;
+		if (here)
+			draw_rect(0, y - 1, TOP_W, r * lh + 2, col_alpha(T.accent, 0.16f));
+		char num[12];
+		snprintf(num, sizeof num, "%d", i + 1);
+		text_draw_right(num, gw - 8, y, TS_SUB, here ? T.accent : T.text3);
+		text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, x, y, T.text, true);
+		y += r * lh;
+	}
+	if (VW.doc.n > vis) { // barra de desplazamiento fina
+		float vh = fmaxf(14, SCR_H * vis / (float)VW.doc.n);
+		draw_rrect(TOP_W - 5, (SCR_H - vh) * VW.top / (float)(VW.doc.n - 1), 3, vh, 1.5f, col_alpha(T.text3, 0.6f));
 	}
 }
 
@@ -1769,17 +1869,161 @@ static void vw_top(void)
 		}
 		return;
 	}
-	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
-	VW.scroll = approach(VW.scroll, VW.target, 18);
-	gfx_clip(0, 0, TOP_W, SCR_H);
-	int nl = text_wrap_lines(VW.txt ? VW.txt : "", TOP_W - 28, TS_SUB, 900, 14, 10 - VW.scroll, T.text, true);
-	gfx_clip_off();
-	float maxs = fmaxf(0, nl * text_lineh(TS_SUB) + 20 - SCR_H);
-	VW.target = clampf(VW.target, 0, maxs);
-	if (maxs > 0) { // barra de desplazamiento fina
-		float vh = SCR_H * SCR_H / (maxs + SCR_H);
-		draw_rrect(TOP_W - 5, (SCR_H - vh) * (VW.scroll / maxs), 3, vh, 1.5f, col_alpha(T.text3, 0.6f));
+	vt_draw();
+}
+
+// botón grande con icono y texto; true si se tocó
+static bool vw_button(float x, float y, float w, float h, IconId ic, const char *label, bool on)
+{
+	bool p = on && touch_in(x, y, w, h);
+	draw_rrect(x, y, w, h, 12, p ? T.surface2 : T.surface);
+	u32 c = on ? T.text2 : col_alpha(T.text3, 0.5f);
+	draw_icon(ic, x + w / 2, y + h / 2 - 7, 15, c);
+	text_draw_center_clip(label, x + w / 2, y + h / 2 + 4, w - 6, TS_SUB, on ? T.text3 : col_alpha(T.text3, 0.5f));
+	return on && tap(x, y, w, h);
+}
+
+static void vw_save(bool force);
+
+static void vw_bottom_text(void)
+{
+	bool ed = vw_editable();
+	int n = VW.doc.n;
+	// estado: línea, sin guardar o por qué es de solo lectura
+	char sub[128];
+	u32 sc = T.text3;
+	if (VW.prot)
+		util_strlcpy(sub, _("Solo lectura: carpeta protegida"), sizeof sub), sc = T.warn;
+	else if (VW.doc.ro == TXT_RO_BIN)
+		util_strlcpy(sub, _("Solo lectura: no es un archivo de texto"), sizeof sub), sc = T.warn;
+	else if (VW.doc.ro == TXT_RO_ENC)
+		util_strlcpy(sub, _("Solo lectura: el texto no está en UTF-8"), sizeof sub), sc = T.warn;
+	else if (VW.doc.ro == TXT_RO_BIG)
+		util_strlcpy(sub, VW.doc.cut ? _("Solo lectura: archivo muy grande, se ve el principio") : _("Solo lectura: archivo muy grande"), sizeof sub), sc = T.warn;
+	else if (VW.doc.dirty)
+		snprintf(sub, sizeof sub, _("Línea %d de %d · Sin guardar"), VW.cur + 1, n), sc = T.warn;
+	else
+		snprintf(sub, sizeof sub, _("Línea %d de %d"), VW.cur + 1, n);
+	text_draw_clip(sub, 60, 32, BOT_W - 74, TS_SUB, sc);
+	// las líneas de alrededor: tocar una la elige; tocar la elegida la edita; arrastrar desplaza
+	const float LY = 58, RH = 21;
+	const int LR = 4;
+	int first = VW.cur - 1;
+	if (first > n - LR)
+		first = n - LR;
+	if (first < 0)
+		first = 0;
+	draw_rrect(10, LY - 3, BOT_W - 20, LR * RH + 6, 10, T.surface);
+	float gw = text_width("0000", TS_SUB);
+	gfx_clip(10, LY - 3, BOT_W - 20, LR * RH + 6);
+	static char b[2400];
+	int edit = -1;
+	for (int k = 0; k < LR && first + k < n; k++) {
+		int i = first + k;
+		float y = LY + k * RH;
+		if (i == VW.cur)
+			draw_rrect(12, y, BOT_W - 24, RH, 8, col_alpha(T.accent, 0.2f));
+		char num[12];
+		snprintf(num, sizeof num, "%d", i + 1);
+		text_draw_right(num, 16 + gw, y + 3, TS_SUB, i == VW.cur ? T.accent : T.text3);
+		vt_line(i, b, 400);
+		text_draw_clip(b, 24 + gw, y + 3, BOT_W - 48 - gw, TS_SUB, T.text);
+		if (tap(10, y, BOT_W - 20, RH)) {
+			if (i == VW.cur && ed)
+				edit = i;
+			VW.cur = i;
+		}
 	}
+	gfx_clip_off();
+	if (g_touch.held && g_touch.drag && g_touch.sy >= LY && g_touch.sy < LY + LR * RH) {
+		VW.drag += g_touch.y - g_touch.py;
+		while (VW.drag >= RH && VW.cur > 0)
+			VW.drag -= RH, VW.cur--;
+		while (VW.drag <= -RH && VW.cur < n - 1)
+			VW.drag += RH, VW.cur++;
+	} else {
+		VW.drag = 0;
+	}
+	// botones
+	const float BY = LY + LR * RH + 10, BH = 40;
+	char t1[48], t2[48], t3[48], t4[48];
+	int hit = -1;
+	if (ed) {
+		snprintf(t1, sizeof t1, "%s %s", GLYPH_A, _("Editar"));
+		snprintf(t2, sizeof t2, "%s %s", GLYPH_X, _("Añadir"));
+		util_strlcpy(t3, _("Borrar"), sizeof t3);
+		snprintf(t4, sizeof t4, "%s %s", GLYPH_Y, _("Opciones"));
+		const char *T4[4] = {t1, t2, t3, t4};
+		static const IconId I4[4] = {IC_PEN, IC_PLUS, IC_TRASH, IC_MENU};
+		float bw = (BOT_W - 20 - 3 * 6) / 4.0f;
+		for (int k = 0; k < 4; k++)
+			if (vw_button(10 + k * (bw + 6), BY, bw, BH, I4[k], T4[k], true))
+				hit = k;
+	} else {
+		snprintf(t1, sizeof t1, "%s %s", GLYPH_DPAD, _("Anterior"));
+		snprintf(t2, sizeof t2, "%s %s", GLYPH_DPAD, _("Siguiente"));
+		snprintf(t4, sizeof t4, "%s %s", GLYPH_Y, _("Opciones"));
+		float bw = (BOT_W - 20 - 2 * 6) / 3.0f;
+		if (vw_button(10, BY, bw, BH, IC_UP, _("Página anterior"), true))
+			hit = 10;
+		if (vw_button(10 + bw + 6, BY, bw, BH, IC_DOWN, _("Página siguiente"), true))
+			hit = 11;
+		if (vw_button(10 + 2 * (bw + 6), BY, bw, BH, IC_MENU, t4, true))
+			hit = 3;
+	}
+	// abajo: guardar (si se puede) y cerrar
+	float cy = BY + BH + 6, ch = SCR_H - 6 - cy;
+	char cl[48], sv[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	snprintf(sv, sizeof sv, "START %s", _("Guardar"));
+	bool save = false, close = false;
+	if (ed) {
+		float hw = (BOT_W - 26) / 2;
+		bool dirty = VW.doc.dirty;
+		bool sp = dirty && touch_in(10, cy, hw, ch);
+		draw_rrect(10, cy, hw, ch, ch / 2, dirty ? (sp ? col_lerp(T.accent, T.text, 0.15f) : T.accent) : T.surface);
+		text_draw_center(sv, 10 + hw / 2, cy + (ch - text_lineh(TS_BODY)) / 2, TS_BODY, dirty ? 0xFFFFFFFF : col_alpha(T.text3, 0.6f));
+		save = dirty && tap(10, cy, hw, ch);
+		bool cp = touch_in(16 + hw, cy, hw, ch);
+		draw_rrect(16 + hw, cy, hw, ch, ch / 2, cp ? T.surface2 : T.surface);
+		text_draw_center(cl, 16 + hw + hw / 2, cy + (ch - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
+		close = tap(16 + hw, cy, hw, ch);
+	} else {
+		bool cp = touch_in(10, cy, BOT_W - 20, ch);
+		draw_rrect(10, cy, BOT_W - 20, ch, ch / 2, cp ? T.surface2 : T.surface);
+		text_draw_center(cl, BOT_W / 2, cy + (ch - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
+		close = tap(10, cy, BOT_W - 20, ch);
+	}
+	// botones de la consola
+	int page = vt_visible() - 1;
+	if (g_krepeat & KEY_UP)
+		VW.cur--;
+	if (g_krepeat & KEY_DOWN)
+		VW.cur++;
+	if ((g_krepeat & KEY_LEFT) || hit == 10)
+		VW.cur -= page, VW.top -= page;
+	if ((g_krepeat & KEY_RIGHT) || hit == 11)
+		VW.cur += page, VW.top += page;
+	VW.cur = VW.cur < 0 ? 0 : VW.cur >= n ? n - 1 : VW.cur;
+	VW.top = VW.top < 0 ? 0 : VW.top > VW.cur ? VW.cur : VW.top;
+	if (ed && (hit == 0 || edit >= 0 || (g_kdown & KEY_A)))
+		U.want_txt = 1;
+	else if (ed && (hit == 1 || (g_kdown & KEY_X)))
+		U.want_txt = 2;
+	else if (ed && hit == 2) {
+		txt_remove(&VW.doc, VW.cur);
+		if (VW.cur >= VW.doc.n)
+			VW.cur = VW.doc.n - 1;
+		toast_icon(_("Línea borrada"), IC_TRASH, T.text3);
+	} else if (hit == 3 || (g_kdown & KEY_Y)) {
+		g_kdown &= ~KEY_Y;
+		f_menu_open();
+	} else if (save || (ed && VW.doc.dirty && (g_kdown & KEY_START))) {
+		vw_save(false);
+	} else if (close || (g_kdown & KEY_B)) {
+		vw_try_close();
+	}
+	g_kdown &= ~KEY_START; // en el editor, START guarda: no sale de la app
 }
 
 static void vw_bottom(void)
@@ -1792,24 +2036,21 @@ static void vw_bottom(void)
 	draw_rrect(14, 14, 36, 36, 10, col_alpha(col, 0.18f));
 	draw_icon(ic, 32, 32, 18, col);
 	text_draw_clip(e->name, 60, 14, BOT_W - 74, TS_BODY, T.text);
+	if (VW.kind == VW_TXT) {
+		vw_bottom_text();
+		return;
+	}
 	char sub[64], sz[24];
 	util_fmt_size(sz, sizeof sz, e->size);
-	if (VW.kind == VW_IMG && VW.res == IMG_OK)
+	if (VW.res == IMG_OK)
 		snprintf(sub, sizeof sub, "%d × %d · %s", VW.ow, VW.oh, sz);
 	else
 		util_strlcpy(sub, sz, sizeof sub);
 	text_draw_clip(sub, 60, 32, BOT_W - 74, TS_SUB, T.text3);
-	// botones grandes: anterior / siguiente (fotos) o subir / bajar (texto), opciones y cerrar
+	// botones grandes: anterior, opciones y siguiente; debajo, cerrar
 	const float BY = 72, BH = 52;
-	struct { const char *g, *t; IconId ic; } B[3];
-	if (VW.kind == VW_IMG) {
-		B[0] = (typeof(B[0])){GLYPH_DPAD, _("Anterior"), IC_CHEV_LEFT};
-		B[2] = (typeof(B[0])){GLYPH_DPAD, _("Siguiente"), IC_CHEV_RIGHT};
-	} else {
-		B[0] = (typeof(B[0])){GLYPH_DPAD, _("Subir"), IC_UP};
-		B[2] = (typeof(B[0])){GLYPH_DPAD, _("Bajar"), IC_DOWN};
-	}
-	B[1] = (typeof(B[0])){GLYPH_Y, _("Opciones"), IC_MENU};
+	struct { const char *t; IconId ic; } B[3] = {
+		{_("Anterior"), IC_CHEV_LEFT}, {_("Opciones"), IC_MENU}, {_("Siguiente"), IC_CHEV_RIGHT}};
 	float bw = (BOT_W - 40) / 3.0f;
 	int hit = -1;
 	for (int k = 0; k < 3; k++) {
@@ -1827,22 +2068,42 @@ static void vw_bottom(void)
 	char cl[64];
 	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
 	text_draw_center(cl, BOT_W / 2, cy + (40 - text_lineh(0.48f)) / 2, 0.48f, T.text);
-	bool img = VW.kind == VW_IMG;
-	if (hit == 0 || (img ? (g_krepeat & KEY_LEFT) : (g_krepeat & KEY_UP)))
-		img ? vw_step(-1) : (void)(VW.target -= 60);
-	if (hit == 2 || (img ? (g_krepeat & KEY_RIGHT) : (g_krepeat & KEY_DOWN)))
-		img ? vw_step(1) : (void)(VW.target += 60);
-	// deslizar el dedo: fotos, pasar; texto, desplazar
-	if (g_touch.up && g_touch.drag && img && fabsf((float)(g_touch.x - g_touch.sx)) > 50)
+	if (hit == 0 || (g_krepeat & KEY_LEFT))
+		vw_step(-1);
+	if (hit == 2 || (g_krepeat & KEY_RIGHT))
+		vw_step(1);
+	// deslizar el dedo para pasar de foto
+	if (g_touch.up && g_touch.drag && fabsf((float)(g_touch.x - g_touch.sx)) > 50)
 		vw_step(g_touch.x < g_touch.sx ? 1 : -1);
-	if (!img && g_touch.held && g_touch.drag)
-		VW.target -= (g_touch.y - g_touch.py) * 1.5f;
 	if (hit == 1 || (g_kdown & KEY_Y)) {
 		g_kdown &= ~KEY_Y;
 		f_menu_open();
 	} else if (tap(14, cy, BOT_W - 28, 40) || (g_kdown & KEY_B)) {
 		vw_close();
 	}
+}
+
+static void vw_save(bool force)
+{
+	bool d;
+	u64 sz = 0;
+	// si alguien lo cambió desde la web mientras se editaba, se avisa antes de pisarlo
+	if (!force && fsx_stat(VW.path, &d, &sz) == 0 && sz != VW.doc.size) {
+		dialog_open(DLG_TXTOVER, _("El archivo cambió mientras lo editabas"),
+		            _("Se modificó desde otro dispositivo. Si guardas, esos cambios se perderán."), _("Guardar igualmente"), true);
+		return;
+	}
+	if (txt_save(&VW.doc, VW.path) != TXT_OK) {
+		toast_icon(_("No se pudo guardar"), IC_CLOSE, T.danger);
+		return;
+	}
+	if (fsx_stat(VW.path, &d, &sz) == 0)
+		VW.doc.size = sz;
+	state_lock();
+	event_add(EV_EDIT, F.e[VW.idx].name, G.console, sz);
+	G.rev++;
+	state_unlock();
+	toast_icon(_("Guardado"), IC_CHECK, T.ok);
 }
 
 // abrir: carpeta → entra; foto o texto → visor; CIA → su tarjeta de instalar; lo demás → opciones
@@ -2055,12 +2316,12 @@ static void tab_files(void)
 }
 
 // ---- menú de un archivo o carpeta
-enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS };
+enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT };
 static struct {
 	bool open;
 	float anim;
 	int idx;     // elemento de F.e
-	int acts[6], n, sel, color;
+	int acts[8], n, sel, color;
 	bool just;   // se acaba de abrir: el toque o el botón que lo abrió no cuenta
 } FM;
 
@@ -2074,6 +2335,8 @@ static void f_menu_open(void)
 	bool locked = e->sys && V.protect_sys;
 	if (!e->dir && !strcasecmp(f_ext(e->name), "cia"))
 		FM.acts[FM.n++] = FA_INSTALL;
+	if (!e->dir && !f_is_img(e) && !f_is_txt(e) && !vw_is_open()) // cualquier archivo se puede mirar como texto
+		FM.acts[FM.n++] = FA_ASTEXT;
 	if (!locked) {
 		FM.acts[FM.n++] = FA_RENAME;
 		FM.acts[FM.n++] = FA_MOVE;
@@ -2096,13 +2359,14 @@ static const char *fa_name(int a)
 	case FA_MOVE: return _("Mover a…");
 	case FA_COPY: return _("Copiar a…");
 	case FA_DELETE: return _("Eliminar");
+	case FA_ASTEXT: return _("Abrir como texto");
 	default: return _("Destacar");
 	}
 }
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[6] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR};
+	static const IconId IC[7] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE};
 	return IC[a];
 }
 
@@ -2119,6 +2383,18 @@ static void fa_run(int a)
 	char full[700];
 	f_full(FM.idx, full, sizeof full);
 	FM.open = false;
+	if (a == FA_ASTEXT) {
+		vw_load(FM.idx);
+		return;
+	}
+	// renombrar, mover, copiar o borrar lo que se está viendo: primero se cierra el visor
+	if (vw_is_open() && a != FA_INSTALL) {
+		if (vw_dirty()) {
+			toast_icon(_("Guarda o descarta los cambios primero"), IC_INFO, T.warn);
+			return;
+		}
+		vw_close();
+	}
 	if (a == FA_INSTALL) {
 		char err[24] = "";
 		int id = strlen(full) < 256 ? ins_request(full, G.console, err, sizeof err) : -1;
@@ -2855,7 +3131,7 @@ static void draw_bottom(void)
 		memset(&g_touch, 0, sizeof g_touch);
 	}
 	if (viewer) {
-		if (!FM.open && !U.ins_pend)
+		if (!FM.open && !U.ins_pend && !g_dialog.open)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
 		vw_bottom();
 	} else if (U.tab == TAB_FILES) {
@@ -2893,6 +3169,14 @@ static void handle_dialog(int ctx, bool ok)
 {
 	if (!ok)
 		return;
+	if (ctx == DLG_TXTDISCARD) {
+		vw_close();
+		return;
+	}
+	if (ctx == DLG_TXTOVER) {
+		vw_save(true);
+		return;
+	}
 	state_lock();
 	if (ctx == DLG_REVOKE) {
 		device_revoke(U.dlg_arg);
@@ -2949,6 +3233,14 @@ static void watch_events(void)
 		} else if (e->kind == EV_UPLOAD_FAIL) {
 			snprintf(msg, sizeof msg, _("Transferencia incompleta: %s"), e->name);
 			toast_icon(msg, IC_CLOSE, T.danger);
+		}
+		// el texto abierto en la consola se cambió desde otro dispositivo: si aquí no hay cambios, se recarga
+		if ((e->kind == EV_EDIT || e->kind == EV_UPLOAD) && VW.kind == VW_TXT && !VW.doc.dirty && strcmp(e->device, V.console) &&
+		    !strcmp(e->name, F.e[VW.idx].name)) {
+			int cur = VW.cur, top = VW.top;
+			vw_load(VW.idx);
+			VW.cur = cur, VW.top = top;
+			toast_icon(_("Actualizado desde otro dispositivo"), IC_REFRESH, T.accent);
 		}
 	}
 	s_hist_n = V.hist_n;
@@ -3060,6 +3352,34 @@ static void update(void)
 		}
 		return;
 	}
+	if (U.want_txt) {
+		int m = U.want_txt;
+		U.want_txt = 0;
+		if (VW.kind != VW_TXT)
+			return;
+		const char *ln = VW.doc.ln[VW.cur];
+		int chars = 0;
+		for (const char *p = ln; *p; p++)
+			chars += ((u8)*p & 0xC0) != 0x80;
+		if (m == 1 && chars > 2000) { // el teclado del sistema no admite más
+			toast_icon(_("Esta línea es demasiado larga para el teclado"), IC_CLOSE, T.warn);
+			return;
+		}
+		char *buf = malloc(8192);
+		char hint[48];
+		if (!buf)
+			return;
+		if (m == 1) {
+			snprintf(hint, sizeof hint, _("Línea %d"), VW.cur + 1);
+			if (kb_input(hint, ln, buf, 8192, true, false) && !txt_set(&VW.doc, VW.cur, buf))
+				toast_icon(_("No hay memoria para abrir este archivo"), IC_CLOSE, T.danger);
+		} else if (kb_input(_("Línea nueva"), "", buf, 8192, true, false)) {
+			if (txt_insert(&VW.doc, VW.cur + 1, buf))
+				VW.cur++;
+		}
+		free(buf);
+		return;
+	}
 	if (U.want_frename) {
 		U.want_frename = false;
 		char nm[128], full[700], dst[1100];
@@ -3132,8 +3452,14 @@ static void update(void)
 	}
 	if (g_dialog.open)
 		return;
-	if ((g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind)
-		vw_close();
+	if ((g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind && U.tab == TAB_FILES) {
+		if (vw_dirty()) { // con cambios sin guardar no se cambia de pestaña sin preguntar
+			vw_try_close();
+			g_kdown &= ~(KEY_R | KEY_ZR | KEY_L | KEY_ZL);
+		} else {
+			vw_close();
+		}
+	}
 	if (g_kdown & (KEY_R | KEY_ZR)) {
 		U.tab = (U.tab + 1) % TAB_COUNT;
 		U.page = PAGE_MAIN;
@@ -3147,7 +3473,7 @@ static void update(void)
 		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : U.page == PAGE_UPDATE ? SET_UPDATE : SET_ABOUT;
 		U.page = PAGE_MAIN;
 	}
-	if (g_kdown & KEY_START)
+	if ((g_kdown & KEY_START) && !(U.tab == TAB_FILES && VW.kind == VW_TXT)) // en el editor, START guarda
 		ask_exit();
 	if (g_kdown & KEY_SELECT)
 		qr_toggle();

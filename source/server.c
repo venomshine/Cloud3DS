@@ -77,6 +77,7 @@ typedef struct {
 	u64 u_total, u_done;
 	bool u_over;
 	char u_tmp[1024], u_final[1024], u_name[256];
+	bool u_edit; /* guardado desde el editor de texto de la web */
 	u8 *ubuf;
 	size_t ubuf_len;
 } Conn;
@@ -1035,6 +1036,7 @@ static void h_upload(Conn *c)
 	snprintf(c->u_tmp, sizeof c->u_tmp, "sdmc:%s%s.c3d_%08lx.part", dirp, strlen(dirp) > 1 ? "/" : "",
 	         (unsigned long)(svcGetSystemTick() & 0xFFFFFFFF));
 	util_strlcpy(c->u_name, basename_of(p), sizeof c->u_name);
+	c->u_edit = qflag(c->query, "ed");
 	int fd = open(c->u_tmp, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0) {
 		resp_err(c, 500, "io");
@@ -1109,7 +1111,7 @@ static void upload_finish(Conn *c)
 	xfer_end(c->xid, err ? XS_FAILED : XS_DONE);
 	Xfer *x = xfer_get(c->xid);
 	u64 ms = x ? x->t_end - x->t_start : 0;
-	event_add(err ? EV_UPLOAD_FAIL : EV_UPLOAD, c->u_name, d ? d->name : "", c->u_total);
+	event_add(err ? EV_UPLOAD_FAIL : c->u_edit ? EV_EDIT : EV_UPLOAD, c->u_name, d ? d->name : "", c->u_total);
 	if (!err)
 		G.stat_up += c->u_total;
 	state_unlock();

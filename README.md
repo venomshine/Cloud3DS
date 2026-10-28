@@ -107,6 +107,7 @@ source/   código de la app
   names.c         nombre real de los dispositivos (mDNS, NetBIOS y el router)
   install.c       instalar CIA de la SD (con confirmación en la consola)
   img.c           abrir fotos para el visor y las miniaturas de la consola
+  txt.c           abrir, editar y guardar textos sin cambiar su formato
   update.c        buscar e instalar actualizaciones desde GitHub
   state.c         estado compartido, dispositivos, historial y configuración
   gfx.c ui.c icons.c   gráficos, componentes e íconos
@@ -116,7 +117,7 @@ lib/      cJSON, QR Code generator, stb_image
 romfs/    certificados raíz de Mozilla para HTTPS
 cia/      icono, banner, sonido y configuración del .cia
 tools/    traducciones, icono y banner, sonido del banner y empaquetado del .cia
-tests/    pruebas automáticas en el emulador (API, web y capturas)
+tests/    pruebas automáticas (API, web y capturas en el emulador; editor de texto en el PC)
 ```
 
 Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python3 tools/gen_i18n.py`.

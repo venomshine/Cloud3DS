@@ -46,6 +46,7 @@ typedef enum {
 	EV_COPY,
 	EV_MOVE,
 	EV_INSTALL,
+	EV_EDIT,       /* archivo de texto editado */
 } EventKind;
 
 typedef struct {
