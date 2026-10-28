@@ -150,6 +150,19 @@ static int installed_version(u64 tid)
 	return v;
 }
 
+/* datos de un CIA para enseñarlos (explorador de la consola), sin pedir instalarlo */
+bool ins_peek(const char *path, InsReq *out)
+{
+	memset(out, 0, sizeof *out);
+	util_strlcpy(out->path, path, sizeof out->path);
+	if (!cia_info(path, out))
+		return false;
+	out->inst_ver = installed_version(out->tid);
+	out->self = out->tid == SELF_TID;
+	out->n3ds_only = ((out->tid >> 28) & 0xF) == 2;
+	return true;
+}
+
 /* ---------- cola ---------- */
 
 static InsReq *find(int id)

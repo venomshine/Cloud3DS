@@ -48,4 +48,5 @@ int  ins_pending(void);
 /* copia de la cola para dibujar o para la web */
 int  ins_snapshot(InsReq *out, int max);
 bool ins_busy(void);
+bool ins_peek(const char *path, InsReq *out); /* solo leer el CIA (nombre, icono, versión) */
 const char *ins_ver_text(u16 v, char *buf, size_t n); /* «1.2.3» */
