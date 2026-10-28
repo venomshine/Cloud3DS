@@ -352,6 +352,7 @@ es:{
  sysQ:"Carpeta del sistema", sysD:"«%1» es necesaria para que la consola o el homebrew funcionen correctamente. ¿Quieres continuar?", cont:"Continuar",
  renT:"Renombrar", newT:"Nueva carpeta", nameErr:"Nombre no válido. No uses \\ / : * ? \" < > | ni termines el nombre en punto.",
  exists:"Ya existe «%1»", existsD:"Elige qué hacer con este archivo.", replace:"Reemplazar", skip:"Omitir", keep:"Conservar ambos", all:"Aplicar a todos",
+ thisDev:"Este dispositivo", renameDev:"Cambiar nombre", devNameT:"Nombre de este dispositivo", devNameD:"Así aparecerá en la consola. Déjalo vacío para usar el nombre automático.", nameSaved:"Nombre guardado",
  sysGroup:"Carpetas del sistema", highlight:"Destacar", mk0:"Sin color", mk1:"Rojo", mk2:"Naranja", mk3:"Amarillo", mk4:"Verde", mk5:"Azul", mk6:"Morado",
  renameAs:"Renombrar…", cancelAll:"Cancelar todo", merge:"Combinar", existsDirD:"Ya hay una carpeta con ese nombre. Puedes combinar su contenido.", newName:"Nuevo nombre", copy:"Copiar", move:"Mover", copyTo:"Copiar a…", moveTo:"Mover a…", pickT:"Elige la carpeta de destino", copyHere:"Copiar aquí", moveHere:"Mover aquí", copying:"Copiando %1…", copied:"Copiado", moved:"Movido", err_into_self:"No puedes copiar ni mover una carpeta dentro de sí misma.", err_busy:"Ya hay una copia en curso. Espera a que termine.", err_is_file:"Ya hay un archivo con ese nombre.", err_no_dir:"La carpeta de destino ya no existe.", err_bad_name:"Ese nombre no es válido.",
  ro:"Modo solo lectura: puedes ver y descargar archivos, pero no modificarlos.", sysHere:"Estás en una carpeta del sistema. Modifícala con precaución.",
@@ -384,6 +385,7 @@ en:{
  sysQ:"System folder", sysD:"“%1” is needed for the console or homebrew to work properly. Do you want to continue?", cont:"Continue",
  renT:"Rename", newT:"New folder", nameErr:"Invalid name. Don't use \\ / : * ? \" < > | or end the name with a period.",
  exists:"“%1” already exists", existsD:"Choose what to do with this file.", replace:"Replace", skip:"Skip", keep:"Keep both", all:"Apply to all",
+ thisDev:"This device", renameDev:"Rename", devNameT:"Name of this device", devNameD:"This is how it will appear on the console. Leave it empty to use the automatic name.", nameSaved:"Name saved",
  sysGroup:"System folders", highlight:"Highlight", mk0:"No color", mk1:"Red", mk2:"Orange", mk3:"Yellow", mk4:"Green", mk5:"Blue", mk6:"Purple",
  renameAs:"Rename…", cancelAll:"Cancel all", merge:"Merge", existsDirD:"A folder with that name already exists. You can merge their contents.", newName:"New name", copy:"Copy", move:"Move", copyTo:"Copy to…", moveTo:"Move to…", pickT:"Choose the destination folder", copyHere:"Copy here", moveHere:"Move here", copying:"Copying %1…", copied:"Copied", moved:"Moved", err_into_self:"You can't copy or move a folder into itself.", err_busy:"A copy is already in progress. Wait for it to finish.", err_is_file:"A file with that name already exists.", err_no_dir:"The destination folder no longer exists.", err_bad_name:"That name isn't valid.",
  ro:"Read-only mode: you can view and download files, but not change them.", sysHere:"You're in a system folder. Change it with care.",
@@ -416,6 +418,7 @@ ja:{
  sysQ:"システムフォルダ", sysD:"「%1」は本体やHomebrewの動作に必要です。続けますか?", cont:"続ける",
  renT:"名前を変更", newT:"新しいフォルダ", nameErr:"無効な名前です。\\ / : * ? \" < > | は使えず、ピリオドで終わることもできません。",
  exists:"「%1」はすでにあります", existsD:"このファイルをどうするか選んでください。", replace:"置き換え", skip:"スキップ", keep:"両方残す", all:"すべてに適用",
+ thisDev:"このデバイス", renameDev:"名前を変更", devNameT:"このデバイスの名前", devNameD:"本体にこの名前で表示されます。空欄にすると自動の名前になります。", nameSaved:"名前を保存しました",
  sysGroup:"システムフォルダ", highlight:"色分け", mk0:"色なし", mk1:"赤", mk2:"オレンジ", mk3:"黄", mk4:"緑", mk5:"青", mk6:"紫",
  renameAs:"名前を変更…", cancelAll:"すべてキャンセル", merge:"統合", existsDirD:"同じ名前のフォルダがあります。中身を統合できます。", newName:"新しい名前", copy:"コピー", move:"移動", copyTo:"コピー先…", moveTo:"移動先…", pickT:"移動先のフォルダを選択", copyHere:"ここにコピー", moveHere:"ここに移動", copying:"%1 をコピー中…", copied:"コピーしました", moved:"移動しました", err_into_self:"フォルダをその中にコピー・移動することはできません。", err_busy:"コピー中です。終わるまでお待ちください。", err_is_file:"同じ名前のファイルがあります。", err_no_dir:"移動先のフォルダがもうありません。", err_bad_name:"その名前は使えません。",
  ro:"読み取り専用モード: ファイルの表示とダウンロードはできますが、変更はできません。", sysHere:"システムフォルダです。変更には注意してください。",
@@ -439,6 +442,7 @@ const I = {
  cloud:'<path d="M7 18a4.5 4.5 0 0 1-.4-9A6 6 0 0 1 18 8.5 4.8 4.8 0 0 1 18 18z"/>',
  copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
  mv:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M10 13h6M13 10l3 3-3 3"/>',
+ dev:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
  tag:'<path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9z"/><circle cx="8" cy="8" r="1.6"/>',
  chev:'<path d="M9 6l6 6-6 6"/>',
  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -893,6 +897,18 @@ function sortMenu(){
  const m=modal(`<div class="sheet"><div class="grab"></div>${["name","date","size"].map(k=>`<button class="act" data-s="${k}">${svg(S.sort===k?"check":"sort")}${t({name:"sortName",date:"sortDate",size:"sortSize"}[k])}</button>`).join("")}</div>`);
  m.el.addEventListener("click",e=>{const s=e.target.closest("[data-s]");if(!s)return;S.sort=s.dataset.s;try{localStorage.setItem("c3d_sort",S.sort)}catch(e){}m.close();render()});
 }
+// botón de salir: este dispositivo, su nombre (se puede cambiar) y desvincularlo
+function deviceMenu(){
+ const i=S.info,sub=i.model&&i.model!==i.device?i.model:"";
+ const m=modal(`<div class="sheet"><div class="grab"></div>
+  <div class="sh"><div class="ic">${svg("dev")}</div><div class="meta"><b>${esc(i.device||"")}</b><span>${esc(t("thisDev")+(sub?" · "+sub:""))}</span></div></div>
+  <button class="act" data-a="name">${svg("pen")}${t("renameDev")}</button>
+  <button class="act danger" data-a="out">${svg("out")}${t("logout")}</button></div>`);
+ m.el.addEventListener("click",async e=>{const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
+  if(a==="out")disconnect();
+  if(a==="name"){const v=await ask({title:t("devNameT"),text:t("devNameD"),input:true,value:i.named===2?i.device:"",ok:t("save")});
+   if(v==null)return;try{await api("POST","devname",{n:v.slice(0,40)});toast(t("nameSaved"));refreshInfo()}catch(err){toast(errText(err))}}});
+}
 async function disconnect(){
  const ok=await ask({title:t("logout"),text:t("device",S.info.device||"")+". "+t("logoutD"),ok:t("disc"),danger:true});
  if(!ok)return;
@@ -909,7 +925,7 @@ document.addEventListener("click",e=>{
  if(id==="tSort")sortMenu();
  if(id==="bref"){go(S.path,true);refreshInfo()}
  if(id==="tView"){S.view=S.view==="grid"?"list":"grid";try{localStorage.setItem("c3d_view",S.view)}catch(e){}render()}
- if(id==="bout")disconnect();
+ if(id==="bout")deviceMenu();
  if(id==="bUp"&&S.path!=="/")go(parent(S.path));
  if(id==="sLens"){const o=$("#search").classList.toggle("open");if(o)setTimeout(()=>$("#q").focus(),120);else closeSearch()}
  if(id==="sX")closeSearch();

@@ -55,10 +55,15 @@ typedef struct {
 	char device[48];
 } Event;
 
+enum { NAME_AUTO, NAME_FOUND, NAME_CUSTOM };
+
 typedef struct {
 	bool used;
 	char token[33];
-	char name[48];   /* "iPhone · Safari" */
+	char name[48];   /* el que se enseña: el de la red, el que puso el usuario o "iPhone · Safari" */
+	char model[48];  /* "iPhone · Safari", sacado del navegador */
+	u8   named;      /* NAME_AUTO, NAME_FOUND (de la red) o NAME_CUSTOM (puesto a mano) */
+	char tried_ip[16]; /* IP con la que ya se buscó el nombre */
 	int  kind;       /* 0 móvil, 1 ordenador, 2 tableta */
 	char ip[16];
 	u64  created;    /* unix */
@@ -122,6 +127,7 @@ const Event *event_at(int i); /* 0 = más reciente */
 void   pin_regen(void);           /* PIN y QR nuevos al azar */
 bool   pin_set(const char *pin);   /* PIN elegido (4 cifras) y QR nuevo */
 void   device_revoke(int i); /* expulsa y recuerda el token */
+void   device_rename(int i, const char *name); /* "" vuelve al nombre automático */
 int    mark_get(const char *path);              /* 0 = sin color */
 void   mark_set(const char *path, int color);   /* 0 quita la marca */
 void   mark_moved(const char *from, const char *to); /* también lo de dentro */

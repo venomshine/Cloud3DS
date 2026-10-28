@@ -70,6 +70,7 @@ static struct {
 	float fade;                  // fundido de la presentación a la app (1 -> 0)
 	bool lid_off;
 	bool want_pin;               // abrir el teclado del PIN fuera del dibujo
+	int want_rename;             // dispositivo a renombrar con el teclado (-1 = ninguno)
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 } U;
 
@@ -843,8 +844,9 @@ static void tab_devices(void)
 		// botón Expulsar a la derecha (se comprueba antes que la fila)
 		float bw = 74, bh = 26, bx = BOT_W - 14 - bw, by = y + (RH - bh) / 2;
 		bool bt = !g_dialog.open && tap(bx, by, bw, bh) && g_touch.sy >= VIEW_Y;
+		bool rt = false;
 		if (!bt)
-			row(l, i, y, RH);
+			rt = row(l, i, y, RH);
 		draw_circle(28, y + RH / 2, 13, T.surface2);
 		draw_icon(dev_icon(d), 28, y + RH / 2, 16, on ? T.ok : T.text3);
 		if (on) {
@@ -852,19 +854,26 @@ static void tab_devices(void)
 			draw_circle(38, y + RH / 2 + 9, 3, T.ok);
 		}
 		text_draw_clip(d->name, 50, y + 7, bx - 58, TS_BODY, T.text);
-		char sub[64], when[24];
+		// debajo, el estado y el modelo si el nombre ya no lo dice («iPhone de Mario» · iPhone · Safari)
+		char sub[128], st[64], when[24];
 		if (on)
-			snprintf(sub, sizeof sub, "%s · %s", _("Conectado ahora"), d->ip);
+			util_strlcpy(st, _("Conectado ahora"), sizeof st);
 		else {
 			util_fmt_when(when, sizeof when, d->last_seen);
-			snprintf(sub, sizeof sub, _("Visto: %s"), when);
+			snprintf(st, sizeof st, _("Visto: %s"), when);
 		}
+		if (strcmp(d->name, d->model) && d->model[0])
+			snprintf(sub, sizeof sub, "%s · %s", st, d->model);
+		else
+			snprintf(sub, sizeof sub, "%s · %s", st, d->ip);
 		text_draw_clip(sub, 50, y + 24, bx - 58, TS_SUB, on ? T.ok : T.text3);
 		bool bp = touch_in(bx, by, bw, bh);
 		draw_rrect(bx, by, bw, bh, bh / 2, col_alpha(T.danger, bp ? 0.35f : 0.16f));
 		text_draw_center(_("Desvincular"), bx + bw / 2, by + (bh - text_lineh(TS_SUB)) / 2, TS_SUB, T.danger);
-		if (bt || activate(l, i))
+		if (bt || (U.buttons && !g_dialog.open && l->sel == i && (g_kdown & KEY_X)))
 			ask_revoke(idx[i]);
+		else if (rt || activate(l, i))
+			U.want_rename = idx[i];
 	}
 	gfx_clip_off();
 }
@@ -1271,6 +1280,22 @@ static void update(void)
 		U.buttons = true;
 	if (g_touch.down)
 		U.buttons = false;
+	if (U.want_rename >= 0) {
+		int i = U.want_rename;
+		U.want_rename = -1;
+		char nm[48];
+		// vacío: vuelve al nombre automático (el de la red o el modelo)
+		if (V.dev[i].used && kb_input(_("Nombre del dispositivo (vacío: automático)"), V.dev[i].named == NAME_CUSTOM ? V.dev[i].name : "",
+		                              nm, sizeof nm, false, false)) {
+			state_lock();
+			if (G.dev[i].used && !strcmp(G.dev[i].token, V.dev[i].token))
+				device_rename(i, nm);
+			memcpy(&V, &G, sizeof G);
+			state_unlock();
+			toast_icon(_("Nombre guardado"), IC_PEN, T.accent2);
+		}
+		return;
+	}
 	if (U.want_pin) {
 		U.want_pin = false;
 		char pin[8];
@@ -1354,6 +1379,7 @@ int main(void)
 	server_start();
 	U.splash = 0;
 	U.qr_anim = G.qr_min ? 0 : 1;
+	U.want_rename = -1;
 
 	u64 last_save = util_ms();
 	while (aptMainLoop() && !U.quit) {

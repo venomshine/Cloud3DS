@@ -126,6 +126,21 @@ void mark_deleted(const char *path)
 		}
 }
 
+void device_rename(int i, const char *name)
+{
+	Device *d = &G.dev[i];
+	if (name[0]) {
+		util_strlcpy(d->name, name, sizeof d->name);
+		d->named = NAME_CUSTOM;
+	} else {
+		util_strlcpy(d->name, d->model, sizeof d->name);
+		d->named = NAME_AUTO;
+		d->tried_ip[0] = 0; /* se vuelve a buscar en la red */
+	}
+	G.dirty_cfg = true;
+	G.rev++;
+}
+
 void device_revoke(int i)
 {
 	Device *d = &G.dev[i];
@@ -319,6 +334,10 @@ void config_load(void)
 		v->used = true;
 		util_strlcpy(v->token, tok, sizeof v->token);
 		util_strlcpy(v->name, jstr(d, "name"), sizeof v->name);
+		util_strlcpy(v->model, jstr(d, "model"), sizeof v->model);
+		if (!v->model[0]) /* config de la 1.0.0: el nombre era el modelo */
+			util_strlcpy(v->model, v->name, sizeof v->model);
+		v->named = (u8)jnum(d, "named", NAME_AUTO);
 		util_strlcpy(v->ip, jstr(d, "ip"), sizeof v->ip);
 		v->kind = (int)jnum(d, "kind", 0);
 		v->created = (u64)jnum(d, "created", 0);
@@ -363,6 +382,8 @@ void config_save(void)
 		cJSON *d = cJSON_CreateObject();
 		cJSON_AddStringToObject(d, "token", v->token);
 		cJSON_AddStringToObject(d, "name", v->name);
+		cJSON_AddStringToObject(d, "model", v->model);
+		cJSON_AddNumberToObject(d, "named", v->named);
 		cJSON_AddStringToObject(d, "ip", v->ip);
 		cJSON_AddNumberToObject(d, "kind", v->kind);
 		cJSON_AddNumberToObject(d, "created", (double)v->created);

@@ -9,6 +9,7 @@
 #include "server.h"
 #include "fsx.h"
 #include "ops.h"
+#include "names.h"
 #include "state.h"
 #include "util.h"
 
@@ -407,7 +408,8 @@ static int add_dev(const char *ua, const char *ip)
 	memset(d, 0, sizeof *d);
 	d->used = true;
 	util_rand_hex(d->token, 32);
-	parse_ua(ua, d->name, sizeof d->name, &d->kind);
+	parse_ua(ua, d->model, sizeof d->model, &d->kind);
+	util_strlcpy(d->name, d->model, sizeof d->name); /* hasta que se encuentre su nombre en la red */
 	util_strlcpy(d->ip, ip, sizeof d->ip);
 	d->created = d->last_seen = util_unix_now();
 	d->last_ms = util_ms();
@@ -515,6 +517,9 @@ static void h_info(Conn *c)
 	buf_json_str(&b, G.console);
 	buf_puts(&b, ",\"device\":");
 	buf_json_str(&b, G.dev[c->dev].name);
+	buf_puts(&b, ",\"model\":");
+	buf_json_str(&b, G.dev[c->dev].model);
+	buf_printf(&b, ",\"named\":%d", G.dev[c->dev].named);
 	buf_printf(&b, ",\"readonly\":%s,\"protect\":%s,\"free\":%llu,\"total\":%llu}",
 	           G.readonly ? "true" : "false", G.protect_sys ? "true" : "false",
 	           (unsigned long long)fr, (unsigned long long)tot);
@@ -862,6 +867,21 @@ static void h_copy(Conn *c)
 	resp_ok(c);
 }
 
+/* nombre de este dispositivo puesto a mano (vacío: vuelve al automático) */
+static void h_devname(Conn *c)
+{
+	char n[48] = "";
+	qget(c->query, "n", n, sizeof n);
+	if (n[0] && !util_utf8_valid(n)) {
+		resp_err(c, 400, "bad_name");
+		return;
+	}
+	state_lock();
+	device_rename(c->dev, n);
+	state_unlock();
+	resp_ok(c);
+}
+
 /* destacar con un color (1-6, 0 lo quita): solo es un dato de Cloud3DS, no toca la SD */
 static void h_mark(Conn *c)
 {
@@ -1127,6 +1147,8 @@ static void route(Conn *c, const char *body)
 		h_move(c);
 	else if (strcmp(p, "copy") == 0 && post)
 		h_copy(c);
+	else if (strcmp(p, "devname") == 0 && post)
+		h_devname(c);
 	else if (strcmp(p, "mark") == 0 && post)
 		h_mark(c);
 	else if (strcmp(p, "job") == 0 && get)
@@ -1584,6 +1606,8 @@ static void server_thread(void *arg)
 {
 	(void)arg;
 	soc_ok = net_init();
+	if (soc_ok)
+		names_start();
 	int last_wifi = -2;
 	u64 last_wifi_t = 0;
 	bool logged_noip = false;
@@ -1683,6 +1707,7 @@ void server_stop(void)
 		threadFree(thr);
 		thr = NULL;
 	}
+	names_stop();
 	if (soc_ok)
 		socExit();
 	soc_ok = false;

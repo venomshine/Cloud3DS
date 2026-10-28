@@ -107,6 +107,8 @@ static const TrEntry TR_TAB[] = {
 	{"Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará.", "1 transfer in progress (%s “%s”, %d%%). It will be canceled if you exit.", "転送中のファイルが1件あります(%s「%s」%d%%)。終了するとキャンセルされます。"},
 	{"Hay %d transferencias en curso (%s «%s», %d%%, y %d más). Si sales, se cancelarán.", "%d transfers in progress (%s “%s”, %d%%, and %d more). They will be canceled if you exit.", "転送中のファイルが%d件あります(%s「%s」%d%%、ほか%d件)。終了するとキャンセルされます。"},
 	{"¿Salir de Cloud3DS?", "Exit Cloud3DS?", "Cloud3DSを終了しますか?"},
+	{"Nombre del dispositivo (vacío: automático)", "Device name (empty: automatic)", "デバイス名(空欄で自動)"},
+	{"Nombre guardado", "Name saved", "名前を保存しました"},
 	{"PIN de 4 cifras", "4-digit PIN", "4桁のPIN"},
 	{"PIN guardado", "PIN saved", "PINを保存しました"},
 	{"No fijar", "Unpin", "固定を解除"},

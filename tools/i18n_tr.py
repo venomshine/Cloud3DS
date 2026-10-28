@@ -258,4 +258,6 @@ TR = {
     "Movido": ("Moved", "移動"),
     "Copiando": ("Copying", "コピー中"),
     "copiando": ("copying", "コピー中"),
+    "Nombre del dispositivo (vacío: automático)": ("Device name (empty: automatic)", "デバイス名(空欄で自動)"),
+    "Nombre guardado": ("Name saved", "名前を保存しました"),
 }
