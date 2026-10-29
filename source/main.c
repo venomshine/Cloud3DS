@@ -444,8 +444,16 @@ static void ins_refresh(void)
 {
 	U.ins_n = ins_snapshot(U.ins, MAX_INS);
 	U.ins_pend = 0;
-	for (int i = 0; i < U.ins_n; i++)
+	static int failed_seen; // la última que falló y ya se avisó
+	for (int i = 0; i < U.ins_n; i++) {
 		U.ins_pend += U.ins[i].st == INS_PENDING;
+		if (U.ins[i].st == INS_FAILED && U.ins[i].id > failed_seen) {
+			failed_seen = U.ins[i].id;
+			char msg[120];
+			snprintf(msg, sizeof msg, _("No se instaló: %s"), U.ins[i].title);
+			toast_icon(msg, IC_CLOSE, T.danger);
+		}
+	}
 	const InsReq *r = ins_first_pending();
 	if (r && r->id != U.ins_icon_id) {
 		U.ins_icon_id = r->id;
@@ -509,6 +517,35 @@ static void ins_button(float y, const char *glyph, const char *label, u32 fg, u3
 	text_draw_center(t, BOT_W / 2, y + (36 - text_lineh(0.48f)) / 2, 0.48f, on ? fg : T.text3);
 }
 
+// botones de la tarjeta: si lo que espera se acaba de subir, «Solo copiar» y «Cancelar la copia»
+// (que lo borra); si ya estaba en la SD, solo «Instalar» o «No instalar»
+typedef struct {
+	const char *glyph, *label;
+	u32 fg, bg;
+	bool on;
+	int what;
+	u32 key;
+} InsBtn;
+
+static int ins_buttons(InsBtn *b)
+{
+	bool can = false, up = false;
+	for (int i = 0; i < U.ins_n; i++)
+		if (U.ins[i].st == INS_PENDING) {
+			can |= ins_can(&U.ins[i]);
+			up |= U.ins[i].uploaded;
+		}
+	int n = 0;
+	b[n++] = (InsBtn){GLYPH_A, U.ins_pend > 1 ? _("Instalar todos") : _("Instalar"), 0xFFFFFFFF, T.ok, can, INS_ACCEPT, KEY_A};
+	if (up) {
+		b[n++] = (InsBtn){GLYPH_X, _("Solo copiar a la SD"), T.text, T.surface2, true, INS_KEEP, KEY_X};
+		b[n++] = (InsBtn){GLYPH_B, _("Cancelar la copia"), T.danger, col_alpha(T.danger, 0.16f), true, INS_REJECT, KEY_B};
+	} else {
+		b[n++] = (InsBtn){GLYPH_B, _("No instalar"), T.text, T.surface2, true, INS_REJECT, KEY_B};
+	}
+	return n;
+}
+
 static void install_card(void)
 {
 	U.ins_anim = approach(U.ins_anim, U.ins_pend ? 1 : 0, 14);
@@ -535,13 +572,10 @@ static void install_card(void)
 			text_draw_center_clip(U.ins[i].title, BOT_W / 2, y + 36 + shown * 16, BOT_W - 60, TS_SUB, T.text3);
 			shown++;
 		}
-	bool can = false;
-	for (int i = 0; i < U.ins_n; i++)
-		can |= U.ins[i].st == INS_PENDING && ins_can(&U.ins[i]);
-	float by = y + 76;
-	ins_button(by, GLYPH_A, U.ins_pend > 1 ? _("Instalar todos") : _("Instalar"), 0xFFFFFFFF, T.ok, can);
-	ins_button(by + 44, GLYPH_X, _("Solo guardar en la SD"), T.text, T.surface2, true);
-	ins_button(by + 88, GLYPH_B, _("Rechazar"), T.danger, col_alpha(T.danger, 0.16f), true);
+	InsBtn b[3];
+	int n = ins_buttons(b);
+	for (int k = 0; k < n; k++)
+		ins_button(y + 76 + k * 44, b[k].glyph, b[k].label, b[k].fg, b[k].bg, b[k].on);
 }
 
 // botones de la tarjeta; devuelve true si se ha decidido algo
@@ -549,25 +583,27 @@ static bool install_input(void)
 {
 	if (!U.ins_pend || g_dialog.open)
 		return false;
-	float y = 26, by = y + 76;
-	int what = -1;
-	bool can = false;
-	for (int i = 0; i < U.ins_n; i++)
-		can |= U.ins[i].st == INS_PENDING && ins_can(&U.ins[i]);
-	if (can && ((g_kdown & KEY_A) || tap(INS_BX, by, INS_BW, 36)))
-		what = INS_ACCEPT;
-	else if ((g_kdown & KEY_X) || tap(INS_BX, by + 44, INS_BW, 36))
-		what = INS_KEEP;
-	else if ((g_kdown & KEY_B) || tap(INS_BX, by + 88, INS_BW, 36))
-		what = INS_REJECT;
+	InsBtn b[3];
+	int n = ins_buttons(b), what = -1;
+	for (int k = 0; k < n && what < 0; k++)
+		if (b[k].on && ((g_kdown & b[k].key) || tap(INS_BX, 26 + 76 + k * 44, INS_BW, 36)))
+			what = b[k].what;
 	if (what < 0)
 		return true; // la tarjeta tapa lo de debajo: no pasa nada más
+	bool up = false;
+	for (int i = 0; i < U.ins_n; i++)
+		up |= U.ins[i].st == INS_PENDING && U.ins[i].uploaded;
 	ins_decide(-1, what);
 	ins_refresh();
+	// el toque que decidió no sigue a lo de debajo (el botón del QR está justo bajo el último)
+	g_kdown &= ~(KEY_A | KEY_B | KEY_X);
+	g_touch.up = false;
 	if (what == INS_ACCEPT)
 		toast_icon(_("Instalando…"), IC_DOWNLOAD, T.ok);
 	else if (what == INS_KEEP)
-		toast_icon(_("Guardado en la SD sin instalar"), IC_FOLDER, T.accent);
+		toast_icon(_("Copiado a la SD sin instalar"), IC_FOLDER, T.accent);
+	else if (up)
+		toast_icon(_("Copia cancelada: se borró de la SD"), IC_TRASH, T.text3);
 	return true;
 }
 
@@ -621,10 +657,12 @@ static void draw_header(void)
 	rx -= 6;
 	util_fmt_today(day, sizeof day);
 	text_draw_right(day, rx, 4, TS_HDR, T.text3);
+	// algo en curso (también con el QR abierto): una línea fina bajo la cabecera con su avance
 	const Xfer *xs[1];
-	if (V.qr_min && visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING) {
-		float p = g_time * 1.2f;
-		draw_grad_h(0, HDR_H, TOP_W, 2, col_alpha(brand_grad(p), 0.9f), col_alpha(brand_grad(p + 0.5f), 0.9f));
+	if (visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING) {
+		float p = g_time * 1.2f, f = xs[0]->total ? clampf((float)((double)xs[0]->done / xs[0]->total), 0, 1) : 0;
+		draw_rect(0, HDR_H, TOP_W, 2, T.surface2);
+		draw_grad_h(0, HDR_H, fmaxf(4, TOP_W * f), 2, col_alpha(brand_grad(p), 0.95f), col_alpha(brand_grad(p + 0.5f), 0.95f));
 	}
 }
 
@@ -754,6 +792,8 @@ static void xfer_wide(float x0, float y, float w, float a)
 
 
 // tira compacta: dirección, PIN y estado; el resto de la pantalla queda libre
+static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic);
+
 static void mini_strip(float a)
 {
 	// una sola línea: dirección y estado a la izquierda, PIN a la derecha
@@ -777,6 +817,31 @@ static void mini_strip(float a)
 		snprintf(n, sizeof n, "%d", on);
 		draw_icon(IC_DEVICES, sx + 8, cy, 14, col_alpha(T.ok, a));
 		text_draw(n, sx + 19, cy - text_lineh(sc) / 2, sc, col_alpha(T.ok, a));
+		lx = sx + 19 + text_width(n, sc);
+	} else {
+		lx += text_width(url, sc);
+	}
+	// lo que está en curso (instalar, copiar, recibir…): qué es y cuánto va, con una barra abajo
+	const Xfer *xs[1];
+	if (visible_xfers(xs, 1)) {
+		const Xfer *x = xs[0];
+		const char *hd;
+		u32 col;
+		IconId ic;
+		xfer_head(x, &hd, &col, &ic);
+		float f = x->st == XS_DONE ? 1 : x->total ? clampf((float)((double)x->done / x->total), 0, 1) : 0;
+		char t[96];
+		if (x->st == XS_RUNNING)
+			snprintf(t, sizeof t, "%s %d%%", hd, (int)(f * 100));
+		else
+			util_strlcpy(t, hd, sizeof t);
+		float x0 = lx + 16, x1 = px - 10 - lw - 8;
+		if (x1 - x0 > 40) {
+			draw_icon(ic, x0 + 7, cy, 12, col_alpha(col, a));
+			text_draw_clip(t, x0 + 17, cy - text_lineh(TS_SUB) / 2, x1 - x0 - 17, TS_SUB, col_alpha(col, a));
+		}
+		draw_rect(CARD_X + 12, y + MINI_H - 4, CARD_W - 24, 2, col_alpha(T.surface2, a));
+		draw_rect(CARD_X + 12, y + MINI_H - 4, (CARD_W - 24) * f, 2, col_alpha(col, a));
 	}
 }
 
@@ -2120,7 +2185,7 @@ static bool f_open_item(int vi)
 		vw_load(F.v[vi].idx);
 	} else if (!strcasecmp(f_ext(e->name), "cia") && strlen(full) < 256) {
 		char err[24] = "";
-		if (ins_request(full, G.console, err, sizeof err) < 0)
+		if (ins_request(full, G.console, false, err, sizeof err) < 0)
 			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está esperando en la consola")
 			                                                                                                  : _("La consola no reconoce este CIA"),
 			           IC_CLOSE, T.danger);
@@ -2397,7 +2462,7 @@ static void fa_run(int a)
 	}
 	if (a == FA_INSTALL) {
 		char err[24] = "";
-		int id = strlen(full) < 256 ? ins_request(full, G.console, err, sizeof err) : -1;
+		int id = strlen(full) < 256 ? ins_request(full, G.console, false, err, sizeof err) : -1;
 		if (id < 0) {
 			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está esperando en la consola")
 			                                                                                                  : _("La consola no reconoce este CIA"),
@@ -3233,6 +3298,9 @@ static void watch_events(void)
 		} else if (e->kind == EV_UPLOAD_FAIL) {
 			snprintf(msg, sizeof msg, _("Transferencia incompleta: %s"), e->name);
 			toast_icon(msg, IC_CLOSE, T.danger);
+		} else if (e->kind == EV_INSTALL) {
+			snprintf(msg, sizeof msg, _("Instalado: %s"), e->name);
+			toast_icon(msg, IC_CHECK, T.ok);
 		}
 		// el texto abierto en la consola se cambió desde otro dispositivo: si aquí no hay cambios, se recarga
 		if ((e->kind == EV_EDIT || e->kind == EV_UPLOAD) && VW.kind == VW_TXT && !VW.doc.dirty && strcmp(e->device, V.console) &&

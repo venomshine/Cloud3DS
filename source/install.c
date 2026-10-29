@@ -173,7 +173,7 @@ static InsReq *find(int id)
 	return NULL;
 }
 
-int ins_request(const char *path, const char *device, char *err, size_t errn)
+int ins_request(const char *path, const char *device, bool uploaded, char *err, size_t errn)
 {
 	const char *dot = strrchr(path, '.');
 	if (!dot || strcasecmp(dot, ".cia")) {
@@ -190,6 +190,7 @@ int ins_request(const char *path, const char *device, char *err, size_t errn)
 	const char *b = strrchr(path, '/');
 	util_strlcpy(r->file, b ? b + 1 : path, sizeof r->file);
 	util_strlcpy(r->device, device, sizeof r->device);
+	r->uploaded = uploaded;
 	bool parsed = cia_info(path, r);
 	/* la consola lee el CIA por su cuenta (como FBI): si AM no lo entiende, no se instala */
 	Handle fh;
@@ -260,6 +261,8 @@ int ins_request(const char *path, const char *device, char *err, size_t errn)
 
 void ins_decide(int id, int what)
 {
+	char del[MAX_INS][256], name[MAX_INS][128];
+	int nd = 0;
 	LightLock_Lock(&I.lock);
 	for (int i = 0; i < MAX_INS; i++) {
 		InsReq *r = &I.q[i];
@@ -270,9 +273,24 @@ void ins_decide(int id, int what)
 			r->st = INS_QUEUED;
 		else
 			r->st = what == INS_REJECT ? INS_REJECTED : INS_KEPT, r->t_end = util_ms();
+		/* rechazar lo que se acaba de subir para instalar es cancelar la copia: se borra */
+		if (what == INS_REJECT && r->uploaded) {
+			util_strlcpy(del[nd], r->path, sizeof del[0]);
+			util_strlcpy(name[nd], r->file, sizeof name[0]);
+			r->deleted = true;
+			nd++;
+		}
 	}
 	LightLock_Unlock(&I.lock);
 	LightEvent_Signal(&I.ev);
+	for (int i = 0; i < nd; i++) {
+		if (fsx_rmrf(del[i]) != 0)
+			continue;
+		state_lock();
+		mark_deleted(del[i]);
+		event_add(EV_DELETE, name[i], G.console, 0);
+		state_unlock();
+	}
 }
 
 int ins_pending(void)

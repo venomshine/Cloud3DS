@@ -893,4 +893,25 @@ TR = {
     'Actualizado desde otro dispositivo':
         ('Updated from another device',
          '別のデバイスで更新されました'),
+    'No se instaló: %s':
+        ('Not installed: %s',
+         'インストールできませんでした: %s'),
+    'Instalado: %s':
+        ('Installed: %s',
+         'インストールしました: %s'),
+    'Solo copiar a la SD':
+        ('Just copy to the SD',
+         'SDにコピーのみ'),
+    'Cancelar la copia':
+        ('Cancel the copy',
+         'コピーを取り消す'),
+    'No instalar':
+        ("Don't install",
+         'インストールしない'),
+    'Copiado a la SD sin instalar':
+        ('Copied to the SD without installing',
+         'インストールせずSDにコピーしました'),
+    'Copia cancelada: se borró de la SD':
+        ('Copy canceled: deleted from the SD',
+         'コピーを取り消しました(SDから削除)'),
 }

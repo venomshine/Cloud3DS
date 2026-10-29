@@ -30,6 +30,8 @@ typedef struct {
 	u16  ver;           /* versión del CIA */
 	int  inst_ver;      /* versión instalada, -1 si no está */
 	bool self;          /* es Cloud3DS: se actualiza desde Ajustes */
+	bool uploaded;      /* recién subido para instalarlo: rechazar cancela la copia (se borra) */
+	bool deleted;       /* se rechazó y se borró de la SD */
 	bool n3ds_only;     /* solo para New 3DS */
 	u64  need;          /* espacio que pide AM para instalarlo */
 	bool has_icon;
@@ -42,8 +44,8 @@ typedef struct {
 void ins_init(void);
 void ins_exit(void);
 /* desde el servidor (con el cerrojo de estado NO tomado): devuelve el id o <0 */
-int  ins_request(const char *path, const char *device, char *err, size_t errn);
-void ins_decide(int id, int what);   /* id < 0: todas las pendientes */
+int  ins_request(const char *path, const char *device, bool uploaded, char *err, size_t errn);
+void ins_decide(int id, int what);   /* id < 0: todas las pendientes. Sin el cerrojo de estado tomado */
 int  ins_pending(void);
 /* copia de la cola para dibujar o para la web */
 int  ins_snapshot(InsReq *out, int max);

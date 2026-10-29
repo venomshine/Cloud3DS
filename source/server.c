@@ -927,7 +927,7 @@ static void h_install(Conn *c)
 	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
 	G.rev++;
 	state_unlock();
-	int id = ins_request(p, dev, err, sizeof err);
+	int id = ins_request(p, dev, qflag(c->query, "up"), err, sizeof err);
 	if (id < 0) {
 		resp_err(c, !strcmp(err, "already") || !strcmp(err, "full") ? 409 : 400, err);
 		return;
@@ -951,9 +951,9 @@ static void h_installs(Conn *c)
 		buf_json_str(&b, q[i].path);
 		buf_puts(&b, ",\"title\":");
 		buf_json_str(&b, q[i].title);
-		buf_printf(&b, ",\"ver\":\"%s\",\"inst\":%d,\"newer\":%s,\"self\":%s,\"size\":%llu,\"done\":%llu,\"error\":\"%s\"}",
+		buf_printf(&b, ",\"ver\":\"%s\",\"inst\":%d,\"newer\":%s,\"self\":%s,\"size\":%llu,\"done\":%llu,\"error\":\"%s\",\"deleted\":%s}",
 		           ins_ver_text(q[i].ver, v, sizeof v), q[i].inst_ver, q[i].inst_ver > q[i].ver ? "true" : "false", q[i].self ? "true" : "false", (unsigned long long)q[i].size,
-		           (unsigned long long)q[i].done, q[i].err);
+		           (unsigned long long)q[i].done, q[i].err, q[i].deleted ? "true" : "false");
 	}
 	buf_puts(&b, "]}");
 	resp_json(c, 200, &b);
