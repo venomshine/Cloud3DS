@@ -609,6 +609,27 @@ function startApp(){
  go(p&&p.startsWith("/")?p:"/",true);
  refreshInfo();
  clearInterval(window._ping);window._ping=setInterval(()=>{if(!document.hidden)refreshInfo()},8000);
+ clearInterval(window._rev);window._rev=setInterval(pollRev,2000);
+}
+// cambios hechos desde la consola u otro dispositivo: la carpeta abierta se actualiza sola
+let fsRev=null;
+async function pollRev(){
+ if(document.hidden||$("#app").classList.contains("hide"))return;
+ let r;try{r=await api("GET","rev")}catch(e){return}
+ if(fsRev!==null&&r.fs!==fsRev&&!await softReload())return; // ocupado (un menú abierto…): se intenta luego
+ fsRev=r.fs;
+}
+async function softReload(){
+ if(S.loading||S.nosaves||document.querySelector(".scrim,.viewer"))return false;
+ const p=S.path;
+ try{
+  const r=await api("GET","list",{p});
+  if(p!==S.path||S.loading)return false;
+  S.items=r.items;S.missing=false;S.system=r.system;
+  const names=new Set(r.items.map(i=>i.n));S.sel.forEach(n=>{if(!names.has(n))S.sel.delete(n)});
+  const y=scrollY;render();scrollTo(0,y);refreshInfo();
+ }catch(e){if(e.code==="not_found")go(p,true)}
+ return true;
 }
 async function refreshInfo(){
  try{

@@ -3281,9 +3281,13 @@ static void handle_dialog(int ctx, bool ok)
 
 static void watch_events(void)
 {
+	static u32 fs_seen;
+	if (V.fsrev != fs_seen) { // algo cambió en la SD (desde la web o aquí): la carpeta abierta se vuelve a leer
+		fs_seen = V.fsrev;
+		F.need_reload = true;
+	}
 	if (V.hist_n == s_hist_n && V.hist_head == s_hist_head)
 		return;
-	F.need_reload = true; // subidas, copias, borrados… la carpeta abierta se vuelve a leer
 	if (s_events_seen && V.hist_n > 0) {
 		const Event *e = ev(0);
 		char msg[160];

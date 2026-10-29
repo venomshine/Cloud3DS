@@ -106,6 +106,7 @@ typedef struct {
 	int    hist_n, hist_head; /* anillo: hist_head es el más reciente */
 	Device dev[MAX_DEVICES];
 	u32    rev; /* cambia en cada modificación visible */
+	u32    fsrev; /* cambia cuando cambia algo en la SD (archivos o colores): la web y la consola recargan */
 	bool   dirty_cfg;
 	char   revoked[MAX_REVOKED][33]; /* expulsados recientes, para avisarles */
 	int    revoked_next;

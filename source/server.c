@@ -516,6 +516,16 @@ static void h_hello(Conn *c)
 	free(b.p);
 }
 
+/* la web lo pregunta cada poco: si cambia, vuelve a leer la carpeta abierta */
+static void h_rev(Conn *c)
+{
+	char b[48];
+	state_lock();
+	int n = snprintf(b, sizeof b, "{\"fs\":%lu}", (unsigned long)G.fsrev);
+	state_unlock();
+	resp(c, 200, "application/json", b, n, NULL);
+}
+
 static void h_info(Conn *c)
 {
 	u64 fr = 0, tot = 0;
@@ -1188,6 +1198,8 @@ static void route(Conn *c, const char *body)
 	}
 	if (strcmp(p, "ping") == 0)
 		resp_ok(c);
+	else if (strcmp(p, "rev") == 0 && get)
+		h_rev(c);
 	else if (strcmp(p, "info") == 0 && get)
 		h_info(c);
 	else if (strcmp(p, "list") == 0 && get)

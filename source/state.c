@@ -92,6 +92,7 @@ void mark_set(const char *path, int color)
 			else
 				mark_remove(i);
 			G.dirty_cfg = true;
+			G.fsrev++;
 			return;
 		}
 	if (!color)
@@ -101,6 +102,7 @@ void mark_set(const char *path, int color)
 	util_strlcpy(G.marks[G.marks_n].path, path, sizeof G.marks[0].path);
 	G.marks[G.marks_n++].color = (u8)color;
 	G.dirty_cfg = true;
+	G.fsrev++;
 }
 
 void mark_moved(const char *from, const char *to)
@@ -245,6 +247,8 @@ void event_add(EventKind k, const char *name, const char *device, u64 size)
 	util_strlcpy(e->device, device ? device : "", sizeof e->device);
 	if (G.hist_n < MAX_HISTORY)
 		G.hist_n++;
+	if (k != EV_PAIRED && k != EV_REVOKED && k != EV_PIN_LOCK)
+		G.fsrev++;
 	G.rev++;
 	G.dirty_cfg = true;
 }
