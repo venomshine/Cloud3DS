@@ -1276,7 +1276,7 @@ async function runQueue(){
    opts:[["install",t("insOk"),"pri"],["keep",t("insKeep"),""],["cancel",t("insCancel"),"dng"]]});
   if(r==="install"){if(!Q.items.some(i=>i.state==="run"||i.state==="queued")){Q.items=[];renderQueue()}requestInstall(cias,true)}
   if(r==="cancel"){
-   let ok=0;for(const p of cias){try{await api("POST","delete",{p});ok++}catch(e){toast(base(p)+": "+errText(e))}}
+   let ok=0;for(const p of cias){try{await api("POST","delete",{p,now:1});ok++}catch(e){toast(base(p)+": "+errText(e))}}
    if(ok)toast(t("insCanceled"));go(S.path,true);refreshInfo();
   }
  }

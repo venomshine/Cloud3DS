@@ -874,7 +874,9 @@ static void h_delete(Conn *c)
 	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
 	u8 col = (u8)mark_get(p);
 	state_unlock();
-	if (trash_put(p, dev, col) < 0 && fsx_rmrf(p) < 0) {
+	// now=1: del todo, sin papelera (cancelar la copia de un CIA recién subido)
+	bool now = qflag(c->query, "now");
+	if ((now || trash_put(p, dev, col) < 0) && fsx_rmrf(p) < 0) {
 		resp_err(c, 500, "io");
 		return;
 	}
