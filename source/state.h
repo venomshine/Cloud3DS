@@ -87,6 +87,10 @@ typedef struct {
 	bool readonly;
 	bool protect_sys; /* pedir confirmación en carpetas del sistema */
 	bool qr_min;      /* tarjeta del QR minimizada */
+	u8   f_sort;      /* explorador de la consola: 0 nombre, 1 fecha, 2 tamaño, 3 tipo */
+	bool f_desc;      /* orden al revés */
+	u8   f_group;     /* agrupar: 0 no, 1 tipo, 2 fecha, 3 tamaño */
+	bool f_grid;      /* vista de iconos en vez de lista */
 	bool upd_auto;    /* buscar actualizaciones al abrir */
 
 	/* servidor */

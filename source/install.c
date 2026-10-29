@@ -151,6 +151,19 @@ static int installed_version(u64 tid)
 }
 
 /* datos de un CIA para enseñarlos (explorador de la consola), sin pedir instalarlo */
+bool ins_icon(const char *path, u16 *px)
+{
+	InsReq *r = malloc(sizeof *r); /* solo se lee la cabecera: vale desde cualquier hilo */
+	if (!r)
+		return false;
+	memset(r, 0, sizeof *r);
+	bool ok = cia_info(path, r) && r->has_icon;
+	if (ok)
+		memcpy(px, r->icon, sizeof r->icon);
+	free(r);
+	return ok;
+}
+
 bool ins_peek(const char *path, InsReq *out)
 {
 	memset(out, 0, sizeof *out);

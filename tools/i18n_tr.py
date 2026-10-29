@@ -200,7 +200,7 @@ TR = {
     'Preparando…': ('Starting…', '準備中…'),
     'Recibiendo': ('Receiving', '受信中'),
     'Enviando': ('Sending', '送信中'),
-    'Lista': ('Ready', '準備完了'),
+    'Lista': ('List', 'リスト'),
     'Conecta la consola a tu Wi-Fi o al punto de acceso de tu móvil. El código aparecerá solo.': ("Connect the console to your Wi-Fi or your phone's hotspot. The code will appear by itself.", '本体をWi-Fiかスマホのテザリングに接続すると、コードが表示されます。'),
     'Escanéalo con la cámara del móvil': ("Scan it with your phone's camera", 'スマホのカメラで読み取ってください'),
     '%d dispositivo conectado': ('%d device online', '%d 台接続中'),
@@ -947,4 +947,88 @@ TR = {
     'Ahora es .%s':
         ("Now it's .%s",
          '今は .%s です'),
+    'Carpetas':
+        ('Folders',
+         'フォルダ'),
+    'Imágenes':
+        ('Images',
+         '画像'),
+    'Vídeos':
+        ('Videos',
+         '動画'),
+    'Audio':
+        ('Audio',
+         '音声'),
+    'Programas de 3DS':
+        ('3DS programs',
+         '3DSのソフト'),
+    'Juegos para emuladores':
+        ('Emulator games',
+         'エミュレーター用ゲーム'),
+    'Textos y código':
+        ('Text and code',
+         'テキストとコード'),
+    'Comprimidos':
+        ('Archives',
+         '圧縮ファイル'),
+    'Fuentes':
+        ('Fonts',
+         'フォント'),
+    'Documentos':
+        ('Documents',
+         '文書'),
+    'Otros':
+        ('Other',
+         'その他'),
+    'Esta semana':
+        ('This week',
+         '今週'),
+    'Este mes':
+        ('This month',
+         '今月'),
+    'Este año':
+        ('This year',
+         '今年'),
+    'Hace más de un año':
+        ('Over a year ago',
+         '1年以上前'),
+    'Sin fecha':
+        ('No date',
+         '日付なし'),
+    'Vacíos':
+        ('Empty',
+         '空'),
+    'Pequeños (menos de 1 MB)':
+        ('Small (under 1 MB)',
+         '小(1 MB未満)'),
+    'Medianos (hasta 100 MB)':
+        ('Medium (up to 100 MB)',
+         '中(100 MBまで)'),
+    'Grandes (hasta 1 GB)':
+        ('Large (up to 1 GB)',
+         '大(1 GBまで)'),
+    'Enormes (más de 1 GB)':
+        ('Huge (over 1 GB)',
+         '特大(1 GB超)'),
+    'Ver y ordenar':
+        ('View and sort',
+         '表示と並べ替え'),
+    'Iconos':
+        ('Icons',
+         'アイコン'),
+    'Vista':
+        ('View',
+         '表示'),
+    'Fecha':
+        ('Date',
+         '日付'),
+    'Ordenar por':
+        ('Sort by',
+         '並べ替え'),
+    'No':
+        ('None',
+         'なし'),
+    'Agrupar por':
+        ('Group by',
+         'グループ化'),
 }

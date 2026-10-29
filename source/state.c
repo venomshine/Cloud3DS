@@ -320,6 +320,10 @@ void config_load(void)
 	G.protect_sys = jbool(r, "protect_sys", true);
 	G.qr_min = jbool(r, "qr_min", false);
 	G.upd_auto = jbool(r, "upd_auto", true);
+	G.f_sort = (u8)jnum(r, "f_sort", 0) % 4;
+	G.f_desc = jbool(r, "f_desc", false);
+	G.f_group = (u8)jnum(r, "f_group", 0) % 4;
+	G.f_grid = jbool(r, "f_grid", false);
 	const char *pin = jstr(r, "pin"), *key = jstr(r, "qr_key");
 	bool keep = strlen(pin) == 4 && strspn(pin, "0123456789") == 4 && strlen(key) == 8 && strspn(key, "0123456789abcdef") == 8;
 	if (keep) {
@@ -379,6 +383,10 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "protect_sys", G.protect_sys);
 	cJSON_AddBoolToObject(r, "qr_min", G.qr_min);
 	cJSON_AddBoolToObject(r, "upd_auto", G.upd_auto);
+	cJSON_AddNumberToObject(r, "f_sort", G.f_sort);
+	cJSON_AddBoolToObject(r, "f_desc", G.f_desc);
+	cJSON_AddNumberToObject(r, "f_group", G.f_group);
+	cJSON_AddBoolToObject(r, "f_grid", G.f_grid);
 	cJSON_AddStringToObject(r, "pin", G.pin);
 	cJSON_AddStringToObject(r, "qr_key", G.qr_key);
 	cJSON *devs = cJSON_AddArrayToObject(r, "devices");

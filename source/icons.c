@@ -271,5 +271,19 @@ void draw_icon(IconId id, float cx, float cy, float s, u32 c) {
     case IC_FONT: // «A» con su barra
         L(-7, 8, 0, -8); L(0, -8, 7, 8); L(-4, 2, 4, 2);
         break;
+    case IC_SORT: // líneas de mayor a menor y una flecha
+        L(-9, -6, 3, -6); L(-9, 0, 0, 0); L(-9, 6, -3, 6);
+        L(7, -7, 7, 7); L(7, 7, 4, 4); L(7, 7, 10, 4);
+        break;
+    case IC_GRID: // cuatro cuadros
+        for (int i = 0; i < 4; i++)
+            draw_rrect_outline(cx + (i % 2 ? 1.5f : -8.5f) * k, cy + (i / 2 ? 1.5f : -8.5f) * k, 7 * k, 7 * k, 1.5f * k, th, c);
+        break;
+    case IC_LIST: // filas con su punto
+        for (int i = -1; i <= 1; i++) {
+            draw_circle(cx - 7 * k, cy + i * 6 * k, 1.6f * k, c);
+            L(-3, i * 6, 9, i * 6);
+        }
+        break;
     }
 }

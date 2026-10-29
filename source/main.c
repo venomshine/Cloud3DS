@@ -1298,13 +1298,16 @@ typedef struct {
 	char name[128];
 	bool dir, sys;
 	u8 color;
+	u8 grp; // grupo al agrupar (por tipo, fecha o tamaño)
 	u64 size, mtime;
 } FEnt;
-enum { FV_CHIPS, FV_ITEM, FV_SYSHDR };
+enum { FV_CHIPS, FV_ITEM, FV_SYSHDR, FV_GROUP };
 typedef struct {
 	u8 kind;
-	short idx;
+	short idx;   // elemento de F.e; en las cabeceras, el grupo o cuántos hay
 	float y, h;
+	float x, w;  // en la vista de iconos, cada casilla de la fila
+	short n;     // cabecera de grupo: cuántos tiene
 } FView;
 enum { CH_HOME, CH_SHOTS, CH_PHOTOS, CH_CIAS, CH_HB, CH_SAVES, CH_COUNT };
 static const char *const CHIP_PATH[CH_COUNT] = {"/", "/luma/screenshots", "/DCIM", "/cias", "/3ds", "@saves"};
@@ -1315,7 +1318,8 @@ static struct {
 	FEnt *e;
 	int n;
 	bool err, truncated;
-	FView v[F_MAX + 2];
+	FView v[F_MAX + 24];
+	u32 gclosed;       // grupos plegados (se despliegan al cambiar de carpeta)
 	int nv;
 	float off, target, total;
 	int sel, chip;
@@ -1465,41 +1469,128 @@ static bool f_collect(const FsxEntry *x, void *u)
 	return true;
 }
 
+// grupo de cada elemento, como «Agrupar por» de Windows
+static int f_grp(const FEnt *e)
+{
+	switch (V.f_group) {
+	case 1: { // tipo
+		static const u8 G[] = {[FK_OTHER] = 11, [FK_IMG] = 1, [FK_VIDEO] = 2, [FK_AUDIO] = 3, [FK_APP] = 4, [FK_ROM] = 5,
+		                       [FK_SAVE] = 6, [FK_TEXT] = 7, [FK_ARCHIVE] = 8, [FK_FONT] = 9, [FK_DOC] = 10};
+		return e->dir ? 0 : G[f_group(e)];
+	}
+	case 2: { // fecha
+		if (!e->mtime)
+			return 6;
+		u64 now = util_unix_now() / 86400, d = e->mtime / 86400;
+		u64 ago = now > d ? now - d : 0;
+		return ago == 0 ? 0 : ago == 1 ? 1 : ago < 7 ? 2 : ago < 31 ? 3 : ago < 365 ? 4 : 5;
+	}
+	case 3: // tamaño
+		return e->dir ? 0 : e->size == 0 ? 1 : e->size < (1 << 20) ? 2 : e->size < (100 << 20) ? 3 : e->size < (1 << 30) ? 4 : 5;
+	}
+	return 0;
+}
+
+static const char *f_grp_name(int g)
+{
+	static const char *const BY_TYPE[] = {N_("Carpetas"), N_("Imágenes"), N_("Vídeos"), N_("Audio"), N_("Programas de 3DS"),
+	                                      N_("Juegos para emuladores"), N_("Partidas"), N_("Textos y código"),
+	                                      N_("Comprimidos"), N_("Fuentes"), N_("Documentos"), N_("Otros")};
+	static const char *const BY_DATE[] = {N_("Hoy"), N_("Ayer"), N_("Esta semana"), N_("Este mes"), N_("Este año"),
+	                                      N_("Hace más de un año"), N_("Sin fecha")};
+	static const char *const BY_SIZE[] = {N_("Carpetas"), N_("Vacíos"), N_("Pequeños (menos de 1 MB)"), N_("Medianos (hasta 100 MB)"),
+	                                      N_("Grandes (hasta 1 GB)"), N_("Enormes (más de 1 GB)")};
+	if (V.f_group == 1 && g < (int)ARRAY_LEN(BY_TYPE))
+		return tr(BY_TYPE[g]);
+	if (V.f_group == 2 && g < (int)ARRAY_LEN(BY_DATE))
+		return tr(BY_DATE[g]);
+	if (V.f_group == 3 && g < (int)ARRAY_LEN(BY_SIZE))
+		return tr(BY_SIZE[g]);
+	return "";
+}
+
+// orden: grupo, carpetas primero, destacadas primero y luego lo elegido (nombre, fecha, tamaño o tipo)
 static int f_cmp(const void *a, const void *b)
 {
 	const FEnt *x = a, *y = b;
+	if (x->grp != y->grp)
+		return x->grp - y->grp;
 	if (x->dir != y->dir)
 		return y->dir - x->dir;
 	if (!!x->color != !!y->color)
 		return !!y->color - !!x->color;
-	return strcasecmp(x->name, y->name);
+	int r = 0;
+	if (V.f_sort == 1)
+		r = x->mtime < y->mtime ? -1 : x->mtime > y->mtime;
+	else if (V.f_sort == 2 && !x->dir)
+		r = x->size < y->size ? -1 : x->size > y->size;
+	else if (V.f_sort == 3)
+		r = strcasecmp(f_ext(x->name), f_ext(y->name));
+	if (!r)
+		r = strcasecmp(x->name, y->name);
+	return V.f_desc ? -r : r;
 }
 
-// filas que se dibujan: accesos rápidos, lo del usuario y, aparte, lo del sistema
+#define F_COLS 4    // casillas por fila en la vista de iconos
+#define F_TILE_H 76
+#define F_ROW_H 36
+
+// coloca una fila (lista) o una casilla (iconos); col lleva la columna en la fila de iconos
+static void f_put(int i, float *y, int *col)
+{
+	if (V.f_grid) {
+		float tw = (BOT_W - 12) / (float)F_COLS;
+		F.v[F.nv++] = (FView){FV_ITEM, (short)i, *y, F_TILE_H, 6 + *col * tw, tw, 0};
+		if (++*col == F_COLS)
+			*col = 0, *y += F_TILE_H;
+	} else {
+		F.v[F.nv++] = (FView){FV_ITEM, (short)i, *y, F_ROW_H, 6, BOT_W - 12, 0};
+		*y += F_ROW_H;
+	}
+}
+
+static void f_endrow(float *y, int *col)
+{
+	if (*col)
+		*col = 0, *y += F_TILE_H;
+}
+
+// filas que se dibujan: accesos rápidos, lo del usuario (por grupos si se agrupa) y, aparte, lo del sistema
 static void f_build_view(void)
 {
 	F.nv = 0;
 	float y = 0;
-	F.v[F.nv++] = (FView){FV_CHIPS, -1, y, 44};
+	int col = 0;
+	F.v[F.nv++] = (FView){FV_CHIPS, -1, y, 44, 0, BOT_W, 0};
 	y += 44;
-	int nsys = 0;
+	int nsys = 0, last = -1;
 	for (int i = 0; i < F.n; i++) {
-		if (F.e[i].sys) {
+		const FEnt *e = &F.e[i];
+		if (e->sys) {
 			nsys++;
 			continue;
 		}
-		F.v[F.nv++] = (FView){FV_ITEM, (short)i, y, 36};
-		y += 36;
+		if (V.f_group && e->grp != last) {
+			f_endrow(&y, &col);
+			last = e->grp;
+			short cnt = 0;
+			for (int k = i; k < F.n; k++)
+				cnt += !F.e[k].sys && F.e[k].grp == last;
+			F.v[F.nv++] = (FView){FV_GROUP, (short)last, y, 26, 0, BOT_W, cnt};
+			y += 26;
+		}
+		if (!V.f_group || !(F.gclosed & (1u << e->grp)))
+			f_put(i, &y, &col);
 	}
+	f_endrow(&y, &col);
 	if (nsys) {
-		F.v[F.nv++] = (FView){FV_SYSHDR, (short)nsys, y, 28};
+		F.v[F.nv++] = (FView){FV_SYSHDR, (short)nsys, y, 28, 0, BOT_W, 0};
 		y += 28;
 		if (F.sys_open)
 			for (int i = 0; i < F.n; i++)
-				if (F.e[i].sys) {
-					F.v[F.nv++] = (FView){FV_ITEM, (short)i, y, 36};
-					y += 36;
-				}
+				if (F.e[i].sys)
+					f_put(i, &y, &col);
+		f_endrow(&y, &col);
 	}
 	F.total = y + QR_PAD;
 }
@@ -1528,9 +1619,13 @@ static void f_load(const char *path)
 		F.e[i].color = (u8)mark_get(full);
 	}
 	state_unlock();
+	for (int i = 0; i < F.n; i++)
+		F.e[i].grp = (u8)f_grp(&F.e[i]);
 	qsort(F.e, F.n, sizeof *F.e, f_cmp);
 	f_build_view();
 	if (!same) {
+		F.gclosed = 0;
+		f_build_view();
 		F.sel = F.nv > 1 ? 1 : 0;
 		F.off = F.target = 0;
 	}
@@ -1604,7 +1699,19 @@ static const FEnt *f_selected(void)
 }
 
 // SMDH de un .3dsx (nombre, autor e icono), si lo lleva
+static bool smdh_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, u16 *px);
+
 static bool read_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, Texture *icon)
+{
+	static u16 px[48 * 48];
+	if (!smdh_3dsx(path, title, tn, pub, pn, px))
+		return false;
+	tex_from_rgb565(icon, px, 48, 48);
+	return true;
+}
+
+// título, autor e icono (48×48 RGB565) del SMDH de un .3dsx; vale desde cualquier hilo
+static bool smdh_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, u16 *px)
 {
 	char sd[720];
 	snprintf(sd, sizeof sd, "sdmc:%s", path);
@@ -1632,13 +1739,11 @@ static bool read_3dsx(const char *path, char *title, size_t tn, char *pub, size_
 		for (int i = 0; i < 0x40; i++)
 			tmp[i] = ti[0x180 + i * 2] | ti[0x180 + i * 2 + 1] << 8;
 		util_utf16_to_utf8(pub, pn, tmp, 0x40);
-		static u16 px[48 * 48];
 		const u16 *ic = (const u16 *)(smdh + 0x24C0);
 		static const u8 tbl[8] = {0x00, 0x01, 0x04, 0x05, 0x10, 0x11, 0x14, 0x15};
 		for (int y = 0; y < 48; y++)
 			for (int x = 0; x < 48; x++)
 				px[y * 48 + x] = ic[((y >> 3) * 6 + (x >> 3)) * 64 + (tbl[x & 7] | tbl[y & 7] << 1)];
-		tex_from_rgb565(icon, px, 48, 48);
 	}
 	free(smdh);
 	return ok;
@@ -2298,6 +2403,260 @@ static bool f_open_item(int vi)
 	return true;
 }
 
+// ---- miniaturas para la lista y la vista de iconos: fotos e iconos de CIA y 3DSX.
+// Se leen en otro hilo, de una en una, para que desplazarse no se trabe; la textura se crea aquí
+#define TH_N 48  // cuántas se guardan (las menos usadas se van)
+#define TH_S 56  // tamaño máximo
+enum { TK_NONE, TK_IMG, TK_CIA, TK_3DSX };
+static struct {
+	char name[128];
+	u64 mtime;
+	Texture t;
+	bool fail, pend;
+	u32 used;
+} TH[TH_N];
+static char th_dir[512];
+static u32 th_frame;
+static struct {
+	Thread thr;
+	LightEvent ev;
+	volatile bool quit;
+	volatile int st; // 0 libre, 1 pedido, 2 listo
+	char path[700];
+	int kind, slot;
+	bool stale;      // se cambió de carpeta mientras se leía: se tira
+	u8 *rgba;
+	u16 px[48 * 48];
+	int w, h;
+	bool ok;
+} TJ;
+
+static void th_thread(void *arg)
+{
+	(void)arg;
+	while (!TJ.quit) {
+		LightEvent_Wait(&TJ.ev);
+		if (TJ.quit)
+			break;
+		if (TJ.st != 1)
+			continue;
+		TJ.ok = false;
+		TJ.rgba = NULL;
+		if (TJ.kind == TK_IMG) {
+			int ow, oh;
+			TJ.ok = img_load_fit(TJ.path, TH_S, TH_S, &TJ.rgba, &TJ.w, &TJ.h, &ow, &oh) == IMG_OK;
+		} else if (TJ.kind == TK_CIA) {
+			TJ.ok = ins_icon(TJ.path, TJ.px);
+		} else {
+			char t[64], p[64];
+			TJ.ok = smdh_3dsx(TJ.path, t, sizeof t, p, sizeof p, TJ.px);
+		}
+		TJ.st = 2;
+	}
+}
+
+static void th_exit(void)
+{
+	if (!TJ.thr)
+		return;
+	TJ.quit = true;
+	LightEvent_Signal(&TJ.ev);
+	threadJoin(TJ.thr, 2000000000ull);
+	threadFree(TJ.thr);
+	TJ.thr = NULL;
+	free(TJ.rgba);
+	for (int i = 0; i < TH_N; i++)
+		tex_free(&TH[i].t);
+}
+
+static int th_kind(const FEnt *e)
+{
+	if (e->dir)
+		return TK_NONE;
+	const char *x = f_ext(e->name);
+	return f_is_img(e) ? TK_IMG : !strcasecmp(x, "cia") ? TK_CIA : !strcasecmp(x, "3dsx") ? TK_3DSX : TK_NONE;
+}
+
+// una vez por frame: recoge lo leído y, si la carpeta cambió, olvida lo de la anterior
+static void th_poll(void)
+{
+	th_frame++;
+	if (strcmp(th_dir, F.path)) {
+		util_strlcpy(th_dir, F.path, sizeof th_dir);
+		for (int i = 0; i < TH_N; i++) {
+			tex_free(&TH[i].t);
+			memset(&TH[i], 0, sizeof TH[i]);
+		}
+		if (TJ.st)
+			TJ.stale = true;
+	}
+	if (TJ.st != 2)
+		return;
+	if (!TJ.stale && TH[TJ.slot].pend) {
+		TH[TJ.slot].pend = false;
+		bool ok = TJ.ok && (TJ.kind == TK_IMG ? tex_from_rgba(&TH[TJ.slot].t, TJ.rgba, TJ.w, TJ.h) : tex_from_rgb565(&TH[TJ.slot].t, TJ.px, 48, 48));
+		TH[TJ.slot].fail = !ok;
+	}
+	free(TJ.rgba);
+	TJ.rgba = NULL;
+	TJ.stale = false;
+	TJ.st = 0;
+}
+
+// la miniatura de un elemento a la vista; si no está, se pide y por ahora sale su icono
+static const Texture *th_get(int idx)
+{
+	const FEnt *e = &F.e[idx];
+	int kind = th_kind(e);
+	if (!kind)
+		return NULL;
+	int lru = -1;
+	for (int i = 0; i < TH_N; i++) {
+		if (TH[i].name[0] && !strcmp(TH[i].name, e->name) && TH[i].mtime == e->mtime) {
+			TH[i].used = th_frame;
+			return TH[i].t.ok ? &TH[i].t : NULL;
+		}
+		if (!TH[i].pend && (lru < 0 || TH[i].used < TH[lru].used))
+			lru = i;
+	}
+	if (TJ.st || lru < 0)
+		return NULL; // ya hay una leyéndose
+	if (!TJ.thr) {
+		LightEvent_Init(&TJ.ev, RESET_ONESHOT);
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		TJ.thr = threadCreate(th_thread, NULL, 64 * 1024, prio + 3, -2, false);
+		if (!TJ.thr)
+			return NULL;
+	}
+	tex_free(&TH[lru].t);
+	util_strlcpy(TH[lru].name, e->name, sizeof TH[lru].name);
+	TH[lru].mtime = e->mtime;
+	TH[lru].fail = false;
+	TH[lru].pend = true;
+	TH[lru].used = th_frame;
+	f_full(idx, TJ.path, sizeof TJ.path);
+	TJ.kind = kind;
+	TJ.slot = lru;
+	TJ.st = 1;
+	LightEvent_Signal(&TJ.ev);
+	return NULL;
+}
+
+// ---- vista y orden del explorador (se guardan en la configuración)
+static struct {
+	bool open, just;
+	float anim;
+	int sel; // fila: 0 vista, 1 ordenar, 2 agrupar, 3 cerrar
+} VS;
+
+static void f_set_view(int sort, int desc, int group, int grid)
+{
+	state_lock();
+	if (sort >= 0)
+		G.f_sort = (u8)sort;
+	if (desc >= 0)
+		G.f_desc = desc;
+	if (group >= 0)
+		G.f_group = (u8)group;
+	if (grid >= 0)
+		G.f_grid = grid;
+	G.dirty_cfg = true;
+	G.rev++;
+	memcpy(&V, &G, sizeof G);
+	state_unlock();
+	f_reload_keep();
+}
+
+// fila de opciones a elegir una (como pestañas); devuelve la tocada o -1
+static int segmented(float x, float y, float w, float h, const char *const *opts, int n, int cur, bool focus)
+{
+	draw_rrect(x, y, w, h, h / 2, T.bg);
+	if (focus)
+		draw_rrect_outline(x, y, w, h, h / 2, 1.5f, T.accent);
+	float sw = w / n;
+	int hit = -1;
+	for (int k = 0; k < n; k++) {
+		float sx = x + k * sw;
+		if (k == cur)
+			draw_rrect(sx + 2, y + 2, sw - 4, h - 4, (h - 4) / 2, T.accent);
+		else if (touch_in(sx, y, sw, h))
+			draw_rrect(sx + 2, y + 2, sw - 4, h - 4, (h - 4) / 2, T.surface2);
+		text_draw_center_clip(opts[k], sx + sw / 2, y + (h - text_lineh(TS_SUB)) / 2, sw - 6, TS_SUB, k == cur ? 0xFFFFFFFF : T.text2);
+		if (tap(sx, y, sw, h))
+			hit = k;
+	}
+	return hit;
+}
+
+static void vs_draw(void)
+{
+	VS.anim = approach(VS.anim, VS.open ? 1 : 0, 16);
+	if (VS.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(VS.anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	const float X = 22, W = BOT_W - 44, SH = 24, LH = text_lineh(TS_SUB) + 1, RH = LH + SH + 6;
+	float h = 30 + 3 * RH + 44, y = SCR_H - h - 6 + (1 - a) * 40;
+	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
+	if (!VS.open)
+		return;
+	bool fresh = VS.just;
+	VS.just = false;
+	text_draw(_("Ver y ordenar"), X, y + 8, TS_BODY, T.text);
+	char cnt[32];
+	snprintf(cnt, sizeof cnt, F.n == 1 ? _("1 elemento") : _("%d elementos"), F.n);
+	text_draw_right(cnt, X + W, y + 10, TS_SUB, T.text3);
+	if (U.buttons && !fresh) {
+		if (g_krepeat & KEY_DOWN) VS.sel = (VS.sel + 1) % 4;
+		if (g_krepeat & KEY_UP) VS.sel = (VS.sel + 3) % 4;
+	}
+	int lr = U.buttons && !fresh ? ((g_krepeat & KEY_RIGHT) ? 1 : (g_krepeat & KEY_LEFT) ? -1 : 0) : 0;
+	float ry = y + 30;
+	// vista
+	const char *VIEW[2] = {_("Lista"), _("Iconos")};
+	text_draw(_("Vista"), X, ry, TS_SUB, T.text3);
+	int hit = segmented(X, ry + LH, W, SH, VIEW, 2, V.f_grid, U.buttons && VS.sel == 0);
+	if (!fresh && (hit >= 0 || (VS.sel == 0 && lr)))
+		f_set_view(-1, -1, -1, hit >= 0 ? hit : !V.f_grid);
+	ry += RH;
+	// ordenar por, y al lado el sentido
+	const char *SORT[4] = {_("Nombre"), _("Fecha"), _("Tamaño"), _("Tipo")};
+	text_draw(_("Ordenar por"), X, ry, TS_SUB, T.text3);
+	float dw = 40;
+	hit = segmented(X, ry + LH, W - dw - 6, SH, SORT, 4, V.f_sort, U.buttons && VS.sel == 1);
+	if (!fresh && (hit >= 0 || (VS.sel == 1 && lr)))
+		f_set_view(hit >= 0 ? hit : (V.f_sort + lr + 4) % 4, -1, -1, -1);
+	float dx = X + W - dw;
+	bool dp = touch_in(dx, ry + LH, dw, SH);
+	draw_rrect(dx, ry + LH, dw, SH, SH / 2, dp ? T.surface2 : T.bg);
+	draw_icon(V.f_desc ? IC_DOWN : IC_UP, dx + dw / 2, ry + LH + SH / 2, 14, T.accent);
+	if (!fresh && (tap(dx, ry + LH, dw, SH) || (U.buttons && VS.sel == 1 && (g_kdown & KEY_A))))
+		f_set_view(-1, !V.f_desc, -1, -1);
+	ry += RH;
+	// agrupar por
+	const char *GROUP[4] = {_("No"), _("Tipo"), _("Fecha"), _("Tamaño")};
+	text_draw(_("Agrupar por"), X, ry, TS_SUB, T.text3);
+	hit = segmented(X, ry + LH, W, SH, GROUP, 4, V.f_group, U.buttons && VS.sel == 2);
+	if (!fresh && (hit >= 0 || (VS.sel == 2 && lr)))
+		f_set_view(-1, -1, hit >= 0 ? hit : (V.f_group + lr + 4) % 4, -1);
+	// cerrar
+	float by = y + h - 40;
+	bool bp = touch_in(X, by, W, 32);
+	draw_rrect(X, by, W, 32, 16, bp || (U.buttons && VS.sel == 3) ? T.surface2 : T.bg);
+	if (U.buttons && VS.sel == 3)
+		draw_rrect_outline(X, by, W, 32, 16, 1.5f, T.accent);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	text_draw_center(cl, BOT_W / 2, by + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
+	if (!fresh && (tap(X, by, W, 32) || (U.buttons && VS.sel == 3 && (g_kdown & KEY_A)) || (g_kdown & KEY_B) ||
+	               (g_touch.up && !g_touch.drag && g_touch.sy < y)))
+		VS.open = false;
+	g_kdown &= ~(KEY_A | KEY_B);
+	g_touch.up = false;
+}
+
 // menú pequeño que sale del botón «+» de arriba: carpeta o documento de texto, y Cerrar
 static struct {
 	bool open, just;
@@ -2367,16 +2726,30 @@ static void tab_files(void)
 	bool root = !strcmp(F.path, "/");
 	const char *nm = F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
 	tab_header(nm, !root || F.nosaves);
+	th_poll();
 	float nx = BOT_W - 24, ny = 16;
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
+	// a la derecha: ordenar y agrupar, lista o iconos, y «+»
+	float gx = nx - 32, sx = nx - 64;
 	if (!F.missing && !F.nosaves) {
+		draw_circle(gx, ny, 12, touch_in(gx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
+		draw_icon(V.f_grid ? IC_LIST : IC_GRID, gx, ny, 14, T.text2);
+		draw_circle(sx, ny, 12, touch_in(sx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
+		draw_icon(IC_SORT, sx, ny, 14, T.text2);
 		draw_circle(nx, ny, 12, np ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
 		draw_icon(IC_PLUS, nx, ny, 13, 0xFFFFFFFF);
-		char cnt[32];
-		snprintf(cnt, sizeof cnt, F.n == 1 ? _("1 elemento") : _("%d elementos"), F.n);
-		text_draw_right(cnt, nx - 20, 11, TS_SUB, T.text3);
 		if (!g_dialog.open && (tap(nx - 14, ny - 14, 28, 28) || (U.buttons && !FP.mode && (g_kdown & KEY_X)))) {
 			f_new_menu();
+			return;
+		}
+		if (!g_dialog.open && tap(gx - 14, ny - 14, 28, 28)) {
+			f_set_view(-1, -1, -1, !V.f_grid);
+			return;
+		}
+		// también con Y en los accesos rápidos
+		if (!g_dialog.open && (tap(sx - 14, ny - 14, 28, 28) || (U.buttons && F.sel == 0 && (g_kdown & KEY_Y)))) {
+			VS.open = VS.just = true;
+			VS.sel = 0;
 			return;
 		}
 	}
@@ -2394,7 +2767,28 @@ static void tab_files(void)
 		F.off = F.target;
 	}
 	if (U.buttons && !g_dialog.open && (g_krepeat & (KEY_UP | KEY_DOWN))) {
-		F.sel += (g_krepeat & KEY_DOWN) ? 1 : -1;
+		int d = (g_krepeat & KEY_DOWN) ? 1 : -1;
+		const FView *c = &F.v[F.sel];
+		if (V.f_grid && c->kind == FV_ITEM) { // iconos: la casilla de la fila de arriba o de abajo más cerca en x
+			int best = -1;
+			for (int k = F.sel + d; k >= 0 && k < F.nv; k += d) {
+				const FView *o = &F.v[k];
+				if (o->y == c->y)
+					continue;
+				if (best >= 0 && o->y != F.v[best].y)
+					break;
+				if (o->kind != FV_ITEM) {
+					if (best < 0)
+						best = k;
+					break;
+				}
+				if (best < 0 || fabsf(o->x - c->x) < fabsf(F.v[best].x - c->x))
+					best = k;
+			}
+			F.sel = best >= 0 ? best : F.sel;
+		} else {
+			F.sel += d;
+		}
 		F.sel = F.sel < 0 ? 0 : F.sel >= F.nv ? F.nv - 1 : F.sel;
 		const FView *v = &F.v[F.sel];
 		if (v->y < F.target)
@@ -2404,6 +2798,11 @@ static void tab_files(void)
 	}
 	if (U.buttons && !g_dialog.open && F.sel == 0 && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
 		F.chip = (F.chip + ((g_krepeat & KEY_RIGHT) ? 1 : CH_COUNT - 1)) % CH_COUNT;
+	if (U.buttons && !g_dialog.open && V.f_grid && F.sel > 0 && F.v[F.sel].kind == FV_ITEM && (g_krepeat & (KEY_LEFT | KEY_RIGHT))) {
+		int k = F.sel + ((g_krepeat & KEY_RIGHT) ? 1 : -1);
+		if (k > 0 && k < F.nv && F.v[k].kind == FV_ITEM && F.v[k].y == F.v[F.sel].y)
+			F.sel = k;
+	}
 	F.target = clampf(F.target, 0, max);
 	F.off = approach(F.off, F.target, 18);
 
@@ -2436,6 +2835,22 @@ static void tab_files(void)
 		}
 		bool pressed = inview && touch_in(6, y, BOT_W - 12, v->h);
 		bool selected = i == F.sel && (U.buttons || f_selected());
+		if (v->kind == FV_GROUP) { // «Agrupar por»: se pliega y despliega tocándola (o con A)
+			bool closed = F.gclosed & (1u << v->idx);
+			if (pressed || (U.buttons && selected))
+				draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 8, T.surface);
+			draw_icon(closed ? IC_CHEV_RIGHT : IC_CHEV_DOWN, 18, y + v->h / 2, 11, T.accent);
+			text_draw(f_grp_name(v->idx), 30, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.accent);
+			char nn[8];
+			snprintf(nn, sizeof nn, "%d", v->n);
+			text_draw_right(nn, BOT_W - 16, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.text3);
+			draw_rect(30 + text_width(f_grp_name(v->idx), TS_SUB) + 8, y + v->h / 2, BOT_W - 60 - text_width(f_grp_name(v->idx), TS_SUB) - 8 - text_width(nn, TS_SUB), 1, T.divider);
+			if ((inview && tap(6, y, BOT_W - 12, v->h)) || (U.buttons && selected && (g_kdown & KEY_A) && !g_dialog.open)) {
+				F.gclosed ^= 1u << v->idx;
+				f_build_view();
+			}
+			continue;
+		}
 		if (v->kind == FV_SYSHDR) {
 			if (pressed || (U.buttons && selected))
 				draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 8, T.surface);
@@ -2454,6 +2869,32 @@ static void tab_files(void)
 		IconId ic;
 		u32 col;
 		f_kind(e, &ic, &col);
+		const Texture *thumb = th_get(v->idx);
+		if (V.f_grid) { // casilla: icono o miniatura grande y el nombre debajo
+			bool tp = inview && touch_in(v->x, y, v->w, v->h);
+			if (tp || selected)
+				draw_rrect(v->x + 2, y + 2, v->w - 4, v->h - 4, 12, selected ? col_alpha(T.accent, 0.16f) : T.surface);
+			float cx = v->x + v->w / 2, cy = y + 30;
+			if (thumb) {
+				float k = fminf(52.0f / thumb->w, 52.0f / thumb->h), tw = thumb->w * k, th = thumb->h * k;
+				draw_texture((Texture *)thumb, cx - tw / 2, cy - th / 2, tw, th, 1);
+			} else {
+				draw_rrect(cx - 22, cy - 22, 44, 44, 12, col_alpha(col, 0.18f));
+				draw_icon(ic, cx, cy, 24, col);
+			}
+			if (e->color)
+				draw_circle(v->x + 10, y + 9, 4, col);
+			if (e->sys && V.protect_sys) {
+				draw_circle(cx + 20, cy + 18, 7, T.bg);
+				draw_icon(IC_LOCK, cx + 20, cy + 18, 10, T.warn);
+			}
+			text_draw_center_clip(e->name, cx, y + 58, v->w - 8, TS_SUB, e->color ? col : T.text);
+			if (inview && long_press(v->x, y, v->w, v->h))
+				menu = i;
+			else if (inview && tap(v->x, y, v->w, v->h))
+				open = i;
+			continue;
+		}
 		// a la derecha, «⋮» para las opciones (como en la web); se comprueba antes que la fila
 		float mx = BOT_W - 30;
 		bool mp = inview && touch_in(mx - 4, y, 34, v->h);
@@ -2461,8 +2902,13 @@ static void tab_files(void)
 			draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 10, selected ? col_alpha(T.accent, 0.14f) : T.surface);
 		if (e->color) // destacada: una raya de su color a la izquierda, como en la web
 			draw_rrect(6, y + 5, 3, v->h - 10, 1.5f, col);
-		draw_rrect(14, y + 5, 26, 26, 8, col_alpha(col, 0.18f));
-		draw_icon(ic, 27, y + 18, 15, col);
+		if (thumb) { // la foto o el icono del programa, en pequeño
+			float k = fminf(26.0f / thumb->w, 26.0f / thumb->h), tw = thumb->w * k, th = thumb->h * k;
+			draw_texture((Texture *)thumb, 27 - tw / 2, y + 18 - th / 2, tw, th, 1);
+		} else {
+			draw_rrect(14, y + 5, 26, 26, 8, col_alpha(col, 0.18f));
+			draw_icon(ic, 27, y + 18, 15, col);
+		}
 		if (e->sys && V.protect_sys) {
 			draw_circle(37, y + 28, 5.5f, T.bg);
 			draw_icon(IC_LOCK, 37, y + 28, 8, T.warn);
@@ -3505,7 +3951,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || VS.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -3537,6 +3983,7 @@ static void draw_bottom(void)
 		f_menu();
 		pm_draw();
 		ty_draw();
+		vs_draw();
 	}
 	install_card();
 	dialog_draw();
@@ -4015,6 +4462,7 @@ int main(int argc, char **argv)
 	}
 
 	ops_exit();
+	th_exit();
 	ins_exit();
 	upd_exit();
 	tex_free(&U.ins_icon);

@@ -51,4 +51,5 @@ int  ins_pending(void);
 int  ins_snapshot(InsReq *out, int max);
 bool ins_busy(void);
 bool ins_peek(const char *path, InsReq *out); /* solo leer el CIA (nombre, icono, versión) */
+bool ins_icon(const char *path, u16 *px);     /* solo el icono 48×48 (RGB565), sin tocar AM */
 const char *ins_ver_text(u16 v, char *buf, size_t n); /* «1.2.3» */
