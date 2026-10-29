@@ -15,6 +15,7 @@
 #include "img.h"
 #include "txt.h"
 #include "hl.h"
+#include "trash.h"
 #include <time.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -60,7 +61,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL };
 
 typedef struct {
 	float off, target;
@@ -174,7 +175,7 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 		break;
 	case EV_DELETE:
 		*ic = IC_TRASH; *col = T.danger;
-		snprintf(sub, sn, "%s · %s", _("Eliminado"), e->device);
+		snprintf(sub, sn, "%s · %s", _("A la papelera"), e->device);
 		break;
 	case EV_PAIRED:
 		*ic = IC_LINK; *col = T.accent2;
@@ -193,6 +194,10 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 	case EV_MOVE:
 		*ic = IC_FOLDER; *col = T.accent2;
 		snprintf(sub, sn, "%s · %s", _("Movido"), e->device);
+		break;
+	case EV_RESTORE:
+		*ic = IC_REFRESH; *col = T.ok;
+		snprintf(sub, sn, "%s · %s", _("Recuperado de la papelera"), e->device);
 		break;
 	case EV_CREATE:
 		*ic = IC_NOTE; *col = T.accent;
@@ -1303,9 +1308,10 @@ typedef struct {
 	bool dir, sys;
 	u8 color;
 	u8 grp; // grupo al agrupar (por tipo, fecha o tamaño)
+	u32 tid; // en la papelera: su número
 	u64 size, mtime;
 } FEnt;
-enum { FV_CHIPS, FV_ITEM, FV_SYSHDR, FV_GROUP };
+enum { FV_CHIPS, FV_ITEM, FV_SYSHDR, FV_GROUP, FV_TRASH };
 typedef struct {
 	u8 kind;
 	short idx;   // elemento de F.e; en las cabeceras, el grupo o cuántos hay
@@ -1325,6 +1331,7 @@ static struct {
 	FView v[F_MAX + 24];
 	u32 gclosed;       // grupos plegados (se despliegan al cambiar de carpeta)
 	bool chips_on;     // accesos rápidos a la vista fuera de la raíz (se sacan tirando hacia abajo)
+	bool trash;        // se está viendo la papelera (F.path = "@trash")
 	float pull;        // cuánto se está tirando hacia abajo estando arriba del todo
 	int nv;
 	float off, target, total;
@@ -1473,6 +1480,8 @@ static bool f_collect(const FsxEntry *x, void *u)
 	size_t l = strlen(x->name);
 	if (!x->dir && !strncmp(x->name, ".c3d_", 5) && l > 5 && !strcmp(x->name + l - 5, ".part"))
 		return true; // temporales de subidas y copias
+	if (x->dir && !strcmp(x->name, "trash") && !strcasecmp(F.path, "/3ds/Cloud3DS"))
+		return true; // la papelera se ve aparte
 	if (F.n >= F_MAX) {
 		F.truncated = true;
 		return false;
@@ -1617,6 +1626,11 @@ static void f_build_view(void)
 					f_put(i, &y, &col);
 		f_endrow(&y, &col);
 	}
+	int tn;
+	if (!strcmp(F.path, "/") && (trash_size(&tn), tn)) { // en la raíz, al final: la papelera
+		F.v[F.nv++] = (FView){FV_TRASH, (short)tn, y + 6, 40, 6, BOT_W - 12, 0};
+		y += 46;
+	}
 	F.total = y + QR_PAD + (MS.on ? 48 : 0); // con la selección, sitio para que su barra no tape lo último
 }
 
@@ -1634,6 +1648,28 @@ static void f_load(const char *path)
 	F.truncated = false;
 	F.nosaves = false;
 	F.need_reload = false;
+	F.trash = !strcmp(path, "@trash");
+	if (F.trash) { // la papelera: sus elementos, lo más reciente primero
+		static TrashItem it[TRASH_MAX];
+		int n = trash_list(it, TRASH_MAX);
+		for (int i = 0; i < n && F.n < F_MAX; i++) {
+			FEnt *e = &F.e[F.n++];
+			memset(e, 0, sizeof *e);
+			util_strlcpy(e->name, it[i].name, sizeof e->name);
+			e->dir = it[i].dir, e->size = it[i].size, e->mtime = it[i].when, e->tid = it[i].id, e->color = it[i].color;
+		}
+		F.err = F.missing = false;
+		f_build_view();
+		if (!same) {
+			ms_end();
+			F.sel = 0;
+			F.off = F.target = 0;
+		}
+		if (F.sel >= F.nv)
+			F.sel = F.nv - 1;
+		F.info_for = -1;
+		return;
+	}
 	F.err = fsx_list(path, true, f_collect, NULL) < 0;
 	bool d;
 	u64 sz;
@@ -2974,7 +3010,10 @@ static void ms_ask_delete(void)
 		return;
 	}
 	char msg[200];
-	snprintf(msg, sizeof msg, _("Se eliminarán %d elementos de la tarjeta SD. Esta acción no se puede deshacer."), MS.n);
+	if (MS.n == 1)
+		snprintf(msg, sizeof msg, _("1 elemento irá a la papelera. Podrás recuperarlo durante %d días."), TRASH_DAYS);
+	else
+		snprintf(msg, sizeof msg, _("%d elementos irán a la papelera. Podrás recuperarlos durante %d días."), MS.n, TRASH_DAYS);
 	dialog_open(DLG_FDELMULTI, _("¿Eliminar?"), msg, _("Eliminar"), true);
 }
 
@@ -3113,6 +3152,49 @@ static void mc_draw(void)
 	g_touch.up = false;
 }
 
+// papelera: recuperar o borrar del todo el elemento elegido
+static struct {
+	bool open, just;
+	float anim;
+	int sel;
+} TS;
+
+static void trash_do_restore(int idx)
+{
+	TrashItem t;
+	char dst[700];
+	if (!trash_get(F.e[idx].tid, &t) || trash_restore(t.id, dst, sizeof dst) < 0) {
+		toast_icon(_("No se pudo recuperar"), IC_CLOSE, T.danger);
+		return;
+	}
+	state_lock();
+	if (t.color)
+		mark_set(dst, t.color);
+	event_add(EV_RESTORE, t.name, G.console, 0);
+	G.rev++;
+	state_unlock();
+	char msg[200];
+	snprintf(msg, sizeof msg, _("Recuperado en %s"), dst);
+	toast_icon(msg, IC_REFRESH, T.ok);
+	f_reload_keep();
+}
+
+static void ts_draw(void)
+{
+	const FEnt *e = f_selected();
+	static const IconId ic[2] = {IC_REFRESH, IC_TRASH};
+	const char *lab[2] = {_("Recuperar"), _("Eliminar para siempre")};
+	const u32 col[2] = {T.ok, T.danger};
+	int r = sheet_list(&TS.open, &TS.just, &TS.anim, &TS.sel, e ? e->name : "", ic, lab, col, 2);
+	if (r == 0 && e)
+		trash_do_restore(F.v[F.sel].idx);
+	else if (r == 1 && e) {
+		char msg[200];
+		snprintf(msg, sizeof msg, _("«%s» se borrará de la tarjeta SD. Esta acción no se puede deshacer."), e->name);
+		dialog_open(DLG_TRASHDEL, _("¿Eliminar para siempre?"), msg, _("Eliminar"), true);
+	}
+}
+
 // copias en cola: una por frame como mucho, cuando la anterior terminó
 static void cq_tick(void)
 {
@@ -3141,7 +3223,7 @@ static void tab_files(void)
 		f_reload_keep();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = !strcmp(F.path, "/");
-	const char *nm = F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
+	const char *nm = F.trash ? _("Papelera") : F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
 	th_poll();
 	if (MS.on) { // selección múltiple: ✕ para salir, cuántos van y «Todo»
 		char t[48];
@@ -3162,6 +3244,21 @@ static void tab_files(void)
 			g_kdown &= ~KEY_B;
 		}
 		g_kdown &= ~KEY_X;
+	} else if (F.trash) { // papelera: atrás a la raíz y «Vaciar»
+		tab_header(nm, true);
+		if (F.n) {
+			const char *vt = _("Vaciar");
+			float vw = text_width(vt, TS_SUB) + 22, vx = BOT_W - 12 - vw;
+			draw_rrect(vx, 6, vw, 20, 10, touch_in(vx, 4, vw, 24) ? col_alpha(T.danger, 0.35f) : col_alpha(T.danger, 0.16f));
+			text_draw_center(vt, vx + vw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.danger);
+			if (!g_dialog.open && tap(vx, 4, vw, 24))
+				dialog_open(DLG_TRASHEMPTY, _("¿Vaciar la papelera?"), _("Todo lo que hay en la papelera se borrará para siempre."), _("Vaciar"), true);
+		}
+		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
+			f_load("/");
+			g_kdown &= ~KEY_B;
+			return;
+		}
 	} else {
 		tab_header(nm, !root || F.nosaves);
 	}
@@ -3169,7 +3266,7 @@ static void tab_files(void)
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
 	// a la derecha: ordenar y agrupar, lista o iconos, y «+»
 	float gx = nx - 32, sx = nx - 64;
-	if (!F.missing && !F.nosaves && !MS.on) {
+	if (!F.missing && !F.nosaves && !MS.on && !F.trash) {
 		draw_circle(gx, ny, 12, touch_in(gx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(V.f_grid ? IC_LIST : IC_GRID, gx, ny, 14, T.text2);
 		draw_circle(sx, ny, 12, touch_in(sx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
@@ -3191,7 +3288,7 @@ static void tab_files(void)
 			return;
 		}
 	}
-	if ((!root || F.nosaves) && !MS.on && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
+	if ((!root || F.nosaves) && !MS.on && !F.trash && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
 		if (F.nosaves)
 			f_reload_keep();
 		else
@@ -3311,6 +3408,26 @@ static void tab_files(void)
 			if ((inview && tap(6, y, BOT_W - 12, v->h)) || (U.buttons && selected && (g_kdown & KEY_A) && !g_dialog.open)) {
 				F.gclosed ^= 1u << v->idx;
 				f_build_view();
+			}
+			continue;
+		}
+		if (v->kind == FV_TRASH) {
+			bool tp = inview && touch_in(6, y, BOT_W - 12, v->h);
+			draw_rrect(6, y, BOT_W - 12, v->h, 10, tp || (U.buttons && i == F.sel) ? T.surface2 : T.surface);
+			draw_icon(IC_TRASH, 27, y + v->h / 2, 15, T.text2);
+			int tc;
+			char sz[24], sub[96];
+			util_fmt_size(sz, sizeof sz, trash_size(&tc));
+			if (tc == 1)
+				snprintf(sub, sizeof sub, _("1 elemento · %s"), sz);
+			else
+				snprintf(sub, sizeof sub, _("%d elementos · %s"), tc, sz);
+			text_draw(_("Papelera"), 48, y + 4, TS_BODY, T.text);
+			text_draw_clip(sub, 48, y + 21, BOT_W - 90, TS_SUB, T.text3);
+			draw_icon(IC_CHEV_RIGHT, BOT_W - 26, y + v->h / 2, 11, T.text3);
+			if ((inview && tap(6, y, BOT_W - 12, v->h)) || (U.buttons && i == F.sel && (g_kdown & KEY_A) && !g_dialog.open)) {
+				f_load("@trash");
+				return;
 			}
 			continue;
 		}
@@ -3454,6 +3571,11 @@ static void tab_files(void)
 	} else if (F.nosaves) {
 		wrap_center(_("Las partidas de los juegos van cifradas dentro de «Nintendo 3DS». Haz una copia con Checkpoint o JKSM y aparecerá aquí."),
 		            BOT_W / 2, my + 14, BOT_W - 40, TS_SUB, 4, T.text3);
+	} else if (F.trash && F.n == 0) {
+		text_draw_center(_("La papelera está vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
+		char t[96];
+		snprintf(t, sizeof t, _("Lo que borres se queda aquí %d días"), TRASH_DAYS);
+		text_draw_center(t, BOT_W / 2, my + 62, TS_SUB, T.text3);
 	} else if (F.err || F.n == 0) {
 		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	}
@@ -3467,10 +3589,21 @@ static void tab_files(void)
 	}
 	if (MS.on && U.buttons && !g_dialog.open && (g_kdown & KEY_Y))
 		MA.open = MA.just = true, MA.sel = 0;
+	if (F.trash) {
+		if (open >= 0 && U.buttons && (g_kdown & KEY_A))
+			trash_do_restore(F.v[open].idx);
+		else if (open >= 0 || menu >= 0) {
+			F.sel = open >= 0 ? open : menu;
+			TS.open = TS.just = true, TS.sel = 0;
+		}
+		return;
+	}
 	if (pick >= 0) {
 		F.sel = pick;
 		ms_toggle(F.e[F.v[pick].idx].name);
 	}
+	if (msel >= 0 && F.trash)
+		menu = msel, msel = -1;
 	if (msel >= 0) {
 		F.sel = msel;
 		ms_start(F.e[F.v[msel].idx].name);
@@ -3750,9 +3883,9 @@ static void fa_run(int a)
 		U.want_frename = true;
 	} else if (a == FA_DELETE) {
 		char msg[200];
-		snprintf(msg, sizeof msg, e->dir ? _("Se eliminarán «%s» y todo su contenido. Esta acción no se puede deshacer.")
-		                                 : _("Se eliminará «%s» de la tarjeta SD. Esta acción no se puede deshacer."),
-		         e->name);
+		snprintf(msg, sizeof msg, e->dir ? _("«%s» y todo su contenido irán a la papelera. Podrás recuperarlo durante %d días.")
+		                                 : _("«%s» irá a la papelera. Podrás recuperarlo durante %d días."),
+		         e->name, TRASH_DAYS);
 		dialog_open(DLG_FDELETE, _("¿Eliminar?"), msg, _("Eliminar"), true);
 	} else if (a == FA_MOVE || a == FA_COPY) {
 		FP.mode = a;
@@ -4115,10 +4248,70 @@ static void ms_top(float a)
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
 }
 
+static float info_row(float x, float y, float w, const char *label, const char *value, u32 vc, float a);
+static void f_fmt_date(char *out, size_t n, u64 t);
+
+// arriba, en la papelera: de dónde venía, cuándo y quién lo borró, y cuánto le queda
+static void trash_top(float a)
+{
+	const FEnt *e = f_selected();
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28;
+	TrashItem t;
+	if (!e || !trash_get(e->tid, &t)) {
+		int n;
+		char sz[24], msg[96];
+		util_fmt_size(sz, sizeof sz, trash_size(&n));
+		draw_icon(IC_TRASH, TOP_W / 2, y0 + h / 2 - 16, 30, col_alpha(T.text3, a));
+		snprintf(msg, sizeof msg, _("Lo borrado se guarda aquí %d días · ocupa %s"), TRASH_DAYS, sz);
+		text_draw_center(msg, TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
+		return;
+	}
+	IconId ic;
+	u32 col;
+	f_kind(e, &ic, &col);
+	const float PS = 96;
+	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
+	draw_icon(ic, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(col, a));
+	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 12;
+	text_wrap_lines(t.name, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
+	y += 2 * text_lineh(TS_TITLE) + 4;
+	char v[512], b[48];
+	util_strlcpy(v, t.from, sizeof v);
+	char *sl = strrchr(v, '/');
+	if (sl && sl != v)
+		*sl = 0;
+	else
+		strcpy(v, "/");
+	y = info_row(rx, y, rw, _("Estaba en"), v, T.text2, a);
+	f_fmt_date(b, sizeof b, t.when);
+	snprintf(v, sizeof v, t.device[0] ? "%s · %s" : "%s", b, t.device);
+	y = info_row(rx, y, rw, _("Borrado"), v, T.text2, a);
+	u64 now = util_unix_now(), end = t.when + TRASH_DAYS * 86400ull;
+	int days = end > now ? (int)((end - now + 86399) / 86400) : 0;
+	if (days > TRASH_DAYS) // la hora de la consola pudo ir adelantada al borrar
+		days = TRASH_DAYS;
+	snprintf(v, sizeof v, days == 1 ? _("mañana") : _("en %d días"), days);
+	y = info_row(rx, y, rw, _("Se borra"), v, days <= 1 ? T.warn : T.text2, a);
+	util_fmt_size(b, sizeof b, t.size);
+	y = info_row(rx, y, rw, _("Tamaño"), b, T.text2, a);
+	float by = y0 + h - 22;
+	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	char hint[96];
+	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Recuperar"), GLYPH_Y, _("Opciones"));
+	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
+}
+
 static void files_top(float a)
 {
 	if (MS.on) {
 		ms_top(a);
+		return;
+	}
+	if (F.trash) {
+		trash_top(a);
 		return;
 	}
 	f_info_refresh();
@@ -4612,7 +4805,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -4648,6 +4841,7 @@ static void draw_bottom(void)
 		vs_draw();
 		ma_draw();
 		mc_draw();
+		ts_draw();
 	}
 	install_card();
 	dialog_draw();
@@ -4688,15 +4882,23 @@ static void handle_dialog(int ctx, bool ok)
 				continue;
 			char full[700];
 			f_full(i, full, sizeof full);
-			if (fsx_rmrf(full) == 0) {
+			if (trash_put(full, G.console, (u8)mark_get(full)) == 0) {
 				mark_deleted(full);
 				event_add(EV_DELETE, F.e[i].name, G.console, 0);
 			}
 		}
+	} else if (ctx == DLG_TRASHEMPTY) {
+		trash_empty();
+		G.fsrev++;
+	} else if (ctx == DLG_TRASHDEL) {
+		const FEnt *e = f_selected();
+		if (e)
+			trash_purge(e->tid);
+		G.fsrev++;
 	} else if (ctx == DLG_FDELETE) {
 		char full[700];
 		f_full(FM.idx, full, sizeof full);
-		if (fsx_rmrf(full) == 0) {
+		if (trash_put(full, G.console, (u8)mark_get(full)) == 0) {
 			mark_deleted(full);
 			event_add(EV_DELETE, F.e[FM.idx].name, G.console, 0);
 		}
@@ -4710,7 +4912,7 @@ static void handle_dialog(int ctx, bool ok)
 		toast_icon(_("Nuevo PIN y código QR generados"), IC_KEY, T.accent2);
 	if (ctx == DLG_FDELMULTI)
 		ms_end();
-	if (ctx == DLG_FDELETE || ctx == DLG_FDELMULTI)
+	if (ctx == DLG_FDELETE || ctx == DLG_FDELMULTI || ctx == DLG_TRASHEMPTY || ctx == DLG_TRASHDEL)
 		f_reload();
 	if (ctx == DLG_FEXISTS) {
 		char dir[512], dst[1100];
@@ -4899,6 +5101,11 @@ static void update(void)
 		return;
 	}
 	cq_tick();
+	static u64 trash_next;
+	if (osGetTime() >= trash_next) { // lo de más de unos días se va solo; basta mirarlo cada hora
+		trash_next = osGetTime() + 3600 * 1000ull;
+		trash_expire();
+	}
 	if (U.want_txt) {
 		int m = U.want_txt;
 		U.want_txt = 0;
@@ -5096,6 +5303,7 @@ int main(int argc, char **argv)
 	theme_set(!G.light);
 	load_console_name();
 	fsx_init();
+	trash_init();
 	aptHook(&hook, apt_hook, NULL);
 	hidSetRepeatParameters(18, 5);
 

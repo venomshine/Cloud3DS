@@ -1136,4 +1136,82 @@ TR = {
     'Acciones':
         ('Actions',
          '操作'),
+    'A la papelera':
+        ('Moved to trash',
+         'ゴミ箱へ'),
+    'Recuperado de la papelera':
+        ('Restored from trash',
+         'ゴミ箱から復元'),
+    '1 elemento irá a la papelera. Podrás recuperarlo durante %d días.':
+        ('1 item will go to the trash. You can restore it for %d days.',
+         '1 項目がゴミ箱に移動します。%d日間は元に戻せます。'),
+    '%d elementos irán a la papelera. Podrás recuperarlos durante %d días.':
+        ('%d items will go to the trash. You can restore them for %d days.',
+         '%d 項目がゴミ箱に移動します。%d日間は元に戻せます。'),
+    'No se pudo recuperar':
+        ("Couldn't restore it",
+         '元に戻せませんでした'),
+    'Recuperado en %s':
+        ('Restored to %s',
+         '%s に戻しました'),
+    'Recuperar':
+        ('Restore',
+         '元に戻す'),
+    'Eliminar para siempre':
+        ('Delete forever',
+         '完全に削除'),
+    '«%s» se borrará de la tarjeta SD. Esta acción no se puede deshacer.':
+        ("“%s” will be deleted from the SD card. This can't be undone.",
+         '「%s」はSDカードから削除されます。元に戻せません。'),
+    '¿Eliminar para siempre?':
+        ('Delete forever?',
+         '完全に削除しますか?'),
+    'Papelera':
+        ('Trash',
+         'ゴミ箱'),
+    'Vaciar':
+        ('Empty',
+         '空にする'),
+    '¿Vaciar la papelera?':
+        ('Empty the trash?',
+         'ゴミ箱を空にしますか?'),
+    'Todo lo que hay en la papelera se borrará para siempre.':
+        ('Everything in the trash will be deleted forever.',
+         'ゴミ箱の中身はすべて完全に削除されます。'),
+    '1 elemento · %s':
+        ('1 item · %s',
+         '1 項目 · %s'),
+    '%d elementos · %s':
+        ('%d items · %s',
+         '%d 項目 · %s'),
+    'La papelera está vacía':
+        ('The trash is empty',
+         'ゴミ箱は空です'),
+    'Lo que borres se queda aquí %d días':
+        ('What you delete stays here for %d days',
+         '削除したものは%d日間ここに残ります'),
+    '«%s» y todo su contenido irán a la papelera. Podrás recuperarlo durante %d días.':
+        ('“%s” and everything in it will go to the trash. You can restore it for %d days.',
+         '「%s」とその中身がゴミ箱に移動します。%d日間は元に戻せます。'),
+    '«%s» irá a la papelera. Podrás recuperarlo durante %d días.':
+        ('“%s” will go to the trash. You can restore it for %d days.',
+         '「%s」がゴミ箱に移動します。%d日間は元に戻せます。'),
+    'Lo borrado se guarda aquí %d días · ocupa %s':
+        ('Deleted items stay here for %d days · using %s',
+         '削除したものは%d日間保管 · 使用中 %s'),
+    'Estaba en':
+        ('Was in',
+         '元の場所'),
+    'Borrado':
+        ('Deleted',
+         '削除日時'),
+    'mañana':
+        ('tomorrow',
+         '明日'),
+    'en %d días':
+        ('in %d days',
+         '%d日後'),
+    'Se borra':
+        ('Removed',
+         '自動削除'),
 }

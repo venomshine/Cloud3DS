@@ -13,6 +13,7 @@
 #include "install.h"
 #include "state.h"
 #include "util.h"
+#include "trash.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -560,6 +561,8 @@ static bool list_cb(const FsxEntry *e, void *u)
 	size_t l = strlen(e->name);
 	if (!e->dir && !strncmp(e->name, ".c3d_", 5) && l > 5 && !strcmp(e->name + l - 5, ".part"))
 		return true;
+	if (e->dir && !strcmp(x->dir, "/3ds/Cloud3DS") && !strcmp(e->name, "trash")) // la papelera va aparte
+		return true;
 	if (x->n++)
 		buf_puts(x->b, ",");
 	buf_puts(x->b, "{\"n\":");
@@ -781,13 +784,92 @@ static void h_delete(Conn *c)
 	}
 	if (!check_write(c, p, SYS_BLOCK))
 		return;
-	if (fsx_rmrf(p) < 0) {
+	bool d;
+	u64 sz;
+	if (fsx_stat(p, &d, &sz) < 0) {
 		resp_err(c, 404, "not_found");
+		return;
+	}
+	// a la papelera (se recupera durante unos días); lo que ya está en ella se borra del todo
+	char dev[48];
+	state_lock();
+	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
+	u8 col = (u8)mark_get(p);
+	state_unlock();
+	if (trash_put(p, dev, col) < 0 && fsx_rmrf(p) < 0) {
+		resp_err(c, 500, "io");
 		return;
 	}
 	state_lock();
 	event_add(EV_DELETE, basename_of(p), G.dev[c->dev].name, 0);
 	mark_deleted(p);
+	state_unlock();
+	resp_ok(c);
+}
+
+/* papelera: lista, recuperar, borrar del todo y vaciar */
+static void h_trash(Conn *c)
+{
+	static TrashItem it[TRASH_MAX]; /* solo el hilo del servidor la usa */
+	int n = trash_list(it, TRASH_MAX), cnt;
+	u64 total = trash_size(&cnt);
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"days\":%d,\"size\":%llu,\"items\":[", TRASH_DAYS, (unsigned long long)total);
+	for (int i = 0; i < n; i++) {
+		buf_printf(&b, "%s{\"id\":%lu,\"n\":", i ? "," : "", (unsigned long)it[i].id);
+		buf_json_str(&b, it[i].name);
+		buf_puts(&b, ",\"f\":");
+		buf_json_str(&b, it[i].from);
+		buf_puts(&b, ",\"by\":");
+		buf_json_str(&b, it[i].device);
+		buf_printf(&b, ",\"t\":%llu,\"s\":%llu,\"d\":%s}", (unsigned long long)it[i].when, (unsigned long long)it[i].size,
+		           it[i].dir ? "true" : "false");
+	}
+	buf_puts(&b, "]}");
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
+static void h_trash_op(Conn *c, int op)
+{
+	if (G.readonly) {
+		resp_err(c, 403, "readonly");
+		return;
+	}
+	char ids[16] = "";
+	u32 id = qget(c->query, "id", ids, sizeof ids) ? (u32)strtoul(ids, NULL, 10) : 0;
+	TrashItem t;
+	if (op != 2 && !trash_get(id, &t)) {
+		resp_err(c, 404, "not_found");
+		return;
+	}
+	if (op == 0) { /* recuperar */
+		char dst[700];
+		if (trash_restore(id, dst, sizeof dst) < 0) {
+			resp_err(c, 500, "io");
+			return;
+		}
+		state_lock();
+		if (t.color)
+			mark_set(dst, t.color);
+		event_add(EV_RESTORE, t.name, G.dev[c->dev].name, 0);
+		G.rev++;
+		state_unlock();
+		Buf b = {0};
+		buf_puts(&b, "{\"ok\":true,\"path\":");
+		buf_json_str(&b, dst);
+		buf_puts(&b, "}");
+		resp_json(c, 200, &b);
+		free(b.p);
+		return;
+	}
+	if (op == 1)
+		trash_purge(id);
+	else
+		trash_empty();
+	state_lock();
+	G.rev++;
+	G.fsrev++;
 	state_unlock();
 	resp_ok(c);
 }
@@ -1038,8 +1120,11 @@ static void h_upload(Conn *c)
 	}
 	u64 fr = 0, tot = 0;
 	if (fsx_space(&fr, &tot) && fr + (exists ? sz : 0) < c->clen + 512 * 1024) {
-		resp_err(c, 507, "no_space");
-		return;
+		trash_make_room(c->clen + 512 * 1024 - fr - (exists ? sz : 0)); // la papelera cede su sitio, lo más viejo primero
+		if (fsx_space(&fr, &tot) && fr + (exists ? sz : 0) < c->clen + 512 * 1024) {
+			resp_err(c, 507, "no_space");
+			return;
+		}
 	}
 
 	snprintf(c->u_final, sizeof c->u_final, "sdmc:%s", p);
@@ -1214,6 +1299,14 @@ static void route(Conn *c, const char *body)
 		h_rename(c);
 	else if (strcmp(p, "delete") == 0 && post)
 		h_delete(c);
+	else if (strcmp(p, "trash") == 0 && get)
+		h_trash(c);
+	else if (strcmp(p, "trash_restore") == 0 && post)
+		h_trash_op(c, 0);
+	else if (strcmp(p, "trash_delete") == 0 && post)
+		h_trash_op(c, 1);
+	else if (strcmp(p, "trash_empty") == 0 && post)
+		h_trash_op(c, 2);
 	else if (strcmp(p, "move") == 0 && post)
 		h_move(c);
 	else if (strcmp(p, "copy") == 0 && post)
