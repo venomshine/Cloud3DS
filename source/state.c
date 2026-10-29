@@ -26,6 +26,7 @@ void state_init(void)
 	G.protect_sys = true;
 	G.wifi = -1;
 	G.upd_auto = true;
+	G.f_sysapart = G.f_pin = true;
 	pin_regen();
 }
 
@@ -322,7 +323,9 @@ void config_load(void)
 	G.upd_auto = jbool(r, "upd_auto", true);
 	G.f_sort = (u8)jnum(r, "f_sort", 0) % 4;
 	G.f_desc = jbool(r, "f_desc", false);
-	G.f_group = (u8)jnum(r, "f_group", 0) % 4;
+	G.f_group = (u8)jnum(r, "f_group", 0) % 5;
+	G.f_sysapart = jbool(r, "f_sysapart", true);
+	G.f_pin = jbool(r, "f_pin", true);
 	G.f_grid = jbool(r, "f_grid", false);
 	const char *pin = jstr(r, "pin"), *key = jstr(r, "qr_key");
 	bool keep = strlen(pin) == 4 && strspn(pin, "0123456789") == 4 && strlen(key) == 8 && strspn(key, "0123456789abcdef") == 8;
@@ -386,6 +389,8 @@ void config_save(void)
 	cJSON_AddNumberToObject(r, "f_sort", G.f_sort);
 	cJSON_AddBoolToObject(r, "f_desc", G.f_desc);
 	cJSON_AddNumberToObject(r, "f_group", G.f_group);
+	cJSON_AddBoolToObject(r, "f_sysapart", G.f_sysapart);
+	cJSON_AddBoolToObject(r, "f_pin", G.f_pin);
 	cJSON_AddBoolToObject(r, "f_grid", G.f_grid);
 	cJSON_AddStringToObject(r, "pin", G.pin);
 	cJSON_AddStringToObject(r, "qr_key", G.qr_key);

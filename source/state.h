@@ -89,7 +89,9 @@ typedef struct {
 	bool qr_min;      /* tarjeta del QR minimizada */
 	u8   f_sort;      /* explorador de la consola: 0 nombre, 1 fecha, 2 tamaño, 3 tipo */
 	bool f_desc;      /* orden al revés */
-	u8   f_group;     /* agrupar: 0 no, 1 tipo, 2 fecha, 3 tamaño */
+	u8   f_group;     /* agrupar: 0 no, 1 tipo, 2 fecha, 3 tamaño, 4 color */
+	bool f_sysapart;  /* carpetas del sistema en su propio apartado */
+	bool f_pin;       /* destacadas con color, arriba del todo */
 	bool f_grid;      /* vista de iconos en vez de lista */
 	bool upd_auto;    /* buscar actualizaciones al abrir */
 

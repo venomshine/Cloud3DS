@@ -1049,4 +1049,34 @@ TR = {
     'No se encontró':
         ('Not found',
          '見つかりませんでした'),
+    'Rojo':
+        ('Red',
+         '赤'),
+    'Naranja':
+        ('Orange',
+         'オレンジ'),
+    'Amarillo':
+        ('Yellow',
+         '黄'),
+    'Verde':
+        ('Green',
+         '緑'),
+    'Azul':
+        ('Blue',
+         '青'),
+    'Morado':
+        ('Purple',
+         '紫'),
+    'Sin color':
+        ('No color',
+         '色なし'),
+    'Color':
+        ('Color',
+         '色'),
+    'Sistema aparte':
+        ('System apart',
+         'システムを分ける'),
+    'Destacadas arriba':
+        ('Highlighted first',
+         '色付きを上に'),
 }

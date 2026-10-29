@@ -1487,6 +1487,8 @@ static int f_grp(const FEnt *e)
 	}
 	case 3: // tamaño
 		return e->dir ? 0 : e->size == 0 ? 1 : e->size < (1 << 20) ? 2 : e->size < (100 << 20) ? 3 : e->size < (1 << 30) ? 4 : 5;
+	case 4: // color: cada uno en su grupo y lo que no tiene, al final
+		return e->color ? e->color - 1 : 6;
 	}
 	return 0;
 }
@@ -1506,6 +1508,9 @@ static const char *f_grp_name(int g)
 		return tr(BY_DATE[g]);
 	if (V.f_group == 3 && g < (int)ARRAY_LEN(BY_SIZE))
 		return tr(BY_SIZE[g]);
+	static const char *const BY_COLOR[] = {N_("Rojo"), N_("Naranja"), N_("Amarillo"), N_("Verde"), N_("Azul"), N_("Morado"), N_("Sin color")};
+	if (V.f_group == 4 && g < (int)ARRAY_LEN(BY_COLOR))
+		return tr(BY_COLOR[g]);
 	return "";
 }
 
@@ -1517,7 +1522,7 @@ static int f_cmp(const void *a, const void *b)
 		return x->grp - y->grp;
 	if (x->dir != y->dir)
 		return y->dir - x->dir;
-	if (!!x->color != !!y->color)
+	if (V.f_pin && !!x->color != !!y->color)
 		return !!y->color - !!x->color;
 	int r = 0;
 	if (V.f_sort == 1)
@@ -1564,9 +1569,10 @@ static void f_build_view(void)
 	F.v[F.nv++] = (FView){FV_CHIPS, -1, y, 44, 0, BOT_W, 0};
 	y += 44;
 	int nsys = 0, last = -1;
+	bool apart = V.f_sysapart;
 	for (int i = 0; i < F.n; i++) {
 		const FEnt *e = &F.e[i];
-		if (e->sys) {
+		if (e->sys && apart) {
 			nsys++;
 			continue;
 		}
@@ -1575,7 +1581,7 @@ static void f_build_view(void)
 			last = e->grp;
 			short cnt = 0;
 			for (int k = i; k < F.n; k++)
-				cnt += !F.e[k].sys && F.e[k].grp == last;
+				cnt += (!F.e[k].sys || !apart) && F.e[k].grp == last;
 			F.v[F.nv++] = (FView){FV_GROUP, (short)last, y, 26, 0, BOT_W, cnt};
 			y += 26;
 		}
@@ -2572,6 +2578,17 @@ static struct {
 	int sel; // fila: 0 vista, 1 ordenar, 2 agrupar, 3 cerrar
 } VS;
 
+static void f_toggle(bool *gfield)
+{
+	state_lock();
+	*gfield = !*gfield;
+	G.dirty_cfg = true;
+	G.rev++;
+	memcpy(&V, &G, sizeof G);
+	state_unlock();
+	f_reload_keep();
+}
+
 static void f_set_view(int sort, int desc, int group, int grid)
 {
 	state_lock();
@@ -2611,6 +2628,21 @@ static int segmented(float x, float y, float w, float h, const char *const *opts
 	return hit;
 }
 
+// botón que se enciende y apaga (para «Sistema aparte» y «Destacadas arriba»)
+static bool switch_chip(float x, float y, float w, float h, const char *label, bool on, bool focus)
+{
+	bool p = touch_in(x, y, w, h);
+	draw_rrect(x, y, w, h, h / 2, on ? col_alpha(T.accent, 0.22f) : p ? T.surface2 : T.bg);
+	if (focus)
+		draw_rrect_outline(x, y, w, h, h / 2, 1.5f, T.accent);
+	float cx = x + 16, cy = y + h / 2;
+	draw_circle(cx, cy, 7, on ? T.accent : T.surface2);
+	if (on)
+		draw_icon(IC_CHECK, cx, cy, 9, 0xFFFFFFFF);
+	text_draw_clip(label, x + 28, cy - text_lineh(TS_SUB) / 2, w - 34, TS_SUB, on ? T.text : T.text2);
+	return tap(x, y, w, h);
+}
+
 static void vs_draw(void)
 {
 	VS.anim = approach(VS.anim, VS.open ? 1 : 0, 16);
@@ -2618,31 +2650,28 @@ static void vs_draw(void)
 		return;
 	float a = ease_out_cubic(VS.anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-	const float X = 22, W = BOT_W - 44, SH = 24, LH = text_lineh(TS_SUB) + 1, RH = LH + SH + 6;
-	float h = 30 + 3 * RH + 44, y = SCR_H - h - 6 + (1 - a) * 40;
+	const float X = 22, W = BOT_W - 44, SH = 24, LH = text_lineh(TS_SUB) + 1, RH = LH + SH + 6, TH = 28;
+	float h = 36 + 2 * RH + TH + 8 + 42, y = SCR_H - h - 6 + (1 - a) * 40;
 	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
 	if (!VS.open)
 		return;
 	bool fresh = VS.just;
 	VS.just = false;
-	text_draw(_("Ver y ordenar"), X, y + 8, TS_BODY, T.text);
-	char cnt[32];
-	snprintf(cnt, sizeof cnt, F.n == 1 ? _("1 elemento") : _("%d elementos"), F.n);
-	text_draw_right(cnt, X + W, y + 10, TS_SUB, T.text3);
+	// filas para la cruceta: 0 vista, 1 ordenar, 2 agrupar, 3 interruptores, 4 cerrar
 	if (U.buttons && !fresh) {
-		if (g_krepeat & KEY_DOWN) VS.sel = (VS.sel + 1) % 4;
-		if (g_krepeat & KEY_UP) VS.sel = (VS.sel + 3) % 4;
+		if (g_krepeat & KEY_DOWN) VS.sel = (VS.sel + 1) % 5;
+		if (g_krepeat & KEY_UP) VS.sel = (VS.sel + 4) % 5;
 	}
 	int lr = U.buttons && !fresh ? ((g_krepeat & KEY_RIGHT) ? 1 : (g_krepeat & KEY_LEFT) ? -1 : 0) : 0;
-	float ry = y + 30;
-	// vista
+	bool A = U.buttons && !fresh && (g_kdown & KEY_A);
+	// cabecera: título y, a la derecha, lista o iconos
+	text_draw(_("Ver y ordenar"), X, y + 12, TS_BODY, T.text);
 	const char *VIEW[2] = {_("Lista"), _("Iconos")};
-	text_draw(_("Vista"), X, ry, TS_SUB, T.text3);
-	int hit = segmented(X, ry + LH, W, SH, VIEW, 2, V.f_grid, U.buttons && VS.sel == 0);
-	if (!fresh && (hit >= 0 || (VS.sel == 0 && lr)))
+	int hit = segmented(X + W - 130, y + 8, 130, SH, VIEW, 2, V.f_grid, U.buttons && VS.sel == 0);
+	if (!fresh && (hit >= 0 || (VS.sel == 0 && (lr || A))))
 		f_set_view(-1, -1, -1, hit >= 0 ? hit : !V.f_grid);
-	ry += RH;
+	float ry = y + 38;
 	// ordenar por, y al lado el sentido
 	const char *SORT[4] = {_("Nombre"), _("Fecha"), _("Tamaño"), _("Tipo")};
 	text_draw(_("Ordenar por"), X, ry, TS_SUB, T.text3);
@@ -2654,26 +2683,35 @@ static void vs_draw(void)
 	bool dp = touch_in(dx, ry + LH, dw, SH);
 	draw_rrect(dx, ry + LH, dw, SH, SH / 2, dp ? T.surface2 : T.bg);
 	draw_icon(V.f_desc ? IC_DOWN : IC_UP, dx + dw / 2, ry + LH + SH / 2, 14, T.accent);
-	if (!fresh && (tap(dx, ry + LH, dw, SH) || (U.buttons && VS.sel == 1 && (g_kdown & KEY_A))))
+	if (!fresh && (tap(dx, ry + LH, dw, SH) || (VS.sel == 1 && A)))
 		f_set_view(-1, !V.f_desc, -1, -1);
 	ry += RH;
 	// agrupar por
-	const char *GROUP[4] = {_("No"), _("Tipo"), _("Fecha"), _("Tamaño")};
+	const char *GROUP[5] = {_("No"), _("Tipo"), _("Fecha"), _("Tamaño"), _("Color")};
 	text_draw(_("Agrupar por"), X, ry, TS_SUB, T.text3);
-	hit = segmented(X, ry + LH, W, SH, GROUP, 4, V.f_group, U.buttons && VS.sel == 2);
+	hit = segmented(X, ry + LH, W, SH, GROUP, 5, V.f_group, U.buttons && VS.sel == 2);
 	if (!fresh && (hit >= 0 || (VS.sel == 2 && lr)))
-		f_set_view(-1, -1, hit >= 0 ? hit : (V.f_group + lr + 4) % 4, -1);
+		f_set_view(-1, -1, hit >= 0 ? hit : (V.f_group + lr + 5) % 5, -1);
+	ry += RH + 2;
+	// interruptores
+	static int col;
+	if (VS.sel == 3 && lr)
+		col = !col;
+	float hw = (W - 6) / 2;
+	if (!fresh && (switch_chip(X, ry, hw, TH, _("Sistema aparte"), V.f_sysapart, U.buttons && VS.sel == 3 && col == 0) || (VS.sel == 3 && col == 0 && A)))
+		f_toggle(&G.f_sysapart);
+	if (!fresh && (switch_chip(X + hw + 6, ry, hw, TH, _("Destacadas arriba"), V.f_pin, U.buttons && VS.sel == 3 && col == 1) || (VS.sel == 3 && col == 1 && A)))
+		f_toggle(&G.f_pin);
 	// cerrar
-	float by = y + h - 40;
-	bool bp = touch_in(X, by, W, 32);
-	draw_rrect(X, by, W, 32, 16, bp || (U.buttons && VS.sel == 3) ? T.surface2 : T.bg);
-	if (U.buttons && VS.sel == 3)
-		draw_rrect_outline(X, by, W, 32, 16, 1.5f, T.accent);
+	float by = y + h - 38;
+	bool bp = touch_in(X, by, W, 30);
+	draw_rrect(X, by, W, 30, 15, bp || (U.buttons && VS.sel == 4) ? T.surface2 : T.bg);
+	if (U.buttons && VS.sel == 4)
+		draw_rrect_outline(X, by, W, 30, 15, 1.5f, T.accent);
 	char cl[48];
 	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
-	text_draw_center(cl, BOT_W / 2, by + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
-	if (!fresh && (tap(X, by, W, 32) || (U.buttons && VS.sel == 3 && (g_kdown & KEY_A)) || (g_kdown & KEY_B) ||
-	               (g_touch.up && !g_touch.drag && g_touch.sy < y)))
+	text_draw_center(cl, BOT_W / 2, by + (30 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
+	if (!fresh && (tap(X, by, W, 30) || (VS.sel == 4 && A) || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y)))
 		VS.open = false;
 	g_kdown &= ~(KEY_A | KEY_B);
 	g_touch.up = false;
@@ -2861,8 +2899,10 @@ static void tab_files(void)
 			bool closed = F.gclosed & (1u << v->idx);
 			if (pressed || (U.buttons && selected))
 				draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 8, T.surface);
-			draw_icon(closed ? IC_CHEV_RIGHT : IC_CHEV_DOWN, 18, y + v->h / 2, 11, T.accent);
-			text_draw(f_grp_name(v->idx), 30, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.accent);
+			static const u32 MKC[6] = {0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
+			u32 gc = V.f_group == 4 && v->idx < 6 ? MKC[v->idx] : T.accent;
+			draw_icon(closed ? IC_CHEV_RIGHT : IC_CHEV_DOWN, 18, y + v->h / 2, 11, gc);
+			text_draw(f_grp_name(v->idx), 30, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, gc);
 			char nn[8];
 			snprintf(nn, sizeof nn, "%d", v->n);
 			text_draw_right(nn, BOT_W - 16, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.text3);
