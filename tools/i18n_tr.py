@@ -1214,4 +1214,40 @@ TR = {
     'Se borra':
         ('Removed',
          '自動削除'),
+    'Programas':
+        ('Programs',
+         'プログラム'),
+    'Juegos':
+        ('Games',
+         'ゲーム'),
+    'Textos':
+        ('Text',
+         'テキスト'),
+    'Buscar aquí':
+        ('Search here',
+         'ここで検索'),
+    'Buscando…':
+        ('Searching…',
+         '検索中…'),
+    '%d o más':
+        ('%d or more',
+         '%d 件以上'),
+    '1 resultado':
+        ('1 result',
+         '1 件'),
+    '%d resultados':
+        ('%d results',
+         '%d 件'),
+    'No hay nada que se llame «%s» aquí':
+        ('Nothing called “%s” here',
+         '「%s」という名前のものはありません'),
+    'Se busca en la carpeta donde estabas y en todas las de dentro.':
+        ('It searches the folder you were in and every folder inside it.',
+         '開いていたフォルダとその中のすべてのフォルダを検索します。'),
+    'Su carpeta':
+        ('Its folder',
+         'フォルダへ'),
+    'Buscar aquí y en las carpetas de dentro':
+        ('Search here and in the folders inside',
+         'ここと中のフォルダを検索'),
 }

@@ -13,6 +13,7 @@
 #include "install.h"
 #include "state.h"
 #include "util.h"
+#include "search.h"
 #include "trash.h"
 
 #include <arpa/inet.h>
@@ -576,6 +577,52 @@ static bool list_cb(const FsxEntry *e, void *u)
 	state_unlock();
 	buf_printf(x->b, col ? ",\"c\":%d}" : "}", col);
 	return x->n < 5000;
+}
+
+/* buscar por nombre en p (por defecto toda la SD) y sus subcarpetas */
+typedef struct {
+	Buf *b;
+	int n;
+} FindCtx;
+
+#define FIND_MAX 300
+
+static bool find_cb(const char *dir, const FsxEntry *e, void *u)
+{
+	FindCtx *x = u;
+	size_t l = strlen(e->name);
+	if (!e->dir && !strncmp(e->name, ".c3d_", 5) && l > 5 && !strcmp(e->name + l - 5, ".part"))
+		return true;
+	buf_puts(x->b, x->n++ ? ",{\"n\":" : "{\"n\":");
+	buf_json_str(x->b, e->name);
+	buf_puts(x->b, ",\"p\":");
+	buf_json_str(x->b, dir);
+	buf_printf(x->b, ",\"d\":%d,\"s\":%llu,\"t\":%llu", e->dir ? 1 : 0, (unsigned long long)e->size,
+	           (unsigned long long)e->mtime);
+	char full[1300];
+	snprintf(full, sizeof full, "%s%s%s", dir, strcmp(dir, "/") ? "/" : "", e->name);
+	state_lock();
+	int col = mark_get(full);
+	state_unlock();
+	buf_printf(x->b, col ? ",\"c\":%d}" : "}", col);
+	return x->n < FIND_MAX;
+}
+
+static void h_search(Conn *c)
+{
+	char p[1024] = "/", q[256];
+	if (!qget(c->query, "q", q, sizeof q) || !q[0] || (qget(c->query, "p", p, sizeof p) && !fsx_path_ok(p))) {
+		resp_err(c, 400, "bad_query");
+		return;
+	}
+	Buf b = {0};
+	buf_puts(&b, "{\"ok\":true,\"items\":[");
+	FindCtx x = {&b, 0};
+	bool tmo = false;
+	int dirs = search_walk(p, q, NULL, 20000, &tmo, find_cb, &x);
+	buf_printf(&b, "],\"dirs\":%d,\"more\":%s}", dirs, x.n >= FIND_MAX || tmo ? "true" : "false");
+	resp_json(c, 200, &b);
+	free(b.p);
 }
 
 static void h_list(Conn *c)
@@ -1287,6 +1334,8 @@ static void route(Conn *c, const char *body)
 		h_rev(c);
 	else if (strcmp(p, "info") == 0 && get)
 		h_info(c);
+	else if (strcmp(p, "search") == 0 && get)
+		h_search(c);
 	else if (strcmp(p, "list") == 0 && get)
 		h_list(c);
 	else if (strcmp(p, "file") == 0 && get)

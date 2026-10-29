@@ -156,6 +156,14 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .tile .nm{padding:8px 10px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile.sel{outline:3px solid var(--a)}
 
+.fchips{display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 10px}
+.fchips .chip{padding:6px 11px;font-size:13px}
+.fchips .chip span{opacity:.7}
+.findall{display:flex;align-items:center;gap:10px;width:100%;margin-top:10px;padding:12px 14px;border-radius:12px;background:var(--card);border:1px dashed var(--line);color:var(--a);font-size:14px;text-align:left}
+.findall svg{width:18px;height:18px}
+.row .meta span .where{display:inline;color:var(--a)}
+.row.flash{animation:flash 1.6s ease}
+@keyframes flash{0%,40%{background:color-mix(in srgb,var(--a) 22%,var(--card))}}
 .empty{text-align:center;padding:56px 20px;color:var(--muted)}
 .empty .big{width:64px;height:64px;border-radius:20px;background:var(--card2);display:grid;place-items:center;margin:0 auto 14px}
 .empty .big svg{width:30px;height:30px}
@@ -374,6 +382,7 @@ es:{
  err_exists:"Ya existe un archivo con ese nombre.", err_not_found:"El elemento ya no existe. Es posible que se haya movido o eliminado.", err_io:"Error de escritura en la tarjeta SD.",
  err_net:"Se perdió la conexión con la consola.", err_is_dir:"Ya hay una carpeta con ese nombre.", err:"Se produjo un error (%1).",
  offline:"Se perdió la conexión con la consola. Reintentando…", logout:"Desvincular este dispositivo", logoutD:"Para volver a entrar tendrás que escanear el código QR o introducir el PIN.",
+ findAll:"Buscar «%1» en toda la SD", findT:"«%1» en toda la SD", finding:"Buscando en la SD…", findNone:"No hay nada que se llame «%1» en la SD.", findMore:"Hay más resultados: escribe algo más concreto.", fAll:"Todo", fDir:"Carpetas", fImg:"Fotos", fVid:"Vídeo y música", fTxt:"Texto", fApp:"Apps y CIA", fRom:"ROMs", fZip:"Comprimidos", fSav:"Partidas", fFile:"Otros",
  trash:"Papelera", trashInfo:"Lo borrado se guarda aquí %1 días y luego se borra solo. Ocupa %2.", trashEmpty:"Vaciar", trashNoneT:"La papelera está vacía", trashNoneD:"Lo que borres, desde aquí o desde la consola, se podrá recuperar durante %1 días.", trashFrom:"Estaba en %1", trashLeft:"se borra en %1 días", trashLeft1:"se borra en 1 día", restore:"Recuperar", restored:"Recuperado en %1", purge:"Eliminar para siempre", purgeQ:"¿Eliminar «%1» para siempre?", purgeD:"Ya no se podrá recuperar.", emptyQ:"¿Vaciar la papelera?", emptyD:"Se borrarán para siempre %1 elementos.", emptyD1:"Se borrará para siempre 1 elemento.", emptied:"Papelera vaciada", purged:"Eliminado para siempre",
  deleted:"Enviado a la papelera", renamed:"Renombrado", created:"Carpeta creada", sel:"%1 seleccionados", all2:"Todo",
  grid:"Cuadrícula", listv:"Lista", made:"hecho por VENOMSHiNE", sortBy:"Ordenar", refresh:"Actualizar", desc:"Descargando %1…",
@@ -409,6 +418,7 @@ en:{
  err_exists:"A file with that name already exists.", err_not_found:"The item no longer exists. It may have been moved or deleted.", err_io:"Write error on the SD card.",
  err_net:"Lost connection to the console.", err_is_dir:"There's already a folder with that name.", err:"An error occurred (%1).",
  offline:"Lost connection to the console. Retrying…", logout:"Unpair this device", logoutD:"To sign in again, you'll need to scan the QR code or enter the PIN.",
+ findAll:"Search “%1” on the whole SD", findT:"“%1” on the whole SD", finding:"Searching the SD…", findNone:"Nothing called “%1” on the SD.", findMore:"There are more results: try something more specific.", fAll:"All", fDir:"Folders", fImg:"Photos", fVid:"Video & music", fTxt:"Text", fApp:"Apps & CIA", fRom:"ROMs", fZip:"Archives", fSav:"Saves", fFile:"Other",
  trash:"Trash", trashInfo:"Deleted items stay here for %1 days and are then removed. Using %2.", trashEmpty:"Empty", trashNoneT:"The trash is empty", trashNoneD:"Anything you delete, here or on the console, can be restored for %1 days.", trashFrom:"Was in %1", trashLeft:"deleted in %1 days", trashLeft1:"deleted in 1 day", restore:"Restore", restored:"Restored to %1", purge:"Delete forever", purgeQ:"Delete “%1” forever?", purgeD:"It can't be restored afterwards.", emptyQ:"Empty the trash?", emptyD:"%1 items will be deleted forever.", emptyD1:"1 item will be deleted forever.", emptied:"Trash emptied", purged:"Deleted forever",
  deleted:"Moved to trash", renamed:"Renamed", created:"Folder created", sel:"%1 selected", all2:"All",
  grid:"Grid", listv:"List", made:"made by VENOMSHiNE", sortBy:"Sort", refresh:"Refresh", desc:"Downloading %1…",
@@ -444,6 +454,7 @@ ja:{
  err_exists:"同じ名前のファイルがあります。", err_not_found:"この項目はもうありません。移動または削除された可能性があります。", err_io:"SDカードへの書き込みエラーです。",
  err_net:"本体との接続が切れました。", err_is_dir:"同じ名前のフォルダがあります。", err:"エラーが発生しました(%1)。",
  offline:"本体との接続が切れました。再試行中…", logout:"このデバイスの登録を解除", logoutD:"もう一度入るには、QRコードを読み取るかPINを入力する必要があります。",
+ findAll:"SD全体で「%1」を検索", findT:"SD全体の「%1」", finding:"SDを検索中…", findNone:"SDに「%1」という名前のものはありません。", findMore:"ほかにも結果があります。もっと具体的に入力してください。", fAll:"すべて", fDir:"フォルダ", fImg:"写真", fVid:"動画と音楽", fTxt:"テキスト", fApp:"アプリとCIA", fRom:"ROM", fZip:"圧縮ファイル", fSav:"セーブ", fFile:"その他",
  trash:"ゴミ箱", trashInfo:"削除したものは%1日間ここに残り、その後自動で消えます。使用中：%2。", trashEmpty:"空にする", trashNoneT:"ゴミ箱は空です", trashNoneD:"ここや本体で削除したものは%1日間元に戻せます。", trashFrom:"元の場所：%1", trashLeft:"あと%1日で削除", trashLeft1:"あと1日で削除", restore:"元に戻す", restored:"%1 に戻しました", purge:"完全に削除", purgeQ:"「%1」を完全に削除しますか?", purgeD:"元に戻せなくなります。", emptyQ:"ゴミ箱を空にしますか?", emptyD:"%1 項目が完全に削除されます。", emptyD1:"1 項目が完全に削除されます。", emptied:"ゴミ箱を空にしました", purged:"完全に削除しました",
  deleted:"ゴミ箱に移動しました", renamed:"名前を変更しました", created:"フォルダを作成しました", sel:"%1 件選択", all2:"すべて",
  grid:"グリッド", listv:"リスト", made:"制作: VENOMSHiNE", sortBy:"並べ替え", refresh:"更新", desc:"ダウンロード中 %1…",
@@ -602,7 +613,7 @@ async function tryPin(pin){
 }
 
 /* ---------- app ---------- */
-const S={trash:false,tr:null,nosaves:false,path:"/",items:[],sort:"name",asc:true,view:"list",sel:new Set(),info:{},filter:"",missing:false,system:false,loading:false};
+const S={find:null,trash:false,tr:null,nosaves:false,path:"/",items:[],sort:"name",asc:true,view:"list",sel:new Set(),info:{},filter:"",missing:false,system:false,loading:false};
 try{S.view=localStorage.getItem("c3d_view")||"list";S.sort=localStorage.getItem("c3d_sort")||"name";S.sysOpen=localStorage.getItem("c3d_sys")!=="0"}catch(e){S.sysOpen=true}
 const PLACES=[["/","home","home"],["/luma/screenshots","shots","cam"],["/DCIM","photos","pic"],["/cias","cias","box"],["/3ds","hb","game"],["@saves","saves","save"],["@trash","trash","trash"]];
 // las partidas solo existen como archivos si se copian con un gestor: se abre el que haya en la SD
@@ -626,7 +637,7 @@ async function pollRev(){
  fsRev=r.fs;
 }
 async function softReload(){
- if(S.loading||S.nosaves||document.querySelector(".scrim,.viewer"))return false;
+ if(S.loading||S.nosaves||S.find||document.querySelector(".scrim,.viewer"))return false;
  if(S.trash){try{const r=await api("GET","trash");if(!S.trash)return false;S.tr=r;const y=scrollY;render();scrollTo(0,y);refreshInfo()}catch(e){}return true}
  const p=S.path;
  try{
@@ -659,7 +670,7 @@ async function goSaves(){
 async function go(p,replace){
  if(p==="@saves"){goSaves();return}
  if(p==="@trash"){goTrash(replace);return}
- S.path=p;S.nosaves=false;S.trash=false;S.sel.clear();S.filter="";$("#q").value="";$("#search").classList.remove("open");
+ S.path=p;S.nosaves=false;S.trash=false;S.find=null;S.sel.clear();S.filter="";$("#q").value="";$("#search").classList.remove("open");
  history[replace?"replaceState":"pushState"]({p},"","#p="+encodeURIComponent(p));
  S.loading=true;render();
  try{
@@ -673,7 +684,7 @@ async function go(p,replace){
 }
 /* papelera: lo borrado (aquí o en la consola) se recupera durante unos días */
 async function goTrash(replace){
- S.trash=true;S.nosaves=false;S.missing=false;S.path="/";S.sel.clear();S.filter="";$("#q").value="";$("#search").classList.remove("open");
+ S.find=null;S.trash=true;S.nosaves=false;S.missing=false;S.path="/";S.sel.clear();S.filter="";$("#q").value="";$("#search").classList.remove("open");
  history[replace?"replaceState":"pushState"]({p:"@trash"},"","#p=@trash");
  S.loading=true;render();
  try{S.tr=await api("GET","trash")}catch(e){S.tr={items:[],days:7,size:0};if(e.code!=="auth")toast(errText(e))}
@@ -703,6 +714,43 @@ async function trashEmpty(){
  try{await api("POST","trash_empty");toast(t("emptied"))}catch(e){toast(errText(e))}
  goTrash(true);refreshInfo();
 }
+/* buscar en toda la SD: resultados con su carpeta y filtros por tipo */
+const FKINDS=[["folder","fDir"],["img","fImg"],["vid","fVid"],["txt","fTxt"],["app","fApp"],["rom","fRom"],["zip","fZip"],["sav","fSav"],["file","fFile"]];
+async function findAll(q){
+ q=(q||"").trim();if(!q)return;
+ const from=S.find?S.find.from:S.path;
+ S.find={q,from,items:[],more:false,loading:true,kind:""};S.trash=false;S.sel.clear();S.filter="";
+ $("#q").value="";$("#search").classList.remove("open");$("#q").blur();
+ history.pushState({p:from},"","#p="+encodeURIComponent(from));
+ render();
+ const f=S.find;
+ try{const r=await api("GET","search",{q});if(S.find!==f)return;f.items=r.items;f.more=r.more}
+ catch(e){if(S.find!==f)return;toast(errText(e))}
+ f.loading=false;render();
+}
+function renderFind(){
+ const L=$("#list"),f=S.find;
+ if(f.loading){L.innerHTML=`<div class="loading"><span class="spin"></span></div><div class="empty" style="padding-top:0">${t("finding")}</div>`;return}
+ if(!f.items.length){L.innerHTML=`<div class="empty"><div class="big">${svg("eye")}</div>${esc(t("findNone",f.q))}</div>`;return}
+ const cnt={};f.items.forEach(it=>{const k=kind(it);cnt[k]=(cnt[k]||0)+1});
+ const kinds=FKINDS.filter(([k])=>cnt[k]);
+ if(f.kind&&!cnt[f.kind])f.kind="";
+ const chips=kinds.length>1?`<div class="fchips"><button class="chip${f.kind?"":" on"}" data-fk="">${t("fAll")} <span>${f.items.length}</span></button>`+kinds.map(([k,l])=>`<button class="chip${f.kind===k?" on":""}" data-fk="${k}">${t(l)} <span>${cnt[k]}</span></button>`).join("")+`</div>`:"";
+ const a=f.items.filter(it=>!f.kind||kind(it)===f.kind);
+ L.innerHTML=chips+`<div class="list">`+a.map(it=>{const k=kind(it),i=f.items.indexOf(it);
+  const sub=(it.d?t("folder"):fsize(it.s))+(it.t?" · "+fdate(it.t):"");
+  return `<div class="row${it.c?" mk"+it.c:""}" data-fi="${i}"><div class="ic ${k}">${kindSvg(k)}</div><div class="meta"><b>${esc(it.n)}</b><span><span class="where">${esc(it.p)}</span> · ${sub}</span></div><button class="more" data-more="1">${svg("dots")}</button></div>`}).join("")+`</div>`+
+  (f.more?`<div class="empty" style="padding:18px">${t("findMore")}</div>`:"");
+}
+// un resultado: se abre su carpeta y, en ella, el elemento (como si se hubiera tocado ahí)
+async function findOpen(i,sheet){
+ const it=S.find.items[i];if(!it)return;
+ await go(it.p);
+ const own=itemByName(it.n);if(!own)return;
+ const el=[...document.querySelectorAll("#list [data-n]")].find(x=>x.dataset.n===it.n);
+ if(el){el.scrollIntoView({block:"center"});el.classList.add("flash")}
+ if(sheet)openSheet(own);else if(!own.d)openItem(own);
+}
 window.addEventListener("popstate",e=>{if(e.state&&e.state.p&&!$("#app").classList.contains("hide"))go(e.state.p,true)});
 
 function sorted(){
@@ -720,20 +768,21 @@ function sorted(){
 }
 function renderChrome(){
  const ro=!!S.info.readonly;
- $("#chips").innerHTML=PLACES.map(([p,k,ic])=>`<button class="chip${(p==="@trash"?S.trash:S.trash?false:p==="@saves"?inSaves(S.path):S.path===p&&!S.nosaves)?" on":""}" data-p="${esc(p)}">${svg(ic)}${t(k)}</button>`).join("");
+ $("#chips").innerHTML=PLACES.map(([p,k,ic])=>`<button class="chip${(S.find?false:p==="@trash"?S.trash:S.trash?false:p==="@saves"?inSaves(S.path):S.path===p&&!S.nosaves)?" on":""}" data-p="${esc(p)}">${svg(ic)}${t(k)}</button>`).join("");
  let b="";
  if(ro)b+=`<div class="banner warn">${svg("lock")}${t("ro")}</div>`;
  else if(S.trash&&S.tr&&!S.loading)b+=`<div class="banner">${svg("trash")}<span class="grow">${t("trashInfo",S.tr.days,fsize(S.tr.size))}</span>${S.tr.items.length?`<button class="btn dng" id="tEmpty">${t("trashEmpty")}</button>`:""}</div>`;
  else if(S.system&&S.path!=="/")b+=`<div class="banner warn">${svg("warn")}${t("sysHere")}</div>`;
  $("#banners").innerHTML=b;
- const parts=S.path==="/"?[]:S.path.slice(1).split("/");
+ const parts=S.path==="/"||S.find?[]:S.path.slice(1).split("/");
  let acc="",cr=`<button data-p="/">SD</button>`;
  parts.forEach(x=>{acc+="/"+x;cr+=`<span class="sep">›</span><button data-p="${esc(acc)}">${esc(x)}</button>`});
+ if(S.find)cr+=`<span class="sep">›</span><button>${esc(t("findT",S.find.q))}</button>`;
  if(S.trash)cr+=`<span class="sep">›</span><button data-p="@trash">${t("trash")}</button>`;
  $("#crumbs").innerHTML=cr;
  const cb=$("#crumbs");cb.scrollLeft=cb.scrollWidth;
  const sortIc={name:"sortName",date:"sortDate",size:"sortSize"}[S.sort];
- $("#tools").innerHTML=S.trash?"":
+ $("#tools").innerHTML=S.trash||S.find?"":
   (ro||S.trash?"":`<button class="btn pri up" id="tUp">${svg("up")}<span class="lbl">${t("upload")}</span></button>`+
    `<button class="btn up" id="tUpF">${svg("upf")}<span class="lbl">${t("uploadFolder")}</span></button>`+
    `<button class="btn" id="tNew">${svg("plusf")}<span class="lbl">${t("newFolder")}</span></button>`)+
@@ -741,7 +790,7 @@ function renderChrome(){
   `<button class="btn" id="tSort" title="${t("sortBy")}">${svg("sort")}<span class="lbl">${t(sortIc)}</span></button>`+
   `<button class="btn" id="tView" title="${t(S.view==="grid"?"listv":"grid")}">${svg(S.view==="grid"?"list":"grid")}</button>`;
  $("#bref").title=t("refresh");$("#bout").title=t("logout");
- $("#bUp").disabled=S.path==="/"&&!S.trash;$("#bUp").title=t("back");
+ $("#bUp").disabled=S.path==="/"&&!S.trash&&!S.find;$("#bUp").title=t("back");
  $("#sLens").title=t("search");
  $("#fab").innerHTML=svg("up")+t("upload");$("#fab").classList.toggle("hide",ro||S.trash||$("#app").classList.contains("hide"));
  $("#q").placeholder=t("search");
@@ -756,6 +805,7 @@ function render(){
  renderChrome();
  const L=$("#list");
  if(S.loading){L.innerHTML=`<div class="loading"><span class="spin"></span></div>`;return}
+ if(S.find){renderFind();return}
  if(S.trash){renderTrash();return}
  if(S.nosaves){
   L.innerHTML=`<div class="empty"><div class="big">${svg("save")}</div><b>${t("savesT")}</b>${t("savesD")}</div>`;
@@ -766,8 +816,9 @@ function render(){
   return;
  }
  const a=sorted();
+ const fa=S.filter?`<button class="findall" id="findAll">${svg("eye")}${esc(t("findAll",S.filter))}</button>`:"";
  if(!a.length){
-  L.innerHTML=`<div class="empty"><div class="big">${svg(S.filter?"eye":"cloud")}</div><b>${S.filter?"":t("emptyT")}</b>${S.filter?t("noMatch",esc(S.filter)):S.info.readonly?t("emptyRO"):t("emptyD")}</div>`;
+  L.innerHTML=`<div class="empty"><div class="big">${svg(S.filter?"eye":"cloud")}</div><b>${S.filter?"":t("emptyT")}</b>${S.filter?t("noMatch",esc(S.filter)):S.info.readonly?t("emptyRO"):t("emptyD")}</div>`+fa;
   return;
  }
  const selMode=S.sel.size>0;
@@ -784,13 +835,16 @@ function render(){
     `<div class="meta"><b>${esc(it.n)}</b><span>${sub}</span></div>`+
     `<button class="more" data-more="1">${svg("dots")}</button></div>`};
  const block=items=>!items.length?"":S.view==="grid"?`<div class="grid">${items.map(tile).join("")}</div>`:`<div class="list">${items.map(row).join("")}</div>`;
- L.innerHTML=block(mine)+(sys.length?`<div class="grp${S.sysOpen?" open":""}" id="sysGrp">${svg("chev")}${t("sysGroup")}<span>${sys.length}</span></div>`+(S.sysOpen?block(sys):""):"");
+ L.innerHTML=block(mine)+(S.filter?"":(sys.length?`<div class="grp${S.sysOpen?" open":""}" id="sysGrp">${svg("chev")}${t("sysGroup")}<span>${sys.length}</span></div>`+(S.sysOpen?block(sys):""):""))+(S.filter&&sys.length?block(sys):"")+fa;
  renderSel();
 }
 function itemByName(n){return S.items.find(i=>i.n===n)}
 
 /* clics en la lista */
 $("#list").addEventListener("click",e=>{
+ if(e.target.closest("#findAll")){findAll(S.filter);return}
+ const fk=e.target.closest("[data-fk]");if(fk){S.find.kind=fk.dataset.fk;render();return}
+ const fr=e.target.closest("[data-fi]");if(fr){findOpen(+fr.dataset.fi,!!e.target.closest("[data-more]"));return}
  const tr=e.target.closest("[data-tid]");
  if(tr){if(S.info.readonly)return;const b=e.target.closest("[data-ta]");trashOp(+tr.dataset.tid,b?b.dataset.ta:"more");return}
  if(e.target.closest("#sysGrp")){S.sysOpen=!S.sysOpen;try{localStorage.setItem("c3d_sys",S.sysOpen?"1":"0")}catch(err){}render();return}
@@ -1050,17 +1104,17 @@ document.addEventListener("click",e=>{
  if(id==="tUpF")$("#dpick").click();
  if(id==="tNew")newFolder();
  if(id==="tSort")sortMenu();
- if(id==="bref"){go(S.trash?"@trash":S.path,true);refreshInfo()}
+ if(id==="bref"){if(S.find)findAll(S.find.q);else go(S.trash?"@trash":S.path,true);refreshInfo()}
  if(id==="tView"){S.view=S.view==="grid"?"list":"grid";try{localStorage.setItem("c3d_view",S.view)}catch(e){}render()}
  if(id==="bout")deviceMenu();
- if(id==="bUp"&&(S.path!=="/"||S.trash))go(S.trash?"/":parent(S.path));
+ if(id==="bUp"&&(S.path!=="/"||S.trash||S.find))go(S.find?S.find.from:S.trash?"/":parent(S.path));
  if(id==="tEmpty")trashEmpty();
  if(id==="sLens"){const o=$("#search").classList.toggle("open");if(o)setTimeout(()=>$("#q").focus(),120);else closeSearch()}
  if(id==="sX")closeSearch();
 });
 function closeSearch(){$("#q").value="";S.filter="";$("#search").classList.remove("open");render()}
 $("#q").addEventListener("input",e=>{S.filter=e.target.value.trim();render()});
-$("#q").addEventListener("keydown",e=>{if(e.key==="Escape")closeSearch()});
+$("#q").addEventListener("keydown",e=>{if(e.key==="Escape")closeSearch();if(e.key==="Enter"&&S.filter)findAll(S.filter)});
 $("#q").addEventListener("blur",()=>{setTimeout(()=>{if(!S.filter&&document.activeElement!==$("#q"))$("#search").classList.remove("open")},150)});
 
 /* ---------- visor ---------- */

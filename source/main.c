@@ -15,6 +15,7 @@
 #include "img.h"
 #include "txt.h"
 #include "hl.h"
+#include "search.h"
 #include "trash.h"
 #include <time.h>
 #include <stdlib.h>
@@ -85,6 +86,7 @@ static struct {
 	bool want_frename;           // renombrar el archivo elegido en Archivos
 	bool want_fnew;              // crear una carpeta en Archivos
 	bool want_tnew;              // crear un documento de texto en Archivos
+	bool want_search;            // buscar desde la carpeta abierta (teclado)
 	int want_txt;                // editor de texto: 1 editar la línea, 2 añadir una debajo
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 	float t_upd;                 // interruptor «Buscar al abrir»
@@ -1141,16 +1143,22 @@ static bool activate(List *l, int i)
 	return U.buttons && !g_dialog.open && l->sel == i && (g_kdown & KEY_A);
 }
 
-static void tab_header(const char *title, bool back)
+// título de una pestaña (con «‹» si se puede volver); maxw: hasta dónde llega el texto
+static void tab_header_w(const char *title, bool back, float maxw)
 {
 	float x = 14;
 	if (back) {
 		if (touch_in(0, 0, 170, VIEW_Y))
-			draw_rrect(6, 4, fminf(text_width(title, TS_TITLE), 190) + 36, 24, 12, T.surface);
+			draw_rrect(6, 4, fminf(text_width(title, TS_TITLE), maxw) + 36, 24, 12, T.surface);
 		draw_icon(IC_CHEV_LEFT, 20, 16, 14, T.text2);
 		x = 32;
 	}
-	text_draw_clip(title, x, 7, 190, TS_TITLE, T.text);
+	text_draw_clip(title, x, 7, maxw, TS_TITLE, T.text);
+}
+
+static void tab_header(const char *title, bool back)
+{
+	tab_header_w(title, back, 190);
 }
 
 static void empty_state(IconId ic, const char *title, const char *text)
@@ -1309,9 +1317,10 @@ typedef struct {
 	u8 color;
 	u8 grp; // grupo al agrupar (por tipo, fecha o tamaño)
 	u32 tid; // en la papelera: su número
+	u16 sdir; // en la búsqueda: su carpeta (SR.dirs)
 	u64 size, mtime;
 } FEnt;
-enum { FV_CHIPS, FV_ITEM, FV_SYSHDR, FV_GROUP, FV_TRASH };
+enum { FV_CHIPS, FV_ITEM, FV_SYSHDR, FV_GROUP, FV_TRASH, FV_FILTER };
 typedef struct {
 	u8 kind;
 	short idx;   // elemento de F.e; en las cabeceras, el grupo o cuántos hay
@@ -1332,6 +1341,7 @@ static struct {
 	u32 gclosed;       // grupos plegados (se despliegan al cambiar de carpeta)
 	bool chips_on;     // accesos rápidos a la vista fuera de la raíz (se sacan tirando hacia abajo)
 	bool trash;        // se está viendo la papelera (F.path = "@trash")
+	bool search;       // se ven los resultados de una búsqueda (F.path = "@search")
 	float pull;        // cuánto se está tirando hacia abajo estando arriba del todo
 	int nv;
 	float off, target, total;
@@ -1358,6 +1368,29 @@ static struct {
 	char (*nm)[128];
 } MS;
 
+// búsqueda: un hilo recorre la carpeta y sus subcarpetas y deja aquí lo que encuentra
+#define SR_MAX 500
+#define SR_DIRS 400
+#define SR_KINDS 12 // los tipos de archivo (FK_*) y, el último, las carpetas
+static struct {
+	char q[128];
+	char scope[512];      // dónde se buscó (B vuelve ahí)
+	char back[512];       // carpeta abierta desde un resultado: B en ella vuelve a los resultados
+	char (*dirs)[384];    // las carpetas de los resultados
+	int ndirs;
+	FEnt *r;
+	int n, shown;
+	int cnt[SR_KINDS];
+	int kind;             // filtro: -1 todo
+	volatile bool cancel;
+	bool running, done;
+	u64 t0;
+	int sel_keep;
+	LightLock lock;
+	Thread thr;
+} SR = {.kind = -1};
+static int sr_nkinds(void);
+
 // acciones sobre archivos (menú de un elemento y selección múltiple)
 enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT };
 
@@ -1381,7 +1414,8 @@ static IconId chip_icon(int i)
 
 static void f_full(int i, char *out, size_t n)
 {
-	snprintf(out, n, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", F.e[i].name);
+	const char *dir = F.search ? SR.dirs[F.e[i].sdir] : F.path;
+	snprintf(out, n, "%s%s%s", dir, strcmp(dir, "/") ? "/" : "", F.e[i].name);
 }
 
 static const char *f_ext(const char *n)
@@ -1591,6 +1625,18 @@ static void f_build_view(void)
 	F.nv = 0;
 	float y = 0;
 	int col = 0;
+	if (F.search) { // búsqueda: los filtros por tipo (si hay de varios) y una fila por resultado, con su carpeta
+		if (sr_nkinds() > 1) {
+			F.v[F.nv++] = (FView){FV_FILTER, -1, y, 30, 0, BOT_W, 0};
+			y += 30;
+		}
+		for (int i = 0; i < F.n; i++) {
+			F.v[F.nv++] = (FView){FV_ITEM, (short)i, y, F_ROW_H, 6, BOT_W - 12, 0};
+			y += F_ROW_H;
+		}
+		F.total = y + QR_PAD;
+		return;
+	}
 	// accesos rápidos: siempre en la raíz; en las demás carpetas, solo si se sacaron tirando hacia abajo
 	if (!strcmp(F.path, "/") || F.chips_on) {
 		F.v[F.nv++] = (FView){FV_CHIPS, -1, y, 44, 0, BOT_W, 0};
@@ -1636,6 +1682,218 @@ static void f_build_view(void)
 
 static void ms_end(void);
 
+// ---- búsqueda
+static int sr_kind(const FEnt *e)
+{
+	return e->dir ? SR_KINDS - 1 : f_group(e);
+}
+
+static bool sr_cb(const char *dir, const FsxEntry *x, void *u)
+{
+	(void)u;
+	char full[1024];
+	snprintf(full, sizeof full, "%s%s%s", dir, strcmp(dir, "/") ? "/" : "", x->name);
+	state_lock();
+	u8 col = (u8)mark_get(full);
+	state_unlock();
+	bool sys = fsx_is_system(full);
+	LightLock_Lock(&SR.lock);
+	int d = SR.ndirs - 1; // los resultados de una carpeta llegan juntos: casi siempre es la última
+	if (d < 0 || strcmp(SR.dirs[d], dir)) {
+		for (d = 0; d < SR.ndirs && strcmp(SR.dirs[d], dir); d++)
+			;
+		if (d == SR.ndirs) {
+			if (SR.ndirs == SR_DIRS || strlen(dir) >= sizeof SR.dirs[0]) {
+				LightLock_Unlock(&SR.lock);
+				return SR.ndirs < SR_DIRS;
+			}
+			util_strlcpy(SR.dirs[SR.ndirs++], dir, sizeof SR.dirs[0]);
+		}
+	}
+	FEnt *e = &SR.r[SR.n];
+	memset(e, 0, sizeof *e);
+	util_strlcpy(e->name, x->name, sizeof e->name);
+	e->dir = x->dir, e->size = x->size, e->mtime = x->mtime, e->color = col, e->sys = sys, e->sdir = (u16)d;
+	SR.cnt[sr_kind(e)]++;
+	SR.n++;
+	bool more = SR.n < SR_MAX;
+	LightLock_Unlock(&SR.lock);
+	return more;
+}
+
+static void sr_thread(void *arg)
+{
+	(void)arg;
+	search_walk(SR.scope, SR.q, &SR.cancel, 0, NULL, sr_cb, NULL);
+	SR.done = true;
+}
+
+static void sr_stop(void)
+{
+	if (!SR.thr)
+		return;
+	SR.cancel = true;
+	threadJoin(SR.thr, U64_MAX);
+	threadFree(SR.thr);
+	SR.thr = NULL;
+}
+
+static void f_load(const char *path);
+
+static void sr_start(const char *q)
+{
+	sr_stop();
+	if (!SR.r) {
+		LightLock_Init(&SR.lock);
+		SR.r = malloc(sizeof(FEnt) * SR_MAX);
+		SR.dirs = malloc(sizeof SR.dirs[0] * SR_DIRS);
+		if (!SR.r || !SR.dirs) {
+			free(SR.r), free(SR.dirs);
+			SR.r = NULL, SR.dirs = NULL;
+			return;
+		}
+	}
+	if (!F.search) // se busca en la carpeta abierta (buscar otra vez desde los resultados: en la misma)
+		util_strlcpy(SR.scope, F.trash || F.nosaves ? "/" : F.path, sizeof SR.scope);
+	util_strlcpy(SR.q, q, sizeof SR.q);
+	SR.n = SR.shown = SR.ndirs = 0;
+	memset(SR.cnt, 0, sizeof SR.cnt);
+	SR.kind = -1;
+	SR.back[0] = 0;
+	SR.cancel = SR.done = false;
+	SR.running = true;
+	SR.t0 = osGetTime();
+	s32 prio = 0x30;
+	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	SR.thr = threadCreate(sr_thread, NULL, 64 * 1024, prio + 2, -2, false);
+	if (!SR.thr)
+		SR.done = true;
+	F.path[0] = 0; // para que f_load lo trate como una carpeta nueva
+	f_load("@search");
+}
+
+// lo encontrado hasta ahora (con el filtro de tipo) pasa a la lista
+static void sr_fill(void)
+{
+	F.n = 0;
+	if (!SR.r)
+		return;
+	LightLock_Lock(&SR.lock);
+	for (int i = 0; i < SR.n && F.n < F_MAX; i++)
+		if (SR.kind < 0 || sr_kind(&SR.r[i]) == SR.kind)
+			F.e[F.n++] = SR.r[i];
+	SR.shown = SR.n;
+	LightLock_Unlock(&SR.lock);
+}
+
+static int sr_nkinds(void)
+{
+	int k = 0;
+	for (int i = 0; i < SR_KINDS; i++)
+		k += SR.cnt[i] > 0;
+	return k;
+}
+
+static const char *sr_kind_name(int k)
+{
+	static const char *const N[SR_KINDS] = {
+		[FK_OTHER] = N_("Otros"), [FK_IMG] = N_("Imágenes"), [FK_VIDEO] = N_("Vídeos"), [FK_AUDIO] = N_("Audio"),
+		[FK_APP] = N_("Programas"), [FK_ROM] = N_("Juegos"), [FK_SAVE] = N_("Partidas"), [FK_TEXT] = N_("Textos"),
+		[FK_ARCHIVE] = N_("Comprimidos"), [FK_FONT] = N_("Fuentes"), [FK_DOC] = N_("Documentos"), [SR_KINDS - 1] = N_("Carpetas")};
+	return k < 0 ? _("Todo") : tr(N[k]);
+}
+
+// abre la carpeta de un resultado con él elegido; B en ella vuelve a los resultados
+static void sr_goto(int idx)
+{
+	const FEnt *e = &F.e[idx];
+	char dir[400], nm[128];
+	util_strlcpy(dir, SR.dirs[e->sdir], sizeof dir);
+	util_strlcpy(nm, e->name, sizeof nm);
+	SR.sel_keep = F.sel;
+	f_load(dir);
+	util_strlcpy(SR.back, dir, sizeof SR.back);
+	for (int i = 0; i < F.nv; i++)
+		if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm)) {
+			F.sel = i;
+			F.target = fmaxf(0, F.v[i].y - VIEW_H / 2);
+		}
+}
+
+// B en la carpeta abierta desde un resultado: de vuelta a los resultados, en el mismo
+static bool f_back_to_results(void)
+{
+	if (!SR.back[0] || !SR.r || strcmp(F.path, SR.back))
+		return false;
+	SR.back[0] = 0;
+	f_load("@search");
+	F.sel = SR.sel_keep < F.nv ? SR.sel_keep : F.nv - 1;
+	if (F.sel >= 0)
+		F.target = fmaxf(0, F.v[F.sel].y - VIEW_H / 2);
+	return true;
+}
+
+// filtro de tipo: d = +1 el siguiente que haya, -1 el anterior (-1 es «Todo»)
+static void sr_next_kind(int d)
+{
+	int k = SR.kind;
+	do
+		k = k + d < -1 ? SR_KINDS - 1 : k + d >= SR_KINDS ? -1 : k + d;
+	while (k >= 0 && !SR.cnt[k]);
+	SR.kind = k;
+	f_load("@search");
+	F.sel = F.nv > 1 && F.v[0].kind == FV_FILTER ? 1 : 0;
+	F.off = F.target = 0;
+}
+
+// la fila de filtros: píldoras que se deslizan para que se vea la elegida
+static void sr_filter_row(float y, bool inview)
+{
+	static float scroll;
+	float x = 8, xs[SR_KINDS + 1], ws[SR_KINDS + 1];
+	int ks[SR_KINDS + 1], n = 0;
+	for (int k = -1; k < SR_KINDS; k++) {
+		if (k >= 0 && !SR.cnt[k])
+			continue;
+		char t[64];
+		snprintf(t, sizeof t, "%s %d", sr_kind_name(k), k < 0 ? SR.n : SR.cnt[k]);
+		ks[n] = k, xs[n] = x, ws[n] = text_width(t, TS_SUB) + 18;
+		x += ws[n++] + 6;
+	}
+	float want = scroll;
+	for (int i = 0; i < n; i++)
+		if (ks[i] == SR.kind) {
+			if (xs[i] - want < 8)
+				want = xs[i] - 8;
+			if (xs[i] + ws[i] - want > BOT_W - 8)
+				want = xs[i] + ws[i] - (BOT_W - 8);
+		}
+	scroll = approach(scroll, fmaxf(0, fminf(want, x - BOT_W + 2)), 18);
+	for (int i = 0; i < n; i++) {
+		float cx = xs[i] - scroll;
+		bool on = ks[i] == SR.kind;
+		char t[64];
+		snprintf(t, sizeof t, "%s %d", sr_kind_name(ks[i]), ks[i] < 0 ? SR.n : SR.cnt[ks[i]]);
+		bool tp = inview && touch_in(cx, y + 4, ws[i], 22);
+		draw_rrect(cx, y + 4, ws[i], 22, 11, on ? T.accent : tp ? T.surface2 : T.surface);
+		text_draw_center(t, cx + ws[i] / 2, y + 15 - text_lineh(TS_SUB) / 2, TS_SUB, on ? 0xFFFFFFFF : T.text2);
+		if (inview && tap(cx, y + 4, ws[i], 22) && !on) {
+			SR.kind = ks[i];
+			f_load("@search");
+			F.sel = F.nv > 1 ? 1 : 0;
+			F.off = F.target = 0;
+			return;
+		}
+	}
+}
+
+static void sr_close(void)
+{
+	sr_stop();
+	SR.back[0] = 0;
+	f_load(SR.scope);
+}
+
 static void f_load(const char *path)
 {
 	if (!F.e)
@@ -1649,6 +1907,21 @@ static void f_load(const char *path)
 	F.nosaves = false;
 	F.need_reload = false;
 	F.trash = !strcmp(path, "@trash");
+	F.search = !strcmp(path, "@search");
+	if (F.search) { // resultados de la búsqueda, en el orden en que se encuentran
+		sr_fill();
+		F.err = F.missing = false;
+		f_build_view();
+		if (!same) {
+			ms_end();
+			F.sel = F.nv > 1 && F.v[0].kind == FV_FILTER ? 1 : 0;
+			F.off = F.target = 0;
+		}
+		if (F.sel >= F.nv)
+			F.sel = F.nv - 1;
+		F.info_for = -1;
+		return;
+	}
 	if (F.trash) { // la papelera: sus elementos, lo más reciente primero
 		static TrashItem it[TRASH_MAX];
 		int n = trash_list(it, TRASH_MAX);
@@ -2829,11 +3102,12 @@ static void pm_draw(void)
 		return;
 	float a = ease_out_cubic(PM.anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a * 0.6f));
-	static const IconId IC[3] = {IC_FOLDER, IC_NOTE, IC_CLOSE};
-	const char *L[3] = {_("Carpeta"), _("Documento de texto"), _("Cerrar")};
+	enum { N = 4 };
+	static const IconId IC[N] = {IC_FOLDER, IC_NOTE, IC_SEARCH, IC_CLOSE};
+	const char *L[N] = {_("Carpeta"), _("Documento de texto"), _("Buscar aquí"), _("Cerrar")};
 	const float W = 190, RH = 34, x = BOT_W - 8 - W, y = 30 - (1 - a) * 8;
-	draw_rrect(x, y + 3, W, 3 * RH + 12, 14, col_alpha(T.shadow, a));
-	draw_rrect(x, y, W, 3 * RH + 12, 14, T.surface);
+	draw_rrect(x, y + 3, W, N * RH + 12, 14, col_alpha(T.shadow, a));
+	draw_rrect(x, y, W, N * RH + 12, 14, T.surface);
 	if (!PM.open)
 		return;
 	bool fresh = PM.just;
@@ -2841,24 +3115,26 @@ static void pm_draw(void)
 	if (fresh)
 		return; // el toque que lo abrió no cuenta
 	if (U.buttons) {
-		if (g_krepeat & KEY_DOWN) PM.sel = (PM.sel + 1) % 3;
-		if (g_krepeat & KEY_UP) PM.sel = (PM.sel + 2) % 3;
+		if (g_krepeat & KEY_DOWN) PM.sel = (PM.sel + 1) % N;
+		if (g_krepeat & KEY_UP) PM.sel = (PM.sel + N - 1) % N;
 	}
 	int run = -1;
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < N; i++) {
 		float ry = y + 6 + i * RH;
-		if (i == 2)
+		if (i == 2 || i == N - 1)
 			draw_rect(x + 12, ry - 1, W - 24, 1, T.divider);
 		if (touch_in(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i))
 			draw_rrect(x + 6, ry + 2, W - 12, RH - 4, 9, T.surface2);
-		u32 c = i == 0 ? T.warn : i == 1 ? T.accent : T.text3;
+		u32 c = i == 0 ? T.warn : i == 1 ? T.accent : i == 2 ? T.text2 : T.text3;
 		draw_icon(IC[i], x + 24, ry + RH / 2, 15, c);
-		text_draw_clip(L[i], x + 42, ry + (RH - text_lineh(TS_BODY)) / 2, W - 52, TS_BODY, i == 2 ? T.text2 : T.text);
+		text_draw_clip(L[i], x + 42, ry + (RH - text_lineh(TS_BODY)) / 2, W - 52, TS_BODY, i == N - 1 ? T.text2 : T.text);
 		if (tap(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i && (g_kdown & KEY_A)))
 			run = i;
 	}
-	if (run == 2 || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= x && g_touch.sx < x + W && g_touch.sy >= y && g_touch.sy < y + 3 * RH + 12)))
+	if (run == N - 1 || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= x && g_touch.sx < x + W && g_touch.sy >= y && g_touch.sy < y + N * RH + 12)))
 		PM.open = false;
+	else if (run == 2)
+		PM.open = false, U.want_search = true;
 	else if (run == 0)
 		PM.open = false, U.want_fnew = true;
 	else if (run == 1)
@@ -3224,6 +3500,20 @@ static void tab_files(void)
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = !strcmp(F.path, "/");
 	const char *nm = F.trash ? _("Papelera") : F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
+	char sq[160];
+	if (F.search) {
+		snprintf(sq, sizeof sq, "«%s»", SR.q);
+		nm = sq;
+		if (SR.shown != SR.n || (SR.done && SR.running)) { // llegaron más resultados: a la lista, sin perder el elegido
+			SR.running = !SR.done;
+			int keep = F.sel;
+			float off = F.target;
+			f_load("@search");
+			F.sel = keep < F.nv ? keep : F.nv - 1;
+			F.target = off;
+		}
+	}
+	bool grid = V.f_grid && !F.search; // los resultados, siempre en lista: cada uno dice su carpeta
 	th_poll();
 	if (MS.on) { // selección múltiple: ✕ para salir, cuántos van y «Todo»
 		char t[48];
@@ -3244,6 +3534,21 @@ static void tab_files(void)
 			g_kdown &= ~KEY_B;
 		}
 		g_kdown &= ~KEY_X;
+	} else if (F.search) { // búsqueda: atrás a donde se buscó y, a la derecha, cuántos van
+		tab_header_w(nm, true, 170);
+		char c[48];
+		if (!SR.done)
+			snprintf(c, sizeof c, "%s", _("Buscando…"));
+		else
+			snprintf(c, sizeof c, SR.n >= SR_MAX ? _("%d o más") : SR.n == 1 ? _("1 resultado") : _("%d resultados"), SR.n);
+		if (!SR.done) // un punto que gira mientras se busca
+			draw_circle(BOT_W - 18 + 5 * cosf(osGetTime() / 120.0f), 16 + 5 * sinf(osGetTime() / 120.0f), 2.5f, T.accent);
+		text_draw_right(c, BOT_W - (SR.done ? 14 : 30), 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
+		if (!g_dialog.open && (tap(0, 0, 170, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
+			sr_close();
+			g_kdown &= ~KEY_B;
+			return;
+		}
 	} else if (F.trash) { // papelera: atrás a la raíz y «Vaciar»
 		tab_header(nm, true);
 		if (F.n) {
@@ -3260,13 +3565,19 @@ static void tab_files(void)
 			return;
 		}
 	} else {
-		tab_header(nm, !root || F.nosaves);
+		tab_header_w(nm, !root || F.nosaves, 150);
 	}
 	float nx = BOT_W - 24, ny = 16;
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
-	// a la derecha: ordenar y agrupar, lista o iconos, y «+»
-	float gx = nx - 32, sx = nx - 64;
-	if (!F.missing && !F.nosaves && !MS.on && !F.trash) {
+	// a la derecha: buscar, ordenar y agrupar, lista o iconos, y «+»
+	float gx = nx - 32, sx = nx - 64, lx = nx - 96;
+	if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search) {
+		draw_circle(lx, ny, 12, touch_in(lx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
+		draw_icon(IC_SEARCH, lx, ny, 14, T.text2);
+		if (!g_dialog.open && tap(lx - 14, ny - 14, 28, 28)) {
+			U.want_search = true;
+			return;
+		}
 		draw_circle(gx, ny, 12, touch_in(gx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(V.f_grid ? IC_LIST : IC_GRID, gx, ny, 14, T.text2);
 		draw_circle(sx, ny, 12, touch_in(sx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
@@ -3288,10 +3599,10 @@ static void tab_files(void)
 			return;
 		}
 	}
-	if ((!root || F.nosaves) && !MS.on && !F.trash && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
+	if ((!root || F.nosaves) && !MS.on && !F.trash && !F.search && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
 		if (F.nosaves)
 			f_reload_keep();
-		else
+		else if (!f_back_to_results())
 			f_up();
 		return;
 	}
@@ -3319,7 +3630,7 @@ static void tab_files(void)
 	if (U.buttons && !g_dialog.open && (g_krepeat & (KEY_UP | KEY_DOWN))) {
 		int d = (g_krepeat & KEY_DOWN) ? 1 : -1;
 		const FView *c = &F.v[F.sel];
-		if (V.f_grid && c->kind == FV_ITEM) { // iconos: la casilla de la fila de arriba o de abajo más cerca en x
+		if (grid && c->kind == FV_ITEM) { // iconos: la casilla de la fila de arriba o de abajo más cerca en x
 			int best = -1;
 			for (int k = F.sel + d; k >= 0 && k < F.nv; k += d) {
 				const FView *o = &F.v[k];
@@ -3348,7 +3659,9 @@ static void tab_files(void)
 	}
 	if (U.buttons && !g_dialog.open && f_on_chips() && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
 		F.chip = (F.chip + ((g_krepeat & KEY_RIGHT) ? 1 : CH_COUNT - 1)) % CH_COUNT;
-	if (U.buttons && !g_dialog.open && V.f_grid && F.sel >= 0 && F.v[F.sel].kind == FV_ITEM && (g_krepeat & (KEY_LEFT | KEY_RIGHT))) {
+	if (U.buttons && !g_dialog.open && F.search && (g_krepeat & (KEY_LEFT | KEY_RIGHT)) && sr_nkinds() > 1)
+		sr_next_kind((g_krepeat & KEY_RIGHT) ? 1 : -1);
+	if (U.buttons && !g_dialog.open && grid && F.sel >= 0 && F.v[F.sel].kind == FV_ITEM && (g_krepeat & (KEY_LEFT | KEY_RIGHT))) {
 		int k = F.sel + ((g_krepeat & KEY_RIGHT) ? 1 : -1);
 		if (k >= 0 && k < F.nv && F.v[k].kind == FV_ITEM && F.v[k].y == F.v[F.sel].y)
 			F.sel = k;
@@ -3411,6 +3724,10 @@ static void tab_files(void)
 			}
 			continue;
 		}
+		if (v->kind == FV_FILTER) { // tipos de lo encontrado: Todo, Imágenes, Carpetas…
+			sr_filter_row(y, inview);
+			continue;
+		}
 		if (v->kind == FV_TRASH) {
 			bool tp = inview && touch_in(6, y, BOT_W - 12, v->h);
 			draw_rrect(6, y, BOT_W - 12, v->h, 10, tp || (U.buttons && i == F.sel) ? T.surface2 : T.surface);
@@ -3450,7 +3767,7 @@ static void tab_files(void)
 		u32 col;
 		f_kind(e, &ic, &col);
 		const Texture *thumb = th_get(v->idx);
-		if (V.f_grid) { // casilla: icono o miniatura grande y el nombre debajo
+		if (grid) { // casilla: icono o miniatura grande y el nombre debajo
 			bool tp = inview && touch_in(v->x, y, v->w, v->h);
 			if (tp || selected)
 				draw_rrect(v->x + 2, y + 2, v->w - 4, v->h - 4, 12, selected ? col_alpha(T.accent, 0.16f) : T.surface);
@@ -3532,7 +3849,15 @@ static void tab_files(void)
 			snprintf(sub, sizeof sub, "%s%s%s", sz, when[0] ? " · " : "", when);
 		}
 		text_draw_clip(e->name, 48, y + 3, mx - (U.buttons && selected ? 74 : 58), TS_BODY, e->color ? col : T.text);
-		text_draw_clip(sub, 48, y + 19, mx - 58, TS_SUB, T.text3);
+		if (F.search) { // la carpeta donde está, en el color de acento, y luego lo de siempre
+			const char *dn = SR.dirs[e->sdir];
+			float dw = fminf(text_width(dn, TS_SUB), (mx - 58) * 0.65f);
+			text_draw_clip(dn, 48, y + 19, dw, TS_SUB, T.accent);
+			char rest[80];
+			snprintf(rest, sizeof rest, " · %s", sub);
+			text_draw_clip(rest, 48 + dw, y + 19, mx - 58 - dw, TS_SUB, T.text3);
+		} else
+			text_draw_clip(sub, 48, y + 19, mx - 58, TS_SUB, T.text3);
 		// ⋮ con su círculo; en la fila elegida con botones, también la Y que hace lo mismo
 		bool ysel = U.buttons && selected && !MS.on;
 		if (!MS.on) {
@@ -3571,6 +3896,15 @@ static void tab_files(void)
 	} else if (F.nosaves) {
 		wrap_center(_("Las partidas de los juegos van cifradas dentro de «Nintendo 3DS». Haz una copia con Checkpoint o JKSM y aparecerá aquí."),
 		            BOT_W / 2, my + 14, BOT_W - 40, TS_SUB, 4, T.text3);
+	} else if (F.search && F.n == 0) {
+		if (!SR.done)
+			text_draw_center(_("Buscando…"), BOT_W / 2, my + 40, TS_BODY, T.text3);
+		else {
+			char t[200];
+			snprintf(t, sizeof t, _("No hay nada que se llame «%s» aquí"), SR.q);
+			wrap_center(t, BOT_W / 2, my + 30, BOT_W - 40, TS_BODY, 2, T.text3);
+			wrap_center(_("Se busca en la carpeta donde estabas y en todas las de dentro."), BOT_W / 2, my + 74, BOT_W - 60, TS_SUB, 2, T.text3);
+		}
 	} else if (F.trash && F.n == 0) {
 		text_draw_center(_("La papelera está vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 		char t[96];
@@ -3589,6 +3923,30 @@ static void tab_files(void)
 	}
 	if (MS.on && U.buttons && !g_dialog.open && (g_kdown & KEY_Y))
 		MA.open = MA.just = true, MA.sel = 0;
+	if (F.search) { // un resultado: se abre en su carpeta (B vuelve aquí); X solo lleva a ella
+		if (msel >= 0)
+			menu = msel;
+		bool go = U.buttons && !g_dialog.open && (g_kdown & KEY_X) && f_selected();
+		int i = menu >= 0 ? menu : open >= 0 ? open : go ? F.sel : -1;
+		if (i >= 0) {
+			F.sel = i;
+			const FEnt *e = &F.e[F.v[i].idx];
+			if (e->dir && open >= 0) { // una carpeta: se entra en ella
+				char full[700];
+				f_full(F.v[i].idx, full, sizeof full);
+				SR.sel_keep = i;
+				f_load(full);
+				util_strlcpy(SR.back, full, sizeof SR.back);
+				return;
+			}
+			sr_goto(F.v[i].idx);
+			if (menu >= 0)
+				f_menu_open();
+			else if (open >= 0 && f_selected())
+				f_open_item(F.v[F.sel].idx);
+		}
+		return;
+	}
 	if (F.trash) {
 		if (open >= 0 && U.buttons && (g_kdown & KEY_A))
 			trash_do_restore(F.v[open].idx);
@@ -3641,7 +3999,7 @@ static void tab_files(void)
 	if (!MS.on && U.buttons && !g_dialog.open && (g_kdown & KEY_B)) {
 		if (F.nosaves)
 			f_reload_keep();
-		else
+		else if (!f_back_to_results())
 			f_up();
 	}
 	if (menu >= 0) {
@@ -4390,7 +4748,9 @@ static void files_top(float a)
 	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
 	bool can_open = e->dir || f_is_img(e) || f_is_txt(e) || F.cia_ok;
 	char hint[96];
-	if (can_open)
+	if (F.search)
+		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"), GLYPH_X, _("Su carpeta"));
+	else if (can_open)
 		snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"));
 	else
 		snprintf(hint, sizeof hint, "%s %s", GLYPH_Y, _("Opciones"));
@@ -5042,6 +5402,12 @@ static void update(void)
 		U.buttons = true;
 	if (g_touch.down)
 		U.buttons = false;
+	if (U.want_search) {
+		U.want_search = false;
+		char q[128];
+		if (kb_input(_("Buscar aquí y en las carpetas de dentro"), SR.q, q, sizeof q, false, false) && q[0])
+			sr_start(q);
+	}
 	if (U.want_tnew) {
 		U.want_tnew = false;
 		char nm[128], dst[700];
