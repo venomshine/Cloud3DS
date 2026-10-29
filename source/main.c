@@ -1320,6 +1320,8 @@ static struct {
 	bool err, truncated;
 	FView v[F_MAX + 24];
 	u32 gclosed;       // grupos plegados (se despliegan al cambiar de carpeta)
+	bool chips_on;     // accesos rápidos a la vista fuera de la raíz (se sacan tirando hacia abajo)
+	float pull;        // cuánto se está tirando hacia abajo estando arriba del todo
 	int nv;
 	float off, target, total;
 	int sel, chip;
@@ -1566,8 +1568,11 @@ static void f_build_view(void)
 	F.nv = 0;
 	float y = 0;
 	int col = 0;
-	F.v[F.nv++] = (FView){FV_CHIPS, -1, y, 44, 0, BOT_W, 0};
-	y += 44;
+	// accesos rápidos: siempre en la raíz; en las demás carpetas, solo si se sacaron tirando hacia abajo
+	if (!strcmp(F.path, "/") || F.chips_on) {
+		F.v[F.nv++] = (FView){FV_CHIPS, -1, y, 44, 0, BOT_W, 0};
+		y += 44;
+	}
 	int nsys = 0, last = -1;
 	bool apart = V.f_sysapart;
 	for (int i = 0; i < F.n; i++) {
@@ -1631,8 +1636,10 @@ static void f_load(const char *path)
 	f_build_view();
 	if (!same) {
 		F.gclosed = 0;
+		F.chips_on = false;
+		F.pull = 0;
 		f_build_view();
-		F.sel = F.nv > 1 ? 1 : 0;
+		F.sel = F.nv > 1 && F.v[0].kind == FV_CHIPS ? 1 : 0;
 		F.off = F.target = 0;
 	}
 	if (F.sel >= F.nv)
@@ -1697,6 +1704,27 @@ static void f_up(void)
 			F.sel = i;
 			F.target = fmaxf(0, F.v[i].y - VIEW_H / 2);
 		}
+}
+
+static bool f_on_chips(void)
+{
+	return F.sel >= 0 && F.sel < F.nv && F.v[F.sel].kind == FV_CHIPS;
+}
+
+static bool f_chips_shown(void)
+{
+	return F.nv > 0 && F.v[0].kind == FV_CHIPS;
+}
+
+// saca los accesos rápidos arriba sin perder lo elegido
+static void f_show_chips(void)
+{
+	if (f_chips_shown())
+		return;
+	F.chips_on = true;
+	f_build_view();
+	F.sel++;
+	F.off = F.target = 0;
 }
 
 static const FEnt *f_selected(void)
@@ -2807,7 +2835,7 @@ static void tab_files(void)
 			return;
 		}
 		// también con Y en los accesos rápidos
-		if (!g_dialog.open && (tap(sx - 14, ny - 14, 28, 28) || (U.buttons && F.sel == 0 && (g_kdown & KEY_Y)))) {
+		if (!g_dialog.open && (tap(sx - 14, ny - 14, 28, 28) || (U.buttons && f_on_chips() && (g_kdown & KEY_Y)))) {
 			VS.open = VS.just = true;
 			VS.sel = 0;
 			return;
@@ -2823,8 +2851,23 @@ static void tab_files(void)
 	// desplazamiento con el dedo o siguiendo la selección
 	float max = fmaxf(0, F.total - VIEW_H);
 	if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && g_touch.sy < VIEW_Y + VIEW_H) {
-		F.target -= g_touch.y - g_touch.py;
-		F.off = F.target;
+		float dy = g_touch.y - g_touch.py;
+		if (!f_chips_shown() && F.target <= 0 && (dy > 0 || F.pull > 0)) {
+			F.pull = fmaxf(0, F.pull + dy); // arriba del todo y tirando: se estira
+		} else {
+			F.target -= dy;
+			F.off = F.target;
+		}
+	} else if (F.pull > 0) {
+		if (F.pull >= 40)
+			f_show_chips();
+		F.pull = 0;
+	}
+	// con la cruceta: ↑ en lo primero también los saca
+	if (U.buttons && !g_dialog.open && !f_chips_shown() && F.sel == 0 && (g_krepeat & KEY_UP)) {
+		f_show_chips();
+		F.sel = 0;
+		g_krepeat &= ~KEY_UP;
 	}
 	if (U.buttons && !g_dialog.open && (g_krepeat & (KEY_UP | KEY_DOWN))) {
 		int d = (g_krepeat & KEY_DOWN) ? 1 : -1;
@@ -2856,11 +2899,11 @@ static void tab_files(void)
 		if (v->y + v->h > F.target + VIEW_H)
 			F.target = v->y + v->h - VIEW_H;
 	}
-	if (U.buttons && !g_dialog.open && F.sel == 0 && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
+	if (U.buttons && !g_dialog.open && f_on_chips() && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
 		F.chip = (F.chip + ((g_krepeat & KEY_RIGHT) ? 1 : CH_COUNT - 1)) % CH_COUNT;
-	if (U.buttons && !g_dialog.open && V.f_grid && F.sel > 0 && F.v[F.sel].kind == FV_ITEM && (g_krepeat & (KEY_LEFT | KEY_RIGHT))) {
+	if (U.buttons && !g_dialog.open && V.f_grid && F.sel >= 0 && F.v[F.sel].kind == FV_ITEM && (g_krepeat & (KEY_LEFT | KEY_RIGHT))) {
 		int k = F.sel + ((g_krepeat & KEY_RIGHT) ? 1 : -1);
-		if (k > 0 && k < F.nv && F.v[k].kind == FV_ITEM && F.v[k].y == F.v[F.sel].y)
+		if (k >= 0 && k < F.nv && F.v[k].kind == FV_ITEM && F.v[k].y == F.v[F.sel].y)
 			F.sel = k;
 	}
 	F.target = clampf(F.target, 0, max);
@@ -2869,9 +2912,15 @@ static void tab_files(void)
 	bool inview = g_touch.sy >= VIEW_Y && g_touch.sy < VIEW_Y + VIEW_H && !g_dialog.open;
 	int open = -1, menu = -1; // fila que se abre o cuyo menú se pide
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+	float po = fminf(F.pull, 70) * 0.6f; // lo que baja la lista al tirar
+	if (po > 1) {
+		float a = clampf(F.pull / 40, 0, 1);
+		draw_icon(F.pull >= 40 ? IC_UP : IC_DOWN, BOT_W / 2 - text_width(_("Accesos rápidos"), TS_SUB) / 2 - 12, VIEW_Y + po / 2, 11, col_alpha(T.accent, a));
+		text_draw_center(_("Accesos rápidos"), BOT_W / 2, VIEW_Y + po / 2 - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.accent, a));
+	}
 	for (int i = 0; i < F.nv; i++) {
 		const FView *v = &F.v[i];
-		float y = VIEW_Y + v->y - F.off;
+		float y = VIEW_Y + v->y - F.off + po;
 		if (y + v->h < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
 		if (v->kind == FV_CHIPS) {
@@ -2880,7 +2929,7 @@ static void tab_files(void)
 				float cx = 6 + c * cw;
 				bool here = c == CH_SAVES ? (F.nosaves || strstr(F.path, "/Checkpoint/saves") || !strncasecmp(F.path, "/JKSV", 5))
 				                          : !F.nosaves && !strcasecmp(F.path, CHIP_PATH[c]);
-				bool hl = here || (U.buttons && F.sel == 0 && F.chip == c) || (inview && touch_in(cx, y + 2, cw, 40));
+				bool hl = here || (U.buttons && f_on_chips() && F.chip == c) || (inview && touch_in(cx, y + 2, cw, 40));
 				if (hl)
 					draw_rrect(cx + 2, y + 3, cw - 4, 38, 10, here ? col_alpha(T.accent, 0.18f) : T.surface);
 				draw_icon(chip_icon(c), cx + cw / 2, y + 15, 16, here ? T.accent : T.text2);
@@ -2889,7 +2938,7 @@ static void tab_files(void)
 				if (inview && tap(cx, y + 2, cw, 40))
 					f_open_chip(c);
 			}
-			if (U.buttons && F.sel == 0 && !g_dialog.open && (g_kdown & KEY_A))
+			if (U.buttons && f_on_chips() && !g_dialog.open && (g_kdown & KEY_A))
 				f_open_chip(F.chip);
 			continue;
 		}
@@ -3008,7 +3057,7 @@ static void tab_files(void)
 			open = i;
 	}
 	gfx_clip_off();
-	float my = VIEW_Y + 44 - F.off;
+	float my = VIEW_Y + (f_chips_shown() ? 44 : 0) - F.off;
 	if (F.missing) {
 		// acceso rápido a una carpeta que aún no existe: se ofrece crearla, como en la web
 		text_draw_center(_("Esta carpeta aún no existe"), BOT_W / 2, my + 22, TS_BODY, T.text);
@@ -3031,7 +3080,7 @@ static void tab_files(void)
 	} else if (F.err || F.n == 0) {
 		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	}
-	if (U.buttons && !g_dialog.open && F.sel > 0 && F.v[F.sel].kind == FV_ITEM) {
+	if (U.buttons && !g_dialog.open && F.sel >= 0 && F.v[F.sel].kind == FV_ITEM) {
 		if (g_kdown & KEY_A)
 			open = F.sel;
 		else if (g_kdown & KEY_Y)

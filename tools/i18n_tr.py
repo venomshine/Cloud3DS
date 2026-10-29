@@ -1079,4 +1079,7 @@ TR = {
     'Destacadas arriba':
         ('Highlighted first',
          '色付きを上に'),
+    'Accesos rápidos':
+        ('Quick access',
+         'クイックアクセス'),
 }

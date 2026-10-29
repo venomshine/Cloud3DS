@@ -240,6 +240,7 @@ static const TrEntry TR_TAB[] = {
 	{"Destacadas arriba", "Highlighted first", "色付きを上に"},
 	{"Carpeta", "Folder", "フォルダ"},
 	{"Documento de texto", "Text document", "テキスト文書"},
+	{"Accesos rápidos", "Quick access", "クイックアクセス"},
 	{"CARPETAS DEL SISTEMA", "SYSTEM FOLDERS", "システムフォルダ"},
 	{"Esta carpeta aún no existe", "This folder doesn't exist yet", "このフォルダはまだありません"},
 	{"Crear carpeta", "Create folder", "フォルダを作成"},
