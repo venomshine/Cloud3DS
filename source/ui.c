@@ -505,6 +505,10 @@ void dialog_draw(void) {
             if (w + gw > lw && n) break;
             if (cp == ' ') { last_sp = q; last_n = n; }
             memcpy(line + n, p, q - p); n += (int)(q - p); w += gw; p = q;
+            if (cp >= 0x2E80) {                        // chino/japonés: se corta tras cada carácter, como en text_wrap_lines
+                const char *t = p; u32 nx = *t ? utf8_next(&t) : 0;
+                if (!(nx == 0x3001 || nx == 0x3002 || nx == 0xFF01 || nx == 0xFF1F || nx == 0x300D || nx == 0xFF09 || nx == 0x30FC)) { last_sp = p; last_n = n; }
+            }
             if (n > 280) break;
         }
         if (*p && *p != '\n' && last_sp) { n = last_n; p = last_sp; }
