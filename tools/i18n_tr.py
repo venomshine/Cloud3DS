@@ -914,4 +914,16 @@ TR = {
     'Copia cancelada: se borró de la SD':
         ('Copy canceled: deleted from the SD',
          'コピーを取り消しました(SDから削除)'),
+    'Documento de texto':
+        ('Text document',
+         'テキスト文書'),
+    'Nombre del documento':
+        ('Document name',
+         '文書の名前'),
+    'No se pudo crear el documento':
+        ("Couldn't create the document",
+         '文書を作成できませんでした'),
+    'Creado':
+        ('Created',
+         '作成'),
 }

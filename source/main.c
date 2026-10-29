@@ -82,6 +82,7 @@ static struct {
 	char dev_tok[33];            // dispositivo elegido en la lista: su información sale arriba
 	bool want_frename;           // renombrar el archivo elegido en Archivos
 	bool want_fnew;              // crear una carpeta en Archivos
+	bool want_tnew;              // crear un documento de texto en Archivos
 	int want_txt;                // editor de texto: 1 editar la línea, 2 añadir una debajo
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 	float t_upd;                 // interruptor «Buscar al abrir»
@@ -191,6 +192,10 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 	case EV_MOVE:
 		*ic = IC_FOLDER; *col = T.accent2;
 		snprintf(sub, sn, "%s · %s", _("Movido"), e->device);
+		break;
+	case EV_CREATE:
+		*ic = IC_NOTE; *col = T.accent;
+		snprintf(sub, sn, "%s · %s", _("Creado"), e->device);
 		break;
 	case EV_EDIT:
 		*ic = IC_NOTE; *col = T.accent2;
@@ -2197,9 +2202,63 @@ static bool f_open_item(int vi)
 	return true;
 }
 
-static void f_new_folder(void)
+// menú pequeño que sale del botón «+» de arriba: carpeta o documento de texto, y Cerrar
+static struct {
+	bool open, just;
+	float anim;
+	int sel;
+} PM;
+
+static void f_new_menu(void)
 {
-	U.want_fnew = true;
+	PM.open = true;
+	PM.just = true;
+	PM.sel = 0;
+}
+
+static void pm_draw(void)
+{
+	PM.anim = approach(PM.anim, PM.open ? 1 : 0, 18);
+	if (PM.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(PM.anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a * 0.6f));
+	static const IconId IC[3] = {IC_FOLDER, IC_NOTE, IC_CLOSE};
+	const char *L[3] = {_("Carpeta"), _("Documento de texto"), _("Cerrar")};
+	const float W = 190, RH = 34, x = BOT_W - 8 - W, y = 30 - (1 - a) * 8;
+	draw_rrect(x, y + 3, W, 3 * RH + 12, 14, col_alpha(T.shadow, a));
+	draw_rrect(x, y, W, 3 * RH + 12, 14, T.surface);
+	if (!PM.open)
+		return;
+	bool fresh = PM.just;
+	PM.just = false;
+	if (fresh)
+		return; // el toque que lo abrió no cuenta
+	if (U.buttons) {
+		if (g_krepeat & KEY_DOWN) PM.sel = (PM.sel + 1) % 3;
+		if (g_krepeat & KEY_UP) PM.sel = (PM.sel + 2) % 3;
+	}
+	int run = -1;
+	for (int i = 0; i < 3; i++) {
+		float ry = y + 6 + i * RH;
+		if (i == 2)
+			draw_rect(x + 12, ry - 1, W - 24, 1, T.divider);
+		if (touch_in(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i))
+			draw_rrect(x + 6, ry + 2, W - 12, RH - 4, 9, T.surface2);
+		u32 c = i == 0 ? T.warn : i == 1 ? T.accent : T.text3;
+		draw_icon(IC[i], x + 24, ry + RH / 2, 15, c);
+		text_draw_clip(L[i], x + 42, ry + (RH - text_lineh(TS_BODY)) / 2, W - 52, TS_BODY, i == 2 ? T.text2 : T.text);
+		if (tap(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i && (g_kdown & KEY_A)))
+			run = i;
+	}
+	if (run == 2 || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= x && g_touch.sx < x + W && g_touch.sy >= y && g_touch.sy < y + 3 * RH + 12)))
+		PM.open = false;
+	else if (run == 0)
+		PM.open = false, U.want_fnew = true;
+	else if (run == 1)
+		PM.open = false, U.want_tnew = true;
+	g_kdown &= ~(KEY_A | KEY_B);
+	g_touch.up = false;
 }
 
 static void tab_files(void)
@@ -2215,15 +2274,13 @@ static void tab_files(void)
 	float nx = BOT_W - 24, ny = 16;
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
 	if (!F.missing && !F.nosaves) {
-		draw_circle(nx, ny, 12, np ? T.surface2 : T.surface);
-		draw_icon(IC_FOLDER, nx - 1, ny + 1, 13, T.accent);
-		draw_circle(nx + 6, ny - 5, 5, T.accent);
-		draw_icon(IC_PLUS, nx + 6, ny - 5, 7, 0xFFFFFFFF);
+		draw_circle(nx, ny, 12, np ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+		draw_icon(IC_PLUS, nx, ny, 13, 0xFFFFFFFF);
 		char cnt[32];
 		snprintf(cnt, sizeof cnt, F.n == 1 ? _("1 elemento") : _("%d elementos"), F.n);
 		text_draw_right(cnt, nx - 20, 11, TS_SUB, T.text3);
 		if (!g_dialog.open && (tap(nx - 14, ny - 14, 28, 28) || (U.buttons && !FP.mode && (g_kdown & KEY_X)))) {
-			f_new_folder();
+			f_new_menu();
 			return;
 		}
 	}
@@ -3228,7 +3285,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -3256,8 +3313,10 @@ static void draw_bottom(void)
 	if (!viewer)
 		draw_tabbar();
 	g_kdown = kd, g_krepeat = kr, g_touch = tc;
-	if (U.tab == TAB_FILES)
+	if (U.tab == TAB_FILES) {
 		f_menu();
+		pm_draw();
+	}
 	install_card();
 	dialog_draw();
 	if (U.fade > 0) {
@@ -3436,6 +3495,39 @@ static void update(void)
 		U.buttons = true;
 	if (g_touch.down)
 		U.buttons = false;
+	if (U.want_tnew) {
+		U.want_tnew = false;
+		char nm[128], dst[700];
+		if (kb_input(_("Nombre del documento"), "", nm, sizeof nm - 4, false, false) && nm[0]) {
+			if (!strchr(nm, '.')) // sin extensión: .txt
+				strcat(nm, ".txt");
+			snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
+			bool d;
+			u64 sz;
+			char sd[720];
+			snprintf(sd, sizeof sd, "sdmc:%s", dst);
+			FILE *f = NULL;
+			if (strpbrk(nm, "\\/:*?\"<>|") || nm[strlen(nm) - 1] == '.' || nm[strlen(nm) - 1] == ' ')
+				toast_icon(_("Ese nombre no es válido"), IC_CLOSE, T.danger);
+			else if (fsx_stat(dst, &d, &sz) == 0)
+				toast_icon(_("Ya existe un archivo con ese nombre"), IC_CLOSE, T.danger);
+			else if (!(f = fopen(sd, "wb")))
+				toast_icon(_("No se pudo crear el documento"), IC_CLOSE, T.danger);
+			else {
+				fclose(f);
+				state_lock();
+				event_add(EV_CREATE, nm, G.console, 0);
+				state_unlock();
+				f_reload_keep();
+				for (int i = 0; i < F.nv; i++) // queda elegido y se abre para escribir
+					if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm)) {
+						F.sel = i;
+						vw_load(F.v[i].idx);
+					}
+			}
+		}
+		return;
+	}
 	if (U.want_fnew) {
 		U.want_fnew = false;
 		char nm[128], dst[700];

@@ -47,6 +47,7 @@ typedef enum {
 	EV_MOVE,
 	EV_INSTALL,
 	EV_EDIT,       /* archivo de texto editado */
+	EV_CREATE,     /* documento nuevo creado en la consola */
 } EventKind;
 
 typedef struct {
