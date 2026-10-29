@@ -2177,20 +2177,29 @@ static void vw_bottom_text(void)
 	else if (VW.doc.ro == TXT_RO_BIG)
 		util_strlcpy(sub, VW.doc.cut ? _("Solo lectura: archivo muy grande, se ve el principio") : _("Solo lectura: archivo muy grande"), sizeof sub), sc = T.warn;
 	else if (VW.doc.dirty)
-		snprintf(sub, sizeof sub, _("Línea %d de %d · Sin guardar"), VW.cur + 1, n), sc = T.warn;
+		snprintf(sub, sizeof sub, _("Línea %d de %d"), VW.cur + 1, n), sc = T.warn; // sin guardar: también se enciende «Guardar»
 	else
 		snprintf(sub, sizeof sub, _("Línea %d de %d"), VW.cur + 1, n);
-	text_draw_clip(sub, 60, 32, BOT_W - 104, TS_SUB, sc);
-	// arriba a la derecha, ⋮: el menú del archivo (cambiar tipo, renombrar…)
-	float mx = BOT_W - 28, my = 30;
-	bool mp = touch_in(mx - 16, my - 16, 32, 32);
-	draw_circle(mx, my, 14, mp ? T.surface2 : T.surface);
-	draw_icon(IC_DOTS, mx, my, 16, T.text2);
-	bool menu = tap(mx - 16, my - 16, 32, 32);
+	// arriba a la derecha, pequeños: guardar (START), el menú del archivo (⋮) y cerrar (B)
+	float my = 30, xx = BOT_W - 22, mx = xx - 32, svw = 58, svx = mx - 18 - svw;
+	text_draw_clip(sub, 60, 32, svx - 66, TS_SUB, sc);
+	bool save = false;
+	if (ed) {
+		bool dirty = VW.doc.dirty, sp = dirty && touch_in(svx, my - 13, svw, 26);
+		draw_rrect(svx, my - 13, svw, 26, 13, dirty ? (sp ? col_lerp(T.accent, T.text, 0.15f) : T.accent) : T.surface);
+		text_draw_center_clip(_("Guardar"), svx + svw / 2, my - text_lineh(TS_SUB) / 2, svw - 8, TS_SUB, dirty ? 0xFFFFFFFF : col_alpha(T.text3, 0.7f));
+		save = dirty && tap(svx, my - 13, svw, 26);
+	}
+	bool mp = touch_in(mx - 15, my - 15, 30, 30), xp = touch_in(xx - 15, my - 15, 30, 30);
+	draw_circle(mx, my, 13, mp ? T.surface2 : T.surface);
+	draw_icon(IC_DOTS, mx, my, 15, T.text2);
+	draw_circle(xx, my, 13, xp ? T.surface2 : T.surface);
+	draw_icon(IC_CLOSE, xx, my, 12, T.text2);
+	bool menu = tap(mx - 15, my - 15, 30, 30), close = tap(xx - 15, my - 15, 30, 30);
 	// las líneas de alrededor: tocar una la elige; tocar la elegida la edita; arrastrar desplaza
 	const float LY = 56, RH = 20;
-	const int LR = 3;
-	int first = VW.cur - 1;
+	const int LR = ed ? 5 : 7;
+	int first = VW.cur - 2;
 	if (first > n - LR)
 		first = n - LR;
 	if (first < 0)
@@ -2228,7 +2237,7 @@ static void vw_bottom_text(void)
 	}
 	// botones: dos filas de cinco; al lado de cada icono, el botón de la consola que hace lo mismo
 	enum { B_LINE, B_BLOCK, B_ADD, B_DEL, B_DUP, B_UNDO, B_REDO, B_UP, B_DOWN, B_FIND, B_PGUP, B_PGDN };
-	const float BH = 36, BY = LY + LR * RH + 8, bw = (BOT_W - 20 - 4 * 5) / 5.0f;
+	const float BH = 34, BY = LY + LR * RH + 6, bw = (BOT_W - 20 - 4 * 5) / 5.0f;
 	int hit = -1;
 	struct {
 		int id;
@@ -2258,29 +2267,6 @@ static void vw_bottom_text(void)
 		int r = ed ? k / 5 : 0, c = ed ? k % 5 : k;
 		if (vw_button(10 + c * (rbw + 5), BY + r * (BH + 4), rbw, BH, B[k].ic, B[k].g, B[k].t, B[k].on))
 			hit = B[k].id;
-	}
-	// abajo: guardar (si se puede) y cerrar
-	float cy = BY + (ed ? 2 : 1) * (BH + 4) + 2, ch = SCR_H - 6 - cy;
-	char cl[48], sv[48];
-	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
-	snprintf(sv, sizeof sv, "START %s", _("Guardar"));
-	bool save = false, close = false;
-	if (ed) {
-		float hw = (BOT_W - 26) / 2;
-		bool dirty = VW.doc.dirty;
-		bool sp = dirty && touch_in(10, cy, hw, ch);
-		draw_rrect(10, cy, hw, ch, ch / 2, dirty ? (sp ? col_lerp(T.accent, T.text, 0.15f) : T.accent) : T.surface);
-		text_draw_center(sv, 10 + hw / 2, cy + (ch - text_lineh(TS_BODY)) / 2, TS_BODY, dirty ? 0xFFFFFFFF : col_alpha(T.text3, 0.6f));
-		save = dirty && tap(10, cy, hw, ch);
-		bool cp = touch_in(16 + hw, cy, hw, ch);
-		draw_rrect(16 + hw, cy, hw, ch, ch / 2, cp ? T.surface2 : T.surface);
-		text_draw_center(cl, 16 + hw + hw / 2, cy + (ch - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
-		close = tap(16 + hw, cy, hw, ch);
-	} else {
-		bool cp = touch_in(10, cy, BOT_W - 20, ch);
-		draw_rrect(10, cy, BOT_W - 20, ch, ch / 2, cp ? T.surface2 : T.surface);
-		text_draw_center(cl, BOT_W / 2, cy + (ch - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
-		close = tap(10, cy, BOT_W - 20, ch);
 	}
 	// botones de la consola
 	int page = vt_visible() - 1;
@@ -2342,7 +2328,7 @@ static void vw_bottom(void)
 	f_kind(e, &ic, &col);
 	draw_rrect(14, 14, 36, 36, 10, col_alpha(col, 0.18f));
 	draw_icon(ic, 32, 32, 18, col);
-	text_draw_clip(e->name, 60, 14, BOT_W - 74, TS_BODY, T.text);
+	text_draw_clip(e->name, 60, 14, VW.kind == VW_TXT ? BOT_W - 210 : BOT_W - 74, TS_BODY, T.text);
 	if (VW.kind == VW_TXT) {
 		vw_bottom_text();
 		return;
