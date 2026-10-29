@@ -14,6 +14,7 @@
 #include "install.h"
 #include "img.h"
 #include "txt.h"
+#include "hl.h"
 #include <time.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -1368,7 +1369,9 @@ typedef struct {
 	const char *x;
 	u8 k;
 	const char *label; // NULL: el genérico del grupo con la extensión («Imagen PNG»)
+	const char *name;  // si label lleva %s: el nombre del lenguaje («Código Python»)
 } FType;
+#define CODE(x, n) {x, FK_TEXT, N_("Código %s"), n}
 static const FType FTYPES[] = {
 	{"png", FK_IMG}, {"jpg", FK_IMG}, {"jpeg", FK_IMG}, {"bmp", FK_IMG}, {"gif", FK_IMG}, {"tga", FK_IMG},
 	{"mpo", FK_IMG, N_("Foto 3D (MPO)")},
@@ -1391,8 +1394,10 @@ static const FType FTYPES[] = {
 	{"conf", FK_TEXT, N_("Configuración (CONF)")}, {"json", FK_TEXT}, {"log", FK_TEXT, N_("Registro (LOG)")},
 	{"xml", FK_TEXT}, {"csv", FK_TEXT}, {"yml", FK_TEXT}, {"yaml", FK_TEXT}, {"toml", FK_TEXT}, {"nfo", FK_TEXT},
 	{"srt", FK_TEXT, N_("Subtítulos (SRT)")}, {"gm9", FK_TEXT, N_("Script de GodMode9")}, {"lua", FK_TEXT, N_("Script de Lua")},
-	{"py", FK_TEXT}, {"sh", FK_TEXT}, {"c", FK_TEXT}, {"h", FK_TEXT}, {"js", FK_TEXT}, {"css", FK_TEXT},
-	{"html", FK_TEXT}, {"htm", FK_TEXT},
+	CODE("py", "Python"), CODE("sh", "Shell"), CODE("c", "C"), CODE("h", "C"), CODE("cpp", "C++"), CODE("hpp", "C++"),
+	CODE("cc", "C++"), CODE("java", "Java"), CODE("js", "JavaScript"), CODE("ts", "TypeScript"), CODE("cs", "C#"),
+	CODE("go", "Go"), CODE("rs", "Rust"), CODE("kt", "Kotlin"), CODE("swift", "Swift"), CODE("php", "PHP"),
+	CODE("rb", "Ruby"), CODE("sql", "SQL"), CODE("css", "CSS"), CODE("html", "HTML"), CODE("htm", "HTML"),
 	{"zip", FK_ARCHIVE}, {"7z", FK_ARCHIVE}, {"rar", FK_ARCHIVE}, {"tar", FK_ARCHIVE}, {"gz", FK_ARCHIVE},
 	{"bz2", FK_ARCHIVE}, {"xz", FK_ARCHIVE},
 	{"ttf", FK_FONT}, {"otf", FK_FONT}, {"bcfnt", FK_FONT, N_("Fuente de 3DS (BCFNT)")},
@@ -1742,6 +1747,9 @@ static struct {
 	int cur, top;      // línea elegida y primera línea visible arriba
 	float drag;        // arrastre en la lista de abajo
 	char path[700];
+	int lang;          // HL_*: colores de código según la extensión
+	int *hls, hlcap;   // estado del resaltado al empezar cada línea (comentarios de varias líneas)
+	int hlv;           // cuántos de esos estados son válidos (0 tras cada cambio)
 } VW;
 
 static bool f_is_img(const FEnt *e)
@@ -1814,6 +1822,8 @@ static void vw_load(int idx)
 	}
 	VW.kind = VW_TXT;
 	VW.prot = V.protect_sys && fsx_is_system(full);
+	VW.lang = hl_lang(f_ext(F.e[idx].name));
+	VW.hlv = 0;
 }
 
 // fotos de la carpeta, para pasar con ← →
@@ -1863,10 +1873,91 @@ static float vt_gutter(void)
 	return text_width(b, TS_SUB) + 16;
 }
 
+// estado del resaltado al empezar la línea i (se calcula una vez y se guarda)
+static int vt_state(int i)
+{
+	if (VW.hlcap < VW.doc.n + 1) {
+		int cap = VW.doc.n + 256, *h = realloc(VW.hls, cap * sizeof *h);
+		if (!h)
+			return 0;
+		VW.hls = h, VW.hlcap = cap;
+	}
+	if (VW.hlv == 0)
+		VW.hls[0] = 0, VW.hlv = 1;
+	while (VW.hlv <= i) {
+		int st = VW.hls[VW.hlv - 1];
+		hl_line(VW.lang, VW.doc.ln[VW.hlv - 1], &st, NULL, 0);
+		VW.hls[VW.hlv++] = st;
+	}
+	return VW.hls[i];
+}
+
+static u32 hl_color(int c)
+{
+	switch (c) {
+	case HC_KEY: return T.accent2;
+	case HC_STR: return T.ok;
+	case HC_COM: return T.text3;
+	case HC_NUM: return T.warn;
+	case HC_TAG: return T.accent;
+	case HC_ATTR: return col_lerp(T.accent, T.text, 0.35f);
+	case HC_HEAD: return T.accent;
+	default: return T.text;
+	}
+}
+
+// una línea de código con colores; se parte por caracteres al llegar al ancho. Devuelve las filas
+static int vt_code(int i, const char *b, float x, float y, float w, bool draw)
+{
+	static HlSpan sp[96];
+	int st = vt_state(i);
+	int ns = hl_line(VW.lang, b, &st, sp, 96);
+	float lh = text_lineh(TS_SUB), cx = 0, rx = 0; // ancho usado en la fila y dónde empieza el trozo
+	int rows = 1, row0 = 0, pl = 0;                 // inicio de la fila en b y bytes del trozo
+	char piece[600];
+#define VT_FLUSH(col)                                                                             \
+	do {                                                                                          \
+		if (pl && draw) {                                                                         \
+			piece[pl] = 0;                                                                        \
+			text_draw(piece, x + rx, y + (rows - 1) * lh, TS_SUB, col);                           \
+		}                                                                                         \
+		pl = 0;                                                                                   \
+	} while (0)
+	for (int k = 0; k < ns; k++) {
+		const char *p = b + sp[k].start, *end = p + sp[k].len;
+		u32 col = hl_color(sp[k].c);
+		rx = text_width_n(b + row0, (int)(p - b) - row0, TS_SUB);
+		while (p < end) {
+			const char *q = p;
+			u32 cp = utf8_next(&q);
+			float gw = glyph_w(cp, TS_SUB);
+			if (cx + gw > w && cx > 0) { // fila llena: sigue en la siguiente
+				VT_FLUSH(col);
+				if (rows == VT_MAXROWS)
+					return rows;
+				rows++, cx = 0, rx = 0, row0 = (int)(p - b);
+			}
+			if (pl + (q - p) >= (int)sizeof piece - 1) {
+				VT_FLUSH(col);
+				rx = text_width_n(b + row0, (int)(p - b) - row0, TS_SUB);
+			}
+			memcpy(piece + pl, p, q - p);
+			pl += (int)(q - p);
+			cx += gw;
+			p = q;
+		}
+		VT_FLUSH(col);
+	}
+#undef VT_FLUSH
+	return rows;
+}
+
 static int vt_rows(int i, float w)
 {
 	static char b[2400];
 	vt_line(i, b, sizeof b);
+	if (VW.lang)
+		return vt_code(i, b, 0, 0, w, false);
 	return text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, 0, 0, 0, false);
 }
 
@@ -1900,14 +1991,17 @@ static void vt_draw(void)
 	float y = 4;
 	for (int i = VW.top; i < VW.doc.n && y < SCR_H; i++) {
 		vt_line(i, b, sizeof b);
-		int r = text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, 0, 0, 0, false);
+		int r = VW.lang ? vt_code(i, b, 0, 0, w, false) : text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, 0, 0, 0, false);
 		bool here = i == VW.cur;
 		if (here)
 			draw_rect(0, y - 1, TOP_W, r * lh + 2, col_alpha(T.accent, 0.16f));
 		char num[12];
 		snprintf(num, sizeof num, "%d", i + 1);
 		text_draw_right(num, gw - 8, y, TS_SUB, here ? T.accent : T.text3);
-		text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, x, y, T.text, true);
+		if (VW.lang)
+			vt_code(i, b, x, y, w, true);
+		else
+			text_wrap_lines(b, w, TS_SUB, VT_MAXROWS, x, y, T.text, true);
 		y += r * lh;
 	}
 	if (VW.doc.n > vis) { // barra de desplazamiento fina
@@ -1943,12 +2037,16 @@ static void vw_top(void)
 }
 
 // botón grande con icono y texto; true si se tocó
-static bool vw_button(float x, float y, float w, float h, IconId ic, const char *label, bool on)
+// botón grande: arriba el icono (y al lado el botón de la consola que hace lo mismo), debajo el texto
+static bool vw_button(float x, float y, float w, float h, IconId ic, const char *glyph, const char *label, bool on)
 {
 	bool p = on && touch_in(x, y, w, h);
 	draw_rrect(x, y, w, h, 12, p ? T.surface2 : T.surface);
 	u32 c = on ? T.text2 : col_alpha(T.text3, 0.5f);
-	draw_icon(ic, x + w / 2, y + h / 2 - 7, 15, c);
+	float gw = glyph ? text_width(glyph, TS_SUB) + 3 : 0;
+	draw_icon(ic, x + w / 2 - gw / 2, y + h / 2 - 7, 15, c);
+	if (glyph)
+		text_draw(glyph, x + w / 2 - gw / 2 + 10, y + h / 2 - 7 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
 	text_draw_center_clip(label, x + w / 2, y + h / 2 + 4, w - 6, TS_SUB, on ? T.text3 : col_alpha(T.text3, 0.5f));
 	return on && tap(x, y, w, h);
 }
@@ -2016,29 +2114,24 @@ static void vw_bottom_text(void)
 	}
 	// botones
 	const float BY = LY + LR * RH + 10, BH = 40;
-	char t1[48], t2[48], t3[48], t4[48];
 	int hit = -1;
 	if (ed) {
-		snprintf(t1, sizeof t1, "%s %s", GLYPH_A, _("Editar"));
-		snprintf(t2, sizeof t2, "%s %s", GLYPH_X, _("Añadir"));
-		util_strlcpy(t3, _("Borrar"), sizeof t3);
-		snprintf(t4, sizeof t4, "%s %s", GLYPH_Y, _("Opciones"));
-		const char *T4[4] = {t1, t2, t3, t4};
-		static const IconId I4[4] = {IC_PEN, IC_PLUS, IC_TRASH, IC_MENU};
-		float bw = (BOT_W - 20 - 3 * 6) / 4.0f;
-		for (int k = 0; k < 4; k++)
-			if (vw_button(10 + k * (bw + 6), BY, bw, BH, I4[k], T4[k], true))
-				hit = k;
+		// línea (A), varias líneas (R), añadir (X), borrar y menú (Y)
+		const char *T5[5] = {_("Línea"), _("Bloque"), _("Añadir"), _("Borrar"), _("Menú")};
+		const char *G5[5] = {GLYPH_A, GLYPH_R, GLYPH_X, NULL, GLYPH_Y};
+		static const IconId I5[5] = {IC_PEN, IC_NOTE, IC_PLUS, IC_TRASH, IC_MENU};
+		static const int H5[5] = {0, 4, 1, 2, 3};
+		float bw = (BOT_W - 20 - 4 * 5) / 5.0f;
+		for (int k = 0; k < 5; k++)
+			if (vw_button(10 + k * (bw + 5), BY, bw, BH, I5[k], G5[k], T5[k], true))
+				hit = H5[k];
 	} else {
-		snprintf(t1, sizeof t1, "%s %s", GLYPH_DPAD, _("Anterior"));
-		snprintf(t2, sizeof t2, "%s %s", GLYPH_DPAD, _("Siguiente"));
-		snprintf(t4, sizeof t4, "%s %s", GLYPH_Y, _("Opciones"));
 		float bw = (BOT_W - 20 - 2 * 6) / 3.0f;
-		if (vw_button(10, BY, bw, BH, IC_UP, _("Página anterior"), true))
+		if (vw_button(10, BY, bw, BH, IC_UP, GLYPH_DPAD, _("Página anterior"), true))
 			hit = 10;
-		if (vw_button(10 + bw + 6, BY, bw, BH, IC_DOWN, _("Página siguiente"), true))
+		if (vw_button(10 + bw + 6, BY, bw, BH, IC_DOWN, GLYPH_DPAD, _("Página siguiente"), true))
 			hit = 11;
-		if (vw_button(10 + 2 * (bw + 6), BY, bw, BH, IC_MENU, t4, true))
+		if (vw_button(10 + 2 * (bw + 6), BY, bw, BH, IC_MENU, GLYPH_Y, _("Opciones"), true))
 			hit = 3;
 	}
 	// abajo: guardar (si se puede) y cerrar
@@ -2080,8 +2173,11 @@ static void vw_bottom_text(void)
 		U.want_txt = 1;
 	else if (ed && (hit == 1 || (g_kdown & KEY_X)))
 		U.want_txt = 2;
+	else if (ed && (hit == 4 || (g_kdown & KEY_R)))
+		U.want_txt = 3;
 	else if (ed && hit == 2) {
 		txt_remove(&VW.doc, VW.cur);
+		VW.hlv = 0;
 		if (VW.cur >= VW.doc.n)
 			VW.cur = VW.doc.n - 1;
 		toast_icon(_("Línea borrada"), IC_TRASH, T.text3);
@@ -2438,7 +2534,7 @@ static void tab_files(void)
 }
 
 // ---- menú de un archivo o carpeta
-enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT };
+enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE };
 static struct {
 	bool open;
 	float anim;
@@ -2459,6 +2555,8 @@ static void f_menu_open(void)
 		FM.acts[FM.n++] = FA_INSTALL;
 	if (!e->dir && !f_is_img(e) && !f_is_txt(e) && !vw_is_open()) // cualquier archivo se puede mirar como texto
 		FM.acts[FM.n++] = FA_ASTEXT;
+	if (!locked && !e->dir && (f_is_txt(e) || !*f_ext(e->name))) // txt → py, cpp, java…
+		FM.acts[FM.n++] = FA_TYPE;
 	if (!locked) {
 		FM.acts[FM.n++] = FA_RENAME;
 		FM.acts[FM.n++] = FA_MOVE;
@@ -2481,13 +2579,14 @@ static const char *fa_name(int a)
 	case FA_COPY: return _("Copiar a…");
 	case FA_DELETE: return _("Eliminar");
 	case FA_ASTEXT: return _("Abrir como texto");
+	case FA_TYPE: return _("Cambiar tipo");
 	default: return _("Destacar");
 	}
 }
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[7] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE};
+	static const IconId IC[8] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE};
 	return IC[a];
 }
 
@@ -2498,6 +2597,120 @@ static void f_reload(void)
 	f_load(p);
 }
 
+// cambiar el tipo de un texto: la extensión. Con el editor abierto, sigue abierto con los colores nuevos
+static const char *const TY_EXT[] = {"txt", "py", "c", "cpp", "h", "java", "js", "html", "css", "json", "lua", "md", "sh", "ini", "xml", "gm9"};
+#define TY_N ((int)ARRAY_LEN(TY_EXT))
+static struct {
+	bool open, just;
+	float anim;
+	int sel;
+} TY;
+
+static void f_set_type(const char *ext)
+{
+	const FEnt *e = &F.e[FM.idx];
+	char nm[140], full[700], dst[900], a[720], b[920];
+	util_strlcpy(nm, e->name, sizeof nm);
+	char *dot = strrchr(nm, '.');
+	if (dot && dot != nm)
+		*dot = 0;
+	snprintf(nm + strlen(nm), sizeof nm - strlen(nm), ".%s", ext);
+	if (!strcmp(nm, e->name))
+		return;
+	f_full(FM.idx, full, sizeof full);
+	snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
+	bool d;
+	u64 sz;
+	snprintf(a, sizeof a, "sdmc:%s", full);
+	snprintf(b, sizeof b, "sdmc:%s", dst);
+	if (fsx_stat(dst, &d, &sz) == 0) {
+		toast_icon(_("Ya existe un archivo con ese nombre"), IC_CLOSE, T.danger);
+		return;
+	}
+	if (rename(a, b) != 0) {
+		toast_icon(_("No se pudo renombrar"), IC_CLOSE, T.danger);
+		return;
+	}
+	state_lock();
+	mark_moved(full, dst);
+	event_add(EV_RENAME, nm, G.console, 0);
+	G.rev++;
+	state_unlock();
+	bool open = VW.kind == VW_TXT;
+	f_reload_keep();
+	for (int i = 0; i < F.nv; i++)
+		if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm)) {
+			F.sel = i;
+			if (open) { // el editor sigue con el mismo texto (con o sin cambios), ahora con otros colores
+				VW.idx = F.v[i].idx;
+				util_strlcpy(VW.path, dst, sizeof VW.path);
+				VW.lang = hl_lang(ext);
+				VW.hlv = 0;
+			}
+		}
+	char msg[80];
+	snprintf(msg, sizeof msg, _("Ahora es .%s"), ext);
+	toast_icon(msg, IC_CODE, T.accent);
+}
+
+static void ty_draw(void)
+{
+	TY.anim = approach(TY.anim, TY.open ? 1 : 0, 16);
+	if (TY.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(TY.anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	const int COLS = 4;
+	const float CW = 66, CH = 30, G = 6, X0 = (BOT_W - COLS * CW - (COLS - 1) * G) / 2;
+	int rows = (TY_N + COLS - 1) / COLS;
+	float h = 38 + rows * (CH + G) + 44, y = SCR_H - h - 6 + (1 - a) * 40;
+	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
+	if (!TY.open)
+		return;
+	bool fresh = TY.just;
+	TY.just = false;
+	const char *cur = f_ext(F.e[FM.idx].name);
+	text_draw_center(_("Cambiar tipo"), BOT_W / 2, y + 10, TS_BODY, T.text);
+	int pick = -1;
+	bool close = false;
+	if (U.buttons && !fresh) {
+		if (g_krepeat & KEY_RIGHT) TY.sel = (TY.sel + 1) % (TY_N + 1);
+		if (g_krepeat & KEY_LEFT) TY.sel = (TY.sel + TY_N) % (TY_N + 1);
+		if (g_krepeat & KEY_DOWN) TY.sel = TY.sel == TY_N ? 0 : TY.sel + COLS < TY_N ? TY.sel + COLS : TY_N;
+		if (g_krepeat & KEY_UP) TY.sel = TY.sel == TY_N ? TY_N - 1 : TY.sel >= COLS ? TY.sel - COLS : TY_N;
+	}
+	for (int i = 0; i < TY_N; i++) {
+		float cx = X0 + (i % COLS) * (CW + G), cy = y + 36 + (i / COLS) * (CH + G);
+		bool now = !strcasecmp(cur, TY_EXT[i]), hl = (U.buttons && TY.sel == i) || touch_in(cx, cy, CW, CH);
+		draw_rrect(cx, cy, CW, CH, CH / 2, now ? col_alpha(T.accent, 0.25f) : hl ? T.surface2 : T.bg);
+		if (U.buttons && TY.sel == i)
+			draw_rrect_outline(cx, cy, CW, CH, CH / 2, 1.5f, T.accent);
+		char t[12];
+		snprintf(t, sizeof t, ".%s", TY_EXT[i]);
+		text_draw_center(t, cx + CW / 2, cy + (CH - text_lineh(TS_BODY)) / 2, TS_BODY, now ? T.accent : T.text);
+		if (!fresh && (tap(cx, cy, CW, CH) || (U.buttons && TY.sel == i && (g_kdown & KEY_A))))
+			pick = i;
+	}
+	float by = y + h - 40;
+	bool bp = touch_in(X0, by, BOT_W - 2 * X0, 32);
+	draw_rrect(X0, by, BOT_W - 2 * X0, 32, 16, bp || (U.buttons && TY.sel == TY_N) ? T.surface2 : T.bg);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	text_draw_center(cl, BOT_W / 2, by + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
+	if (!fresh && (tap(X0, by, BOT_W - 2 * X0, 32) || (U.buttons && TY.sel == TY_N && (g_kdown & KEY_A)) || (g_kdown & KEY_B) ||
+	               (g_touch.up && !g_touch.drag && g_touch.sy < y)))
+		close = true;
+	if (pick >= 0) {
+		TY.open = false;
+		f_set_type(TY_EXT[pick]);
+	} else if (close) {
+		TY.open = false;
+	}
+	g_kdown &= ~(KEY_A | KEY_B);
+	g_touch.up = false;
+}
+
 static void fa_run(int a)
 {
 	const FEnt *e = &F.e[FM.idx];
@@ -2506,6 +2719,11 @@ static void fa_run(int a)
 	FM.open = false;
 	if (a == FA_ASTEXT) {
 		vw_load(FM.idx);
+		return;
+	}
+	if (a == FA_TYPE) { // también con el editor abierto: solo cambia la extensión
+		TY.open = TY.just = true;
+		TY.sel = 0;
 		return;
 	}
 	// renombrar, mover, copiar o borrar lo que se está viendo: primero se cierra el visor
@@ -2766,6 +2984,8 @@ static void f_type_text(const FEnt *e, char *out, size_t n)
 	const FType *t = f_type(e);
 	if (e->dir)
 		util_strlcpy(out, e->sys ? _("Carpeta del sistema") : _("Carpeta"), n);
+	else if (t && t->label && t->name)
+		snprintf(out, n, tr(t->label), t->name);
 	else if (t && t->label)
 		util_strlcpy(out, tr(t->label), n);
 	else if (!t && up[0])
@@ -3285,12 +3505,12 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
 	if (viewer) {
-		if (!FM.open && !U.ins_pend && !g_dialog.open)
+		if (!FM.open && !TY.open && !U.ins_pend && !g_dialog.open)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
 		vw_bottom();
 	} else if (U.tab == TAB_FILES) {
@@ -3316,6 +3536,7 @@ static void draw_bottom(void)
 	if (U.tab == TAB_FILES) {
 		f_menu();
 		pm_draw();
+		ty_draw();
 	}
 	install_card();
 	dialog_draw();
@@ -3562,7 +3783,7 @@ static void update(void)
 		int chars = 0;
 		for (const char *p = ln; *p; p++)
 			chars += ((u8)*p & 0xC0) != 0x80;
-		if (m == 1 && chars > 2000) { // el teclado del sistema no admite más
+		if ((m == 1 || m == 3) && chars > 2000) { // el teclado del sistema no admite más
 			toast_icon(_("Esta línea es demasiado larga para el teclado"), IC_CLOSE, T.warn);
 			return;
 		}
@@ -3574,10 +3795,27 @@ static void update(void)
 			snprintf(hint, sizeof hint, _("Línea %d"), VW.cur + 1);
 			if (kb_input(hint, ln, buf, 8192, true, false) && !txt_set(&VW.doc, VW.cur, buf))
 				toast_icon(_("No hay memoria para abrir este archivo"), IC_CLOSE, T.danger);
+		} else if (m == 3) {
+			// varias líneas de una vez: desde la elegida, las que quepan en el teclado (hasta 1800 caracteres)
+			int cnt = 0, tot = 0;
+			while (VW.cur + cnt < VW.doc.n && cnt < 40) {
+				int c = 1;
+				for (const char *p = VW.doc.ln[VW.cur + cnt]; *p; p++)
+					c += ((u8)*p & 0xC0) != 0x80;
+				if (cnt && tot + c > 1800)
+					break;
+				tot += c, cnt++;
+			}
+			char *blk = txt_join(&VW.doc, VW.cur, cnt);
+			snprintf(hint, sizeof hint, _("Líneas %d a %d"), VW.cur + 1, VW.cur + cnt);
+			if (blk && kb_input(hint, blk, buf, 8192, true, false) && strcmp(blk, buf) && !txt_replace(&VW.doc, VW.cur, cnt, buf))
+				toast_icon(_("No hay memoria para abrir este archivo"), IC_CLOSE, T.danger);
+			free(blk);
 		} else if (kb_input(_("Línea nueva"), "", buf, 8192, true, false)) {
 			if (txt_insert(&VW.doc, VW.cur + 1, buf))
 				VW.cur++;
 		}
+		VW.hlv = 0;
 		free(buf);
 		return;
 	}
@@ -3653,19 +3891,15 @@ static void update(void)
 	}
 	if (g_dialog.open)
 		return;
-	if ((g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind && U.tab == TAB_FILES) {
-		if (vw_dirty()) { // con cambios sin guardar no se cambia de pestaña sin preguntar
-			vw_try_close();
-			g_kdown &= ~(KEY_R | KEY_ZR | KEY_L | KEY_ZL);
-		} else {
-			vw_close();
-		}
-	}
-	if (g_kdown & (KEY_R | KEY_ZR)) {
+	// en el editor de texto, L y R no cambian de pestaña: R edita varias líneas y B cierra
+	bool editor = VW.kind == VW_TXT && U.tab == TAB_FILES;
+	if (!editor && (g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind && U.tab == TAB_FILES)
+		vw_close();
+	if (!editor && (g_kdown & (KEY_R | KEY_ZR))) {
 		U.tab = (U.tab + 1) % TAB_COUNT;
 		U.page = PAGE_MAIN;
 	}
-	if (g_kdown & (KEY_L | KEY_ZL)) {
+	if (!editor && (g_kdown & (KEY_L | KEY_ZL))) {
 		U.tab = (U.tab + TAB_COUNT - 1) % TAB_COUNT;
 		U.page = PAGE_MAIN;
 	}

@@ -186,19 +186,46 @@ int txt_load(TxtDoc *d, const char *path)
 	return TXT_OK;
 }
 
+bool txt_replace(TxtDoc *d, int i, int count, const char *s)
+{
+	if (i < 0 || count < 1 || i + count > d->n)
+		return false;
+	if (put_lines(d, i + count, s, strlen(s)) < 0) // sin memoria: se queda como estaba
+		return false;
+	for (int k = 0; k < count; k++)
+		free(d->ln[i + k]);
+	memmove(d->ln + i, d->ln + i + count, (d->n - i - count) * sizeof *d->ln);
+	d->n -= count;
+	d->dirty = true;
+	return true;
+}
+
 bool txt_set(TxtDoc *d, int i, const char *s)
 {
 	if (i < 0 || i >= d->n)
 		return false;
 	if (!strcmp(d->ln[i], s))
 		return true;
-	if (put_lines(d, i + 1, s, strlen(s)) < 0) // sin memoria: se queda como estaba
-		return false;
-	free(d->ln[i]);
-	memmove(d->ln + i, d->ln + i + 1, (d->n - i - 1) * sizeof *d->ln);
-	d->n--;
-	d->dirty = true;
-	return true;
+	return txt_replace(d, i, 1, s);
+}
+
+char *txt_join(const TxtDoc *d, int i, int count)
+{
+	size_t n = 1;
+	for (int k = i; k < i + count && k < d->n; k++)
+		n += strlen(d->ln[k]) + 1;
+	char *r = malloc(n), *o = r;
+	if (!r)
+		return NULL;
+	for (int k = i; k < i + count && k < d->n; k++) {
+		size_t l = strlen(d->ln[k]);
+		memcpy(o, d->ln[k], l);
+		o += l;
+		if (k < i + count - 1 && k < d->n - 1)
+			*o++ = '\n';
+	}
+	*o = 0;
+	return r;
 }
 
 bool txt_insert(TxtDoc *d, int at, const char *s)

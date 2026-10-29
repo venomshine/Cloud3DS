@@ -926,4 +926,25 @@ TR = {
     'Creado':
         ('Created',
          '作成'),
+    'Código %s':
+        ('%s code',
+         '%s コード'),
+    'Líneas %d a %d':
+        ('Lines %d to %d',
+         '%d〜%d 行'),
+    'Línea':
+        ('Line',
+         '行'),
+    'Bloque':
+        ('Block',
+         'ブロック'),
+    'Menú':
+        ('Menu',
+         'メニュー'),
+    'Cambiar tipo':
+        ('Change type',
+         '種類を変更'),
+    'Ahora es .%s':
+        ("Now it's .%s",
+         '今は .%s です'),
 }

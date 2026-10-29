@@ -46,6 +46,13 @@ int main(int argc, char **argv) {
 	// UTF-8 inválido corto
 	wr(p, "\xC3", 1); CHECK(txt_load(&d, p) == 0); CHECK(d.ro == TXT_RO_ENC); txt_free(&d);
 	free(big);
+	// bloque: se editan varias líneas a la vez
+	wr(p, "a\nb\nc\nd\n", 8); CHECK(txt_load(&d, p) == 0);
+	char *j = txt_join(&d, 1, 2); CHECK(j && !strcmp(j, "b\nc")); free(j);
+	CHECK(txt_replace(&d, 1, 2, "X\nY\nZ")); CHECK(d.n == 5 && !strcmp(d.ln[1], "X") && !strcmp(d.ln[3], "Z") && !strcmp(d.ln[4], "d"));
+	CHECK(txt_replace(&d, 0, 5, "solo")); CHECK(d.n == 1 && !strcmp(d.ln[0], "solo"));
+	CHECK(!txt_replace(&d, 0, 2, "x"));
+	CHECK(txt_save(&d, p) == 0); b = rd(p, &n); CHECK(n == 5 && !memcmp(b, "solo\n", 5)); txt_free(&d);
 	printf(fails ? "%d fallos\n" : "todo bien\n", fails);
 	return fails != 0;
 }

@@ -108,6 +108,7 @@ source/   código de la app
   install.c       instalar CIA de la SD (con confirmación en la consola)
   img.c           abrir fotos para el visor y las miniaturas de la consola
   txt.c           abrir, editar y guardar textos sin cambiar su formato
+  hl.c            colores de código en el editor (Python, C/C++, Java, JS, Lua, HTML, JSON…)
   update.c        buscar e instalar actualizaciones desde GitHub
   state.c         estado compartido, dispositivos, historial y configuración
   gfx.c ui.c icons.c   gráficos, componentes e íconos

@@ -508,7 +508,7 @@ function base(p){return p.slice(p.lastIndexOf("/")+1)}
 function ext(n){const i=n.lastIndexOf(".");return i<0?"":n.slice(i+1).toLowerCase()}
 const TXT_EDIT_MAX=512*1024; // como en la consola: más grande, solo lectura
 const IMG=["png","jpg","jpeg","gif","bmp","webp","mpo"],VID=["mp4","webm","m4v","mov"],AUD=["mp3","wav","ogg","m4a","flac","aac","opus"],
- TXT=["txt","ini","log","json","cfg","xml","md","yml","yaml","csv","conf","toml","nfo","srt","gm9","lua","py","sh","c","h","js","css","html","htm"],
+ TXT=["txt","ini","log","json","cfg","xml","md","yml","yaml","csv","conf","toml","nfo","srt","gm9","lua","py","sh","c","h","js","css","html","htm","cpp","hpp","cc","java","ts","cs","go","rs","kt","swift","php","rb","sql"],
  ZIP=["zip","7z","rar","tar","gz","bz2","xz"],ROM=["nds","gba","gb","gbc","nes","sfc","smc","gen","sms","gg"],
  APP=["cia","3dsx","firm","3ds","cci","cxi","tik","smdh"],SAV=["sav","srm"];
 function kind(it){if(it.d)return"folder";const e=ext(it.n);if(IMG.includes(e))return"img";if(VID.includes(e)||AUD.includes(e))return"vid";if(TXT.includes(e))return"txt";if(APP.includes(e))return"app";if(ROM.includes(e))return"rom";if(ZIP.includes(e))return"zip";if(SAV.includes(e))return"sav";return"file"}

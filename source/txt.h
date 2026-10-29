@@ -35,6 +35,8 @@ typedef struct {
 int  txt_load(TxtDoc *d, const char *path);  /* ruta de la SD: «/notas.txt» */
 int  txt_new(TxtDoc *d);                     /* documento vacío */
 bool txt_set(TxtDoc *d, int i, const char *s);    /* cambia la línea i; si s trae saltos, se parte */
+bool txt_replace(TxtDoc *d, int i, int count, const char *s); /* cambia count líneas desde la i por s */
+char *txt_join(const TxtDoc *d, int i, int count);  /* esas líneas unidas con \n (malloc) */
 bool txt_insert(TxtDoc *d, int at, const char *s); /* línea nueva en la posición at */
 void txt_remove(TxtDoc *d, int i);
 int  txt_save(TxtDoc *d, const char *path);  /* escribe aparte y luego reemplaza: nunca queda a medias */
