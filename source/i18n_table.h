@@ -201,7 +201,7 @@ static const TrEntry TR_TAB[] = {
 	{"Mover a…", "Move to…", "移動…"},
 	{"Copiar a…", "Copy to…", "コピー…"},
 	{"Eliminar", "Delete", "削除"},
-	{"Abrir como texto", "Open as text", "テキストとして開く"},
+	{"Abrir como texto", "Open as text", "テキストで開く"},
 	{"Destacar", "Highlight", "色分け"},
 	{"Guarda o descarta los cambios primero", "Save or discard your changes first", "先に変更を保存するか破棄してください"},
 	{"Cloud3DS se actualiza desde Ajustes → Actualizaciones", "Cloud3DS is updated from Settings → Updates", "Cloud3DSは設定 → アップデートから更新します"},

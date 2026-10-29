@@ -2409,7 +2409,6 @@ static void f_menu_open(void)
 	FM.acts[FM.n++] = FA_COPY;
 	if (!locked)
 		FM.acts[FM.n++] = FA_DELETE;
-	FM.acts[FM.n++] = FA_COLORS;
 	FM.sel = 0;
 	FM.color = e->color;
 	FM.open = true;
@@ -2419,7 +2418,7 @@ static void f_menu_open(void)
 static const char *fa_name(int a)
 {
 	switch (a) {
-	case FA_INSTALL: return _("Instalar en la consola");
+	case FA_INSTALL: return _("Instalar");
 	case FA_RENAME: return _("Renombrar");
 	case FA_MOVE: return _("Mover a…");
 	case FA_COPY: return _("Copiar a…");
@@ -2496,6 +2495,9 @@ static void fa_run(int a)
 	}
 }
 
+// menú de un archivo: una hoja compacta con las acciones en cuadrícula, los colores y «Cerrar».
+// Con botones: la cruceta recorre las casillas, luego los colores y luego Cerrar
+#define FM_COLS 3
 static void f_menu(void)
 {
 	FM.anim = approach(FM.anim, FM.open ? 1 : 0, 16);
@@ -2503,16 +2505,16 @@ static void f_menu(void)
 		return;
 	float a = ease_out_cubic(FM.anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-	const float RH = 32;
-	float h = 40 + FM.n * RH + 8, y = SCR_H - h - 6 + (1 - a) * 40;
+	const float TH = 46, TG = 6, X0 = 18, TW = (BOT_W - 2 * X0 - (FM_COLS - 1) * TG) / FM_COLS;
+	int rows = (FM.n + FM_COLS - 1) / FM_COLS;
+	float h = 34 + rows * (TH + TG) + 30 + 40, y = SCR_H - h - 6 + (1 - a) * 40;
 	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
 	if (!FM.open)
 		return;
 	const FEnt *e = &F.e[FM.idx];
-	text_draw_center_clip(e->name, BOT_W / 2, y + 12, BOT_W - 50, TS_BODY, T.text);
 	static const u32 MK[7] = {0, 0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
-	int run = -1;
+	int run = -1, close = 0;
 	// el mismo toque o botón que abrió el menú no elige nada: ese frame no hay entrada
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
@@ -2522,45 +2524,80 @@ static void f_menu(void)
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
+	int SC = FM.n, SX = FM.n + 1; // posiciones de los colores y de Cerrar
 	if (U.buttons) {
-		if (g_krepeat & KEY_DOWN) FM.sel = (FM.sel + 1) % FM.n;
-		if (g_krepeat & KEY_UP) FM.sel = (FM.sel + FM.n - 1) % FM.n;
+		int s0 = FM.sel;
+		if (g_krepeat & KEY_DOWN)
+			FM.sel = FM.sel < FM.n ? (FM.sel + FM_COLS < FM.n ? FM.sel + FM_COLS : SC) : FM.sel == SC ? SX : 0;
+		if (g_krepeat & KEY_UP)
+			FM.sel = FM.sel == SX ? SC : FM.sel == SC ? (rows - 1) * FM_COLS < FM.n ? (rows - 1) * FM_COLS : 0 : FM.sel - FM_COLS >= 0 ? FM.sel - FM_COLS : SX;
+		if (FM.sel < FM.n && s0 == FM.sel) {
+			if ((g_krepeat & KEY_RIGHT) && FM.sel + 1 < FM.n)
+				FM.sel++;
+			if ((g_krepeat & KEY_LEFT) && FM.sel > 0)
+				FM.sel--;
+		}
+		if (FM.sel == SC && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
+			FM.color = (FM.color + ((g_krepeat & KEY_RIGHT) ? 1 : 6)) % 7;
 	}
+	// cabecera: el nombre y una X para cerrar
+	text_draw_clip(e->name, 24, y + 10, BOT_W - 80, TS_BODY, T.text);
+	float xc = BOT_W - 32, yc = y + 17;
+	bool xp = touch_in(xc - 15, yc - 15, 30, 30);
+	draw_circle(xc, yc, 12, xp ? T.surface2 : T.bg);
+	draw_icon(IC_CLOSE, xc, yc, 11, T.text2);
+	if (tap(xc - 15, yc - 15, 30, 30))
+		close = 1;
+	// acciones
 	for (int i = 0; i < FM.n; i++) {
-		float ry = y + 36 + i * RH;
 		int act = FM.acts[i];
-		bool hl = (U.buttons && FM.sel == i) || touch_in(16, ry, BOT_W - 32, RH);
-		if (hl)
-			draw_rrect(16, ry + 1, BOT_W - 32, RH - 2, 9, T.surface2);
-		u32 c = act == FA_DELETE ? T.danger : act == FA_INSTALL ? T.ok : T.text;
-		draw_icon(fa_icon(act), 34, ry + RH / 2, 14, c);
-		if (act == FA_COLORS) {
-			text_draw(fa_name(act), 50, ry + (RH - text_lineh(TS_BODY)) / 2, TS_BODY, c);
-			if (U.buttons && FM.sel == i && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
-				FM.color = (FM.color + ((g_krepeat & KEY_RIGHT) ? 1 : 6)) % 7;
-			for (int k = 0; k < 7; k++) {
-				float sx = BOT_W - 30 - (6 - k) * 21, sy = ry + RH / 2;
-				if (FM.color == k)
-					draw_circle(sx, sy, 9.5f, T.text);
-				draw_circle(sx, sy, 8, k ? MK[k] : T.surface2);
-				if (!k)
-					draw_line(sx - 4, sy + 4, sx + 4, sy - 4, 1.4f, T.text3);
-				if (tap(sx - 10, ry, 20, RH)) {
-					FM.color = k;
-					run = FA_COLORS;
-				}
-			}
-			if (U.buttons && FM.sel == i && (g_kdown & KEY_A))
-				run = FA_COLORS;
-		} else {
-			text_draw(fa_name(act), 50, ry + (RH - text_lineh(TS_BODY)) / 2, TS_BODY, c);
-			if (tap(16, ry, BOT_W - 32, RH) || (U.buttons && FM.sel == i && (g_kdown & KEY_A)))
-				run = act;
+		float tx = X0 + (i % FM_COLS) * (TW + TG), ty = y + 34 + (i / FM_COLS) * (TH + TG);
+		bool hl = (U.buttons && FM.sel == i) || touch_in(tx, ty, TW, TH);
+		u32 c = act == FA_DELETE ? T.danger : act == FA_INSTALL ? T.ok : T.text2;
+		draw_rrect(tx, ty, TW, TH, 12, hl ? T.surface2 : T.bg);
+		if (U.buttons && FM.sel == i)
+			draw_rrect_outline(tx, ty, TW, TH, 12, 1.5f, T.accent);
+		draw_icon(fa_icon(act), tx + TW / 2, ty + 15, 15, c);
+		text_draw_center_clip(fa_name(act), tx + TW / 2, ty + 27, TW - 8, TS_SUB, act == FA_DELETE ? T.danger : T.text);
+		if (tap(tx, ty, TW, TH) || (U.buttons && FM.sel == i && (g_kdown & KEY_A)))
+			run = act;
+	}
+	// colores
+	float cy = y + 34 + rows * (TH + TG) + 2;
+	if (U.buttons && FM.sel == SC) {
+		draw_rrect(X0 - 4, cy - 2, BOT_W - 2 * X0 + 8, 28, 10, T.surface2);
+		draw_rrect_outline(X0 - 4, cy - 2, BOT_W - 2 * X0 + 8, 28, 10, 1.5f, T.accent);
+	}
+	draw_icon(IC_STAR, X0 + 8, cy + 12, 13, T.text2);
+	text_draw(_("Destacar"), X0 + 22, cy + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+	for (int k = 0; k < 7; k++) {
+		float sx = BOT_W - X0 - 10 - (6 - k) * 23, sy = cy + 12;
+		if (FM.color == k)
+			draw_circle(sx, sy, 10.5f, T.text);
+		draw_circle(sx, sy, 9, k ? MK[k] : T.surface2);
+		if (!k)
+			draw_line(sx - 4, sy + 4, sx + 4, sy - 4, 1.4f, T.text3);
+		if (tap(sx - 11, cy - 2, 22, 28)) {
+			FM.color = k;
+			run = FA_COLORS;
 		}
 	}
-	if (g_kdown & KEY_B || (g_touch.up && !g_touch.drag && g_touch.sy < y))
+	if (U.buttons && FM.sel == SC && (g_kdown & KEY_A))
+		run = FA_COLORS;
+	// Cerrar, siempre abajo
+	float by = y + h - 40;
+	bool bp = touch_in(X0, by, BOT_W - 2 * X0, 32);
+	draw_rrect(X0, by, BOT_W - 2 * X0, 32, 16, bp || (U.buttons && FM.sel == SX) ? T.surface2 : T.bg);
+	if (U.buttons && FM.sel == SX)
+		draw_rrect_outline(X0, by, BOT_W - 2 * X0, 32, 16, 1.5f, T.accent);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	text_draw_center(cl, BOT_W / 2, by + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
+	if (tap(X0, by, BOT_W - 2 * X0, 32) || (U.buttons && FM.sel == SX && (g_kdown & KEY_A)))
+		close = 1;
+	if (close || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y))
 		FM.open = false;
-	if (run == FA_COLORS) {
+	else if (run == FA_COLORS) {
 		char full[700];
 		f_full(FM.idx, full, sizeof full);
 		state_lock();

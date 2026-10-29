@@ -865,7 +865,7 @@ TR = {
          '保存しました'),
     'Abrir como texto':
         ('Open as text',
-         'テキストとして開く'),
+         'テキストで開く'),
     'Guarda o descarta los cambios primero':
         ('Save or discard your changes first',
          '先に変更を保存するか破棄してください'),
