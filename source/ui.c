@@ -411,20 +411,68 @@ void toast_icon(const char *msg, int ic, u32 col) {
 
 void toast(const char *msg) { toast_icon(msg, IC_CHECK, T.accent); }
 
+#define TOAST_TS 0.40f
+int g_toast_style = 1; // 0 burbuja abajo (antigua), 1 isla en la cabecera, 2 línea bajo la cabecera, 3 tarjeta en la esquina
+
+// cuánto se ve la cabecera normal (título, hora…): en los estilos 1 y 2 se aparta mientras hay aviso
+float toast_header_alpha(void) {
+    if (s_toast_t < 0 || (g_toast_style != 1 && g_toast_style != 2)) return 1;
+    const float life = 3.0f;
+    float in = clampf(s_toast_t / 0.2f, 0, 1), out = clampf((life - s_toast_t) / 0.35f, 0, 1);
+    return 1 - fminf(in, out) * (g_toast_style == 1 ? 0.85f : 1);
+}
+
 void toast_draw_top(void) {
     if (s_toast_t < 0) return;
     s_toast_t += g_dt;
     const float life = 3.0f;
     if (s_toast_t > life) { s_toast_t = -1; return; }
-    float a = s_toast_t < 0.25f ? ease_out_cubic(s_toast_t / 0.25f) : clampf((life - s_toast_t) / 0.4f, 0, 1);
-    float w = text_width(s_toast, 0.45f) + 46;
-    if (w > 360) w = 360;
-    float x = (TOP_W - w) / 2, y = SCR_H - 38 + (1 - a) * 10;
-    draw_rrect(x, y + 2, w, 28, 14, col_alpha(T.shadow, a));
-    draw_rrect(x, y, w, 28, 14, col_alpha(T.surface2, a));
-    draw_circle(x + 15, y + 14, 9, col_alpha(s_toast_col, a));
-    draw_icon((IconId)s_toast_ic, x + 15, y + 14, 12, col_alpha(0xFFFFFFFF, a));
-    text_draw_clip(s_toast, x + 30, y + 7, w - 40, 0.45f, col_alpha(T.text, a));
+    float in = ease_out_cubic(clampf(s_toast_t / 0.3f, 0, 1)), out = clampf((life - s_toast_t) / 0.35f, 0, 1);
+    float a = fminf(in, out), left = 1 - s_toast_t / life;
+    float tw = text_width(s_toast, TOAST_TS);
+    switch (g_toast_style) {
+    case 1: { // isla: una píldora oscura en medio de la cabecera que se estira con el aviso
+        float w = fminf(tw + 34, TOP_W - 16), ww = 28 + (w - 28) * fminf(in, out);
+        float x = (TOP_W - ww) / 2, y = 2, h = 18;
+        draw_rrect(x, y, ww, h, h / 2, col_alpha(0xFF000000, fminf(1, a * 1.6f)));
+        if (ww > 40) {
+            float ta = clampf((ww - 40) / 40, 0, 1) * a;
+            draw_circle(x + 11, y + h / 2, 5.5f, col_alpha(s_toast_col, ta));
+            draw_icon((IconId)s_toast_ic, x + 11, y + h / 2, 7.5f, col_alpha(0xFFFFFFFF, ta));
+            gfx_clip(x, y, ww - 8, h);
+            text_draw(s_toast, x + 22, y + (h - text_lineh(TOAST_TS)) / 2, TOAST_TS, col_alpha(0xFFFFFFFF, ta));
+            gfx_clip_off();
+        }
+        break;
+    }
+    case 2: { // cabecera: el aviso ocupa la propia cabecera (título y hora se apartan) y una línea marca el tiempo
+        float h = 22, y = (1 - a) * -6;
+        draw_icon((IconId)s_toast_ic, 16, y + h / 2, 11, col_alpha(s_toast_col, a));
+        text_draw_clip(s_toast, 28, y + (h - text_lineh(TOAST_TS)) / 2, TOP_W - 40, TOAST_TS, col_alpha(T.text, a));
+        draw_rect(0, h - 1, TOP_W * left, 1.5f, col_alpha(s_toast_col, a * 0.9f));
+        break;
+    }
+    case 3: { // tarjeta: entra por la derecha, arriba, con una raya de su color
+        float w = fminf(tw + 44, 240), h = 30, x = TOP_W - 8 - w + (1 - a) * 30, y = 28;
+        draw_rrect(x, y + 2, w, h, 10, col_alpha(T.shadow, a));
+        draw_rrect(x, y, w, h, 10, col_alpha(T.surface2, a));
+        draw_rrect(x + 4, y + 6, 3, h - 12, 1.5f, col_alpha(s_toast_col, a));
+        draw_icon((IconId)s_toast_ic, x + 20, y + h / 2, 13, col_alpha(s_toast_col, a));
+        text_draw_clip(s_toast, x + 32, y + (h - text_lineh(TOAST_TS)) / 2, w - 40, TOAST_TS, col_alpha(T.text, a));
+        draw_rect(x + 10, y + h - 3, (w - 20) * left, 1.5f, col_alpha(T.text3, a * 0.6f));
+        break;
+    }
+    default: { // la burbuja de antes
+        float w = text_width(s_toast, 0.45f) + 46;
+        if (w > 360) w = 360;
+        float x = (TOP_W - w) / 2, y = SCR_H - 38 + (1 - a) * 10;
+        draw_rrect(x, y + 2, w, 28, 14, col_alpha(T.shadow, a));
+        draw_rrect(x, y, w, 28, 14, col_alpha(T.surface2, a));
+        draw_circle(x + 15, y + 14, 9, col_alpha(s_toast_col, a));
+        draw_icon((IconId)s_toast_ic, x + 15, y + 14, 12, col_alpha(0xFFFFFFFF, a));
+        text_draw_clip(s_toast, x + 30, y + 7, w - 40, 0.45f, col_alpha(T.text, a));
+    }
+    }
 }
 
 // ------------------------------------------------------------ diálogo (pantalla inferior)

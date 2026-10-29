@@ -663,6 +663,10 @@ static void draw_header(void)
 	rx -= 6;
 	util_fmt_today(day, sizeof day);
 	text_draw_right(day, rx, 4, TS_HDR, T.text3);
+	// con un aviso en la cabecera (según su estilo), lo de siempre se aparta
+	float ha = toast_header_alpha();
+	if (ha < 1)
+		draw_rect(0, 0, TOP_W, HDR_H, col_alpha(T.bg, 1 - ha));
 	// algo en curso (también con el QR abierto): una línea fina bajo la cabecera con su avance
 	const Xfer *xs[1];
 	if (visible_xfers(xs, 1) && xs[0]->st == XS_RUNNING) {
@@ -4569,6 +4573,7 @@ int main(int argc, char **argv)
 		bool dirty = G.dirty_cfg;
 		state_unlock();
 
+		g_toast_style = V.toast_style;
 		watch_events();
 		s_events_seen = true;
 		upd_get(&U.upd);
