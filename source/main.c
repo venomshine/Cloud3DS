@@ -2950,8 +2950,16 @@ static void tab_files(void)
 				draw_circle(cx + 20, cy + 18, 7, T.bg);
 				draw_icon(IC_LOCK, cx + 20, cy + 18, 10, T.warn);
 			}
-			text_draw_center_clip(e->name, cx, y + 58, v->w - 8, TS_SUB, e->color ? col : T.text);
-			if (inview && long_press(v->x, y, v->w, v->h))
+			// el nombre y, a su derecha, ⋮ para las opciones (lo mismo que Y)
+			float dx = v->x + v->w - 10, dy = y + 58 + text_lineh(TS_SUB) / 2;
+			text_draw_center_clip(e->name, cx - 6, y + 58, v->w - 22, TS_SUB, e->color ? col : T.text);
+			bool dp = inview && touch_in(dx - 10, y + 44, 20, v->h - 44);
+			if (dp || (U.buttons && selected))
+				draw_circle(dx, dy, 8, U.buttons && selected ? col_alpha(T.accent, 0.3f) : T.surface2);
+			draw_icon(IC_DOTS, dx, dy, 11, U.buttons && selected ? T.accent : T.text2);
+			if (inview && tap(dx - 10, y + 44, 20, v->h - 44))
+				menu = i;
+			else if (inview && long_press(v->x, y, v->w, v->h))
 				menu = i;
 			else if (inview && tap(v->x, y, v->w, v->h))
 				open = i;
@@ -2984,12 +2992,14 @@ static void tab_files(void)
 			util_fmt_size(sz, sizeof sz, e->size);
 			snprintf(sub, sizeof sub, "%s%s%s", sz, when[0] ? " · " : "", when);
 		}
-		text_draw_clip(e->name, 48, y + 3, mx - 58, TS_BODY, e->color ? col : T.text);
+		text_draw_clip(e->name, 48, y + 3, mx - (U.buttons && selected ? 74 : 58), TS_BODY, e->color ? col : T.text);
 		text_draw_clip(sub, 48, y + 19, mx - 58, TS_SUB, T.text3);
-		if (mp)
-			draw_circle(mx + 12, y + v->h / 2, 12, T.surface2);
-		for (int d = -1; d <= 1; d++)
-			draw_circle(mx + 12, y + v->h / 2 + d * 5, 1.6f, T.text3);
+		// ⋮ con su círculo; en la fila elegida con botones, también la Y que hace lo mismo
+		bool ysel = U.buttons && selected;
+		draw_circle(mx + 12, y + v->h / 2, 11, mp ? T.surface2 : ysel ? col_alpha(T.accent, 0.3f) : col_alpha(T.surface2, 0.6f));
+		draw_icon(IC_DOTS, mx + 12, y + v->h / 2, 14, ysel ? T.accent : T.text2);
+		if (ysel)
+			text_draw_right(GLYPH_Y, mx - 2, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.accent);
 		if (inview && tap(mx - 4, y, 34, v->h))
 			menu = i;
 		else if (inview && long_press(6, y, mx - 10, v->h))
