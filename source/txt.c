@@ -186,18 +186,112 @@ int txt_load(TxtDoc *d, const char *path)
 	return TXT_OK;
 }
 
+/* deshacer y rehacer: cada cambio es «las líneas [i, i+oldn) pasan a ser el texto newt»
+ * (newt NULL: ninguna línea). Se guardan los textos de antes y de después. */
+#define TXT_MAX_OPS 200
+
+static void op_free(TxtOp *o)
+{
+	free(o->oldt);
+	free(o->newt);
+}
+
+static void hist_clear(TxtDoc *d)
+{
+	for (int k = 0; k < d->nops; k++)
+		op_free(&d->ops[k]);
+	d->nops = d->pos = 0;
+	d->saved = -1;
+}
+
+static int count_lines(const char *s)
+{
+	int n = 1;
+	for (; *s; s++)
+		n += *s == '\n';
+	return n;
+}
+
+/* el cambio en sí, sin apuntarlo */
+static bool splice_raw(TxtDoc *d, int i, int oldn, const char *s)
+{
+	if (i < 0 || oldn < 0 || i + oldn > d->n || (!s && d->n - oldn < 1))
+		return false;
+	if (s && put_lines(d, i + oldn, s, strlen(s)) < 0) // sin memoria: se queda como estaba
+		return false;
+	for (int k = 0; k < oldn; k++)
+		free(d->ln[i + k]);
+	memmove(d->ln + i, d->ln + i + oldn, (d->n - i - oldn) * sizeof *d->ln);
+	d->n -= oldn;
+	return true;
+}
+
+static bool splice(TxtDoc *d, int i, int oldn, const char *s)
+{
+	char *oldt = oldn ? txt_join(d, i, oldn) : NULL, *newt = s ? strdup(s) : NULL;
+	bool rec = (!oldn || oldt) && (!s || newt);
+	if (!splice_raw(d, i, oldn, s)) {
+		free(oldt);
+		free(newt);
+		return false;
+	}
+	for (int k = d->pos; k < d->nops; k++) // lo que se podía rehacer ya no vale
+		op_free(&d->ops[k]);
+	d->nops = d->pos;
+	if (d->saved > d->pos)
+		d->saved = -1;
+	if (rec && d->nops == TXT_MAX_OPS) { // lleno: se olvida el más antiguo
+		op_free(&d->ops[0]);
+		memmove(d->ops, d->ops + 1, (TXT_MAX_OPS - 1) * sizeof *d->ops);
+		d->nops--, d->pos--;
+		d->saved = d->saved > 0 ? d->saved - 1 : -1;
+	}
+	if (rec && !d->ops)
+		d->ops = calloc(TXT_MAX_OPS, sizeof *d->ops);
+	if (rec && d->ops) {
+		d->ops[d->nops++] = (TxtOp){i, oldn, s ? count_lines(s) : 0, oldt, newt};
+		d->pos = d->nops;
+	} else { // no se pudo apuntar: mejor sin historial que con uno que no cuadra
+		free(oldt);
+		free(newt);
+		hist_clear(d);
+	}
+	d->dirty = d->pos != d->saved;
+	return true;
+}
+
+int txt_undo(TxtDoc *d)
+{
+	if (d->pos == 0)
+		return -1;
+	TxtOp *o = &d->ops[d->pos - 1];
+	if (!splice_raw(d, o->i, o->newn, o->oldt))
+		return -1;
+	d->pos--;
+	d->dirty = d->pos != d->saved;
+	return o->i;
+}
+
+int txt_redo(TxtDoc *d)
+{
+	if (d->pos >= d->nops)
+		return -1;
+	TxtOp *o = &d->ops[d->pos];
+	if (!splice_raw(d, o->i, o->oldn, o->newt))
+		return -1;
+	d->pos++;
+	d->dirty = d->pos != d->saved;
+	return o->i;
+}
+
+bool txt_can_undo(const TxtDoc *d) { return d->pos > 0; }
+bool txt_can_redo(const TxtDoc *d) { return d->pos < d->nops; }
+
 bool txt_replace(TxtDoc *d, int i, int count, const char *s)
 {
 	if (i < 0 || count < 1 || i + count > d->n)
 		return false;
-	if (put_lines(d, i + count, s, strlen(s)) < 0) // sin memoria: se queda como estaba
-		return false;
-	for (int k = 0; k < count; k++)
-		free(d->ln[i + k]);
-	memmove(d->ln + i, d->ln + i + count, (d->n - i - count) * sizeof *d->ln);
-	d->n -= count;
-	d->dirty = true;
-	return true;
+	return splice(d, i, count, s);
 }
 
 bool txt_set(TxtDoc *d, int i, const char *s)
@@ -206,7 +300,7 @@ bool txt_set(TxtDoc *d, int i, const char *s)
 		return false;
 	if (!strcmp(d->ln[i], s))
 		return true;
-	return txt_replace(d, i, 1, s);
+	return splice(d, i, 1, s);
 }
 
 char *txt_join(const TxtDoc *d, int i, int count)
@@ -234,24 +328,35 @@ bool txt_insert(TxtDoc *d, int at, const char *s)
 		at = 0;
 	if (at > d->n)
 		at = d->n;
-	if (put_lines(d, at, s, strlen(s)) < 0)
-		return false;
-	d->dirty = true;
-	return true;
+	return splice(d, at, 0, s);
 }
 
 void txt_remove(TxtDoc *d, int i)
 {
 	if (i < 0 || i >= d->n)
 		return;
-	if (d->n == 1) { // siempre queda al menos una línea, vacía
-		d->ln[0][0] = 0;
-	} else {
-		free(d->ln[i]);
-		memmove(d->ln + i, d->ln + i + 1, (d->n - i - 1) * sizeof *d->ln);
-		d->n--;
-	}
-	d->dirty = true;
+	if (d->n == 1) // siempre queda al menos una línea, vacía
+		splice(d, 0, 1, "");
+	else
+		splice(d, i, 1, NULL);
+}
+
+bool txt_move(TxtDoc *d, int i, int dir)
+{
+	int j = i + dir;
+	if (i < 0 || j < 0 || i >= d->n || j >= d->n)
+		return false;
+	int a = i < j ? i : j;
+	size_t la = strlen(d->ln[a]), lb = strlen(d->ln[a + 1]);
+	char *t = malloc(la + lb + 2);
+	if (!t)
+		return false;
+	memcpy(t, d->ln[a + 1], lb); // las dos líneas, al revés
+	t[lb] = '\n';
+	memcpy(t + lb + 1, d->ln[a], la + 1);
+	bool ok = splice(d, a, 2, t);
+	free(t);
+	return ok;
 }
 
 int txt_save(TxtDoc *d, const char *path)
@@ -297,11 +402,14 @@ int txt_save(TxtDoc *d, const char *path)
 	if (had)
 		remove(old);
 	d->dirty = false;
+	d->saved = d->pos;
 	return TXT_OK;
 }
 
 void txt_free(TxtDoc *d)
 {
+	hist_clear(d);
+	free(d->ops);
 	for (int i = 0; i < d->n; i++)
 		free(d->ln[i]);
 	free(d->ln);

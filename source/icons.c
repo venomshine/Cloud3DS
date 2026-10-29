@@ -279,6 +279,22 @@ void draw_icon(IconId id, float cx, float cy, float s, u32 c) {
         for (int i = 0; i < 4; i++)
             draw_rrect_outline(cx + (i % 2 ? 1.5f : -8.5f) * k, cy + (i / 2 ? 1.5f : -8.5f) * k, 7 * k, 7 * k, 1.5f * k, th, c);
         break;
+    case IC_UNDO: // arco abierto arriba con la punta de flecha a la izquierda
+        draw_arc(cx, cy + 2 * k, 7 * k, th, (float)(-M_PI * 0.25), (float)M_PI, c);
+        draw_tri(cx - 7 * k, cy - 5 * k, cx - 11 * k, cy + 1 * k, cx - 3 * k, cy + 1 * k, c);
+        break;
+    case IC_REDO: // lo mismo, al revés
+        draw_arc(cx, cy + 2 * k, 7 * k, th, 0, (float)(M_PI * 1.25), c);
+        draw_tri(cx + 7 * k, cy - 5 * k, cx + 3 * k, cy + 1 * k, cx + 11 * k, cy + 1 * k, c);
+        break;
+    case IC_DUP: // dos hojas, una sobre otra
+        draw_rrect_outline(cx - 8 * k, cy - 4 * k, 11 * k, 13 * k, 2 * k, th, c);
+        draw_rrect_outline(cx - 3 * k, cy - 9 * k, 11 * k, 13 * k, 2 * k, th, c);
+        break;
+    case IC_DOTS: // tres puntos en vertical
+        for (int i = -1; i <= 1; i++)
+            draw_circle(cx, cy + i * 6 * k, 1.9f * k, c);
+        break;
     case IC_LIST: // filas con su punto
         for (int i = -1; i <= 1; i++) {
             draw_circle(cx - 7 * k, cy + i * 6 * k, 1.6f * k, c);

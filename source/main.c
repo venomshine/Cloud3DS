@@ -1855,6 +1855,8 @@ static struct {
 	int lang;          // HL_*: colores de código según la extensión
 	int *hls, hlcap;   // estado del resaltado al empezar cada línea (comentarios de varias líneas)
 	int hlv;           // cuántos de esos estados son válidos (0 tras cada cambio)
+	int hlpos;         // posición en el historial de cambios con la que se calcularon
+	char find[128];    // lo último que se buscó
 } VW;
 
 static bool f_is_img(const FEnt *e)
@@ -1918,6 +1920,7 @@ static void vw_load(int idx)
 	// lo demás, como texto
 	VW.kind = VW_NONE;
 	VW.cur = VW.top = 0;
+	VW.hlpos = 0;
 	VW.drag = 0;
 	util_strlcpy(VW.path, full, sizeof VW.path);
 	int r = txt_load(&VW.doc, full);
@@ -2177,10 +2180,16 @@ static void vw_bottom_text(void)
 		snprintf(sub, sizeof sub, _("Línea %d de %d · Sin guardar"), VW.cur + 1, n), sc = T.warn;
 	else
 		snprintf(sub, sizeof sub, _("Línea %d de %d"), VW.cur + 1, n);
-	text_draw_clip(sub, 60, 32, BOT_W - 74, TS_SUB, sc);
+	text_draw_clip(sub, 60, 32, BOT_W - 104, TS_SUB, sc);
+	// arriba a la derecha, ⋮: el menú del archivo (cambiar tipo, renombrar…)
+	float mx = BOT_W - 28, my = 30;
+	bool mp = touch_in(mx - 16, my - 16, 32, 32);
+	draw_circle(mx, my, 14, mp ? T.surface2 : T.surface);
+	draw_icon(IC_DOTS, mx, my, 16, T.text2);
+	bool menu = tap(mx - 16, my - 16, 32, 32);
 	// las líneas de alrededor: tocar una la elige; tocar la elegida la edita; arrastrar desplaza
-	const float LY = 58, RH = 21;
-	const int LR = 4;
+	const float LY = 56, RH = 20;
+	const int LR = 3;
 	int first = VW.cur - 1;
 	if (first > n - LR)
 		first = n - LR;
@@ -2198,9 +2207,9 @@ static void vw_bottom_text(void)
 			draw_rrect(12, y, BOT_W - 24, RH, 8, col_alpha(T.accent, 0.2f));
 		char num[12];
 		snprintf(num, sizeof num, "%d", i + 1);
-		text_draw_right(num, 16 + gw, y + 3, TS_SUB, i == VW.cur ? T.accent : T.text3);
+		text_draw_right(num, 16 + gw, y + 2, TS_SUB, i == VW.cur ? T.accent : T.text3);
 		vt_line(i, b, 400);
-		text_draw_clip(b, 24 + gw, y + 3, BOT_W - 48 - gw, TS_SUB, T.text);
+		text_draw_clip(b, 24 + gw, y + 2, BOT_W - 48 - gw, TS_SUB, T.text);
 		if (tap(10, y, BOT_W - 20, RH)) {
 			if (i == VW.cur && ed)
 				edit = i;
@@ -2217,30 +2226,41 @@ static void vw_bottom_text(void)
 	} else {
 		VW.drag = 0;
 	}
-	// botones
-	const float BY = LY + LR * RH + 10, BH = 40;
+	// botones: dos filas de cinco; al lado de cada icono, el botón de la consola que hace lo mismo
+	enum { B_LINE, B_BLOCK, B_ADD, B_DEL, B_DUP, B_UNDO, B_REDO, B_UP, B_DOWN, B_FIND, B_PGUP, B_PGDN };
+	const float BH = 36, BY = LY + LR * RH + 8, bw = (BOT_W - 20 - 4 * 5) / 5.0f;
 	int hit = -1;
+	struct {
+		int id;
+		IconId ic;
+		const char *g, *t;
+		bool on;
+	} B[10];
+	int nb = 0;
 	if (ed) {
-		// línea (A), varias líneas (R), añadir (X), borrar y menú (Y)
-		const char *T5[5] = {_("Línea"), _("Bloque"), _("Añadir"), _("Borrar"), _("Menú")};
-		const char *G5[5] = {GLYPH_A, GLYPH_R, GLYPH_X, NULL, GLYPH_Y};
-		static const IconId I5[5] = {IC_PEN, IC_NOTE, IC_PLUS, IC_TRASH, IC_MENU};
-		static const int H5[5] = {0, 4, 1, 2, 3};
-		float bw = (BOT_W - 20 - 4 * 5) / 5.0f;
-		for (int k = 0; k < 5; k++)
-			if (vw_button(10 + k * (bw + 5), BY, bw, BH, I5[k], G5[k], T5[k], true))
-				hit = H5[k];
+		B[nb++] = (typeof(B[0])){B_LINE, IC_PEN, GLYPH_A, _("Línea"), true};
+		B[nb++] = (typeof(B[0])){B_BLOCK, IC_NOTE, "SELECT", _("Bloque"), true};
+		B[nb++] = (typeof(B[0])){B_ADD, IC_PLUS, GLYPH_X, _("Añadir"), true};
+		B[nb++] = (typeof(B[0])){B_DEL, IC_TRASH, GLYPH_Y, _("Borrar"), true};
+		B[nb++] = (typeof(B[0])){B_DUP, IC_DUP, NULL, _("Duplicar"), true};
+		B[nb++] = (typeof(B[0])){B_UNDO, IC_UNDO, GLYPH_L, _("Deshacer"), txt_can_undo(&VW.doc)};
+		B[nb++] = (typeof(B[0])){B_REDO, IC_REDO, GLYPH_R, _("Rehacer"), txt_can_redo(&VW.doc)};
+		B[nb++] = (typeof(B[0])){B_UP, IC_UP, NULL, _("Subir"), VW.cur > 0};
+		B[nb++] = (typeof(B[0])){B_DOWN, IC_DOWN, NULL, _("Bajar"), VW.cur < n - 1};
+		B[nb++] = (typeof(B[0])){B_FIND, IC_SEARCH, NULL, _("Buscar"), true};
 	} else {
-		float bw = (BOT_W - 20 - 2 * 6) / 3.0f;
-		if (vw_button(10, BY, bw, BH, IC_UP, GLYPH_DPAD, _("Página anterior"), true))
-			hit = 10;
-		if (vw_button(10 + bw + 6, BY, bw, BH, IC_DOWN, GLYPH_DPAD, _("Página siguiente"), true))
-			hit = 11;
-		if (vw_button(10 + 2 * (bw + 6), BY, bw, BH, IC_MENU, GLYPH_Y, _("Opciones"), true))
-			hit = 3;
+		B[nb++] = (typeof(B[0])){B_PGUP, IC_UP, GLYPH_DPAD, _("Página anterior"), true};
+		B[nb++] = (typeof(B[0])){B_PGDN, IC_DOWN, GLYPH_DPAD, _("Página siguiente"), true};
+		B[nb++] = (typeof(B[0])){B_FIND, IC_SEARCH, NULL, _("Buscar"), true};
+	}
+	float rbw = ed ? bw : (BOT_W - 20 - 2 * 5) / 3.0f;
+	for (int k = 0; k < nb; k++) {
+		int r = ed ? k / 5 : 0, c = ed ? k % 5 : k;
+		if (vw_button(10 + c * (rbw + 5), BY + r * (BH + 4), rbw, BH, B[k].ic, B[k].g, B[k].t, B[k].on))
+			hit = B[k].id;
 	}
 	// abajo: guardar (si se puede) y cerrar
-	float cy = BY + BH + 6, ch = SCR_H - 6 - cy;
+	float cy = BY + (ed ? 2 : 1) * (BH + 4) + 2, ch = SCR_H - 6 - cy;
 	char cl[48], sv[48];
 	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
 	snprintf(sv, sizeof sv, "START %s", _("Guardar"));
@@ -2268,33 +2288,49 @@ static void vw_bottom_text(void)
 		VW.cur--;
 	if (g_krepeat & KEY_DOWN)
 		VW.cur++;
-	if ((g_krepeat & KEY_LEFT) || hit == 10)
+	if ((g_krepeat & KEY_LEFT) || hit == B_PGUP)
 		VW.cur -= page, VW.top -= page;
-	if ((g_krepeat & KEY_RIGHT) || hit == 11)
+	if ((g_krepeat & KEY_RIGHT) || hit == B_PGDN)
 		VW.cur += page, VW.top += page;
 	VW.cur = VW.cur < 0 ? 0 : VW.cur >= n ? n - 1 : VW.cur;
 	VW.top = VW.top < 0 ? 0 : VW.top > VW.cur ? VW.cur : VW.top;
-	if (ed && (hit == 0 || edit >= 0 || (g_kdown & KEY_A)))
+	int r = -1;
+	if (ed && (hit == B_LINE || edit >= 0 || (g_kdown & KEY_A)))
 		U.want_txt = 1;
-	else if (ed && (hit == 1 || (g_kdown & KEY_X)))
+	else if (ed && (hit == B_ADD || (g_kdown & KEY_X)))
 		U.want_txt = 2;
-	else if (ed && (hit == 4 || (g_kdown & KEY_R)))
+	else if (ed && (hit == B_BLOCK || (g_kdown & KEY_SELECT)))
 		U.want_txt = 3;
-	else if (ed && hit == 2) {
+	else if (hit == B_FIND)
+		U.want_txt = 4;
+	else if (ed && (hit == B_DEL || (g_kdown & KEY_Y))) {
 		txt_remove(&VW.doc, VW.cur);
-		VW.hlv = 0;
 		if (VW.cur >= VW.doc.n)
 			VW.cur = VW.doc.n - 1;
-		toast_icon(_("Línea borrada"), IC_TRASH, T.text3);
-	} else if (hit == 3 || (g_kdown & KEY_Y)) {
-		g_kdown &= ~KEY_Y;
+	} else if (ed && hit == B_DUP) {
+		if (txt_insert(&VW.doc, VW.cur + 1, VW.doc.ln[VW.cur]))
+			VW.cur++;
+	} else if (ed && (hit == B_UP || hit == B_DOWN)) {
+		int d = hit == B_UP ? -1 : 1;
+		if (txt_move(&VW.doc, VW.cur, d))
+			VW.cur += d;
+	} else if (ed && (hit == B_UNDO || (g_kdown & KEY_L))) {
+		if ((r = txt_undo(&VW.doc)) >= 0)
+			VW.cur = r < VW.doc.n ? r : VW.doc.n - 1;
+	} else if (ed && (hit == B_REDO || (g_kdown & KEY_R))) {
+		if ((r = txt_redo(&VW.doc)) >= 0)
+			VW.cur = r < VW.doc.n ? r : VW.doc.n - 1;
+	} else if (menu) {
 		f_menu_open();
 	} else if (save || (ed && VW.doc.dirty && (g_kdown & KEY_START))) {
 		vw_save(false);
 	} else if (close || (g_kdown & KEY_B)) {
 		vw_try_close();
 	}
-	g_kdown &= ~KEY_START; // en el editor, START guarda: no sale de la app
+	if (VW.doc.pos != VW.hlpos) { // cambió el texto: los comentarios de varias líneas pueden moverse
+		VW.hlpos = VW.doc.pos;
+		VW.hlv = 0;
+	}
 }
 
 static void vw_bottom(void)
@@ -4230,6 +4266,25 @@ static void update(void)
 		int chars = 0;
 		for (const char *p = ln; *p; p++)
 			chars += ((u8)*p & 0xC0) != 0x80;
+		if (m == 4) { // buscar: desde la línea siguiente, dando la vuelta; sin distinguir mayúsculas
+			char q[128];
+			if (!kb_input(_("Buscar en el texto"), VW.find, q, sizeof q, false, false) || !q[0])
+				return;
+			util_strlcpy(VW.find, q, sizeof VW.find);
+			for (int k = 1; k <= VW.doc.n; k++) {
+				int i = (VW.cur + k) % VW.doc.n;
+				const char *h = VW.doc.ln[i];
+				for (; *h; h++)
+					if (!strncasecmp(h, q, strlen(q)))
+						break;
+				if (*h) {
+					VW.cur = i;
+					return;
+				}
+			}
+			toast_icon(_("No se encontró"), IC_SEARCH, T.text3);
+			return;
+		}
 		if ((m == 1 || m == 3) && chars > 2000) { // el teclado del sistema no admite más
 			toast_icon(_("Esta línea es demasiado larga para el teclado"), IC_CLOSE, T.warn);
 			return;
@@ -4326,7 +4381,8 @@ static void update(void)
 		}
 		return;
 	}
-	if ((g_kdown & KEY_SELECT) && U.ins_pend) // el QR se abre y se cierra siempre, también con la tarjeta de instalar
+	bool in_editor = VW.kind == VW_TXT && U.tab == TAB_FILES; // ahí SELECT edita varias líneas
+	if ((g_kdown & KEY_SELECT) && U.ins_pend && !in_editor) // el QR se abre y se cierra siempre, también con la tarjeta de instalar
 		qr_toggle();
 	if (install_input())
 		return;
@@ -4357,7 +4413,7 @@ static void update(void)
 	}
 	if ((g_kdown & KEY_START) && !(U.tab == TAB_FILES && VW.kind == VW_TXT)) // en el editor, START guarda
 		ask_exit();
-	if (g_kdown & KEY_SELECT)
+	if ((g_kdown & KEY_SELECT) && !editor)
 		qr_toggle();
 }
 

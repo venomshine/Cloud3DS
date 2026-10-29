@@ -1031,4 +1031,22 @@ TR = {
     'Agrupar por':
         ('Group by',
          'グループ化'),
+    'Duplicar':
+        ('Duplicate',
+         '複製'),
+    'Deshacer':
+        ('Undo',
+         '元に戻す'),
+    'Rehacer':
+        ('Redo',
+         'やり直す'),
+    'Buscar':
+        ('Find',
+         '検索'),
+    'Buscar en el texto':
+        ('Find in text',
+         'テキスト内を検索'),
+    'No se encontró':
+        ('Not found',
+         '見つかりませんでした'),
 }
