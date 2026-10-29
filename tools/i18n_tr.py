@@ -1250,4 +1250,55 @@ TR = {
     'Buscar aquí y en las carpetas de dentro':
         ('Search here and in the folders inside',
          'ここと中のフォルダを検索'),
+    'Comparar con un valor':
+        ('Compare with a value',
+         '値と比較'),
+    'Guardar en un .sha256 al lado':
+        ('Save as a .sha256 next to it',
+         '横に .sha256 として保存'),
+    'Aún se está calculando':
+        ('Still calculating',
+         'まだ計算中です'),
+    'Guardado al lado como .sha256':
+        ('Saved next to it as .sha256',
+         '横に .sha256 として保存しました'),
+    'Calculando… %d %%':
+        ('Calculating… %d %%',
+         '計算中… %d %%'),
+    'Puedes seguir usando la consola: se calcula aparte.':
+        ('You can keep using the console: it runs in the background.',
+         '計算はバックグラウンドで行われるので、そのまま本体を使えます。'),
+    'No se pudo leer el archivo':
+        ("Couldn't read the file",
+         'ファイルを読めませんでした'),
+    'Coincide con el valor que escribiste':
+        ('Matches the value you entered',
+         '入力した値と一致します'),
+    'No coincide con el valor que escribiste':
+        ("Doesn't match the value you entered",
+         '入力した値と一致しません'),
+    'Coincide con %s':
+        ('Matches %s',
+         '%s と一致'),
+    'No coincide con %s':
+        ("Doesn't match %s",
+         '%s と一致しません'),
+    'MD5 y SHA-256':
+        ('MD5 & SHA-256',
+         'MD5とSHA-256'),
+    'MD5 y SHA-256 listos':
+        ('MD5 & SHA-256 ready',
+         'MD5とSHA-256の計算が完了'),
+    'Pega o escribe el MD5 o el SHA-256 esperado':
+        ('Paste or type the expected MD5 or SHA-256',
+         '期待するMD5またはSHA-256を入力'),
+    'Eso no parece un MD5 (32 cifras) ni un SHA-256 (64)':
+        ("That doesn't look like an MD5 (32 digits) or SHA-256 (64)",
+         'MD5（32桁）でもSHA-256（64桁）でもないようです'),
+    'Coincide':
+        ('It matches',
+         '一致します'),
+    'No coincide':
+        ("It doesn't match",
+         '一致しません'),
 }

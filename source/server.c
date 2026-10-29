@@ -13,6 +13,7 @@
 #include "install.h"
 #include "state.h"
 #include "util.h"
+#include "hash.h"
 #include "search.h"
 #include "trash.h"
 
@@ -577,6 +578,36 @@ static bool list_cb(const FsxEntry *e, void *u)
 	state_unlock();
 	buf_printf(x->b, col ? ",\"c\":%d}" : "}", col);
 	return x->n < 5000;
+}
+
+/* MD5 y SHA-256: POST empieza (p = archivo), GET dice cómo va (el mismo trabajo que en la consola) */
+static void h_hash(Conn *c, bool post)
+{
+	char p[1024];
+	if (post) {
+		bool d;
+		u64 sz;
+		if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p) || fsx_stat(p, &d, &sz) < 0 || d) {
+			resp_err(c, 400, "bad_path");
+			return;
+		}
+		hash_start(p);
+	}
+	HashJob j;
+	hash_get(&j);
+	Buf b = {0};
+	static const char *const ST[] = {"idle", "run", "done", "error"};
+	buf_printf(&b, "{\"ok\":true,\"st\":\"%s\",\"p\":", ST[j.st]);
+	buf_json_str(&b, j.path);
+	buf_printf(&b, ",\"size\":%llu,\"done\":%llu", (unsigned long long)j.size, (unsigned long long)j.done);
+	if (j.st == HASH_DONE) {
+		buf_printf(&b, ",\"md5\":\"%s\",\"sha256\":\"%s\",\"check\":\"%s\",\"checkFile\":", j.md5, j.sha,
+		           j.check == HCHK_OK ? "ok" : j.check == HCHK_BAD ? "bad" : "");
+		buf_json_str(&b, j.check_file);
+	}
+	buf_puts(&b, "}");
+	resp_json(c, 200, &b);
+	free(b.p);
 }
 
 /* buscar por nombre en p (por defecto toda la SD) y sus subcarpetas */
@@ -1334,6 +1365,8 @@ static void route(Conn *c, const char *body)
 		h_rev(c);
 	else if (strcmp(p, "info") == 0 && get)
 		h_info(c);
+	else if (strcmp(p, "hash") == 0)
+		h_hash(c, post);
 	else if (strcmp(p, "search") == 0 && get)
 		h_search(c);
 	else if (strcmp(p, "list") == 0 && get)

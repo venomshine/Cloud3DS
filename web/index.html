@@ -164,6 +164,19 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .row .meta span .where{display:inline;color:var(--a)}
 .row.flash{animation:flash 1.6s ease}
 @keyframes flash{0%,40%{background:color-mix(in srgb,var(--a) 22%,var(--card))}}
+.dlg.hash{max-width:560px}
+.dlg.hash .hn{margin:-4px 0 10px;color:var(--muted);word-break:break-all}
+.hv{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.hv span{width:64px;flex:none;font-size:12.5px;color:var(--muted)}
+.hv code{flex:1;font-size:13px;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace}
+.hv .btn{flex:none;padding:6px 8px}
+.hv .btn svg{width:16px;height:16px}
+.hchk{margin-top:10px;padding:8px 12px;border-radius:10px;font-size:13.5px}
+.hchk.ok{background:color-mix(in srgb,var(--ok,#2ec47a) 16%,transparent);color:var(--ok,#2ec47a)}
+.hchk.bad{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
+.dlg.hash .field{margin-top:12px}
+.pbar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:8px 0}
+.pbar i{display:block;height:100%;background:var(--a)}
 .empty{text-align:center;padding:56px 20px;color:var(--muted)}
 .empty .big{width:64px;height:64px;border-radius:20px;background:var(--card2);display:grid;place-items:center;margin:0 auto 14px}
 .empty .big svg{width:30px;height:30px}
@@ -382,6 +395,7 @@ es:{
  err_exists:"Ya existe un archivo con ese nombre.", err_not_found:"El elemento ya no existe. Es posible que se haya movido o eliminado.", err_io:"Error de escritura en la tarjeta SD.",
  err_net:"Se perdió la conexión con la consola.", err_is_dir:"Ya hay una carpeta con ese nombre.", err:"Se produjo un error (%1).",
  offline:"Se perdió la conexión con la consola. Reintentando…", logout:"Desvincular este dispositivo", logoutD:"Para volver a entrar tendrás que escanear el código QR o introducir el PIN.",
+ close:"Cerrar", hashA:"MD5 y SHA-256", hashRun:"La consola lo está calculando… %1 %", hashBg:"Puedes cerrar esto: la consola sigue calculando y lo verás al volver a abrirlo.", hashErr:"La consola no pudo leer el archivo.", hashOther:"La consola empezó a calcular otro archivo.", hashOk:"Coincide con %1", hashBad:"No coincide con %1", hashCmp:"Pega aquí el valor esperado para comparar", hashSame:"Coincide", hashDiff:"No coincide", copied:"Copiado",
  findAll:"Buscar «%1» en toda la SD", findT:"«%1» en toda la SD", finding:"Buscando en la SD…", findNone:"No hay nada que se llame «%1» en la SD.", findMore:"Hay más resultados: escribe algo más concreto.", fAll:"Todo", fDir:"Carpetas", fImg:"Fotos", fVid:"Vídeo y música", fTxt:"Texto", fApp:"Apps y CIA", fRom:"ROMs", fZip:"Comprimidos", fSav:"Partidas", fFile:"Otros",
  trash:"Papelera", trashInfo:"Lo borrado se guarda aquí %1 días y luego se borra solo. Ocupa %2.", trashEmpty:"Vaciar", trashNoneT:"La papelera está vacía", trashNoneD:"Lo que borres, desde aquí o desde la consola, se podrá recuperar durante %1 días.", trashFrom:"Estaba en %1", trashLeft:"se borra en %1 días", trashLeft1:"se borra en 1 día", restore:"Recuperar", restored:"Recuperado en %1", purge:"Eliminar para siempre", purgeQ:"¿Eliminar «%1» para siempre?", purgeD:"Ya no se podrá recuperar.", emptyQ:"¿Vaciar la papelera?", emptyD:"Se borrarán para siempre %1 elementos.", emptyD1:"Se borrará para siempre 1 elemento.", emptied:"Papelera vaciada", purged:"Eliminado para siempre",
  deleted:"Enviado a la papelera", renamed:"Renombrado", created:"Carpeta creada", sel:"%1 seleccionados", all2:"Todo",
@@ -418,6 +432,7 @@ en:{
  err_exists:"A file with that name already exists.", err_not_found:"The item no longer exists. It may have been moved or deleted.", err_io:"Write error on the SD card.",
  err_net:"Lost connection to the console.", err_is_dir:"There's already a folder with that name.", err:"An error occurred (%1).",
  offline:"Lost connection to the console. Retrying…", logout:"Unpair this device", logoutD:"To sign in again, you'll need to scan the QR code or enter the PIN.",
+ close:"Close", hashA:"MD5 & SHA-256", hashRun:"The console is calculating it… %1 %", hashBg:"You can close this: the console keeps going and you'll see it when you open it again.", hashErr:"The console couldn't read the file.", hashOther:"The console started on another file.", hashOk:"Matches %1", hashBad:"Doesn't match %1", hashCmp:"Paste the expected value here to compare", hashSame:"It matches", hashDiff:"It doesn't match", copied:"Copied",
  findAll:"Search “%1” on the whole SD", findT:"“%1” on the whole SD", finding:"Searching the SD…", findNone:"Nothing called “%1” on the SD.", findMore:"There are more results: try something more specific.", fAll:"All", fDir:"Folders", fImg:"Photos", fVid:"Video & music", fTxt:"Text", fApp:"Apps & CIA", fRom:"ROMs", fZip:"Archives", fSav:"Saves", fFile:"Other",
  trash:"Trash", trashInfo:"Deleted items stay here for %1 days and are then removed. Using %2.", trashEmpty:"Empty", trashNoneT:"The trash is empty", trashNoneD:"Anything you delete, here or on the console, can be restored for %1 days.", trashFrom:"Was in %1", trashLeft:"deleted in %1 days", trashLeft1:"deleted in 1 day", restore:"Restore", restored:"Restored to %1", purge:"Delete forever", purgeQ:"Delete “%1” forever?", purgeD:"It can't be restored afterwards.", emptyQ:"Empty the trash?", emptyD:"%1 items will be deleted forever.", emptyD1:"1 item will be deleted forever.", emptied:"Trash emptied", purged:"Deleted forever",
  deleted:"Moved to trash", renamed:"Renamed", created:"Folder created", sel:"%1 selected", all2:"All",
@@ -454,6 +469,7 @@ ja:{
  err_exists:"同じ名前のファイルがあります。", err_not_found:"この項目はもうありません。移動または削除された可能性があります。", err_io:"SDカードへの書き込みエラーです。",
  err_net:"本体との接続が切れました。", err_is_dir:"同じ名前のフォルダがあります。", err:"エラーが発生しました(%1)。",
  offline:"本体との接続が切れました。再試行中…", logout:"このデバイスの登録を解除", logoutD:"もう一度入るには、QRコードを読み取るかPINを入力する必要があります。",
+ close:"閉じる", hashA:"MD5とSHA-256", hashRun:"本体で計算中… %1 %", hashBg:"閉じても大丈夫です。本体が計算を続け、もう一度開くと表示されます。", hashErr:"本体がファイルを読めませんでした。", hashOther:"本体が別のファイルの計算を始めました。", hashOk:"%1 と一致", hashBad:"%1 と一致しません", hashCmp:"比較する値をここに貼り付け", hashSame:"一致します", hashDiff:"一致しません", copied:"コピーしました",
  findAll:"SD全体で「%1」を検索", findT:"SD全体の「%1」", finding:"SDを検索中…", findNone:"SDに「%1」という名前のものはありません。", findMore:"ほかにも結果があります。もっと具体的に入力してください。", fAll:"すべて", fDir:"フォルダ", fImg:"写真", fVid:"動画と音楽", fTxt:"テキスト", fApp:"アプリとCIA", fRom:"ROM", fZip:"圧縮ファイル", fSav:"セーブ", fFile:"その他",
  trash:"ゴミ箱", trashInfo:"削除したものは%1日間ここに残り、その後自動で消えます。使用中：%2。", trashEmpty:"空にする", trashNoneT:"ゴミ箱は空です", trashNoneD:"ここや本体で削除したものは%1日間元に戻せます。", trashFrom:"元の場所：%1", trashLeft:"あと%1日で削除", trashLeft1:"あと1日で削除", restore:"元に戻す", restored:"%1 に戻しました", purge:"完全に削除", purgeQ:"「%1」を完全に削除しますか?", purgeD:"元に戻せなくなります。", emptyQ:"ゴミ箱を空にしますか?", emptyD:"%1 項目が完全に削除されます。", emptyD1:"1 項目が完全に削除されます。", emptied:"ゴミ箱を空にしました", purged:"完全に削除しました",
  deleted:"ゴミ箱に移動しました", renamed:"名前を変更しました", created:"フォルダを作成しました", sel:"%1 件選択", all2:"すべて",
@@ -491,7 +507,7 @@ const I = {
  upf:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 16v-6M9.5 12.5 12 10l2.5 2.5"/>',
  check:'<path d="m5 12 5 5 9-10"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>',
  dots:'<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
- trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', pen:'<path d="M4 20h4L20 8l-4-4L4 16z"/>',
+ trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', shield:'<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>', pen:'<path d="M4 20h4L20 8l-4-4L4 16z"/>',
  eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
  grid:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
  list:'<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/>',
@@ -916,13 +932,14 @@ function openSheet(it){
   ${ro?"":isProt(p)?`<div class="act off">${svg("lock")}<span><b>${t("protT")}</b><small>${t("protD")}</small></span></div>`:`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act" data-a="mv">${svg("mv")}${t("moveTo")}</button><button class="act" data-a="cp">${svg("copy")}${t("copyTo")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
   ${!ro&&!it.d&&ext(it.n)==="cia"?`<button class="act" data-a="ins">${svg("app")}${t("insConsole")}</button>`:""}
   <button class="act" data-a="sel">${svg("selall")}${t("select")}</button>
+  ${it.d?"":`<button class="act" data-a="hash">${svg("shield")}${t("hashA")}</button>`}
   <div class="marks">${svg("tag")}<b>${t("highlight")}</b>${[0,1,2,3,4,5,6].map(c=>`<button class="swt mk${c}${(it.c||0)===c?" on":""}" data-mk="${c}" title="${t("mk"+c)}"></button>`).join("")}</div>
  </div>`);
  m.el.addEventListener("click",async e=>{
   const mk=e.target.closest("[data-mk]");
   if(mk){const c=+mk.dataset.mk;m.close();try{await api("POST","mark",{p,c});it.c=c||undefined;render()}catch(err){toast(errText(err))}return}
   const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
-  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n);if(a==="mv")transfer("move",[it]);if(a==="cp")transfer("copy",[it]);if(a==="ins")requestInstall([p])});
+  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n);if(a==="mv")transfer("move",[it]);if(a==="cp")transfer("copy",[it]);if(a==="ins")requestInstall([p]);if(a==="hash")hashDlg(p)});
 }
 // varias opciones en columna; devuelve la clave de la elegida o null
 function choose({title,text,opts}){
@@ -981,6 +998,30 @@ async function confirmDelete(list){
  for(const it of list){try{await api("POST","delete",{p:join(S.path,it.n),...g})}catch(e){errs++;toast(errText(e))}}
  if(!errs)toast(t("deleted"));
  S.sel.clear();go(S.path,true);refreshInfo();
+}
+/* ---------- MD5 y SHA-256 (los calcula la consola) ---------- */
+async function hashDlg(p){
+ const m=modal(`<div class="dlg hash"><h3>${t("hashA")}</h3><p class="hn">${esc(base(p))}</p><div class="hb"><div class="loading" style="padding:10px"><span class="spin"></span></div></div>
+  <div class="btns"><button class="btn" data-r="0">${t("close")}</button></div></div>`,true);
+ const box=m.el.querySelector(".hb");let alive=true;
+ m.el.addEventListener("click",e=>{if(e.target.closest('[data-r="0"]'))m.close();const cp=e.target.closest("[data-cp]");if(cp){navigator.clipboard?.writeText(cp.dataset.cp).then(()=>toast(t("copied")),()=>{});}});
+ new MutationObserver((_,o)=>{if(!document.body.contains(m.el)){alive=false;o.disconnect()}}).observe(document.body,{childList:true});
+ let r;try{r=await api("POST","hash",{p})}catch(e){box.innerHTML=`<p class="err">${esc(errText(e))}</p>`;return}
+ while(alive&&r.p===p&&r.st==="run"){
+  const f=r.size?r.done/r.size:0;
+  box.innerHTML=`<p>${t("hashRun",Math.floor(f*100))}</p><div class="pbar"><i style="width:${(f*100).toFixed(1)}%"></i></div><small>${t("hashBg")}</small>`;
+  await new Promise(z=>setTimeout(z,700));
+  try{r=await api("GET","hash")}catch(e){return}
+ }
+ if(!alive)return;
+ if(r.p!==p||r.st!=="done"){box.innerHTML=`<p class="err">${t(r.st==="error"?"hashErr":"hashOther")}</p>`;return}
+ const row=(k,v)=>`<div class="hv"><span>${k}</span><code>${v}</code><button class="btn" data-cp="${v}">${svg("copy")}</button></div>`;
+ const chk=r.check?`<div class="hchk ${r.check}">${esc(t(r.check==="ok"?"hashOk":"hashBad",r.checkFile))}</div>`:"";
+ box.innerHTML=row("MD5",r.md5)+row("SHA-256",r.sha256)+chk+`<input class="field" placeholder="${t("hashCmp")}" spellcheck="false" autocapitalize="off"><div class="hcmp"></div>`;
+ const f=box.querySelector(".field"),out=box.querySelector(".hcmp");
+ f.addEventListener("input",()=>{const v=f.value.toLowerCase().replace(/[^0-9a-f]/g,"");
+  out.className="hcmp";out.textContent="";
+  if(v.length===32||v.length===64){const ok=v===(v.length===32?r.md5:r.sha256);out.className="hcmp hchk "+(ok?"ok":"bad");out.textContent=t(ok?"hashSame":"hashDiff")}});
 }
 /* ---------- instalar CIA en la consola ---------- */
 const IQ={ids:new Set(),items:[],timer:0};

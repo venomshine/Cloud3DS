@@ -15,6 +15,7 @@
 #include "img.h"
 #include "txt.h"
 #include "hl.h"
+#include "hash.h"
 #include "search.h"
 #include "trash.h"
 #include <time.h>
@@ -1392,7 +1393,7 @@ static struct {
 static int sr_nkinds(void);
 
 // acciones sobre archivos (menú de un elemento y selección múltiple)
-enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT };
+enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT, FA_HASH };
 
 static const char *chip_name(int i)
 {
@@ -3428,6 +3429,93 @@ static void mc_draw(void)
 	g_touch.up = false;
 }
 
+// MD5 y SHA-256 del archivo elegido: la hoja de abajo (comparar, guardar) y los valores arriba
+static struct {
+	bool open, just, want_cmp;
+	float anim;
+	int sel, cmp; // cmp: lo que dio «Comparar» (HCHK_*)
+	char path[512];
+	u32 seen;     // para avisar una vez cuando termina con la hoja cerrada
+} HS;
+static HashJob HJ; // copia por frame
+
+static void hs_draw(void)
+{
+	const char *nm = strrchr(HS.path, '/');
+	static const IconId ic[2] = {IC_CHECK, IC_DOWNLOAD};
+	const char *lab[2] = {_("Comparar con un valor"), _("Guardar en un .sha256 al lado")};
+	bool done = HJ.st == HASH_DONE && !strcmp(HJ.path, HS.path);
+	const u32 col[2] = {done ? T.accent : T.text3, done ? T.text : T.text3};
+	int r = sheet_list(&HS.open, &HS.just, &HS.anim, &HS.sel, nm ? nm + 1 : HS.path, ic, lab, col, 2);
+	if (r >= 0 && !done) {
+		toast_icon(_("Aún se está calculando"), IC_CLOCK, T.text2);
+		HS.open = true; // la hoja sigue abierta
+	} else if (r == 0) {
+		HS.open = true, HS.want_cmp = true; // el teclado, fuera del dibujo
+	} else if (r == 1) {
+		if (hash_save_sha256(&HJ) == 0) {
+			toast_icon(_("Guardado al lado como .sha256"), IC_CHECK, T.ok);
+			F.need_reload = true;
+		} else
+			toast_icon(_("No se pudo guardar"), IC_CLOSE, T.danger);
+	}
+}
+
+// pantalla de arriba: el archivo, el progreso y luego los dos valores y si coinciden
+static void hash_top(float a)
+{
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28;
+	bool mine = !strcmp(HJ.path, HS.path);
+	const char *nm = strrchr(HS.path, '/');
+	char sz[24];
+	util_fmt_size(sz, sizeof sz, mine ? HJ.size : 0);
+	float y = y0 + 12;
+	draw_icon(IC_SHIELD, X + 8, y + 8, 15, col_alpha(T.accent, a));
+	text_draw_clip(nm ? nm + 1 : HS.path, X + 24, y, W - 24 - text_width(sz, TS_SUB) - 10, TS_TITLE, col_alpha(T.text, a));
+	text_draw_right(sz, X + W, y + 3, TS_SUB, col_alpha(T.text3, a));
+	y += 30;
+	if (!mine || HJ.st == HASH_RUN) {
+		float f = mine && HJ.size ? (float)HJ.done / HJ.size : 0;
+		char t[64];
+		snprintf(t, sizeof t, _("Calculando… %d %%"), (int)(f * 100));
+		text_draw(t, X, y, TS_BODY, col_alpha(T.text2, a));
+		draw_rrect(X, y + 24, W, 6, 3, col_alpha(T.surface2, a));
+		draw_rrect(X, y + 24, fmaxf(6, W * f), 6, 3, col_alpha(T.accent, a));
+		wrap_center(_("Puedes seguir usando la consola: se calcula aparte."), TOP_W / 2, y + 44, W, TS_SUB, 2, col_alpha(T.text3, a));
+		return;
+	}
+	if (HJ.st == HASH_ERR) {
+		text_draw(_("No se pudo leer el archivo"), X, y, TS_BODY, col_alpha(T.danger, a));
+		return;
+	}
+	text_draw("MD5", X, y, TS_SUB, col_alpha(T.text3, a));
+	text_draw(HJ.md5, X, y + 13, TS_BODY, col_alpha(T.text, a));
+	y += 34;
+	text_draw("SHA-256", X, y, TS_SUB, col_alpha(T.text3, a));
+	char h1[33], h2[33];
+	memcpy(h1, HJ.sha, 32), h1[32] = 0;
+	memcpy(h2, HJ.sha + 32, 32), h2[32] = 0;
+	text_draw(h1, X, y + 13, TS_BODY, col_alpha(T.text, a));
+	text_draw(h2, X, y + 29, TS_BODY, col_alpha(T.text, a));
+	y += 52;
+	// lo que dice «Comparar» manda; si no, el .md5/.sha256 de al lado
+	int chk = HS.cmp != HCHK_NONE ? HS.cmp : HJ.check;
+	if (chk != HCHK_NONE) {
+		char t[200];
+		if (HS.cmp != HCHK_NONE)
+			util_strlcpy(t, chk == HCHK_OK ? _("Coincide con el valor que escribiste") : _("No coincide con el valor que escribiste"), sizeof t);
+		else
+			snprintf(t, sizeof t, chk == HCHK_OK ? _("Coincide con %s") : _("No coincide con %s"), HJ.check_file);
+		u32 c = chk == HCHK_OK ? T.ok : T.danger;
+		draw_rrect(X, y, W, 24, 12, col_alpha(c, 0.16f * a));
+		draw_icon(chk == HCHK_OK ? IC_CHECK : IC_CLOSE, X + 14, y + 12, 12, col_alpha(c, a));
+		text_draw_clip(t, X + 28, y + 12 - text_lineh(TS_SUB) / 2, W - 36, TS_SUB, col_alpha(c, a));
+	}
+}
+
 // papelera: recuperar o borrar del todo el elemento elegido
 static struct {
 	bool open, just;
@@ -4042,6 +4130,8 @@ static void f_menu_open(void)
 		FM.acts[FM.n++] = FA_DELETE;
 	if (!vw_is_open())
 		FM.acts[FM.n++] = FA_SELECT;
+	if (!e->dir)
+		FM.acts[FM.n++] = FA_HASH;
 	FM.sel = 0;
 	FM.color = e->color;
 	FM.open = true;
@@ -4059,13 +4149,14 @@ static const char *fa_name(int a)
 	case FA_ASTEXT: return _("Abrir como texto");
 	case FA_TYPE: return _("Cambiar tipo");
 	case FA_SELECT: return _("Elegir varios");
+	case FA_HASH: return _("MD5 y SHA-256");
 	default: return _("Destacar");
 	}
 }
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[9] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK};
+	static const IconId IC[10] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD};
 	return IC[a];
 }
 
@@ -4203,6 +4294,14 @@ static void fa_run(int a)
 	if (a == FA_SELECT) {
 		ms_start(e->name);
 		f_build_view();
+		return;
+	}
+	if (a == FA_HASH) { // se calcula aparte; la hoja y la pantalla de arriba lo enseñan
+		hash_start(full);
+		util_strlcpy(HS.path, full, sizeof HS.path);
+		HS.cmp = HCHK_NONE;
+		HS.open = HS.just = true;
+		HS.sel = 0;
 		return;
 	}
 	if (a == FA_TYPE) { // también con el editor abierto: solo cambia la extensión
@@ -4664,6 +4763,10 @@ static void trash_top(float a)
 
 static void files_top(float a)
 {
+	if (HS.open) {
+		hash_top(a);
+		return;
+	}
 	if (MS.on) {
 		ms_top(a);
 		return;
@@ -5165,7 +5268,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -5202,6 +5305,7 @@ static void draw_bottom(void)
 		ma_draw();
 		mc_draw();
 		ts_draw();
+		hs_draw();
 	}
 	install_card();
 	dialog_draw();
@@ -5402,6 +5506,25 @@ static void update(void)
 		U.buttons = true;
 	if (g_touch.down)
 		U.buttons = false;
+	hash_get(&HJ);
+	if (HJ.st == HASH_DONE && HJ.id != HS.seen) { // terminó: si no se está mirando, un aviso
+		HS.seen = HJ.id;
+		if (!HS.open || U.tab != TAB_FILES)
+			toast_icon(_("MD5 y SHA-256 listos"), IC_SHIELD, T.ok);
+	}
+	if (HS.want_cmp) {
+		HS.want_cmp = false;
+		char v[160];
+		if (kb_input(_("Pega o escribe el MD5 o el SHA-256 esperado"), "", v, sizeof v, false, false) && v[0]) {
+			int r = hash_compare(&HJ, v);
+			if (r == HCHK_NONE)
+				toast_icon(_("Eso no parece un MD5 (32 cifras) ni un SHA-256 (64)"), IC_CLOSE, T.warn);
+			else {
+				HS.cmp = r;
+				toast_icon(r == HCHK_OK ? _("Coincide") : _("No coincide"), r == HCHK_OK ? IC_CHECK : IC_CLOSE, r == HCHK_OK ? T.ok : T.danger);
+			}
+		}
+	}
 	if (U.want_search) {
 		U.want_search = false;
 		char q[128];
