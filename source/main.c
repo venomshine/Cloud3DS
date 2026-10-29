@@ -4573,7 +4573,6 @@ int main(int argc, char **argv)
 		bool dirty = G.dirty_cfg;
 		state_unlock();
 
-		g_toast_style = V.toast_style;
 		watch_events();
 		s_events_seen = true;
 		upd_get(&U.upd);

@@ -92,7 +92,6 @@ typedef struct {
 	u8   f_group;     /* agrupar: 0 no, 1 tipo, 2 fecha, 3 tamaño, 4 color */
 	bool f_sysapart;  /* carpetas del sistema en su propio apartado */
 	bool f_pin;       /* destacadas con color, arriba del todo */
-	u8   toast_style; /* cómo se ven los avisos arriba (ver toast_draw_top) */
 	bool f_grid;      /* vista de iconos en vez de lista */
 	bool upd_auto;    /* buscar actualizaciones al abrir */
 
