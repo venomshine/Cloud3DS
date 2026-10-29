@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
@@ -94,7 +95,12 @@ int fsx_list(const char *path, bool want_mtime, FsxListCb cb, void *user)
 	Handle d;
 	if (R_FAILED(FSUSER_OpenDirectory(&d, sd, mkpath(pb, 512, path))))
 		return -1;
-	static FS_DirectoryEntry ents[32];
+	// en el montón y no estático: se puede listar desde varios hilos y desde dentro de otra lista
+	FS_DirectoryEntry *ents = malloc(32 * sizeof *ents);
+	if (!ents) {
+		FSDIR_Close(d);
+		return -1;
+	}
 	FsxEntry e;
 	char full[1024];
 	int total = 0;
@@ -116,6 +122,7 @@ int fsx_list(const char *path, bool want_mtime, FsxListCb cb, void *user)
 			go = cb(&e, user);
 		}
 	}
+	free(ents);
 	FSDIR_Close(d);
 	return total;
 }
