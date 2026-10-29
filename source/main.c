@@ -60,7 +60,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI };
 
 typedef struct {
 	float off, target;
@@ -1344,6 +1344,16 @@ static struct {
 	char preview[600]; // principio de un texto, para verlo arriba
 } F = {.path = "/", .sys_open = true, .info_for = -1, .sel = 1};
 
+// selección múltiple: los nombres elegidos en la carpeta abierta (se olvidan al cambiar de carpeta)
+static struct {
+	bool on;
+	int n;
+	char (*nm)[128];
+} MS;
+
+// acciones sobre archivos (menú de un elemento y selección múltiple)
+enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT };
+
 static const char *chip_name(int i)
 {
 	switch (i) {
@@ -1607,8 +1617,10 @@ static void f_build_view(void)
 					f_put(i, &y, &col);
 		f_endrow(&y, &col);
 	}
-	F.total = y + QR_PAD;
+	F.total = y + QR_PAD + (MS.on ? 48 : 0); // con la selección, sitio para que su barra no tape lo último
 }
+
+static void ms_end(void);
 
 static void f_load(const char *path)
 {
@@ -1639,6 +1651,7 @@ static void f_load(const char *path)
 	qsort(F.e, F.n, sizeof *F.e, f_cmp);
 	f_build_view();
 	if (!same) {
+		ms_end();
 		F.gclosed = 0;
 		F.chips_on = false;
 		F.pull = 0;
@@ -1873,7 +1886,17 @@ static struct {
 	int mode;          // 0 nada, FA_MOVE o FA_COPY: eligiendo carpeta de destino
 	char src[700], name[128];
 	bool src_dir;
+	int n;             // varios a la vez (selección múltiple): sus rutas en list
+	char (*list)[512];
 } FP;
+
+
+// copias en cola: se lanzan de una en una cuando termina la anterior
+static struct {
+	int n, i;
+	char (*src)[512];
+	char (*dst)[700];
+} CQ;
 
 // ---- visor (fotos y textos): pantalla completa arriba, controles abajo
 enum { VW_NONE, VW_IMG, VW_TXT };
@@ -2808,6 +2831,308 @@ static void pm_draw(void)
 	g_touch.up = false;
 }
 
+static bool ms_has(const char *nm)
+{
+	for (int i = 0; i < MS.n; i++)
+		if (!strcmp(MS.nm[i], nm))
+			return true;
+	return false;
+}
+
+static void ms_toggle(const char *nm)
+{
+	for (int i = 0; i < MS.n; i++)
+		if (!strcmp(MS.nm[i], nm)) {
+			memcpy(MS.nm[i], MS.nm[--MS.n], sizeof MS.nm[0]);
+			return;
+		}
+	if (!MS.nm && !(MS.nm = malloc(F_MAX * sizeof *MS.nm)))
+		return;
+	if (MS.n < F_MAX)
+		util_strlcpy(MS.nm[MS.n++], nm, sizeof MS.nm[0]);
+}
+
+static void ms_start(const char *first)
+{
+	MS.on = true;
+	MS.n = 0;
+	if (first)
+		ms_toggle(first);
+}
+
+static void ms_end(void)
+{
+	MS.on = false;
+	MS.n = 0;
+}
+
+// todo o nada: si ya está todo elegido, se desmarca
+static void ms_all(void)
+{
+	if (MS.n >= F.n) {
+		MS.n = 0;
+		return;
+	}
+	for (int i = 0; i < F.n; i++)
+		if (!ms_has(F.e[i].name))
+			ms_toggle(F.e[i].name);
+}
+
+static u64 ms_size(int *ndir)
+{
+	u64 t = 0;
+	*ndir = 0;
+	for (int i = 0; i < F.n; i++)
+		if (ms_has(F.e[i].name)) {
+			t += F.e[i].dir ? 0 : F.e[i].size;
+			*ndir += F.e[i].dir;
+		}
+	return t;
+}
+
+static int ms_cias(void)
+{
+	int n = 0;
+	for (int i = 0; i < F.n; i++)
+		n += !F.e[i].dir && ms_has(F.e[i].name) && !strcasecmp(f_ext(F.e[i].name), "cia");
+	return n;
+}
+
+// ¿hay algo protegido entre lo elegido? (no se mueve ni se borra)
+static bool ms_locked(void)
+{
+	for (int i = 0; i < F.n; i++)
+		if (F.e[i].sys && V.protect_sys && ms_has(F.e[i].name))
+			return true;
+	return false;
+}
+
+static void ms_copy_move(int mode)
+{
+	if (!MS.n)
+		return;
+	free(FP.list);
+	FP.list = malloc(MS.n * sizeof *FP.list);
+	if (!FP.list)
+		return;
+	FP.n = 0;
+	FP.src_dir = false;
+	for (int i = 0; i < F.n; i++)
+		if (ms_has(F.e[i].name)) {
+			f_full(i, FP.list[FP.n], sizeof FP.list[0]);
+			FP.src_dir |= F.e[i].dir;
+			if (!FP.n)
+				util_strlcpy(FP.src, FP.list[0], sizeof FP.src), util_strlcpy(FP.name, F.e[i].name, sizeof FP.name);
+			FP.n++;
+		}
+	FP.mode = mode;
+	ms_end();
+	toast_icon(_("Ve a la carpeta de destino y pulsa X"), IC_FOLDER, T.accent);
+}
+
+static void ms_install(void)
+{
+	int n = 0;
+	for (int i = 0; i < F.n; i++) {
+		if (F.e[i].dir || !ms_has(F.e[i].name) || strcasecmp(f_ext(F.e[i].name), "cia"))
+			continue;
+		char full[700], err[24] = "";
+		f_full(i, full, sizeof full);
+		int id = strlen(full) < 256 ? ins_request(full, G.console, false, err, sizeof err) : -1;
+		if (id >= 0) {
+			ins_decide(id, INS_ACCEPT); // Cloud3DS y bajar de versión se quedan guardados, como siempre
+			n++;
+		}
+	}
+	char msg[64];
+	snprintf(msg, sizeof msg, _("Instalando %d CIA…"), n);
+	toast_icon(n ? msg : _("La consola no reconoce este CIA"), n ? IC_DOWNLOAD : IC_CLOSE, n ? T.ok : T.danger);
+	ms_end();
+}
+
+static void ms_color(int c)
+{
+	state_lock();
+	for (int i = 0; i < F.n; i++)
+		if (ms_has(F.e[i].name)) {
+			char full[700];
+			f_full(i, full, sizeof full);
+			mark_set(full, c);
+		}
+	G.rev++;
+	state_unlock();
+	ms_end();
+	f_reload_keep();
+}
+
+static void ms_ask_delete(void)
+{
+	if (!MS.n)
+		return;
+	if (ms_locked()) {
+		toast_icon(_("Hay carpetas protegidas entre lo elegido"), IC_LOCK, T.warn);
+		return;
+	}
+	char msg[200];
+	snprintf(msg, sizeof msg, _("Se eliminarán %d elementos de la tarjeta SD. Esta acción no se puede deshacer."), MS.n);
+	dialog_open(DLG_FDELMULTI, _("¿Eliminar?"), msg, _("Eliminar"), true);
+}
+
+// menú de acciones de la selección (Y) y colores para destacar varios a la vez
+static struct {
+	bool open, just;
+	float anim;
+	int sel;
+} MA, MC;
+
+static void ms_do(int act)
+{
+	if (act == FA_COPY || act == FA_MOVE)
+		ms_copy_move(act);
+	else if (act == FA_COLORS)
+		MC.open = MC.just = true, MC.sel = 0;
+	else if (act == FA_DELETE)
+		ms_ask_delete();
+	else if (act == FA_INSTALL)
+		ms_install();
+}
+
+// hoja de abajo con una lista de opciones y «Cerrar» al final; devuelve la elegida o -1
+static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char *title, const IconId *ic, const char *const *lab,
+                      const u32 *col, int n)
+{
+	*anim = approach(*anim, *open ? 1 : 0, 16);
+	if (*anim < 0.01f)
+		return -1;
+	float a = ease_out_cubic(*anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	const float RH = 30;
+	float h = 34 + (n + 1) * RH + 10, y = SCR_H - h - 6 + (1 - a) * 40;
+	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
+	if (!*open)
+		return -1;
+	bool fresh = *just;
+	*just = false;
+	text_draw_center_clip(title, BOT_W / 2, y + 10, BOT_W - 50, TS_BODY, T.text);
+	if (U.buttons && !fresh) {
+		if (g_krepeat & KEY_DOWN) *sel = (*sel + 1) % (n + 1);
+		if (g_krepeat & KEY_UP) *sel = (*sel + n) % (n + 1);
+	}
+	int run = -1;
+	for (int i = 0; i <= n; i++) {
+		float ry = y + 32 + i * RH;
+		bool hl = (U.buttons && *sel == i) || touch_in(16, ry, BOT_W - 32, RH);
+		if (hl)
+			draw_rrect(16, ry + 1, BOT_W - 32, RH - 2, 9, T.surface2);
+		if (i == n) {
+			char cl[48];
+			snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+			text_draw_center(cl, BOT_W / 2, ry + (RH - text_lineh(TS_BODY)) / 2, TS_BODY, T.text2);
+		} else {
+			draw_icon(ic[i], 34, ry + RH / 2, 14, col[i]);
+			text_draw(lab[i], 50, ry + (RH - text_lineh(TS_BODY)) / 2, TS_BODY, col[i]);
+		}
+		if (!fresh && (tap(16, ry, BOT_W - 32, RH) || (U.buttons && *sel == i && (g_kdown & KEY_A))))
+			run = i;
+	}
+	if (!fresh && (run == n || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y)))
+		*open = false, run = -1;
+	else if (run >= 0)
+		*open = false;
+	g_kdown &= ~(KEY_A | KEY_B);
+	g_touch.up = false;
+	return run;
+}
+
+static void ma_draw(void)
+{
+	int acts[5], n = 0;
+	IconId ic[5];
+	const char *lab[5];
+	u32 col[5];
+	bool lock = ms_locked();
+	if (MS.n) {
+		acts[n] = FA_COPY, ic[n] = IC_PLUS, lab[n] = _("Copiar a…"), col[n++] = T.text;
+		if (!lock)
+			acts[n] = FA_MOVE, ic[n] = IC_FOLDER, lab[n] = _("Mover a…"), col[n++] = T.text;
+		acts[n] = FA_COLORS, ic[n] = IC_STAR, lab[n] = _("Destacar"), col[n++] = T.text;
+		if (!lock)
+			acts[n] = FA_DELETE, ic[n] = IC_TRASH, lab[n] = _("Eliminar"), col[n++] = T.danger;
+		if (ms_cias())
+			acts[n] = FA_INSTALL, ic[n] = IC_DOWNLOAD, lab[n] = _("Instalar"), col[n++] = T.ok;
+	}
+	char t[48];
+	snprintf(t, sizeof t, MS.n == 1 ? _("1 elegido") : _("%d elegidos"), MS.n);
+	int r = sheet_list(&MA.open, &MA.just, &MA.anim, &MA.sel, t, ic, lab, col, n);
+	if (r >= 0)
+		ms_do(acts[r]);
+}
+
+static void mc_draw(void)
+{
+	static const u32 MK[7] = {0, 0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
+	MC.anim = approach(MC.anim, MC.open ? 1 : 0, 16);
+	if (MC.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(MC.anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	float h = 120, y = SCR_H - h - 6 + (1 - a) * 40;
+	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
+	if (!MC.open)
+		return;
+	bool fresh = MC.just;
+	MC.just = false;
+	text_draw_center(_("Destacar con un color"), BOT_W / 2, y + 10, TS_BODY, T.text);
+	if (U.buttons && !fresh && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
+		MC.sel = (MC.sel + ((g_krepeat & KEY_RIGHT) ? 1 : 6)) % 7;
+	int pick = -1;
+	for (int k = 0; k < 7; k++) {
+		float cx = BOT_W / 2 + (k - 3) * 36, cy = y + 50;
+		if (U.buttons && MC.sel == k)
+			draw_circle(cx, cy, 15, T.text);
+		draw_circle(cx, cy, 13, k ? MK[k] : T.surface2);
+		if (!k)
+			draw_line(cx - 6, cy + 6, cx + 6, cy - 6, 1.6f, T.text3);
+		if (!fresh && (tap(cx - 16, cy - 16, 32, 32) || (U.buttons && MC.sel == k && (g_kdown & KEY_A))))
+			pick = k;
+	}
+	float by = y + h - 38;
+	draw_rrect(18, by, BOT_W - 36, 30, 15, touch_in(18, by, BOT_W - 36, 30) ? T.surface2 : T.bg);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	text_draw_center(cl, BOT_W / 2, by + (30 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text2);
+	if (pick >= 0) {
+		MC.open = false;
+		ms_color(pick);
+	} else if (!fresh && (tap(18, by, BOT_W - 36, 30) || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y))) {
+		MC.open = false;
+	}
+	g_kdown &= ~(KEY_A | KEY_B);
+	g_touch.up = false;
+}
+
+// copias en cola: una por frame como mucho, cuando la anterior terminó
+static void cq_tick(void)
+{
+	if (CQ.i >= CQ.n)
+		return;
+	int st, err;
+	u64 d, t;
+	ops_job(&st, &err, &d, &t);
+	if (st == OPS_RUNNING)
+		return;
+	int r = ops_copy_start(CQ.src[CQ.i], CQ.dst[CQ.i], G.console);
+	if (r != OPS_BUSY)
+		CQ.i++;
+	if (CQ.i >= CQ.n) {
+		free(CQ.src), free(CQ.dst);
+		CQ.src = NULL, CQ.dst = NULL;
+		CQ.n = CQ.i = 0;
+	}
+}
+
 static void tab_files(void)
 {
 	if (!F.e)
@@ -2817,13 +3142,34 @@ static void tab_files(void)
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = !strcmp(F.path, "/");
 	const char *nm = F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
-	tab_header(nm, !root || F.nosaves);
 	th_poll();
+	if (MS.on) { // selección múltiple: ✕ para salir, cuántos van y «Todo»
+		char t[48];
+		snprintf(t, sizeof t, MS.n == 1 ? _("1 elegido") : _("%d elegidos"), MS.n);
+		bool xp = touch_in(0, 0, 150, VIEW_Y);
+		if (xp)
+			draw_rrect(6, 4, text_width(t, TS_TITLE) + 40, 24, 12, T.surface);
+		draw_icon(IC_CLOSE, 20, 16, 12, T.text2);
+		text_draw_clip(t, 34, 7, 180, TS_TITLE, T.text);
+		const char *all = MS.n >= F.n && F.n ? _("Nada") : _("Todo");
+		float aw = text_width(all, TS_SUB) + 20, ax = BOT_W - 12 - aw;
+		draw_rrect(ax, 6, aw, 20, 10, touch_in(ax, 4, aw, 24) ? T.surface2 : T.surface);
+		text_draw_center(all, ax + aw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
+		if (!g_dialog.open && (tap(ax, 4, aw, 24) || (U.buttons && (g_kdown & KEY_X))))
+			ms_all();
+		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
+			ms_end();
+			g_kdown &= ~KEY_B;
+		}
+		g_kdown &= ~KEY_X;
+	} else {
+		tab_header(nm, !root || F.nosaves);
+	}
 	float nx = BOT_W - 24, ny = 16;
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
 	// a la derecha: ordenar y agrupar, lista o iconos, y «+»
 	float gx = nx - 32, sx = nx - 64;
-	if (!F.missing && !F.nosaves) {
+	if (!F.missing && !F.nosaves && !MS.on) {
 		draw_circle(gx, ny, 12, touch_in(gx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(V.f_grid ? IC_LIST : IC_GRID, gx, ny, 14, T.text2);
 		draw_circle(sx, ny, 12, touch_in(sx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
@@ -2845,7 +3191,7 @@ static void tab_files(void)
 			return;
 		}
 	}
-	if ((!root || F.nosaves) && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
+	if ((!root || F.nosaves) && !MS.on && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
 		if (F.nosaves)
 			f_reload_keep();
 		else
@@ -2914,7 +3260,9 @@ static void tab_files(void)
 	F.off = approach(F.off, F.target, 18);
 
 	bool inview = g_touch.sy >= VIEW_Y && g_touch.sy < VIEW_Y + VIEW_H && !g_dialog.open;
-	int open = -1, menu = -1; // fila que se abre o cuyo menú se pide
+	if (MS.on && g_touch.sy >= VIEW_Y + VIEW_H - QR_PAD - 46) // la barra de la selección tapa las filas de debajo
+		inview = false;
+	int open = -1, menu = -1, pick = -1, msel = -1; // fila que se abre, cuyo menú se pide, que se marca o con la que empieza la selección
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
 	float po = fminf(F.pull, 70) * 0.6f; // lo que baja la lista al tirar
 	if (po > 1) {
@@ -2999,7 +3347,16 @@ static void tab_files(void)
 			}
 			if (e->color)
 				draw_circle(v->x + 10, y + 9, 4, col);
-			if (e->sys && V.protect_sys) {
+			if (MS.on) { // casilla para elegir, arriba a la izquierda
+				bool pk = ms_has(e->name);
+				draw_circle(v->x + 13, y + 13, 8, pk ? T.accent : col_alpha(T.bg, 0.8f));
+				draw_ring(v->x + 13, y + 13, 7.5f, 1.5f, pk ? T.accent : T.text3);
+				if (pk)
+					draw_icon(IC_CHECK, v->x + 13, y + 13, 10, 0xFFFFFFFF);
+				if (pk)
+					draw_rrect_outline(v->x + 2, y + 2, v->w - 4, v->h - 4, 12, 1.5f, T.accent);
+			}
+			if (e->sys && V.protect_sys && !MS.on) {
 				draw_circle(cx + 20, cy + 18, 7, T.bg);
 				draw_icon(IC_LOCK, cx + 20, cy + 18, 10, T.warn);
 			}
@@ -3007,14 +3364,18 @@ static void tab_files(void)
 			float dx = v->x + v->w - 10, dy = y + 58 + text_lineh(TS_SUB) / 2;
 			text_draw_center_clip(e->name, cx - 6, y + 58, v->w - 22, TS_SUB, e->color ? col : T.text);
 			bool dp = inview && touch_in(dx - 10, y + 44, 20, v->h - 44);
-			if (dp || (U.buttons && selected))
-				draw_circle(dx, dy, 8, U.buttons && selected ? col_alpha(T.accent, 0.3f) : T.surface2);
-			draw_icon(IC_DOTS, dx, dy, 11, U.buttons && selected ? T.accent : T.text2);
-			if (inview && tap(dx - 10, y + 44, 20, v->h - 44))
+			if (!MS.on) {
+				if (dp || (U.buttons && selected))
+					draw_circle(dx, dy, 8, U.buttons && selected ? col_alpha(T.accent, 0.3f) : T.surface2);
+				draw_icon(IC_DOTS, dx, dy, 11, U.buttons && selected ? T.accent : T.text2);
+			}
+			if (MS.on && inview && !g_touch.long_fired && tap(v->x, y, v->w, v->h))
+				pick = i;
+			else if (!MS.on && inview && tap(dx - 10, y + 44, 20, v->h - 44))
 				menu = i;
-			else if (inview && long_press(v->x, y, v->w, v->h))
-				menu = i;
-			else if (inview && tap(v->x, y, v->w, v->h))
+			else if (!MS.on && inview && long_press(v->x, y, v->w, v->h))
+				msel = i;
+			else if (!MS.on && inview && tap(v->x, y, v->w, v->h))
 				open = i;
 			continue;
 		}
@@ -3032,7 +3393,15 @@ static void tab_files(void)
 			draw_rrect(14, y + 5, 26, 26, 8, col_alpha(col, 0.18f));
 			draw_icon(ic, 27, y + 18, 15, col);
 		}
-		if (e->sys && V.protect_sys) {
+		if (MS.on) { // casilla para elegir, sobre la esquina del icono
+			bool pk = ms_has(e->name);
+			if (pk)
+				draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 10, col_alpha(T.accent, 0.14f));
+			draw_circle(37, y + 28, 7, pk ? T.accent : T.bg);
+			draw_ring(37, y + 28, 6.5f, 1.4f, pk ? T.accent : T.text3);
+			if (pk)
+				draw_icon(IC_CHECK, 37, y + 28, 9, 0xFFFFFFFF);
+		} else if (e->sys && V.protect_sys) {
 			draw_circle(37, y + 28, 5.5f, T.bg);
 			draw_icon(IC_LOCK, 37, y + 28, 8, T.warn);
 		}
@@ -3048,16 +3417,20 @@ static void tab_files(void)
 		text_draw_clip(e->name, 48, y + 3, mx - (U.buttons && selected ? 74 : 58), TS_BODY, e->color ? col : T.text);
 		text_draw_clip(sub, 48, y + 19, mx - 58, TS_SUB, T.text3);
 		// ⋮ con su círculo; en la fila elegida con botones, también la Y que hace lo mismo
-		bool ysel = U.buttons && selected;
-		draw_circle(mx + 12, y + v->h / 2, 11, mp ? T.surface2 : ysel ? col_alpha(T.accent, 0.3f) : col_alpha(T.surface2, 0.6f));
-		draw_icon(IC_DOTS, mx + 12, y + v->h / 2, 14, ysel ? T.accent : T.text2);
+		bool ysel = U.buttons && selected && !MS.on;
+		if (!MS.on) {
+			draw_circle(mx + 12, y + v->h / 2, 11, mp ? T.surface2 : ysel ? col_alpha(T.accent, 0.3f) : col_alpha(T.surface2, 0.6f));
+			draw_icon(IC_DOTS, mx + 12, y + v->h / 2, 14, ysel ? T.accent : T.text2);
+		}
 		if (ysel)
 			text_draw_right(GLYPH_Y, mx - 2, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.accent);
-		if (inview && tap(mx - 4, y, 34, v->h))
+		if (MS.on && inview && !g_touch.long_fired && tap(6, y, BOT_W - 12, v->h))
+			pick = i;
+		else if (!MS.on && inview && tap(mx - 4, y, 34, v->h))
 			menu = i;
-		else if (inview && long_press(6, y, mx - 10, v->h))
-			menu = i;
-		else if (inview && tap(6, y, mx - 10, v->h))
+		else if (!MS.on && inview && long_press(6, y, mx - 10, v->h))
+			msel = i; // pulsación larga: a elegir varios, empezando por este
+		else if (!MS.on && inview && tap(6, y, mx - 10, v->h))
 			open = i;
 	}
 	gfx_clip_off();
@@ -3085,12 +3458,54 @@ static void tab_files(void)
 		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	}
 	if (U.buttons && !g_dialog.open && F.sel >= 0 && F.v[F.sel].kind == FV_ITEM) {
-		if (g_kdown & KEY_A)
+		if ((g_kdown & KEY_A) && MS.on)
+			pick = F.sel;
+		else if (g_kdown & KEY_A)
 			open = F.sel;
-		else if (g_kdown & KEY_Y)
+		else if ((g_kdown & KEY_Y) && !MS.on)
 			menu = F.sel;
 	}
-	if (U.buttons && !g_dialog.open && (g_kdown & KEY_B)) {
+	if (MS.on && U.buttons && !g_dialog.open && (g_kdown & KEY_Y))
+		MA.open = MA.just = true, MA.sel = 0;
+	if (pick >= 0) {
+		F.sel = pick;
+		ms_toggle(F.e[F.v[pick].idx].name);
+	}
+	if (msel >= 0) {
+		F.sel = msel;
+		ms_start(F.e[F.v[msel].idx].name);
+		f_build_view();
+	}
+	if (MS.on) { // barra de acciones de la selección, sobre el botón del QR
+		bool any = MS.n > 0, cia = ms_cias() > 0;
+		struct {
+			IconId ic;
+			const char *t;
+			int act;
+			bool on;
+		} B[5] = {{IC_PLUS, _("Copiar"), FA_COPY, any},
+		          {IC_FOLDER, _("Mover"), FA_MOVE, any && !ms_locked()},
+		          {IC_STAR, _("Destacar"), FA_COLORS, any},
+		          {IC_TRASH, _("Borrar"), FA_DELETE, any && !ms_locked()},
+		          {IC_DOWNLOAD, _("Instalar"), FA_INSTALL, cia}};
+		int nb = cia ? 5 : 4;
+		float by = VIEW_Y + VIEW_H - QR_PAD - 46, bw = (BOT_W - 20) / (float)nb;
+		draw_rrect(10, by + 3, BOT_W - 20, 42, 14, T.shadow);
+		draw_rrect(10, by, BOT_W - 20, 42, 14, T.surface2);
+		for (int k = 0; k < nb; k++) {
+			float bx = 10 + k * bw;
+			u32 c = !B[k].on ? col_alpha(T.text3, 0.5f) : B[k].act == FA_DELETE ? T.danger : B[k].act == FA_INSTALL ? T.ok : T.text;
+			if (B[k].on && touch_in(bx, by, bw, 42))
+				draw_rrect(bx + 2, by + 2, bw - 4, 38, 12, T.surface);
+			draw_icon(B[k].ic, bx + bw / 2, by + 14, 14, c);
+			text_draw_center_clip(B[k].t, bx + bw / 2, by + 24, bw - 4, 0.36f, c);
+			if (B[k].on && !g_dialog.open && tap(bx, by, bw, 42)) {
+				ms_do(B[k].act);
+				g_touch.up = false; // el mismo toque no sigue a «Copiar aquí», que está en el mismo sitio
+			}
+		}
+	}
+	if (!MS.on && U.buttons && !g_dialog.open && (g_kdown & KEY_B)) {
 		if (F.nosaves)
 			f_reload_keep();
 		else
@@ -3099,13 +3514,12 @@ static void tab_files(void)
 	if (menu >= 0) {
 		F.sel = menu;
 		f_menu_open();
-	} else if (open >= 0) {
+	} else if (open >= 0 && !MS.on) {
 		f_open_item(open);
 	}
 }
 
 // ---- menú de un archivo o carpeta
-enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE };
 static struct {
 	bool open;
 	float anim;
@@ -3135,6 +3549,8 @@ static void f_menu_open(void)
 	FM.acts[FM.n++] = FA_COPY;
 	if (!locked)
 		FM.acts[FM.n++] = FA_DELETE;
+	if (!vw_is_open())
+		FM.acts[FM.n++] = FA_SELECT;
 	FM.sel = 0;
 	FM.color = e->color;
 	FM.open = true;
@@ -3151,13 +3567,14 @@ static const char *fa_name(int a)
 	case FA_DELETE: return _("Eliminar");
 	case FA_ASTEXT: return _("Abrir como texto");
 	case FA_TYPE: return _("Cambiar tipo");
+	case FA_SELECT: return _("Elegir varios");
 	default: return _("Destacar");
 	}
 }
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[8] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE};
+	static const IconId IC[9] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK};
 	return IC[a];
 }
 
@@ -3292,6 +3709,11 @@ static void fa_run(int a)
 		vw_load(FM.idx);
 		return;
 	}
+	if (a == FA_SELECT) {
+		ms_start(e->name);
+		f_build_view();
+		return;
+	}
 	if (a == FA_TYPE) { // también con el editor abierto: solo cambia la extensión
 		TY.open = TY.just = true;
 		TY.sel = 0;
@@ -3334,6 +3756,7 @@ static void fa_run(int a)
 		dialog_open(DLG_FDELETE, _("¿Eliminar?"), msg, _("Eliminar"), true);
 	} else if (a == FA_MOVE || a == FA_COPY) {
 		FP.mode = a;
+		FP.n = 0;
 		util_strlcpy(FP.src, full, sizeof FP.src);
 		util_strlcpy(FP.name, e->name, sizeof FP.name);
 		FP.src_dir = e->dir;
@@ -3480,10 +3903,68 @@ static void f_pick_bar(void)
 	bool go = (g_kdown & KEY_X) || (!cancel && tap(10, y, w - 60, 30));
 	if (cancel) {
 		FP.mode = 0;
+		FP.n = 0;
 		return;
 	}
 	if (!go)
 		return;
+	if (FP.n > 1) { // varios: cada uno con su nombre; si ya existe, con uno libre («nombre (2)»)
+		if (V.protect_sys && fsx_is_system(F.path) && strcmp(F.path, "/")) {
+			toast_icon(_("Carpeta protegida: elige otra"), IC_LOCK, T.warn);
+			return;
+		}
+		int done = 0;
+		if (FP.mode == FA_COPY && !CQ.n) {
+			CQ.src = malloc(FP.n * sizeof *CQ.src);
+			CQ.dst = malloc(FP.n * sizeof *CQ.dst);
+			if (!CQ.src || !CQ.dst) {
+				free(CQ.src), free(CQ.dst);
+				CQ.src = NULL, CQ.dst = NULL;
+				return;
+			}
+			CQ.i = 0;
+		} else if (FP.mode == FA_COPY) {
+			toast_icon(_("Ya hay una copia en curso"), IC_CLOSE, T.danger);
+			return;
+		}
+		for (int k = 0; k < FP.n; k++) {
+			const char *src = FP.list[k], *nm = strrchr(src, '/') + 1;
+			size_t pl = nm - 1 - src;
+			bool here = (pl == 0 && !strcmp(F.path, "/")) || (strlen(F.path) == pl && !strncasecmp(F.path, src, pl));
+			if (FP.mode == FA_MOVE && here)
+				continue; // ya está aquí
+			size_t sl = strlen(src);
+			if (!strncasecmp(F.path, src, sl) && (F.path[sl] == 0 || F.path[sl] == '/'))
+				continue; // una carpeta dentro de sí misma
+			char dst[700];
+			snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
+			bool d;
+			u64 sz;
+			if (fsx_stat(dst, &d, &sz) == 0)
+				ops_free_name(dst, sizeof dst, F.path, nm);
+			if (FP.mode == FA_MOVE) {
+				if (ops_move(src, dst) == OPS_OK) {
+					state_lock();
+					mark_moved(src, dst);
+					event_add(EV_MOVE, nm, G.console, 0);
+					G.rev++;
+					state_unlock();
+					done++;
+				}
+			} else {
+				util_strlcpy(CQ.src[CQ.n], src, sizeof CQ.src[0]);
+				util_strlcpy(CQ.dst[CQ.n], dst, sizeof CQ.dst[0]);
+				CQ.n++, done++;
+			}
+		}
+		char msg[64];
+		snprintf(msg, sizeof msg, FP.mode == FA_MOVE ? _("Movidos: %d") : _("Copiando %d elementos…"), done);
+		toast_icon(msg, IC_FOLDER, FP.mode == FA_MOVE ? T.accent2 : T.accent);
+		FP.mode = 0;
+		FP.n = 0;
+		f_reload();
+		return;
+	}
 	char dst[1100];
 	snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", FP.name);
 	if (FP.src_dir && (!strcasecmp(F.path, FP.src) || (!strncasecmp(F.path, FP.src, strlen(FP.src)) && F.path[strlen(FP.src)] == '/'))) {
@@ -3583,8 +4064,63 @@ static float info_row(float x, float y, float w, const char *label, const char *
 }
 
 // pantalla de arriba en Archivos con el QR cerrado: la información de lo elegido
+// arriba, mientras se eligen varios: cuántos, cuánto ocupan y una tira con los primeros
+static void ms_top(float a)
+{
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 16, W = CARD_W - 32;
+	char t[64], sz[24], sub[96];
+	snprintf(t, sizeof t, MS.n == 1 ? _("1 elegido") : _("%d elegidos"), MS.n);
+	text_draw(t, X, y0 + 14, 0.62f, col_alpha(T.text, a));
+	int nd;
+	util_fmt_size(sz, sizeof sz, ms_size(&nd));
+	if (nd)
+		snprintf(sub, sizeof sub, _("%s en archivos · %d carpetas"), sz, nd);
+	else
+		snprintf(sub, sizeof sub, _("%s en total"), sz);
+	text_draw(sub, X + text_width(t, 0.62f) + 12, y0 + 22, TS_SUB, col_alpha(T.text2, a));
+	// los primeros elegidos, en pequeño
+	float x = X, ty = y0 + 50;
+	int shown = 0;
+	for (int i = 0; i < F.n && shown < 6; i++) {
+		if (!ms_has(F.e[i].name))
+			continue;
+		IconId ic;
+		u32 col;
+		f_kind(&F.e[i], &ic, &col);
+		draw_rrect(x, ty, 52, 52, 10, col_alpha(T.surface2, a));
+		const Texture *th = th_get(i);
+		if (th) {
+			float k = fminf(48.0f / th->w, 48.0f / th->h);
+			draw_texture((Texture *)th, x + 26 - th->w * k / 2, ty + 26 - th->h * k / 2, th->w * k, th->h * k, a);
+		} else {
+			draw_icon(ic, x + 26, ty + 26, 24, col_alpha(col, a));
+		}
+		x += 58;
+		shown++;
+	}
+	if (MS.n > shown && shown) {
+		char more[16];
+		snprintf(more, sizeof more, "+%d", MS.n - shown);
+		text_draw(more, x + 4, ty + 20, TS_BODY, col_alpha(T.text3, a));
+	}
+	if (!MS.n)
+		text_draw(_("Toca o pulsa A para elegir"), X, ty + 20, TS_BODY, col_alpha(T.text3, a));
+	float by = y0 + h - 22;
+	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	char hint[128];
+	snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s   %s %s", GLYPH_A, _("Elegir"), GLYPH_X, _("Todo"), GLYPH_Y, _("Acciones"), GLYPH_B, _("Salir"));
+	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
+}
+
 static void files_top(float a)
 {
+	if (MS.on) {
+		ms_top(a);
+		return;
+	}
 	f_info_refresh();
 	const FEnt *e = f_selected();
 	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
@@ -4076,7 +4612,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || VS.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -4103,12 +4639,15 @@ static void draw_bottom(void)
 		settings_main();
 	if (!viewer)
 		draw_tabbar();
-	g_kdown = kd, g_krepeat = kr, g_touch = tc;
+	bool lf = g_touch.long_fired; // una pulsación larga ya usada no vuelve a contar al soltar
+	g_kdown = kd, g_krepeat = kr, g_touch = tc, g_touch.long_fired |= lf;
 	if (U.tab == TAB_FILES) {
 		f_menu();
 		pm_draw();
 		ty_draw();
 		vs_draw();
+		ma_draw();
+		mc_draw();
 	}
 	install_card();
 	dialog_draw();
@@ -4143,6 +4682,17 @@ static void handle_dialog(int ctx, bool ok)
 		U.quit = true;
 	} else if (ctx == DLG_UPDATE) {
 		upd_install();
+	} else if (ctx == DLG_FDELMULTI) {
+		for (int i = 0; i < F.n; i++) {
+			if (!ms_has(F.e[i].name))
+				continue;
+			char full[700];
+			f_full(i, full, sizeof full);
+			if (fsx_rmrf(full) == 0) {
+				mark_deleted(full);
+				event_add(EV_DELETE, F.e[i].name, G.console, 0);
+			}
+		}
 	} else if (ctx == DLG_FDELETE) {
 		char full[700];
 		f_full(FM.idx, full, sizeof full);
@@ -4158,7 +4708,9 @@ static void handle_dialog(int ctx, bool ok)
 	state_unlock();
 	if (ctx == DLG_NEWPIN)
 		toast_icon(_("Nuevo PIN y código QR generados"), IC_KEY, T.accent2);
-	if (ctx == DLG_FDELETE)
+	if (ctx == DLG_FDELMULTI)
+		ms_end();
+	if (ctx == DLG_FDELETE || ctx == DLG_FDELMULTI)
 		f_reload();
 	if (ctx == DLG_FEXISTS) {
 		char dir[512], dst[1100];
@@ -4346,6 +4898,7 @@ static void update(void)
 		}
 		return;
 	}
+	cq_tick();
 	if (U.want_txt) {
 		int m = U.want_txt;
 		U.want_txt = 0;

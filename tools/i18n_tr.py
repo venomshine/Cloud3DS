@@ -1082,4 +1082,58 @@ TR = {
     'Accesos rápidos':
         ('Quick access',
          'クイックアクセス'),
+    'Instalando %d CIA…':
+        ('Installing %d CIA…',
+         '%d 個のCIAをインストール中…'),
+    'Hay carpetas protegidas entre lo elegido':
+        ('There are protected folders in the selection',
+         '選択に保護されたフォルダがあります'),
+    'Se eliminarán %d elementos de la tarjeta SD. Esta acción no se puede deshacer.':
+        ("%d items will be deleted from the SD card. This can't be undone.",
+         'SDカードから %d 個の項目を削除します。元に戻せません。'),
+    '1 elegido':
+        ('1 selected',
+         '1 個選択'),
+    '%d elegidos':
+        ('%d selected',
+         '%d 個選択'),
+    'Destacar con un color':
+        ('Highlight with a color',
+         '色で目立たせる'),
+    'Nada':
+        ('None',
+         'なし'),
+    'Todo':
+        ('All',
+         'すべて'),
+    'Copiar':
+        ('Copy',
+         'コピー'),
+    'Mover':
+        ('Move',
+         '移動'),
+    'Elegir varios':
+        ('Select several',
+         '複数選択'),
+    'Movidos: %d':
+        ('Moved: %d',
+         '移動しました: %d'),
+    'Copiando %d elementos…':
+        ('Copying %d items…',
+         '%d 個をコピー中…'),
+    '%s en archivos · %d carpetas':
+        ('%s in files · %d folders',
+         'ファイル %s · フォルダ %d'),
+    '%s en total':
+        ('%s in total',
+         '合計 %s'),
+    'Toca o pulsa A para elegir':
+        ('Tap or press A to select',
+         'タッチかAで選択'),
+    'Elegir':
+        ('Select',
+         '選択'),
+    'Acciones':
+        ('Actions',
+         '操作'),
 }
