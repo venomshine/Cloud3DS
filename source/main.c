@@ -4112,37 +4112,45 @@ static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char 
 		return -1;
 	float a = ease_out_cubic(*anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-	const float RH = n >= 6 ? 26 : 30; // con muchas, más juntas para que quepan
-	float h = 34 + (n + 1) * RH + 10, y = SCR_H - h - 6 + (1 - a) * 40;
-	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
-	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
+	// como el menú de un archivo: el título y «Cerrar» arriba, y una fila por acción con su icono
+	const float X = 6, W = BOT_W - 12, PAD = 10, HH = 34, RH = n >= 6 ? 28 : 32;
+	float h = PAD + HH + n * RH + PAD, y = SCR_H - h - 6 + (1 - a) * 40;
+	draw_rrect(X, y + 3, W, h, 18, col_alpha(T.shadow, a));
+	draw_rrect(X, y, W, h, 18, T.surface);
 	if (!*open)
 		return -1;
 	bool fresh = *just;
 	*just = false;
-	text_draw_center_clip(title, BOT_W / 2, y + 10, BOT_W - 50, TS_BODY, T.text);
-	if (U.buttons && !fresh) {
-		if (g_krepeat & KEY_DOWN) *sel = (*sel + 1) % (n + 1);
-		if (g_krepeat & KEY_UP) *sel = (*sel + n) % (n + 1);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	float cw = text_width(cl, TS_SUB) + 18, cx = X + W - PAD - cw, hy = y + PAD;
+	draw_rrect(cx, hy + 7, cw, 20, 10, touch_in(cx, hy + 2, cw, 30) ? T.divider : T.surface2);
+	text_draw_center(cl, cx + cw / 2, hy + 17 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+	text_draw_clip(title, X + PAD + 6, hy + 17 - text_lineh(TS_BODY) / 2, cx - 10 - (X + PAD + 6), TS_BODY, T.text);
+	if (*sel >= n)
+		*sel = 0;
+	if (U.buttons && !fresh && n) {
+		if (g_krepeat & KEY_DOWN) *sel = (*sel + 1) % n;
+		if (g_krepeat & KEY_UP) *sel = (*sel + n - 1) % n;
 	}
 	int run = -1;
-	for (int i = 0; i <= n; i++) {
-		float ry = y + 32 + i * RH;
-		bool hl = (U.buttons && *sel == i) || touch_in(16, ry, BOT_W - 32, RH);
+	bool close = !fresh && tap(cx, hy + 2, cw, 30);
+	for (int i = 0; i < n; i++) {
+		float ry = hy + HH + i * RH, rx = X + PAD, rw = W - 2 * PAD;
+		bool hl = (U.buttons && *sel == i) || touch_in(rx, ry, rw, RH);
 		if (hl)
-			draw_rrect(16, ry + 1, BOT_W - 32, RH - 2, 9, T.surface2);
-		if (i == n) {
-			char cl[48];
-			snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
-			text_draw_center(cl, BOT_W / 2, ry + (RH - text_lineh(TS_BODY)) / 2, TS_BODY, T.text2);
-		} else {
-			draw_icon(ic[i], 34, ry + RH / 2, 14, col[i]);
-			text_draw(lab[i], 50, ry + (RH - text_lineh(TS_BODY)) / 2, TS_BODY, col[i]);
-		}
-		if (!fresh && (tap(16, ry, BOT_W - 32, RH) || (U.buttons && *sel == i && (g_kdown & KEY_A))))
+			draw_rrect(rx, ry + 1, rw, RH - 2, 10, T.surface2);
+		if (U.buttons && *sel == i)
+			draw_rrect_outline(rx, ry + 1, rw, RH - 2, 10, 1.5f, T.accent);
+		bool tinted = col[i] != T.text && col[i] != T.text2;
+		float ts = RH - 8;
+		draw_rrect(rx + 6, ry + 4, ts, ts, 8, tinted ? col_alpha(col[i], 0.16f) : T.surface2);
+		draw_icon(ic[i], rx + 6 + ts / 2, ry + RH / 2, 13, tinted ? col[i] : T.text2);
+		text_draw_clip(lab[i], rx + 14 + ts, ry + (RH - text_lineh(0.44f)) / 2, rw - ts - 22, 0.44f, tinted ? col[i] : T.text);
+		if (!fresh && (tap(rx, ry, rw, RH) || (U.buttons && *sel == i && (g_kdown & KEY_A))))
 			run = i;
 	}
-	if (!fresh && (run == n || (g_kdown & (KEY_B | KEY_Y)) || (g_touch.up && !g_touch.drag && g_touch.sy < y))) // con Y se abren casi todas: Y también las cierra
+	if (!fresh && (close || (g_kdown & (KEY_B | KEY_Y)) || (g_touch.up && !g_touch.drag && g_touch.sy < y))) // con Y se abren casi todas: Y también las cierra
 		*open = false, run = -1;
 	else if (run >= 0)
 		*open = false;
