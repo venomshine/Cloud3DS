@@ -16,6 +16,7 @@
 #include "txt.h"
 #include "hl.h"
 #include "hash.h"
+#include "zipjob.h"
 #include "search.h"
 #include "trash.h"
 #include <time.h>
@@ -201,6 +202,14 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 	case EV_RESTORE:
 		*ic = IC_REFRESH; *col = T.ok;
 		snprintf(sub, sn, "%s · %s", _("Recuperado de la papelera"), e->device);
+		break;
+	case EV_ZIP:
+		*ic = IC_ARCHIVE; *col = T.warn;
+		snprintf(sub, sn, "%s · %s · %s", _("ZIP creado"), sz, e->device);
+		break;
+	case EV_UNZIP:
+		*ic = IC_ARCHIVE; *col = T.warn;
+		snprintf(sub, sn, "%s · %s · %s", _("Extraído"), sz, e->device);
 		break;
 	case EV_CREATE:
 		*ic = IC_NOTE; *col = T.accent;
@@ -755,6 +764,10 @@ static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic)
 		*head = _("Instalando");
 		*col = T.ok;
 		*ic = IC_DOWNLOAD;
+	} else if (x->kind == XF_ZIP || x->kind == XF_UNZIP) {
+		*head = x->kind == XF_ZIP ? _("Comprimiendo") : _("Descomprimiendo");
+		*col = T.warn;
+		*ic = IC_ARCHIVE;
 	}
 	if (x->st == XS_DONE) {
 		*head = _("Completado");
@@ -1369,6 +1382,42 @@ static struct {
 	char (*nm)[128];
 } MS;
 
+// comprimir en ZIP: lo elegido espera aquí a que se escriba el nombre (teclado, fuera del dibujo)
+static struct {
+	bool want;
+	char base[512];
+	char (*names)[256];
+	int n;
+} ZQ;
+
+static void zq_set(const char *base, char (*names)[128], int n)
+{
+	free(ZQ.names);
+	ZQ.names = n > 0 ? malloc(n * sizeof *ZQ.names) : NULL;
+	if (!ZQ.names)
+		return;
+	for (int i = 0; i < n; i++)
+		util_strlcpy(ZQ.names[i], names[i], sizeof ZQ.names[0]);
+	ZQ.n = n;
+	util_strlcpy(ZQ.base, base, sizeof ZQ.base);
+	ZQ.want = true;
+}
+
+static const char *zip_err_text(int r)
+{
+	switch (r) {
+	case ZIP_BAD: return _("No es un ZIP o está dañado");
+	case ZIP_UNSUP: return _("Este ZIP tiene contraseña o un formato que Cloud3DS no sabe abrir");
+	case ZIP_NO_SPACE: return _("No hay espacio suficiente en la SD");
+	case ZIP_CANCELED: return _("Se canceló");
+	case ZIP_CRC: return _("Un archivo del ZIP está dañado");
+	case ZIP_TOO_BIG: return _("Pasa de 4 GB: no cabe en un ZIP");
+	case ZIP_BUSY: return _("Ya se está comprimiendo o extrayendo algo");
+	case ZIP_EMPTY: return _("No hay nada que comprimir");
+	default: return _("No se pudo leer o escribir en la SD");
+	}
+}
+
 // búsqueda: un hilo recorre la carpeta y sus subcarpetas y deja aquí lo que encuentra
 #define SR_MAX 500
 #define SR_DIRS 400
@@ -1393,7 +1442,7 @@ static struct {
 static int sr_nkinds(void);
 
 // acciones sobre archivos (menú de un elemento y selección múltiple)
-enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT, FA_HASH };
+enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT, FA_HASH, FA_ZIP };
 
 static const char *chip_name(int i)
 {
@@ -2190,6 +2239,7 @@ static void f_info_refresh(void)
 
 static void f_menu_open(void);
 static bool f_open_item(int vi);
+static void zs_open(const char *path);
 
 // mover o copiar: carpeta de destino que se está eligiendo
 static struct {
@@ -2782,6 +2832,8 @@ static bool f_open_item(int vi)
 			f_load(full);
 	} else if (f_is_img(e) || f_is_txt(e)) {
 		vw_load(F.v[vi].idx);
+	} else if (!strcasecmp(f_ext(e->name), "zip")) {
+		zs_open(full);
 	} else if (!strcasecmp(f_ext(e->name), "cia") && strlen(full) < 256) {
 		char err[24] = "";
 		if (ins_request(full, G.console, false, err, sizeof err) < 0)
@@ -3311,6 +3363,8 @@ static void ms_do(int act)
 		ms_ask_delete();
 	else if (act == FA_INSTALL)
 		ms_install();
+	else if (act == FA_ZIP)
+		zq_set(F.path, MS.nm, MS.n);
 }
 
 // hoja de abajo con una lista de opciones y «Cerrar» al final; devuelve la elegida o -1
@@ -3322,7 +3376,7 @@ static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char 
 		return -1;
 	float a = ease_out_cubic(*anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-	const float RH = 30;
+	const float RH = n >= 6 ? 26 : 30; // con muchas, más juntas para que quepan
 	float h = 34 + (n + 1) * RH + 10, y = SCR_H - h - 6 + (1 - a) * 40;
 	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
@@ -3363,10 +3417,10 @@ static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char 
 
 static void ma_draw(void)
 {
-	int acts[5], n = 0;
-	IconId ic[5];
-	const char *lab[5];
-	u32 col[5];
+	int acts[6], n = 0;
+	IconId ic[6];
+	const char *lab[6];
+	u32 col[6];
 	bool lock = ms_locked();
 	if (MS.n) {
 		acts[n] = FA_COPY, ic[n] = IC_PLUS, lab[n] = _("Copiar a…"), col[n++] = T.text;
@@ -3375,6 +3429,7 @@ static void ma_draw(void)
 		acts[n] = FA_COLORS, ic[n] = IC_STAR, lab[n] = _("Destacar"), col[n++] = T.text;
 		if (!lock)
 			acts[n] = FA_DELETE, ic[n] = IC_TRASH, lab[n] = _("Eliminar"), col[n++] = T.danger;
+		acts[n] = FA_ZIP, ic[n] = IC_ARCHIVE, lab[n] = _("Comprimir en ZIP"), col[n++] = T.text;
 		if (ms_cias())
 			acts[n] = FA_INSTALL, ic[n] = IC_DOWNLOAD, lab[n] = _("Instalar"), col[n++] = T.ok;
 	}
@@ -3514,6 +3569,157 @@ static void hash_top(float a)
 		draw_icon(chk == HCHK_OK ? IC_CHECK : IC_CLOSE, X + 14, y + 12, 12, col_alpha(c, a));
 		text_draw_clip(t, X + 28, y + 12 - text_lineh(TS_SUB) / 2, W - 36, TS_SUB, col_alpha(c, a));
 	}
+}
+
+static float info_row(float x, float y, float w, const char *k, const char *v, u32 vc, float a);
+
+// un .zip abierto: lo que trae (primer nivel) y extraer aquí o en una carpeta nueva
+#define ZS_TOP 64
+static struct {
+	bool open, just;
+	float anim, off;
+	char path[700];
+	ZipDir z;
+	char (*names)[256];
+	int cnt[ZS_TOP], n;
+	u64 sizes[ZS_TOP];
+	bool dirs[ZS_TOP];
+} ZS;
+
+static void zs_open(const char *path)
+{
+	zip_dir_free(&ZS.z);
+	int r = zip_read_dir(path, &ZS.z);
+	if (r != ZIP_OK) {
+		toast_icon(zip_err_text(r), IC_CLOSE, T.danger);
+		return;
+	}
+	if (!ZS.names)
+		ZS.names = malloc(ZS_TOP * sizeof *ZS.names);
+	if (!ZS.names)
+		return;
+	ZS.n = zip_top_level(&ZS.z, ZS.names, ZS.cnt, ZS.sizes, ZS.dirs, ZS_TOP);
+	util_strlcpy(ZS.path, path, sizeof ZS.path);
+	ZS.off = 0;
+	ZS.open = ZS.just = true;
+}
+
+static void zs_extract(bool new_dir)
+{
+	int r = zipjob_extract(ZS.path, new_dir, G.console);
+	if (r != ZIP_OK)
+		toast_icon(zip_err_text(r), IC_CLOSE, T.danger);
+	else {
+		toast_icon(_("Extrayendo…"), IC_ARCHIVE, T.warn);
+		ZS.open = false;
+	}
+}
+
+static void zs_draw(void)
+{
+	ZS.anim = approach(ZS.anim, ZS.open ? 1 : 0, 16);
+	if (ZS.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(ZS.anim), y0 = (1 - a) * 40;
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	draw_rrect(6, y0 + 6, BOT_W - 12, SCR_H - 12, 16, T.surface);
+	if (!ZS.open)
+		return;
+	bool fresh = ZS.just;
+	ZS.just = false;
+	const char *nm = strrchr(ZS.path, '/');
+	char c[48];
+	snprintf(c, sizeof c, ZS.z.n == 1 ? _("1 elemento") : _("%d elementos"), ZS.z.nfiles + ZS.z.ndirs);
+	bool xp = touch_in(6, 6, 170, 28);
+	draw_icon(IC_CHEV_LEFT, 22, y0 + 22, 13, xp ? T.text : T.text2);
+	text_draw_clip(nm ? nm + 1 : ZS.path, 34, y0 + 13, BOT_W - 60 - text_width(c, TS_SUB) - 30, TS_TITLE, T.text);
+	text_draw_right(c, BOT_W - 18, y0 + 17, TS_SUB, T.text3);
+	// lo de primer nivel
+	const float RH = 32, LY = 40, LH = SCR_H - 12 - 44 - LY;
+	if (g_touch.held && g_touch.drag && g_touch.sy >= LY && g_touch.sy < LY + LH)
+		ZS.off -= g_touch.y - g_touch.py;
+	if (U.buttons && (g_krepeat & (KEY_UP | KEY_DOWN)))
+		ZS.off += (g_krepeat & KEY_DOWN) ? RH : -RH;
+	ZS.off = clampf(ZS.off, 0, fmaxf(0, ZS.n * RH - LH));
+	gfx_clip(0, LY, BOT_W, LH);
+	for (int i = 0; i < ZS.n; i++) {
+		float ry = LY + i * RH - ZS.off;
+		if (ry + RH < LY || ry > LY + LH)
+			continue;
+		u32 col = ZS.dirs[i] ? T.warn : T.text3;
+		draw_rrect(18, ry + 4, 24, 24, 7, col_alpha(col, 0.18f));
+		draw_icon(ZS.dirs[i] ? IC_FOLDER : IC_FILE, 30, ry + 16, 13, col);
+		char sub[48], sz[24];
+		util_fmt_size(sz, sizeof sz, ZS.sizes[i]);
+		if (ZS.dirs[i])
+			snprintf(sub, sizeof sub, ZS.cnt[i] == 1 ? _("1 archivo · %s") : _("%d archivos · %s"), ZS.cnt[i], sz);
+		else
+			util_strlcpy(sub, sz, sizeof sub);
+		text_draw_clip(ZS.names[i], 50, ry + 2, BOT_W - 70, TS_BODY, T.text);
+		text_draw_clip(sub, 50, ry + 17, BOT_W - 70, TS_SUB, T.text3);
+	}
+	gfx_clip_off();
+	// abajo: extraer aquí (A) o en una carpeta nueva (X)
+	bool can = !ZS.z.encrypted && !ZS.z.unsupported;
+	float by = SCR_H - 12 - 38, bw = (BOT_W - 36) / 2.0f;
+	char t1[64], t2[64];
+	snprintf(t1, sizeof t1, "%s %s", GLYPH_A, _("Extraer aquí"));
+	snprintf(t2, sizeof t2, "%s %s", GLYPH_X, _("En carpeta nueva"));
+	bool p1 = can && touch_in(14, by, bw, 32), p2 = can && touch_in(22 + bw, by, bw, 32);
+	draw_rrect(14, by, bw, 32, 16, !can ? T.surface2 : p1 ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+	draw_rrect(22 + bw, by, bw, 32, 16, p2 ? T.surface : T.surface2);
+	text_draw_center_clip(t1, 14 + bw / 2, by + 16 - text_lineh(TS_SUB) / 2, bw - 8, TS_SUB, can ? 0xFFFFFFFF : T.text3);
+	text_draw_center_clip(t2, 22 + bw * 1.5f, by + 16 - text_lineh(TS_SUB) / 2, bw - 8, TS_SUB, can ? T.text : T.text3);
+	if (!fresh && can && (tap(14, by, bw, 32) || (g_kdown & KEY_A)))
+		zs_extract(false);
+	else if (!fresh && can && (tap(22 + bw, by, bw, 32) || (g_kdown & KEY_X)))
+		zs_extract(true);
+	else if (!fresh && ((g_kdown & KEY_B) || tap(6, 6, 170, 28)))
+		ZS.open = false;
+	g_kdown &= ~(KEY_A | KEY_B | KEY_X);
+	g_touch.up = false;
+}
+
+// pantalla de arriba con un ZIP abierto: qué trae, cuánto ocupa al extraerlo y si cabe
+static void zip_top(float a)
+{
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28, PS = 96;
+	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
+	draw_icon(IC_ARCHIVE, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(T.warn, a));
+	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 12;
+	const char *nm = strrchr(ZS.path, '/');
+	text_wrap_lines(nm ? nm + 1 : ZS.path, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
+	y += 2 * text_lineh(TS_TITLE) + 4;
+	char v[160], s1[24], s2[24];
+	snprintf(v, sizeof v, _("%d carpetas, %d archivos"), ZS.z.ndirs, ZS.z.nfiles);
+	y = info_row(rx, y, rw, _("Contiene"), v, T.text2, a);
+	util_fmt_size(s1, sizeof s1, ZS.z.csize);
+	util_fmt_size(s2, sizeof s2, ZS.z.usize);
+	snprintf(v, sizeof v, _("%s (%s al extraer)"), s1, s2);
+	y = info_row(rx, y, rw, _("Tamaño"), v, T.text2, a);
+	if (ZS.z.encrypted || ZS.z.unsupported) {
+		y = info_row(rx, y, rw, _("Aviso"), ZS.z.encrypted ? _("Tiene contraseña: no se puede extraer") : _("Usa un formato que no se puede extraer"), T.danger, a);
+	} else {
+		u64 fr = 0, tot = 0;
+		fsx_space(&fr, &tot);
+		util_fmt_size(s1, sizeof s1, fr);
+		bool fits = fr > ZS.z.usize + 1024 * 1024;
+		if (fits)
+			snprintf(v, sizeof v, _("Cabe: quedan %s"), s1);
+		else {
+			util_fmt_size(s2, sizeof s2, ZS.z.usize - fr);
+			snprintf(v, sizeof v, _("No cabe: faltan %s"), s2);
+		}
+		y = info_row(rx, y, rw, _("Espacio"), v, fits ? T.ok : T.danger, a);
+	}
+	float by = y0 + h - 22;
+	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	char hint[96];
+	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Extraer aquí"), GLYPH_X, _("En carpeta nueva"));
+	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
 }
 
 // papelera: recuperar o borrar del todo el elemento elegido
@@ -4134,6 +4340,8 @@ static void f_menu_open(void)
 		FM.acts[FM.n++] = FA_SELECT;
 	if (!e->dir)
 		FM.acts[FM.n++] = FA_HASH;
+	if (!F.trash)
+		FM.acts[FM.n++] = FA_ZIP;
 	FM.sel = 0;
 	FM.color = e->color;
 	FM.open = true;
@@ -4152,13 +4360,14 @@ static const char *fa_name(int a)
 	case FA_TYPE: return _("Cambiar tipo");
 	case FA_SELECT: return _("Elegir varios");
 	case FA_HASH: return _("MD5 y SHA-256");
+	case FA_ZIP: return _("Comprimir en ZIP");
 	default: return _("Destacar");
 	}
 }
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[10] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD};
+	static const IconId IC[11] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD, IC_ARCHIVE};
 	return IC[a];
 }
 
@@ -4296,6 +4505,10 @@ static void fa_run(int a)
 	if (a == FA_SELECT) {
 		ms_start(e->name);
 		f_build_view();
+		return;
+	}
+	if (a == FA_ZIP) { // el nombre se pide con el teclado, fuera del dibujo
+		zq_set(F.path, (char (*)[128])e->name, 1);
 		return;
 	}
 	if (a == FA_HASH) { // se calcula aparte; la hoja y la pantalla de arriba lo enseñan
@@ -4717,7 +4930,6 @@ static void ms_top(float a)
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
 }
 
-static float info_row(float x, float y, float w, const char *label, const char *value, u32 vc, float a);
 static void f_fmt_date(char *out, size_t n, u64 t);
 
 // arriba, en la papelera: de dónde venía, cuándo y quién lo borró, y cuánto le queda
@@ -4775,6 +4987,10 @@ static void trash_top(float a)
 
 static void files_top(float a)
 {
+	if (ZS.open) {
+		zip_top(a);
+		return;
+	}
 	if (HS.open) {
 		hash_top(a);
 		return;
@@ -5280,7 +5496,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -5318,6 +5534,7 @@ static void draw_bottom(void)
 		mc_draw();
 		ts_draw();
 		hs_draw();
+		zs_draw();
 	}
 	install_card();
 	dialog_draw();
@@ -5474,7 +5691,7 @@ static void exit_text(char *msg, size_t n, bool *danger)
 	char name[64];
 	util_strlcpy(name, x->name, sizeof name);
 	int pct = x->total ? (int)((double)x->done * 100 / x->total) : 0;
-	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : x->kind == XF_COPY ? _("copiando") : x->kind == XF_INSTALL ? _("instalando") : _("enviando");
+	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : x->kind == XF_COPY ? _("copiando") : x->kind == XF_INSTALL ? _("instalando") : x->kind == XF_ZIP ? _("comprimiendo") : x->kind == XF_UNZIP ? _("descomprimiendo") : _("enviando");
 	if (cnt == 1)
 		snprintf(msg, n, _("Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará."), dir, name, pct);
 	else
@@ -5518,6 +5735,56 @@ static void update(void)
 		U.buttons = true;
 	if (g_touch.down)
 		U.buttons = false;
+	if (ZQ.want) {
+		ZQ.want = false;
+		char def[256], nm[256];
+		if (ZQ.n == 1) { // «carpeta.zip» o «archivo.zip» (sin su extensión)
+			util_strlcpy(def, ZQ.names[0], sizeof def - 4);
+			char *dot = strrchr(def, '.');
+			bool dir = false;
+			u64 sz;
+			char full[800];
+			snprintf(full, sizeof full, "%s%s%s", ZQ.base, strcmp(ZQ.base, "/") ? "/" : "", ZQ.names[0]);
+			fsx_stat(full, &dir, &sz);
+			if (dot && dot != def && !dir)
+				*dot = 0;
+		} else {
+			const char *b = strrchr(ZQ.base, '/');
+			util_strlcpy(def, b && b[1] ? b + 1 : "Cloud3DS", sizeof def - 4);
+		}
+		strcat(def, ".zip");
+		if (kb_input(_("Nombre del ZIP"), def, nm, sizeof nm - 4, false, false) && nm[0]) {
+			size_t l = strlen(nm);
+			if (l < 4 || strcasecmp(nm + l - 4, ".zip"))
+				strcat(nm, ".zip");
+			if (strpbrk(nm, "\\/:*?\"<>|"))
+				toast_icon(_("Ese nombre no es válido"), IC_CLOSE, T.danger);
+			else {
+				int r = zipjob_create(ZQ.base, ZQ.names, ZQ.n, nm, G.console);
+				if (r != ZIP_OK)
+					toast_icon(zip_err_text(r), IC_CLOSE, T.danger);
+				else {
+					toast_icon(_("Comprimiendo…"), IC_ARCHIVE, T.warn);
+					ms_end();
+					f_build_view();
+				}
+			}
+		}
+	}
+	{ // un ZIP terminó: se dice cómo fue
+		static u32 seen;
+		ZipJob zj;
+		zipjob_get(&zj);
+		if (zj.id != seen && (zj.st == ZJ_DONE || zj.st == ZJ_FAIL)) {
+			seen = zj.id;
+			const char *nm = strrchr(zj.result, '/');
+			char msg[300];
+			if (zj.st == ZJ_DONE)
+				snprintf(msg, sizeof msg, zj.create ? _("ZIP creado: %s") : _("Extraído en %s"), zj.create && nm ? nm + 1 : zj.result);
+			toast_icon(zj.st == ZJ_DONE ? msg : zip_err_text(zj.err), zj.st == ZJ_DONE ? IC_CHECK : IC_CLOSE, zj.st == ZJ_DONE ? T.ok : T.danger);
+			F.need_reload = true;
+		}
+	}
 	hash_get(&HJ);
 	if (HJ.st == HASH_DONE && HJ.id != HS.seen) { // terminó: si no se está mirando, un aviso
 		HS.seen = HJ.id;

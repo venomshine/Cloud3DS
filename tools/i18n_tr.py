@@ -1301,4 +1301,103 @@ TR = {
     'No coincide':
         ("It doesn't match",
          '一致しません'),
+    'ZIP creado':
+        ('ZIP created',
+         'ZIPを作成'),
+    'Extraído':
+        ('Extracted',
+         '展開済み'),
+    'Comprimiendo':
+        ('Compressing',
+         '圧縮中'),
+    'Descomprimiendo':
+        ('Extracting',
+         '展開中'),
+    'No es un ZIP o está dañado':
+        ("It isn't a ZIP or it's damaged",
+         'ZIPではないか、壊れています'),
+    'Este ZIP tiene contraseña o un formato que Cloud3DS no sabe abrir':
+        ("This ZIP has a password or a format Cloud3DS can't open",
+         'このZIPはパスワード付きか、開けない形式です'),
+    'Se canceló':
+        ('Canceled',
+         'キャンセルしました'),
+    'Un archivo del ZIP está dañado':
+        ('A file in the ZIP is damaged',
+         'ZIP内のファイルが壊れています'),
+    'Pasa de 4 GB: no cabe en un ZIP':
+        ("Over 4 GB: it doesn't fit in a ZIP",
+         '4 GBを超えるためZIPにできません'),
+    'Ya se está comprimiendo o extrayendo algo':
+        ('Something is already being compressed or extracted',
+         'すでに圧縮か展開をしています'),
+    'No hay nada que comprimir':
+        ("There's nothing to compress",
+         '圧縮するものがありません'),
+    'No se pudo leer o escribir en la SD':
+        ("Couldn't read or write the SD card",
+         'SDカードの読み書きができませんでした'),
+    'Comprimir en ZIP':
+        ('Compress to ZIP',
+         'ZIPに圧縮'),
+    'Extrayendo…':
+        ('Extracting…',
+         '展開中…'),
+    '1 archivo · %s':
+        ('1 file · %s',
+         '1 ファイル · %s'),
+    '%d archivos · %s':
+        ('%d files · %s',
+         '%d ファイル · %s'),
+    'Extraer aquí':
+        ('Extract here',
+         'ここに展開'),
+    'En carpeta nueva':
+        ('In a new folder',
+         '新しいフォルダに'),
+    '%d carpetas, %d archivos':
+        ('%d folders, %d files',
+         '%d フォルダ、%d ファイル'),
+    'Contiene':
+        ('Contains',
+         '中身'),
+    '%s (%s al extraer)':
+        ('%s (%s extracted)',
+         '%s（展開後 %s）'),
+    'Aviso':
+        ('Note',
+         '注意'),
+    'Tiene contraseña: no se puede extraer':
+        ("It has a password: it can't be extracted",
+         'パスワード付きのため展開できません'),
+    'Usa un formato que no se puede extraer':
+        ("It uses a format that can't be extracted",
+         '展開できない形式です'),
+    'Cabe: quedan %s':
+        ('Fits: %s free',
+         '入ります（空き %s）'),
+    'No cabe: faltan %s':
+        ("Doesn't fit: %s short",
+         '入りません（%s 不足）'),
+    'Espacio':
+        ('Space',
+         '空き容量'),
+    'comprimiendo':
+        ('compressing',
+         '圧縮中'),
+    'descomprimiendo':
+        ('extracting',
+         '展開中'),
+    'Nombre del ZIP':
+        ('ZIP name',
+         'ZIPの名前'),
+    'Comprimiendo…':
+        ('Compressing…',
+         '圧縮中…'),
+    'ZIP creado: %s':
+        ('ZIP created: %s',
+         'ZIPを作成しました：%s'),
+    'Extraído en %s':
+        ('Extracted to %s',
+         '%s に展開しました'),
 }

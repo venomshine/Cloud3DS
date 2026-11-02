@@ -14,6 +14,7 @@
 #include "state.h"
 #include "util.h"
 #include "hash.h"
+#include "zipjob.h"
 #include "search.h"
 #include "trash.h"
 
@@ -74,6 +75,7 @@ typedef struct {
 	u64 f_left;
 	int xid;
 	u64 x_done;
+	struct ZipStream *zs; /* descarga como ZIP, generado mientras se manda */
 
 	/* subida */
 	int ufd;
@@ -346,6 +348,8 @@ static void resp_ok(Conn *c)
 
 /* ---------- conexiones ---------- */
 
+static void zs_free(Conn *c);
+
 static void conn_close(Conn *c)
 {
 	if (c->fd >= 0)
@@ -368,6 +372,7 @@ static void conn_close(Conn *c)
 		xfer_end(c->xid, XS_CANCELED);
 		state_unlock();
 	}
+	zs_free(c);
 	free(c->out.p);
 	free(c->ubuf);
 	memset(c, 0, sizeof *c);
@@ -580,6 +585,273 @@ static bool list_cb(const FsxEntry *e, void *u)
 	return x->n < 5000;
 }
 
+enum { SYS_NONE, SYS_BLOCK, SYS_CONFIRM };
+static bool check_write(Conn *c, const char *p, int sys);
+static void pct_encode(Buf *b, const char *s);
+
+/* ---------- descargar como ZIP ----------
+ * POST zip_prep?d=carpeta con los nombres (uno por línea) en el cuerpo → {id};
+ * GET zip?t=id lo manda sin comprimir (store), generándolo mientras sale: no
+ * ocupa sitio en la SD y se sabe su tamaño exacto desde el principio. */
+typedef struct ZipStream {
+	ZipItem *it;
+	int n, i, ci, phase;
+	char base[512];
+	u32 *crc, *off, *dos;
+	int fd;
+	u64 left, pos;
+	u32 cur_crc, cd_start;
+} ZipStream;
+
+#define ZPREP_N 4
+static struct {
+	u32 id;
+	u64 t;
+	char base[512];
+	char (*names)[256];
+	int n;
+} ZPREP[ZPREP_N];
+
+static void zs_free(Conn *c)
+{
+	ZipStream *z = c->zs;
+	if (!z)
+		return;
+	if (z->fd >= 0)
+		close(z->fd);
+	zip_plan_free(z->it, z->n);
+	free(z->crc), free(z->off), free(z->dos);
+	free(z);
+	c->zs = NULL;
+}
+
+static void h_zip_prep(Conn *c, const char *body)
+{
+	char d[512];
+	bool dir;
+	u64 sz;
+	if (!qget(c->query, "d", d, sizeof d) || !fsx_path_ok(d) || fsx_stat(d, &dir, &sz) < 0 || !dir) {
+		resp_err(c, 400, "bad_path");
+		return;
+	}
+	int slot = 0; // el más viejo se reutiliza
+	for (int i = 1; i < ZPREP_N; i++)
+		if (ZPREP[i].t < ZPREP[slot].t)
+			slot = i;
+	free(ZPREP[slot].names);
+	memset(&ZPREP[slot], 0, sizeof ZPREP[slot]);
+	int n = 0;
+	for (const char *p = body; *p; p++)
+		n += *p == '\n';
+	ZPREP[slot].names = calloc(n + 1, sizeof *ZPREP[slot].names);
+	if (!ZPREP[slot].names) {
+		resp_err(c, 500, "io");
+		return;
+	}
+	n = 0;
+	for (const char *p = body; *p;) {
+		const char *e = strchr(p, '\n');
+		size_t l = e ? (size_t)(e - p) : strlen(p);
+		if (l && l < 256) {
+			memcpy(ZPREP[slot].names[n], p, l);
+			ZPREP[slot].names[n][l] = 0;
+			if (fsx_name_ok(ZPREP[slot].names[n]))
+				n++;
+		}
+		p += l + (e ? 1 : 0);
+	}
+	static u32 next_id = 1;
+	ZPREP[slot].id = next_id++ ^ (u32)(util_ms() << 8);
+	ZPREP[slot].t = util_ms();
+	ZPREP[slot].n = n;
+	util_strlcpy(ZPREP[slot].base, d, sizeof ZPREP[slot].base);
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"id\":%lu}", (unsigned long)ZPREP[slot].id);
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
+static void h_zip(Conn *c)
+{
+	char ts[16], name[300];
+	u32 id = qget(c->query, "t", ts, sizeof ts) ? (u32)strtoul(ts, NULL, 10) : 0;
+	int slot = -1;
+	for (int i = 0; i < ZPREP_N; i++)
+		if (id && ZPREP[i].id == id)
+			slot = i;
+	if (slot < 0) {
+		resp_err(c, 404, "not_found");
+		return;
+	}
+	ZipStream *z = calloc(1, sizeof *z);
+	if (!z) {
+		resp_err(c, 500, "io");
+		return;
+	}
+	z->fd = -1;
+	util_strlcpy(z->base, ZPREP[slot].base, sizeof z->base);
+	// con una carpeta (o los nombres vacíos: la carpeta entera)
+	char (*names)[256] = ZPREP[slot].names;
+	int nn = ZPREP[slot].n;
+	char whole[1][256];
+	if (!nn) {
+		const char *b = basename_of(z->base);
+		char par[512];
+		parent_of(par, sizeof par, z->base);
+		util_strlcpy(whole[0], b, sizeof whole[0]);
+		util_strlcpy(z->base, par, sizeof z->base);
+		names = whole, nn = 1;
+	}
+	u64 total;
+	int r = zip_plan(z->base, names, nn, &z->it, &z->n, &total);
+	if (r != ZIP_OK) {
+		free(z);
+		resp_err(c, r == ZIP_TOO_BIG ? 413 : 404, r == ZIP_TOO_BIG ? "zip_too_big" : "not_found");
+		return;
+	}
+	u64 len = 22;
+	for (int i = 0; i < z->n; i++) {
+		size_t nl = strlen(z->it[i].rel);
+		len += 30 + nl + 46 + nl + (z->it[i].dir ? 0 : z->it[i].size + 16);
+	}
+	z->crc = calloc(z->n, 4), z->off = calloc(z->n, 4), z->dos = calloc(z->n, 4);
+	if (len >= 0xFFFFFFFFull || !z->crc || !z->off || !z->dos) {
+		c->zs = z;
+		zs_free(c);
+		resp_err(c, len >= 0xFFFFFFFFull ? 413 : 500, len >= 0xFFFFFFFFull ? "zip_too_big" : "io");
+		return;
+	}
+	if (nn == 1)
+		snprintf(name, sizeof name, "%s.zip", names[0]);
+	else
+		snprintf(name, sizeof name, "%s.zip", strcmp(z->base, "/") ? basename_of(z->base) : "Cloud3DS");
+	Buf h = {0};
+	buf_puts(&h, "Content-Disposition: attachment; filename*=UTF-8''");
+	pct_encode(&h, name);
+	buf_puts(&h, "\r\n");
+	resp_head(c, 200, "application/zip", len, h.p);
+	free(h.p);
+	c->zs = z;
+	state_lock();
+	c->xid = xfer_begin(XF_DOWNLOAD, name, G.dev[c->dev].name, len);
+	state_unlock();
+}
+
+/* el siguiente trozo del ZIP en c->out; false si algo falló (un archivo cambió o no se pudo leer) */
+static bool zs_fill(Conn *c)
+{
+	ZipStream *z = c->zs;
+	c->out.len = 0;
+	c->out_off = 0;
+	u8 hdr[700];
+	while (c->out.len < FILE_CHUNK && z->phase < 5) {
+		if (z->phase == 0) { // cabecera del siguiente
+			if (z->i >= z->n) {
+				z->phase = 3;
+				z->cd_start = (u32)z->pos;
+				continue;
+			}
+			ZipItem *it = &z->it[z->i];
+			char sp[1200], ap[1100];
+			zip_item_path(z->base, it, ap, sizeof ap);
+			z->off[z->i] = (u32)z->pos;
+			z->dos[z->i] = zip_dostime(fsx_mtime(ap));
+			size_t hl = zip_local_header(hdr, it->rel, z->dos[z->i], it->size, it->dir, true);
+			buf_add(&c->out, hdr, hl);
+			z->pos += hl;
+			if (it->dir) {
+				z->i++;
+				continue;
+			}
+			sdpath(sp, sizeof sp, ap);
+			z->fd = open(sp, O_RDONLY);
+			if (z->fd < 0)
+				return false;
+			z->left = it->size;
+			z->cur_crc = 0;
+			z->phase = 1;
+		} else if (z->phase == 1) { // sus datos
+			if (!z->left) {
+				close(z->fd);
+				z->fd = -1;
+				z->phase = 2;
+				continue;
+			}
+			size_t want = FILE_CHUNK - c->out.len;
+			if (want > z->left)
+				want = (size_t)z->left;
+			buf_need(&c->out, want);
+			ssize_t r = read(z->fd, c->out.p + c->out.len, want);
+			if (r <= 0)
+				return false; // se acortó desde que se empezó
+			z->cur_crc = zip_crc(z->cur_crc, c->out.p + c->out.len, (size_t)r);
+			c->out.len += (size_t)r;
+			z->left -= (u64)r;
+			z->pos += (u64)r;
+		} else if (z->phase == 2) { // el CRC, detrás
+			size_t hl = zip_data_desc(hdr, z->cur_crc, z->it[z->i].size);
+			buf_add(&c->out, hdr, hl);
+			z->pos += hl;
+			z->crc[z->i++] = z->cur_crc;
+			z->phase = 0;
+		} else if (z->phase == 3) { // índice
+			if (z->ci >= z->n) {
+				z->phase = 4;
+				continue;
+			}
+			ZipItem *it = &z->it[z->ci];
+			size_t hl = zip_central(hdr, it->rel, z->dos[z->ci], z->crc[z->ci], it->size, it->size, z->off[z->ci], it->dir, 0, true);
+			buf_add(&c->out, hdr, hl);
+			z->pos += hl;
+			z->ci++;
+		} else { // final
+			size_t hl = zip_end(hdr, z->n, (u32)(z->pos - z->cd_start), z->cd_start);
+			buf_add(&c->out, hdr, hl);
+			z->pos += hl;
+			z->phase = 5;
+		}
+	}
+	return true;
+}
+
+/* extraer un ZIP de la SD (desde la web): p = el ZIP, new=1 en una carpeta nueva; GET zipjob: cómo va */
+static void h_unzip(Conn *c)
+{
+	char p[1024];
+	if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p)) {
+		resp_err(c, 400, "bad_path");
+		return;
+	}
+	if (!check_write(c, p, SYS_CONFIRM))
+		return;
+	char dev[48];
+	state_lock();
+	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
+	state_unlock();
+	int r = zipjob_extract(p, qflag(c->query, "new"), dev);
+	if (r != ZIP_OK) {
+		static const char *const E[] = {"ok", "bad_zip", "zip_unsupported", "io", "no_space", "canceled", "zip_damaged", "zip_too_big", "busy", "empty"};
+		resp_err(c, r == ZIP_NO_SPACE ? 507 : r == ZIP_BUSY ? 409 : 400, E[-r]);
+		return;
+	}
+	resp_ok(c);
+}
+
+static void h_zipjob(Conn *c)
+{
+	ZipJob j;
+	zipjob_get(&j);
+	static const char *const ST[] = {"idle", "run", "done", "fail"};
+	static const char *const E[] = {"", "bad_zip", "zip_unsupported", "io", "no_space", "canceled", "zip_damaged", "zip_too_big", "busy", "empty"};
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"st\":\"%s\",\"create\":%s,\"done\":%llu,\"total\":%llu,\"error\":\"%s\",\"result\":", ST[j.st],
+	           j.create ? "true" : "false", (unsigned long long)j.done, (unsigned long long)j.total, j.err < 0 && j.err >= -9 ? E[-j.err] : "");
+	buf_json_str(&b, j.result);
+	buf_puts(&b, "}");
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
 /* MD5 y SHA-256: POST empieza (p = archivo), GET dice cómo va (el mismo trabajo que en la consola) */
 static void h_hash(Conn *c, bool post)
 {
@@ -768,7 +1040,6 @@ static void h_file(Conn *c)
 	}
 }
 
-enum { SYS_NONE, SYS_BLOCK, SYS_CONFIRM };
 
 /* Con la protección activa, las carpetas del sistema no se pueden borrar ni
  * renombrar (SYS_BLOCK); subir dentro de ellas pide confirmación (SYS_CONFIRM). */
@@ -1369,6 +1640,14 @@ static void route(Conn *c, const char *body)
 		h_info(c);
 	else if (strcmp(p, "hash") == 0)
 		h_hash(c, post);
+	else if (strcmp(p, "zip_prep") == 0 && post)
+		h_zip_prep(c, body);
+	else if (strcmp(p, "zip") == 0 && get)
+		h_zip(c);
+	else if (strcmp(p, "unzip") == 0 && post)
+		h_unzip(c);
+	else if (strcmp(p, "zipjob") == 0 && get)
+		h_zipjob(c);
 	else if (strcmp(p, "search") == 0 && get)
 		h_search(c);
 	else if (strcmp(p, "list") == 0 && get)
@@ -1517,6 +1796,7 @@ static bool handle_input(Conn *c)
 
 static void finish_response(Conn *c)
 {
+	zs_free(c);
 	if (c->ffd >= 0) {
 		close(c->ffd);
 		c->ffd = -1;
@@ -1616,7 +1896,14 @@ static void on_writable(Conn *c)
 {
 	for (int rounds = 0; rounds < 8; rounds++) {
 		if (c->out_off >= c->out.len) {
-			if (c->ffd >= 0 && c->f_left > 0) {
+			if (c->zs && c->zs->phase < 5) {
+				if (!zs_fill(c)) {
+					conn_close(c);
+					return;
+				}
+				if (!c->out.len)
+					continue;
+			} else if (c->ffd >= 0 && c->f_left > 0) {
 				size_t want = c->f_left > FILE_CHUNK ? FILE_CHUNK : (size_t)c->f_left;
 				ssize_t r = read(c->ffd, fbuf, want);
 				if (r <= 0) {
