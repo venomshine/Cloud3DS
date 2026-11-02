@@ -17,6 +17,7 @@
 
 #include <ctype.h>
 #include <curl/curl.h>
+#include <sys/socket.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -260,8 +261,18 @@ static int quit_cb(void *u, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t
 	return D.quit || D.cancel;
 }
 
+/* más búfer de recepción en el socket: con el de serie, la consola pide los datos a sorbos */
+static int sockopt_cb(void *u, curl_socket_t fd, curlsocktype purpose)
+{
+	(void)u, (void)purpose;
+	int sz = 256 * 1024;
+	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof sz);
+	return CURL_SOCKOPT_OK;
+}
+
 static void common_opts(CURL *c, char *eb)
 {
+	curl_easy_setopt(c, CURLOPT_SOCKOPTFUNCTION, sockopt_cb);
 	curl_easy_setopt(c, CURLOPT_USERAGENT, UA);
 	curl_easy_setopt(c, CURLOPT_ERRORBUFFER, eb);
 	curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
@@ -273,7 +284,7 @@ static void common_opts(CURL *c, char *eb)
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 64L);
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
 	curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
-	curl_easy_setopt(c, CURLOPT_BUFFERSIZE, 65536L);
+	curl_easy_setopt(c, CURLOPT_BUFFERSIZE, 256L * 1024);
 }
 
 static const char *curl_err(CURLcode r, long code)
@@ -445,7 +456,7 @@ static size_t body_cb(char *d, size_t s, size_t m, void *u)
 		j->f = fopen(sp, j->ranged ? "ab" : "wb");
 		if (!j->f)
 			return 0;
-		setvbuf(j->f, NULL, _IOFBF, 64 * 1024);
+		setvbuf(j->f, NULL, _IOFBF, 256 * 1024); // a la SD en bloques grandes
 	}
 	return fwrite(d, 1, k, j->f) == k ? k : 0;
 }
@@ -722,7 +733,13 @@ void dl_init(void)
 	D.ready = true;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	D.thr = threadCreate(dl_thread, NULL, 64 * 1024, prio + 2, -2, false);
+	// como el servidor: en New 3DS, al núcleo 2; si no, en el de la app pero por delante de la interfaz
+	// (casi siempre espera datos de la red; con menos prioridad, cada fotograma le quitaba la CPU y el TLS iba a sorbos)
+	bool n3ds = false;
+	APT_CheckNew3DS(&n3ds);
+	D.thr = n3ds ? threadCreate(dl_thread, NULL, 64 * 1024, prio - 1, 2, false) : NULL;
+	if (!D.thr)
+		D.thr = threadCreate(dl_thread, NULL, 64 * 1024, prio - 1, 0, false);
 }
 
 void dl_exit(void)
