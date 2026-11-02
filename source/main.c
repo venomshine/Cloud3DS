@@ -63,6 +63,10 @@
 #define VIEW_H   (SCR_H - TABBAR_H - VIEW_Y)
 #define QR_PAD   24 // el botón del QR sobresale de la barra
 #define MINI_H   30 // tira de arriba con el QR cerrado
+#define SDB_H    44 // tarjeta de la SD, al pie de la pantalla de arriba
+#define BODY_Y   (CARD_Y + MINI_H + 8)        // lo de en medio, entre la tira y la tarjeta de la SD
+#define BODY_B   (SCR_H - 8 - SDB_H - 6)
+static float g_info_ymax = 1e9f; // info_row: las filas que no caben (las menos importantes van al final) no se dibujan
 
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones."
 
@@ -282,6 +286,73 @@ static void toggle(float x, float y, float anim)
 	u32 off = col_lerp(T.surface2, T.text3, 0.45f);
 	draw_rrect(x, y, w, h, h / 2, col_lerp(off, T.accent, anim));
 	draw_circle(x + 10 + (w - 20) * anim, y + h / 2, 7.5f, 0xFFFFFFFF);
+}
+
+// la tarjeta de la SD, al pie de la pantalla de arriba: lo libre y una barra con lo usado.
+// Si algo se está guardando en la SD, una marca más clara muestra lo que ocupará al terminar
+static int visible_xfers(const Xfer **out, int max);
+static void sd_bar(float a)
+{
+	static u64 fr, tot;
+	static float t = -100;
+	if (g_time - t > 3) {
+		t = g_time;
+		if (!fsx_space(&fr, &tot))
+			fr = tot = 0;
+	}
+	float x = CARD_X, y = SCR_H - 8 - SDB_H, w = CARD_W;
+	bool low = tot && fr < 512ull * 1024 * 1024, warn = tot && fr < tot / 10;
+	u32 c = low ? T.danger : warn ? T.warn : T.accent;
+	draw_rrect(x, y + 3, w, SDB_H, 14, col_alpha(T.shadow, a));
+	draw_rrect(x, y, w, SDB_H, 14, col_alpha(T.surface, a));
+	if (low)
+		draw_rrect_outline(x, y, w, SDB_H, 14, 1, col_alpha(T.danger, 0.45f * a));
+	// una tarjeta SD: esquina cortada y sus contactos
+	float ix = x + 14, iy = y + (SDB_H - 18) / 2;
+	draw_rrect(ix, iy, 14, 18, 2.5f, col_alpha(c, a));
+	draw_tri(ix + 8, iy - 0.5f, ix + 14.5f, iy - 0.5f, ix + 14.5f, iy + 6, T.surface);
+	for (int k = 0; k < 3; k++)
+		draw_rect(ix + 3 + k * 3, iy + 3, 1.6f, 4, T.surface);
+	float lx = ix + 26, rx = x + w - 14, bw = rx - lx;
+	float ty = y + 9;
+	if (!tot) {
+		text_draw(_("Tarjeta SD"), lx, ty, TS_SUB, col_alpha(T.text, a));
+		text_draw_right(_("No se puede leer el espacio"), rx, ty, TS_SUB, col_alpha(T.text3, a));
+		return;
+	}
+	char fs[24], ts[24], r1[48], r2[48];
+	util_fmt_size(fs, sizeof fs, fr);
+	util_fmt_size(ts, sizeof ts, tot);
+	snprintf(r1, sizeof r1, _("%s libres"), fs);
+	snprintf(r2, sizeof r2, _("de %s"), ts);
+	float w2 = text_width(r2, TS_SUB);
+	text_draw_right(r2, rx, ty, TS_SUB, col_alpha(T.text3, a));
+	text_draw_right(r1, rx - w2 - 5, ty, TS_SUB, col_alpha(low ? T.danger : T.text, a));
+	text_draw(low ? _("Queda poco espacio") : _("Tarjeta SD"), lx, ty, TS_SUB, col_alpha(low ? T.danger : T.text, a));
+	// la barra: lo usado
+	float by = y + SDB_H - 15, bh = 6;
+	float used = (float)((double)(tot - fr) / tot);
+	// lo que aún falta por guardar de lo que está en curso
+	float extra = 0;
+	const Xfer *xs[4];
+	int nx = visible_xfers(xs, 4);
+	for (int i = 0; i < nx; i++)
+		if (xs[i]->st == XS_RUNNING && xs[i]->kind != XF_DOWNLOAD && xs[i]->kind != XF_INSTALL && xs[i]->total > xs[i]->done)
+			extra += (float)((double)(xs[i]->total - xs[i]->done) / tot);
+	draw_rrect(lx, by, bw, bh, bh / 2, col_alpha(T.surface2, a));
+	if (extra > 0)
+		draw_rrect(lx, by, fmaxf(bh, bw * clampf(used + extra, 0, 1)), bh, bh / 2, col_alpha(c, 0.35f * a));
+	float fw = fmaxf(bh, bw * clampf(used, 0, 1));
+	if (low || warn)
+		draw_rrect(lx, by, fw, bh, bh / 2, col_alpha(c, a));
+	else {
+		gfx_clip(lx, by, fw, bh);
+		draw_circle(lx + bh / 2, by + bh / 2, bh / 2, col_alpha(T.accent, a));
+		draw_grad_h(lx + bh / 2, by, bw - bh, bh, col_alpha(T.accent, a), col_alpha(T.accent2, a));
+		draw_circle(lx + bw - bh / 2, by + bh / 2, bh / 2, col_alpha(T.accent2, a));
+		gfx_clip_off();
+		draw_circle(lx + fw - bh / 2, by + bh / 2, bh / 2, col_alpha(col_lerp(T.accent, T.accent2, clampf((fw - bh / 2) / bw, 0, 1)), a));
+	}
 }
 
 static void brand_bar(float x, float y, float w, float h, float frac)
@@ -508,39 +579,42 @@ static void install_top(float a)
 	const InsReq *r = ins_first_pending();
 	if (!r)
 		return;
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
-	const float X = CARD_X + 16, W = CARD_W - 32;
-	float ix = X, iy = y0 + 14;
-	draw_rrect(ix - 2, iy - 2, 76, 76, 16, col_alpha(T.surface2, a));
+	const float X = CARD_X + 14, W = CARD_W - 28, IS = h - 20;
+	float px = X - 4, py = y0 + 10;
+	draw_rrect(px, py, IS, IS, 12, col_alpha(T.surface2, a));
 	if (U.ins_icon.ok)
-		draw_texture(&U.ins_icon, ix + 2, iy + 2, 68, 68, a);
+		draw_texture(&U.ins_icon, px + (IS - 72) / 2, py + (IS - 72) / 2, 72, 72, a);
 	else
-		draw_icon(IC_GEM, ix + 36, iy + 36, 34, col_alpha(T.text3, a));
-	float tx = ix + 88, tw = X + W - tx;
-	text_draw_clip(_("Instalar en la consola"), tx, iy, tw, TS_SUB, col_alpha(T.accent, a));
+		draw_icon(IC_GEM, px + IS / 2, py + IS / 2, 38, col_alpha(T.text3, a));
+	float tx = px + IS + 14, tw = X + W - tx, y = py + 1;
+	text_draw_clip(_("Instalar en la consola"), tx, y, tw, TS_SUB, col_alpha(T.accent, a));
 	if (U.ins_pend > 1) {
 		char more[48];
 		snprintf(more, sizeof more, _("y %d más esperando"), U.ins_pend - 1);
-		text_draw_right(more, X + W, iy, TS_SUB, col_alpha(T.text3, a));
+		text_draw_right(more, X + W, y, TS_SUB, col_alpha(T.text3, a));
 	}
-	text_wrap_lines(r->title, tw, TS_TITLE, 2, tx, iy + 16, col_alpha(T.text, a), true);
+	y += 15;
+	text_draw_clip(r->title, tx, y, tw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 2;
 	char line[160], sz[24];
 	util_fmt_size(sz, sizeof sz, r->size);
-	snprintf(line, sizeof line, "%s%s%s · %s", r->publisher, r->publisher[0] ? " · " : "", sz, r->file);
-	text_draw_clip(line, tx, iy + 56, tw, TS_SUB, col_alpha(T.text3, a));
-	float y = iy + 84;
-	draw_rect(X, y, W, 1, col_alpha(T.divider, a));
+	snprintf(line, sizeof line, "%s%s%s", r->publisher, r->publisher[0] ? " · " : "", sz);
+	text_draw_clip(line, tx, y, tw, TS_SUB, col_alpha(T.text2, a));
+	y += 18;
 	u32 col;
 	ins_version_line(r, line, sizeof line, &col);
-	int nl = text_wrap_lines(line, W, TS_BODY, 2, X, y + 8, col_alpha(col, a), true);
+	y += text_wrap_lines(line, tw, TS_SUB, 2, tx, y, col_alpha(col, a), true) * text_lineh(TS_SUB) + 2;
 	bool n3ds = false;
 	APT_CheckNew3DS(&n3ds);
-	if (r->n3ds_only && !n3ds && nl < 2)
-		text_draw_clip(_("Este juego es solo para New 3DS."), X, y + 8 + text_lineh(TS_BODY), W, TS_BODY, col_alpha(T.warn, a));
-	snprintf(line, sizeof line, _("ID %016llX · pedido desde %s"), (unsigned long long)r->tid, r->device);
-	text_draw_clip(line, X, y0 + h - 22, W, TS_SUB, col_alpha(T.text3, a));
+	if (r->n3ds_only && !n3ds) {
+		text_draw_clip(_("Este juego es solo para New 3DS."), tx, y, tw, TS_SUB, col_alpha(T.warn, a));
+		y += 15;
+	}
+	snprintf(line, sizeof line, _("Pedido desde %s"), r->device);
+	text_draw_clip(line, tx, y0 + h - 10 - text_lineh(TS_SUB), tw, TS_SUB, col_alpha(T.text3, a));
 }
 
 // tarjeta de abajo: Instalar / Solo guardar / Rechazar (con varios, para todos)
@@ -706,34 +780,6 @@ static void draw_header(void)
 	rx -= 6;
 	util_fmt_today(day, sizeof day);
 	text_draw_right(day, rx, 4, TS_HDR, T.text3);
-	rx -= text_width(day, TS_HDR) + 12;
-	// espacio libre de la SD, siempre a la vista (se mira cada pocos segundos)
-	static u64 sd_free, sd_total;
-	static float sd_t = -100;
-	if (g_time - sd_t > 4) {
-		sd_t = g_time;
-		if (!fsx_space(&sd_free, &sd_total))
-			sd_free = sd_total = 0;
-	}
-	if (sd_total) {
-		char sz[24], fl[48];
-		util_fmt_size(sz, sizeof sz, sd_free);
-		snprintf(fl, sizeof fl, _("%s libres"), sz);
-		u32 c = sd_free < 512ull * 1024 * 1024 ? T.danger : sd_free < sd_total / 20 ? T.warn : T.text3;
-		float left = 32 + text_width(APP_NAME, 0.5f) + 4;
-		if (rx - text_width(fl, TS_HDR) - 12 < left)
-			util_strlcpy(fl, sz, sizeof fl); // sin sitio: solo la cifra
-		float tw = text_width(fl, TS_HDR);
-		if (rx - tw - 12 >= left) {
-			text_draw_right(fl, rx, 4, TS_HDR, c);
-			// una tarjeta SD pequeña, con su esquina cortada
-			float ix = rx - tw - 12, iy = 6;
-			draw_rrect(ix, iy, 8, 10, 1.5f, c);
-			draw_tri(ix + 4.5f, iy - 0.5f, ix + 8.5f, iy - 0.5f, ix + 8.5f, iy + 3.5f, T.bg);
-			draw_rect(ix + 2, iy + 2, 1, 2.5f, T.bg);
-			draw_rect(ix + 4, iy + 2, 1, 2.5f, T.bg);
-		}
-	}
 	// con un aviso en la cabecera (según su estilo), lo de siempre se aparta
 	float ha = toast_header_alpha();
 	if (ha < 1)
@@ -877,24 +923,24 @@ static void xfer_wide(float x0, float y, float w, float a)
 	float pw = text_width(pc, 0.62f);
 	text_draw_clip(head, x0 + 34, y + 4, w - 34 - pw - 10, 0.55f, col_alpha(T.text, a));
 	text_draw_right(pc, x0 + w, y + 2, 0.62f, col_alpha(T.accent, a));
-	text_draw_clip(x->name, x0, y + 32, w, TS_BODY, col_alpha(T.text, a));
+	text_draw_clip(x->name, x0, y + 28, w, TS_BODY, col_alpha(T.text, a));
 	snprintf(line, sizeof line, x->kind != XF_DOWNLOAD ? _("de %s") : _("a %s"), x->device);
-	text_draw_clip(line, x0, y + 52, w, TS_SUB, col_alpha(T.text3, a));
-	brand_bar(x0, y + 72, w, 8, frac);
+	text_draw_clip(line, x0, y + 46, w * 0.6f, TS_SUB, col_alpha(T.text3, a));
+	brand_bar(x0, y + 64, w, 6, frac);
 	util_fmt_size(d, sizeof d, x->done);
 	util_fmt_size(t, sizeof t, x->total);
 	snprintf(line, sizeof line, _("%s de %s"), d, t);
-	text_draw_clip(line, x0, y + 86, w / 2, TS_SUB, col_alpha(T.text2, a));
+	text_draw_clip(line, x0, y + 76, w / 2, TS_SUB, col_alpha(T.text2, a));
 	if (x->st == XS_RUNNING && x->speed > 0) {
 		char sp[24], eta[24];
 		util_fmt_speed(sp, sizeof sp, x->speed);
 		util_fmt_eta(eta, sizeof eta, (x->total - x->done) / x->speed);
 		snprintf(line, sizeof line, _("%s · quedan %s"), sp, eta);
-		text_draw_right(line, x0 + w, y + 86, TS_SUB, col_alpha(T.text3, a));
+		text_draw_right(line, x0 + w, y + 76, TS_SUB, col_alpha(T.text3, a));
 	}
 	if (n > 1) {
 		snprintf(line, sizeof line, _("y %d más"), n - 1);
-		text_draw_clip(line, x0, y + 104, w, TS_SUB, col_alpha(T.text3, a));
+		text_draw_right(line, x0 + w, y + 46, TS_SUB, col_alpha(T.text3, a));
 	}
 }
 
@@ -998,44 +1044,45 @@ static void music_top(float a)
 		} else
 			tex_free(&MU.cover);
 	}
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
-	const float X = CARD_X + 14, W = CARD_W - 28, PS = 96;
-	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
+	const float X = CARD_X + 14, W = CARD_W - 28, PS = h - 20;
+	float px = X - 4, py0 = y0 + 10;
+	draw_rrect(px, py0, PS, PS, 12, col_alpha(T.surface2, a));
 	if (MU.cover.ok) {
 		float k = fminf(PS / MU.cover.w, PS / MU.cover.h), cw = MU.cover.w * k, ch = MU.cover.h * k;
-		draw_texture(&MU.cover, X + (PS - cw) / 2, y0 + 12 + (PS - ch) / 2, cw, ch, a);
+		draw_texture(&MU.cover, px + (PS - cw) / 2, py0 + (PS - ch) / 2, cw, ch, a);
 	} else
-		draw_icon(IC_SPEAKER, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(T.accent2, a));
-	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 12;
+		draw_icon(IC_SPEAKER, px + PS / 2, py0 + PS / 2, 38, col_alpha(T.accent2, a));
+	float rx = px + PS + 14, rw = X + W - rx, y = py0 + 1;
 	const char *d = strrchr(MU.s.dir, '/');
 	char head[160];
 	snprintf(head, sizeof head, MU.s.st == MU_PAUSE ? _("En pausa · %s") : _("Sonando · %s"), d && d[1] ? d + 1 : "SD");
 	text_draw_clip(head, rx, y, rw, TS_SUB, col_alpha(MU.s.st == MU_PAUSE ? T.text3 : T.accent, a));
-	y += 16;
-	text_wrap_lines(MU.s.title, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
-	y += 2 * text_lineh(TS_TITLE) + 2;
+	y += 15;
+	text_draw_clip(MU.s.title, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 2;
 	if (MU.s.artist[0])
-		text_draw_clip(MU.s.artist, rx, y, rw, TS_BODY, col_alpha(T.text2, a));
+		text_draw_clip(MU.s.artist, rx, y, rw, TS_SUB, col_alpha(T.text2, a));
 	// la onda: barras que siguen lo fuerte que suena
-	float wy = y0 + 12 + PS + 14, wh = 34;
+	float wy = y + 18, wh = 22;
 	for (int i = 0; i < 24; i++) {
 		float target = MU.s.st == MU_PLAY ? MU.s.level * (0.35f + 0.65f * fabsf(sinf(g_time * (2.1f + i * 0.37f) + i))) : 0.04f;
 		MU.bars[i] = approach(MU.bars[i], target, 10);
-		float bw = W / 24.0f, bh = fmaxf(2, MU.bars[i] * wh);
-		draw_rrect(X + i * bw + 1, wy + (wh - bh) / 2, bw - 2, bh, 1.5f, col_alpha(T.accent2, a * 0.85f));
+		float bw = rw / 24.0f, bh = fmaxf(2, MU.bars[i] * wh);
+		draw_rrect(rx + i * bw + 1, wy + (wh - bh) / 2, bw - 2, bh, 1.5f, col_alpha(T.accent2, a * 0.85f));
 	}
 	// tiempo
-	float py = y0 + h - 30, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	float py = py0 + PS - 4 - text_lineh(TS_SUB) - 8, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
 	char t1[16], t2[16];
 	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
-	text_draw(t1, X, py + 8, TS_SUB, col_alpha(T.text3, a));
+	text_draw(t1, rx, py + 8, TS_SUB, col_alpha(T.text3, a));
 	if (MU.s.dur_ms)
-		text_draw_right(t2, X + W, py + 8, TS_SUB, col_alpha(T.text3, a));
-	draw_rrect(X, py, W, 4, 2, col_alpha(T.surface2, a));
-	draw_rrect(X, py, fmaxf(4, W * f), 4, 2, col_alpha(T.accent, a));
+		text_draw_right(t2, rx + rw, py + 8, TS_SUB, col_alpha(T.text3, a));
+	draw_rrect(rx, py, rw, 4, 2, col_alpha(T.surface2, a));
+	draw_rrect(rx, py, fmaxf(4, rw * f), 4, 2, col_alpha(T.accent, a));
 }
 
 // abajo, sobre las pestañas mientras suena: play/pausa, lo que suena y siguiente; tocarla abre el reproductor
@@ -1076,7 +1123,7 @@ static void mini_body(float a)
 {
 	if (a <= 0.01f)
 		return;
-	float y = CARD_Y + MINI_H + 10, h = SCR_H - 8 - y;
+	float y = CARD_Y + MINI_H + 10, h = BODY_B - y;
 	const Xfer *xs[MAX_XFERS];
 	int nx = visible_xfers(xs, MAX_XFERS);
 	const InsReq *wait[MAX_INS];
@@ -1089,16 +1136,17 @@ static void mini_body(float a)
 		return;
 	}
 	if (!nx && !nw) {
-		draw_halo(TOP_W / 2, y + 44, 70, 0.25f * a);
-		draw_cloud(TOP_W / 2, y + 44, 22, a);
-		text_draw_center(_("Tu nube está lista"), TOP_W / 2, y + 76, TS_BODY, col_alpha(T.text2, a));
-		text_draw_center(_("Pulsa SELECT para ver el código QR"), TOP_W / 2, y + 98, TS_SUB, col_alpha(T.text3, a));
+		float cy = y + h / 2 - 18;
+		draw_halo(TOP_W / 2, cy, 64, 0.25f * a);
+		draw_cloud(TOP_W / 2, cy, 20, a);
+		text_draw_center(_("Tu nube está lista"), TOP_W / 2, cy + 28, TS_BODY, col_alpha(T.text2, a));
+		text_draw_center(_("Pulsa SELECT para ver el código QR"), TOP_W / 2, cy + 48, TS_SUB, col_alpha(T.text3, a));
 		return;
 	}
 	if (nx == 1 && !nw) { // una sola: a lo grande
 		draw_rrect(CARD_X, y + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 		draw_rrect(CARD_X, y, CARD_W, h, 16, col_alpha(T.surface, a));
-		xfer_wide(CARD_X + 16, y + 14, CARD_W - 32, a);
+		xfer_wide(CARD_X + 16, y + 12, CARD_W - 32, a);
 		return;
 	}
 	draw_rrect(CARD_X, y + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
@@ -1292,6 +1340,8 @@ static void draw_top(void)
 		if (mini > 0.01f)
 			mini_strip(mini);
 		gfx_clip_off();
+		if (mini > 0.01f)
+			sd_bar(mini);
 		if (mini > 0.01f && U.ins_pend)
 			install_top(mini);
 		else if (mini > 0.01f && MU.open)
@@ -4214,7 +4264,7 @@ static void hs_draw(void)
 // pantalla de arriba: el archivo, el progreso y luego los dos valores y si coinciden
 static void hash_top(float a)
 {
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	const float X = CARD_X + 14, W = CARD_W - 28;
@@ -4222,11 +4272,11 @@ static void hash_top(float a)
 	const char *nm = strrchr(HS.path, '/');
 	char sz[24];
 	util_fmt_size(sz, sizeof sz, mine ? HJ.size : 0);
-	float y = y0 + 12;
+	float y = y0 + 10;
 	draw_icon(IC_SHIELD, X + 8, y + 8, 15, col_alpha(T.accent, a));
 	text_draw_clip(nm ? nm + 1 : HS.path, X + 24, y, W - 24 - text_width(sz, TS_SUB) - 10, TS_TITLE, col_alpha(T.text, a));
 	text_draw_right(sz, X + W, y + 3, TS_SUB, col_alpha(T.text3, a));
-	y += 30;
+	y += 26;
 	if (!mine || HJ.st == HASH_RUN) {
 		float f = mine && HJ.size ? (float)HJ.done / HJ.size : 0;
 		char t[64];
@@ -4241,16 +4291,19 @@ static void hash_top(float a)
 		text_draw(_("No se pudo leer el archivo"), X, y, TS_BODY, col_alpha(T.danger, a));
 		return;
 	}
-	text_draw("MD5", X, y, TS_SUB, col_alpha(T.text3, a));
-	text_draw(HJ.md5, X, y + 13, TS_BODY, col_alpha(T.text, a));
-	y += 34;
-	text_draw("SHA-256", X, y, TS_SUB, col_alpha(T.text3, a));
+	// en dos columnas: el nombre a la izquierda y el valor a la derecha
+	const float VX = X + 62, LH = text_lineh(TS_BODY) + 2;
+	float dy = (text_lineh(TS_BODY) - text_lineh(TS_SUB)) / 2;
+	text_draw("MD5", X, y + dy, TS_SUB, col_alpha(T.text3, a));
+	text_draw(HJ.md5, VX, y, TS_BODY, col_alpha(T.text, a));
+	y += LH + 4;
+	text_draw("SHA-256", X, y + dy, TS_SUB, col_alpha(T.text3, a));
 	char h1[33], h2[33];
 	memcpy(h1, HJ.sha, 32), h1[32] = 0;
 	memcpy(h2, HJ.sha + 32, 32), h2[32] = 0;
-	text_draw(h1, X, y + 13, TS_BODY, col_alpha(T.text, a));
-	text_draw(h2, X, y + 29, TS_BODY, col_alpha(T.text, a));
-	y += 52;
+	text_draw(h1, VX, y, TS_BODY, col_alpha(T.text, a));
+	text_draw(h2, VX, y + LH, TS_BODY, col_alpha(T.text, a));
+	y += 2 * LH + 6;
 	// lo que dice «Comparar» manda; si no, el .md5/.sha256 de al lado
 	int chk = HS.cmp != HCHK_NONE ? HS.cmp : HJ.check;
 	if (chk != HCHK_NONE) {
@@ -4260,9 +4313,10 @@ static void hash_top(float a)
 		else
 			snprintf(t, sizeof t, chk == HCHK_OK ? _("Coincide con %s") : _("No coincide con %s"), HJ.check_file);
 		u32 c = chk == HCHK_OK ? T.ok : T.danger;
-		draw_rrect(X, y, W, 24, 12, col_alpha(c, 0.16f * a));
-		draw_icon(chk == HCHK_OK ? IC_CHECK : IC_CLOSE, X + 14, y + 12, 12, col_alpha(c, a));
-		text_draw_clip(t, X + 28, y + 12 - text_lineh(TS_SUB) / 2, W - 36, TS_SUB, col_alpha(c, a));
+		y = fminf(y, y0 + h - 30);
+		draw_rrect(X, y, W, 22, 11, col_alpha(c, 0.16f * a));
+		draw_icon(chk == HCHK_OK ? IC_CHECK : IC_CLOSE, X + 14, y + 11, 12, col_alpha(c, a));
+		text_draw_clip(t, X + 28, y + 11 - text_lineh(TS_SUB) / 2, W - 36, TS_SUB, col_alpha(c, a));
 	}
 }
 
@@ -4378,16 +4432,18 @@ static void zs_draw(void)
 // pantalla de arriba con un ZIP abierto: qué trae, cuánto ocupa al extraerlo y si cabe
 static void zip_top(float a)
 {
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
-	const float X = CARD_X + 14, W = CARD_W - 28, PS = 96;
-	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
-	draw_icon(IC_ARCHIVE, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(T.warn, a));
-	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 12;
+	const float X = CARD_X + 14, W = CARD_W - 28, PS = h - 20;
+	draw_rrect(X - 4, y0 + 10, PS, PS, 12, col_alpha(T.surface2, a));
+	draw_icon(IC_ARCHIVE, X - 4 + PS / 2, y0 + 10 + PS / 2, 38, col_alpha(T.warn, a));
+	float rx = X - 4 + PS + 14, rw = X + W - rx, y = y0 + 11;
 	const char *nm = strrchr(ZS.path, '/');
-	text_wrap_lines(nm ? nm + 1 : ZS.path, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
-	y += 2 * text_lineh(TS_TITLE) + 4;
+	text_draw_clip(nm ? nm + 1 : ZS.path, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 5;
+	float by = y0 + h - 10 - text_lineh(TS_SUB);
+	g_info_ymax = by - 4;
 	char v[160], s1[24], s2[24];
 	snprintf(v, sizeof v, _("%d carpetas, %d archivos"), ZS.z.ndirs, ZS.z.nfiles);
 	y = info_row(rx, y, rw, _("Contiene"), v, T.text2, a);
@@ -4410,8 +4466,7 @@ static void zip_top(float a)
 		}
 		y = info_row(rx, y, rw, _("Espacio"), v, fits ? T.ok : T.danger, a);
 	}
-	float by = y0 + h - 22;
-	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	g_info_ymax = 1e9f;
 	char hint[96];
 	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Extraer aquí"), GLYPH_X, _("En carpeta nueva"));
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
@@ -4504,10 +4559,10 @@ static void ver_text(u16 v, char *out, size_t n)
 static void titles_top(float a)
 {
 	const TitleInfo *t = tt_selected();
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
-	const float X = CARD_X + 14, W = CARD_W - 28, PS = 96;
+	const float X = CARD_X + 14, W = CARD_W - 28;
 	if (!t) {
 		draw_icon(IC_GAMEPAD, TOP_W / 2, y0 + h / 2 - 14, 30, col_alpha(T.text3, a));
 		text_draw_center(_("Elige un juego para ver sus datos"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
@@ -4526,14 +4581,23 @@ static void titles_top(float a)
 		TT.info_tid = t->tid;
 		TT.copies = save_backups_count(t, &TT.last);
 	}
-	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
+	const float IS = h - 20;
+	float px = X - 4, py = y0 + 10;
+	draw_rrect(px, py, IS, IS, 12, col_alpha(T.surface2, a));
 	if (TT.icon.ok)
-		draw_texture(&TT.icon, X + 12, y0 + 24, 72, 72, a);
+		draw_texture(&TT.icon, px + (IS - 72) / 2, py + (IS - 72) / 2, 72, 72, a);
 	else
-		draw_icon(IC_GAMEPAD, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(T.ok, a));
-	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 10;
-	text_wrap_lines(t->title, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
-	y += 2 * text_lineh(TS_TITLE) + 2;
+		draw_icon(IC_GAMEPAD, px + IS / 2, py + IS / 2, 38, col_alpha(T.ok, a));
+	float rx = px + IS + 14, rw = X + W - rx, y = py + 1;
+	text_draw_clip(t->title, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 2;
+	if (t->pub[0]) {
+		text_draw_clip(t->pub, rx, y, rw, TS_SUB, col_alpha(T.text2, a));
+		y += 15;
+	}
+	y += 3;
+	float by = y0 + h - 10 - text_lineh(TS_SUB);
+	g_info_ymax = by - 4;
 	char v[160], b1[24], b2[24];
 	ver_text(t->has_upd ? t->upd_version : t->version, b1, sizeof b1);
 	if (t->has_upd)
@@ -4548,25 +4612,23 @@ static void titles_top(float a)
 	} else
 		util_strlcpy(v, b1, sizeof v);
 	y = info_row(rx, y, rw, _("Tamaño"), v, T.text2, a);
-	if (t->dlc) {
-		util_fmt_size(b1, sizeof b1, t->dlc_size);
-		snprintf(v, sizeof v, t->dlc == 1 ? _("1 contenido · %s") : _("%d contenidos · %s"), t->dlc, b1);
-		y = info_row(rx, y, rw, _("DLC"), v, T.text2, a);
-	}
 	if (TT.copies) {
 		f_fmt_date(b1, sizeof b1, TT.last);
 		snprintf(v, sizeof v, TT.copies == 1 ? _("1 · %s") : _("%d · la última %s"), TT.copies, b1);
 	} else
 		util_strlcpy(v, _("Ninguna todavía"), sizeof v);
 	y = info_row(rx, y, rw, _("Copias"), v, TT.copies ? T.text2 : T.text3, a);
-	float by = y0 + h - 22;
-	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
-	snprintf(v, sizeof v, "%016llX%s%s", (unsigned long long)t->tid, t->pub[0] ? " · " : "", t->pub);
+	if (t->dlc) {
+		util_fmt_size(b1, sizeof b1, t->dlc_size);
+		snprintf(v, sizeof v, t->dlc == 1 ? _("1 contenido · %s") : _("%d contenidos · %s"), t->dlc, b1);
+		y = info_row(rx, y, rw, _("DLC"), v, T.text2, a);
+	}
+	snprintf(v, sizeof v, "%016llX", (unsigned long long)t->tid);
+	y = info_row(rx, y, rw, _("ID"), v, T.text3, a);
+	g_info_ymax = 1e9f;
 	char hint[64];
 	snprintf(hint, sizeof hint, "%s %s", GLYPH_A, _("Opciones"));
-	float hw = text_width(hint, TS_SUB);
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
-	text_draw_clip(v, X, by, W - hw - 12, TS_SUB, col_alpha(T.text3, a));
 }
 
 // papelera: recuperar o borrar del todo el elemento elegido
@@ -5908,6 +5970,8 @@ static void f_type_text(const FEnt *e, char *out, size_t n)
 // fila «etiqueta  valor» de la información
 static float info_row(float x, float y, float w, const char *label, const char *value, u32 vc, float a)
 {
+	if (y + 13 > g_info_ymax)
+		return y;
 	const float LW = 74;
 	text_draw_clip(label, x, y, LW - 6, TS_SUB, col_alpha(T.text3, a));
 	text_draw_clip(value, x + LW, y, w - LW, TS_SUB, col_alpha(vc, a));
@@ -5918,22 +5982,22 @@ static float info_row(float x, float y, float w, const char *label, const char *
 // arriba, mientras se eligen varios: cuántos, cuánto ocupan y una tira con los primeros
 static void ms_top(float a)
 {
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	const float X = CARD_X + 16, W = CARD_W - 32;
 	char t[64], sz[24], sub[96];
 	snprintf(t, sizeof t, MS.n == 1 ? _("1 elegido") : _("%d elegidos"), MS.n);
-	text_draw(t, X, y0 + 14, 0.62f, col_alpha(T.text, a));
+	text_draw(t, X, y0 + 10, 0.62f, col_alpha(T.text, a));
 	int nd;
 	util_fmt_size(sz, sizeof sz, ms_size(&nd));
 	if (nd)
 		snprintf(sub, sizeof sub, _("%s en archivos · %d carpetas"), sz, nd);
 	else
 		snprintf(sub, sizeof sub, _("%s en total"), sz);
-	text_draw(sub, X + text_width(t, 0.62f) + 12, y0 + 22, TS_SUB, col_alpha(T.text2, a));
+	text_draw(sub, X + text_width(t, 0.62f) + 12, y0 + 18, TS_SUB, col_alpha(T.text2, a));
 	// los primeros elegidos, en pequeño
-	float x = X, ty = y0 + 50;
+	float x = X, ty = y0 + 40;
 	int shown = 0;
 	for (int i = 0; i < F.n && shown < 6; i++) {
 		if (!ms_has(F.e[i].name))
@@ -5941,26 +6005,25 @@ static void ms_top(float a)
 		IconId ic;
 		u32 col;
 		f_kind(&F.e[i], &ic, &col);
-		draw_rrect(x, ty, 52, 52, 10, col_alpha(T.surface2, a));
+		draw_rrect(x, ty, 46, 46, 10, col_alpha(T.surface2, a));
 		const Texture *th = th_get(i);
 		if (th) {
-			float k = fminf(48.0f / th->w, 48.0f / th->h);
-			draw_texture((Texture *)th, x + 26 - th->w * k / 2, ty + 26 - th->h * k / 2, th->w * k, th->h * k, a);
+			float k = fminf(42.0f / th->w, 42.0f / th->h);
+			draw_texture((Texture *)th, x + 23 - th->w * k / 2, ty + 23 - th->h * k / 2, th->w * k, th->h * k, a);
 		} else {
-			draw_icon(ic, x + 26, ty + 26, 24, col_alpha(col, a));
+			draw_icon(ic, x + 23, ty + 23, 22, col_alpha(col, a));
 		}
-		x += 58;
+		x += 52;
 		shown++;
 	}
 	if (MS.n > shown && shown) {
 		char more[16];
 		snprintf(more, sizeof more, "+%d", MS.n - shown);
-		text_draw(more, x + 4, ty + 20, TS_BODY, col_alpha(T.text3, a));
+		text_draw(more, x + 4, ty + 16, TS_BODY, col_alpha(T.text3, a));
 	}
 	if (!MS.n)
-		text_draw(_("Toca o pulsa A para elegir"), X, ty + 20, TS_BODY, col_alpha(T.text3, a));
-	float by = y0 + h - 22;
-	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+		text_draw(_("Toca o pulsa A para elegir"), X, ty + 16, TS_BODY, col_alpha(T.text3, a));
+	float by = y0 + h - 10 - text_lineh(TS_SUB);
 	char hint[128];
 	snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s   %s %s", GLYPH_A, _("Elegir"), GLYPH_X, _("Todo"), GLYPH_Y, _("Acciones"), GLYPH_B, _("Salir"));
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
@@ -5972,7 +6035,7 @@ static void f_fmt_date(char *out, size_t n, u64 t);
 static void trash_top(float a)
 {
 	const FEnt *e = f_selected();
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	const float X = CARD_X + 14, W = CARD_W - 28;
@@ -5989,12 +6052,14 @@ static void trash_top(float a)
 	IconId ic;
 	u32 col;
 	f_kind(e, &ic, &col);
-	const float PS = 96;
-	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
-	draw_icon(ic, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(col, a));
-	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 12;
-	text_wrap_lines(t.name, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
-	y += 2 * text_lineh(TS_TITLE) + 4;
+	const float PS = h - 20;
+	draw_rrect(X - 4, y0 + 10, PS, PS, 12, col_alpha(T.surface2, a));
+	draw_icon(ic, X - 4 + PS / 2, y0 + 10 + PS / 2, 38, col_alpha(col, a));
+	float rx = X - 4 + PS + 14, rw = X + W - rx, y = y0 + 11;
+	text_draw_clip(t.name, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 5;
+	float by = y0 + h - 10 - text_lineh(TS_SUB);
+	g_info_ymax = by - 4;
 	char v[512], b[48];
 	util_strlcpy(v, t.from, sizeof v);
 	char *sl = strrchr(v, '/');
@@ -6014,8 +6079,7 @@ static void trash_top(float a)
 	y = info_row(rx, y, rw, _("Se borra"), v, days <= 1 ? T.warn : T.text2, a);
 	util_fmt_size(b, sizeof b, t.size);
 	y = info_row(rx, y, rw, _("Tamaño"), b, T.text2, a);
-	float by = y0 + h - 22;
-	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	g_info_ymax = 1e9f;
 	char hint[96];
 	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Recuperar"), GLYPH_Y, _("Opciones"));
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
@@ -6050,7 +6114,7 @@ static void files_top(float a)
 	}
 	f_info_refresh();
 	const FEnt *e = f_selected();
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	const float X = CARD_X + 14, W = CARD_W - 28;
@@ -6063,33 +6127,52 @@ static void files_top(float a)
 	u32 col;
 	f_kind(e, &ic, &col);
 	// a la izquierda, la vista previa: la foto, el icono del programa o el del tipo
-	const float PS = 120;
-	float py = y0 + 12;
-	draw_rrect(X, py, PS, PS, 14, col_alpha(T.surface2, a));
-	if (F.thumb.ok)
-		draw_texture(&F.thumb, X + (PS - F.thumb.w) / 2, py + (PS - F.thumb.h) / 2, F.thumb.w, F.thumb.h, a);
-	else if (F.cia_icon.ok)
-		draw_texture(&F.cia_icon, X + 12, py + 12, 96, 96, a);
+	const float PS = h - 20;
+	float py = y0 + 10;
+	draw_rrect(X - 4, py, PS, PS, 12, col_alpha(T.surface2, a));
+	float px = X - 4;
+	if (F.thumb.ok) {
+		float k = fminf(1, fminf((PS - 4) / F.thumb.w, (PS - 4) / F.thumb.h)), tw = F.thumb.w * k, th = F.thumb.h * k;
+		draw_texture(&F.thumb, px + (PS - tw) / 2, py + (PS - th) / 2, tw, th, a);
+	} else if (F.cia_icon.ok)
+		draw_texture(&F.cia_icon, px + (PS - 72) / 2, py + (PS - 72) / 2, 72, 72, a);
 	else if (F.preview[0]) { // las primeras líneas, como una hoja
-		gfx_clip(X, py, PS, PS);
-		text_wrap_lines(F.preview, PS - 14, 0.34f, 12, X + 7, py + 6, col_alpha(T.text2, a), true);
+		gfx_clip(px, py, PS, PS);
+		text_wrap_lines(F.preview, PS - 12, 0.32f, 9, px + 6, py + 5, col_alpha(T.text2, a), true);
 		gfx_clip_off();
 	} else
-		draw_icon(ic, X + PS / 2, py + PS / 2, 48, col_alpha(col, a));
-	// a la derecha, los datos
-	float rx = X + PS + 14, rw = X + W - rx, y = py;
+		draw_icon(ic, px + PS / 2, py + PS / 2, 38, col_alpha(col, a));
+	// a la derecha: nombre, datos y, abajo, qué hacen los botones
+	float rx = px + PS + 14, rw = X + W - rx, y = py + 1;
 	const char *title = F.cia_ok && F.cia->title[0] ? F.cia->title : F.app_title[0] ? F.app_title : e->name;
-	int nl = text_wrap_lines(title, rw, TS_TITLE, 2, rx, y, col_alpha(e->color ? col : T.text, a), true);
-	y += nl * text_lineh(TS_TITLE) + 2;
+	text_draw_clip(title, rx, y, rw, TS_TITLE, col_alpha(e->color ? col : T.text, a)); // si no cabe, se desplaza
+	y += text_lineh(TS_TITLE) + 2;
 	const char *pub = F.cia_ok ? F.cia->publisher : F.app_pub;
 	if (pub[0]) {
 		text_draw_clip(pub, rx, y, rw, TS_SUB, col_alpha(T.text2, a));
-		y += 16;
+		y += 15;
 	}
-	y += 4;
+	y += 3;
+	float by = y0 + h - 10 - text_lineh(TS_SUB);
+	g_info_ymax = by - 4;
 	char v[160], b[48];
-	f_type_text(e, v, sizeof v);
-	y = info_row(rx, y, rw, _("Tipo"), v, e->sys ? T.warn : T.text2, a);
+	if (F.search) { // en una búsqueda, dónde está
+		char full[700];
+		f_full(F.v[F.sel].idx, full, sizeof full);
+		char *sl = strrchr(full, '/');
+		if (sl)
+			*(sl == full ? sl + 1 : sl) = 0;
+		y = info_row(rx, y, rw, _("Carpeta"), full, T.text2, a);
+	}
+	if (F.cia_ok) {
+		u32 vc;
+		char vl[160];
+		ins_version_line(F.cia, vl, sizeof vl, &vc);
+		y = info_row(rx, y, rw, _("Versión"), vl, vc, a);
+	} else {
+		f_type_text(e, v, sizeof v);
+		y = info_row(rx, y, rw, _("Tipo"), v, e->sys ? T.warn : T.text2, a);
+	}
 	if (e->dir) {
 		if (F.dir_count >= 0) {
 			snprintf(v, sizeof v, F.dir_count == 1 ? _("1 elemento") : _("%d elementos"), F.dir_count);
@@ -6097,11 +6180,7 @@ static void files_top(float a)
 		}
 	} else {
 		util_fmt_size(b, sizeof b, e->size);
-		if (e->size >= 1024)
-			snprintf(v, sizeof v, _("%s (%llu bytes)"), b, (unsigned long long)e->size);
-		else
-			util_strlcpy(v, b, sizeof v);
-		y = info_row(rx, y, rw, _("Tamaño"), v, T.text2, a);
+		y = info_row(rx, y, rw, _("Tamaño"), b, T.text2, a);
 	}
 	if (F.iw > 0) {
 		snprintf(v, sizeof v, "%d × %d", F.iw, F.ih);
@@ -6112,29 +6191,20 @@ static void files_top(float a)
 		y = info_row(rx, y, rw, _("Modificado"), v, T.text2, a);
 	}
 	if (F.cia_ok) {
-		u32 vc;
-		char vl[160];
-		ins_version_line(F.cia, vl, sizeof vl, &vc);
-		y = info_row(rx, y, rw, _("Versión"), vl, vc, a);
 		snprintf(v, sizeof v, "%016llX", (unsigned long long)F.cia->tid);
 		y = info_row(rx, y, rw, _("ID"), v, T.text2, a);
 	}
-	// abajo: la ruta y qué hacen los botones
-	float by = y0 + h - 22;
-	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	g_info_ymax = 1e9f;
 	bool can_open = e->dir || f_is_img(e) || f_is_txt(e) || F.cia_ok;
+	const char *open_l = F.cia_ok ? _("Instalar") : _("Abrir");
 	char hint[96];
 	if (F.search)
-		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"), GLYPH_X, _("Su carpeta"));
-	else if (can_open) // X abre el «+» (carpeta o documento nuevo, buscar, enlace, QR)
-		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"), GLYPH_X, _("Nuevo"));
+		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, open_l, GLYPH_Y, _("Opciones"), GLYPH_X, _("Su carpeta"));
+	else if (can_open)
+		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, open_l, GLYPH_Y, _("Opciones"), GLYPH_X, _("Nuevo"));
 	else
 		snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_Y, _("Opciones"), GLYPH_X, _("Nuevo"));
-	float hw = text_width(hint, TS_SUB);
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
-	char full[700];
-	f_full(F.v[F.sel].idx, full, sizeof full);
-	text_draw_clip(full, X, by, W - hw - 12, TS_SUB, col_alpha(T.text3, a));
 }
 
 // pantalla de arriba en Dispositivos con el QR cerrado: la información del elegido
@@ -6151,40 +6221,45 @@ static bool device_top(float a)
 		d = &V.dev[idx[0]];
 	}
 	bool on = dev_online(d);
-	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = BODY_B - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	const float X = CARD_X + 14, W = CARD_W - 28;
-	// icono grande con el estado, y al lado el nombre y el modelo
-	float cx = X + 24, cy = y0 + 36;
-	draw_circle(cx, cy, 24, col_alpha(on ? col_alpha(T.ok, 0.18f) : T.surface2, a));
-	draw_icon(dev_icon(d), cx, cy, 28, col_alpha(on ? T.ok : T.text3, a));
-	float rx = X + 62, rw = X + W - rx;
+	// a la izquierda el icono con su estado; a la derecha el nombre, si está conectado y sus datos
+	const float IS = h - 20;
+	float px = X - 4, py = y0 + 10;
+	draw_rrect(px, py, IS, IS, 12, col_alpha(on ? col_alpha(T.ok, 0.14f) : T.surface2, a));
+	draw_icon(dev_icon(d), px + IS / 2, py + IS / 2, 40, col_alpha(on ? T.ok : T.text3, a));
+	float rx = px + IS + 14, rw = X + W - rx, y = py + 1;
 	char v[96], when[24];
-	text_draw_clip(d->name, rx, y0 + 14, rw, TS_TITLE, col_alpha(T.text, a));
+	text_draw_clip(d->name, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 2;
 	if (!on && d->last_seen) {
 		util_fmt_when(when, sizeof when, d->last_seen);
 		snprintf(v, sizeof v, _("Visto: %s"), when);
 	}
-	text_draw_clip(on ? _("Conectado ahora") : d->last_seen ? v : _("Desconectado"), rx, y0 + 14 + text_lineh(TS_TITLE) + 2, rw, TS_SUB,
+	if (on)
+		draw_circle(rx + 3, y + text_lineh(TS_SUB) / 2, 3, col_alpha(T.ok, a));
+	text_draw_clip(on ? _("Conectado ahora") : d->last_seen ? v : _("Desconectado"), rx + (on ? 10 : 0), y, rw, TS_SUB,
 	               col_alpha(on ? T.ok : T.text3, a));
-	float y = y0 + 74;
+	y += 18;
+	float by = y0 + h - 10 - text_lineh(TS_SUB);
+	g_info_ymax = by - 4;
 	const char *kind = d->kind == 0 ? _("Móvil") : d->kind == 2 ? _("Tableta") : _("Ordenador");
 	if (d->model[0])
 		snprintf(v, sizeof v, "%s · %s", kind, d->model);
 	else
 		util_strlcpy(v, kind, sizeof v);
-	y = info_row(X, y, W, _("Tipo"), v, T.text2, a);
+	y = info_row(rx, y, rw, _("Tipo"), v, T.text2, a);
 	if (d->ip[0])
-		y = info_row(X, y, W, on ? _("IP") : _("Última IP"), d->ip, T.text2, a);
-	const char *src = d->named == NAME_CUSTOM ? _("Puesto a mano") : d->named == NAME_FOUND ? _("Dado por la red") : _("Según el navegador");
-	y = info_row(X, y, W, _("Nombre"), src, T.text2, a);
+		y = info_row(rx, y, rw, on ? _("IP") : _("Última IP"), d->ip, T.text2, a);
 	if (d->created) {
 		f_fmt_date(v, sizeof v, d->created);
-		y = info_row(X, y, W, _("Vinculado"), v, T.text2, a);
+		y = info_row(rx, y, rw, _("Vinculado"), v, T.text2, a);
 	}
-	float by = y0 + h - 22;
-	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	const char *src = d->named == NAME_CUSTOM ? _("Puesto a mano") : d->named == NAME_FOUND ? _("Dado por la red") : _("Según el navegador");
+	y = info_row(rx, y, rw, _("Nombre"), src, T.text2, a);
+	g_info_ymax = 1e9f;
 	char hint[96];
 	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_Y, _("Renombrar"), GLYPH_X, _("Desvincular"));
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));

@@ -1742,4 +1742,16 @@ TR = {
     'Con la cámara, como en FBI':
         ('With the camera, like in FBI',
          'FBIと同じく、カメラで'),
+    'Tarjeta SD':
+        ('SD card',
+         'SDカード'),
+    'No se puede leer el espacio':
+        ('Unable to read free space',
+         '空き容量を読み取れません'),
+    'Queda poco espacio':
+        ('Running out of space',
+         '空き容量が少なくなっています'),
+    'Pedido desde %s':
+        ('Requested from %s',
+         '%s からのリクエスト'),
 }
