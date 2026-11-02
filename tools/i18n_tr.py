@@ -1721,4 +1721,7 @@ TR = {
     'Ir a la carpeta':
         ('Go to the folder',
          'フォルダへ'),
+    'Nuevo':
+        ('New',
+         '新規'),
 }

@@ -470,6 +470,7 @@ static const TrEntry TR_TAB[] = {
 	{"ID", "ID", "ID"},
 	{"Abrir", "Open", "開く"},
 	{"Su carpeta", "Its folder", "フォルダへ"},
+	{"Nuevo", "New", "新規"},
 	{"Desconectado", "Offline", "オフライン"},
 	{"Móvil", "Phone", "スマホ"},
 	{"Tableta", "Tablet", "タブレット"},

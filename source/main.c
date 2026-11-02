@@ -6032,10 +6032,10 @@ static void files_top(float a)
 	char hint[96];
 	if (F.search)
 		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"), GLYPH_X, _("Su carpeta"));
-	else if (can_open)
-		snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"));
+	else if (can_open) // X abre el «+» (carpeta o documento nuevo, buscar, enlace, QR)
+		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"), GLYPH_X, _("Nuevo"));
 	else
-		snprintf(hint, sizeof hint, "%s %s", GLYPH_Y, _("Opciones"));
+		snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_Y, _("Opciones"), GLYPH_X, _("Nuevo"));
 	float hw = text_width(hint, TS_SUB);
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
 	char full[700];
