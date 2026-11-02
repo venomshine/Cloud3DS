@@ -90,6 +90,11 @@ typedef struct {
 	bool light;       /* tema claro */
 	bool readonly;
 	bool protect_sys; /* pedir confirmación en carpetas del sistema */
+	bool mdns;        /* responder a «net_name.local» */
+	bool fbi_remote;  /* aceptar lo que mandan las apps de PC para FBI (puerto 5000) */
+	char net_name[41];
+	u32  remote_rev;  /* cambia al tocar lo anterior: el servidor lo vuelve a abrir */
+	int  remote_ok;   /* 1 mDNS en marcha, 2 FBI remoto escuchando */
 	bool qr_min;      /* tarjeta del QR minimizada */
 	u8   f_sort;      /* explorador de la consola: 0 nombre, 1 fecha, 2 tamaño, 3 tipo */
 	bool f_desc;      /* orden al revés */

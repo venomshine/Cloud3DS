@@ -15,6 +15,7 @@
 #include "util.h"
 #include "dl.h"
 #include "hash.h"
+#include "remote.h"
 #include "zipjob.h"
 #include "search.h"
 #include "trash.h"
@@ -2133,10 +2134,26 @@ static void load_page(void)
 
 static void serve_loop(void)
 {
-	struct pollfd pf[MAX_CONN + 1];
-	int idx[MAX_CONN + 1];
+	struct pollfd pf[MAX_CONN + 1 + 8];
+	int idx[MAX_CONN + 1 + 8];
 	u64 last_ip_check = util_ms();
+	u32 rrev = 0xFFFFFFFF;
 	while (!quit && !restart) {
+		if (rrev != G.remote_rev) { // cloud3ds.local y FBI remoto: al empezar y al cambiarlos en Ajustes
+			state_lock();
+			rrev = G.remote_rev;
+			bool md = G.mdns, fb = G.fbi_remote;
+			char nm[41];
+			util_strlcpy(nm, G.net_name, sizeof nm);
+			u32 ip = G.ip;
+			int port = G.port;
+			state_unlock();
+			remote_open(ip, port, md, fb, nm);
+			state_lock();
+			G.remote_ok = (remote_mdns_ready() ? 1 : 0) | (remote_fbi_ready() ? 2 : 0);
+			G.rev++;
+			state_unlock();
+		}
 		int n = 0;
 		bool room = false;
 		for (int i = 0; i < MAX_CONN; i++) {
@@ -2158,7 +2175,13 @@ static void serve_loop(void)
 			pf[n].revents = 0;
 			idx[n++] = -1;
 		}
-		int r = poll(pf, n, 20);
+		int nr = remote_fds(pf + n, 8);
+		for (int k = 0; k < nr; k++)
+			idx[n + k] = -2;
+		int r = poll(pf, n + nr, 20);
+		if (r > 0)
+			remote_events(pf + n, nr);
+		remote_tick();
 		if (r > 0) {
 			for (int k = 0; k < n; k++) {
 				if (!pf[k].revents)
@@ -2281,6 +2304,7 @@ static void server_thread(void *arg)
 		state_unlock();
 		util_log("servidor en %s:%d", inet_ntoa((struct in_addr){ip}), port);
 		serve_loop();
+		remote_close();
 		close_all();
 	}
 	state_lock();

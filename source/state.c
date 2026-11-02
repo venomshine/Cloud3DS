@@ -6,6 +6,7 @@
  * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
  */
 #include "state.h"
+#include "remote.h"
 #include "util.h"
 
 #include "cJSON.h"
@@ -24,6 +25,8 @@ void state_init(void)
 	LightLock_Init(&lock);
 	memset(&G, 0, sizeof G);
 	G.protect_sys = true;
+	G.mdns = G.fbi_remote = true;
+	util_strlcpy(G.net_name, "cloud3ds", sizeof G.net_name);
 	G.wifi = -1;
 	G.upd_auto = true;
 	G.f_sysapart = G.f_pin = true;
@@ -319,6 +322,10 @@ void config_load(void)
 	G.light = jbool(r, "light", false);
 	G.readonly = jbool(r, "readonly", false);
 	G.protect_sys = jbool(r, "protect_sys", true);
+	G.mdns = jbool(r, "mdns", true);
+	G.fbi_remote = jbool(r, "fbi_remote", true);
+	if (jstr(r, "net_name")[0] && remote_name_ok(jstr(r, "net_name")))
+		util_strlcpy(G.net_name, jstr(r, "net_name"), sizeof G.net_name);
 	G.qr_min = jbool(r, "qr_min", false);
 	G.upd_auto = jbool(r, "upd_auto", true);
 	G.f_sort = (u8)jnum(r, "f_sort", 0) % 4;
@@ -384,6 +391,9 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "light", G.light);
 	cJSON_AddBoolToObject(r, "readonly", G.readonly);
 	cJSON_AddBoolToObject(r, "protect_sys", G.protect_sys);
+	cJSON_AddBoolToObject(r, "mdns", G.mdns);
+	cJSON_AddBoolToObject(r, "fbi_remote", G.fbi_remote);
+	cJSON_AddStringToObject(r, "net_name", G.net_name);
 	cJSON_AddBoolToObject(r, "qr_min", G.qr_min);
 	cJSON_AddBoolToObject(r, "upd_auto", G.upd_auto);
 	cJSON_AddNumberToObject(r, "f_sort", G.f_sort);

@@ -1547,4 +1547,46 @@ TR = {
     'Enlace para descargar (https://…)':
         ('Link to download (https://…)',
          'ダウンロードするリンク（https://…）'),
+    'o %s':
+        ('or %s',
+         'または %s'),
+    'Conexión':
+        ('Connection',
+         '接続'),
+    'Nombre en la red y FBI remoto':
+        ('Network name and remote FBI',
+         'ネットワーク名とFBIリモート'),
+    'Nombre en la red':
+        ('Network name',
+         'ネットワーク名'),
+    'No se pudo activar en esta red':
+        ("Couldn't turn it on in this network",
+         'このネットワークでは有効にできませんでした'),
+    'Entra con %s.local':
+        ('Open it with %s.local',
+         '%s.local で開けます'),
+    'Instalación remota (FBI)':
+        ('Remote install (FBI)',
+         'リモートインストール（FBI）'),
+    'El puerto 5000 está ocupado':
+        ('Port 5000 is in use',
+         'ポート5000は使用中です'),
+    'Apps de PC para FBI · puerto 5000':
+        ('PC apps for FBI · port 5000',
+         'FBI用PCアプリ · ポート5000'),
+    'Cambiar el nombre':
+        ('Change the name',
+         '名前を変更'),
+    'Para tener varias consolas: 3ds-de-mario.local':
+        ('For several consoles: marios-3ds.local',
+         '複数の本体用：mario-3ds.local'),
+    'Nombre en la red (letras, números y guiones)':
+        ('Network name (letters, numbers and hyphens)',
+         'ネットワーク名（英数字とハイフン）'),
+    'Solo letras sin acentos, números y guiones':
+        ('Only plain letters, numbers and hyphens',
+         '英字（アクセントなし）、数字、ハイフンのみ'),
+    'Ahora es %s.local':
+        ("It's now %s.local",
+         '%s.local になりました'),
 }

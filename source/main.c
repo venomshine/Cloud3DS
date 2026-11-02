@@ -17,10 +17,12 @@
 #include "hl.h"
 #include "dl.h"
 #include "hash.h"
+#include "remote.h"
 #include "qrcam.h"
 #include "zipjob.h"
 #include "search.h"
 #include "trash.h"
+#include <ctype.h>
 #include <time.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -62,9 +64,9 @@
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones."
 
 enum { TAB_FILES, TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
-enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE };
+enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
-enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
+enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
 enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL };
 
@@ -76,7 +78,7 @@ typedef struct {
 static struct {
 	int tab, page;
 	float tab_anim;
-	List list[TAB_COUNT + 4];   // una por pestaña y por subpágina de Ajustes
+	List list[TAB_COUNT + 5];   // una por pestaña y por subpágina de Ajustes
 	bool buttons;                // la última interacción fue con botones (se ve la selección)
 	float t_ro, t_prot;          // animación de los interruptores
 	int dlg_arg;
@@ -92,6 +94,8 @@ static struct {
 	bool want_tnew;              // crear un documento de texto en Archivos
 	bool want_search;            // buscar desde la carpeta abierta (teclado)
 	bool want_dlurl;             // descargar un enlace escrito en la consola (teclado)
+	bool want_netname;           // cambiar el nombre en la red (teclado)
+	float t_mdns, t_fbi;         // animación de sus interruptores
 	int want_txt;                // editor de texto: 1 editar la línea, 2 añadir una debajo
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 	float t_upd;                 // interruptor «Buscar al abrir»
@@ -742,12 +746,27 @@ static void connect_col(float a, float dy)
 	float dy2 = fmaxf(0, y + 24 + nl * text_lineh(TS_SUB) + 4 - (y + 66));
 	draw_rect(x, y + 66 + dy2, COL_W, 1, col_alpha(T.divider, a));
 	text_draw_clip(_("O escribe en el navegador:"), x, y + 74 + dy2, COL_W, TS_SUB, col_alpha(T.text3, a));
-	char url[48];
+	char url[48], nm[64];
 	url_text(url, sizeof url, false);
+	// con el nombre en la red activo: «cloud3ds.local» y, debajo y en pequeño, la IP por si el móvil no lo entiende
+	bool named = V.mdns && (V.remote_ok & 1);
+	if (named) {
+		if (V.port == 80)
+			snprintf(nm, sizeof nm, "%s.local", V.net_name);
+		else
+			snprintf(nm, sizeof nm, "%s.local:%d", V.net_name, V.port);
+	}
+	const char *main_t = named ? nm : url;
 	float s = 0.64f;
-	while (s > 0.44f && text_width(url, s) > COL_W)
+	while (s > 0.44f && text_width(main_t, s) > COL_W)
 		s -= 0.02f;
-	text_draw(url, x, y + 74 + dy2 + fmaxf(16, text_lineh(TS_SUB) + 2), s, col_alpha(T.accent, a));
+	float uy = y + 74 + dy2 + fmaxf(16, text_lineh(TS_SUB) + 2);
+	text_draw(main_t, x, uy, s, col_alpha(T.accent, a));
+	if (named) {
+		char alt[64];
+		snprintf(alt, sizeof alt, _("o %s"), url);
+		text_draw_clip(alt, x, uy + text_lineh(s) - 1, COL_W, TS_SUB, col_alpha(T.text3, a));
+	}
 	text_draw(_("PIN"), x, y + 132, TS_SUB, col_alpha(T.text3, a));
 	for (int i = 0; i < 4; i++) {
 		float bx = x + 30 + i * 31, by = y + 122;
@@ -1134,6 +1153,8 @@ static List *cur_list(void)
 		return &U.list[TAB_COUNT + 2];
 	if (U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE)
 		return &U.list[TAB_COUNT + 3];
+	if (U.tab == TAB_SETTINGS && U.page == PAGE_CONN)
+		return &U.list[TAB_COUNT + 4];
 	return &U.list[U.tab];
 }
 
@@ -5588,6 +5609,11 @@ static void settings_action(int i)
 		U.list[TAB_COUNT + 2].sel = PIN_CUSTOM;
 		U.list[TAB_COUNT + 2].off = U.list[TAB_COUNT + 2].target = 0;
 		break;
+	case SET_CONN:
+		U.page = PAGE_CONN;
+		U.list[TAB_COUNT + 4].sel = 0;
+		U.list[TAB_COUNT + 4].off = U.list[TAB_COUNT + 4].target = 0;
+		break;
 	case SET_LANG:
 		U.page = PAGE_LANG;
 		U.list[TAB_COUNT].sel = V.lang;
@@ -5646,6 +5672,11 @@ static void settings_main(void)
 			title = _("PIN"); sub = _("Se mantiene hasta que lo cambies"); ic = IC_KEY; col = T.accent2; val = V.pin;
 			chev = true;
 			break;
+		case SET_CONN:
+			title = _("Conexión"); ic = IC_WIFI; col = T.ok; chev = true;
+			snprintf(vbuf, sizeof vbuf, "%s.local", V.net_name);
+			sub = V.mdns ? vbuf : _("Nombre en la red y FBI remoto");
+			break;
 		case SET_LANG:
 			title = _("Idioma"); ic = IC_GLOBE; chev = true;
 			snprintf(vbuf, sizeof vbuf, "%s", lang_setting_name(V.lang));
@@ -5699,6 +5730,74 @@ static void settings_main(void)
 			settings_action(i);
 	}
 	gfx_clip_off();
+}
+
+// Ajustes → Conexión: el nombre en la red (mDNS) y la instalación remota de FBI
+static void remote_changed(void)
+{
+	state_lock();
+	G.remote_rev++;
+	G.dirty_cfg = true;
+	G.rev++;
+	memcpy(&V, &G, sizeof G);
+	state_unlock();
+}
+
+static void settings_conn(void)
+{
+	List *l = cur_list();
+	tab_header(_("Conexión"), true);
+	const float RH = 48;
+	list_update(l, 3, RH);
+	U.t_mdns = approach(U.t_mdns, V.mdns ? 1 : 0, 14);
+	U.t_fbi = approach(U.t_fbi, V.fbi_remote ? 1 : 0, 14);
+	for (int i = 0; i < 3; i++) {
+		float y = VIEW_Y + i * RH - l->off;
+		bool t = row(l, i, y, RH);
+		char title[64], sub[120];
+		IconId ic;
+		u32 col;
+		if (i == 0) {
+			snprintf(title, sizeof title, "%s", _("Nombre en la red"));
+			if (V.mdns && !(V.remote_ok & 1) && V.running)
+				snprintf(sub, sizeof sub, "%s", _("No se pudo activar en esta red"));
+			else
+				snprintf(sub, sizeof sub, _("Entra con %s.local"), V.net_name);
+			ic = IC_GLOBE, col = T.ok;
+		} else if (i == 1) {
+			snprintf(title, sizeof title, "%s", _("Instalación remota (FBI)"));
+			if (V.fbi_remote && !(V.remote_ok & 2) && V.running)
+				snprintf(sub, sizeof sub, "%s", _("El puerto 5000 está ocupado"));
+			else
+				snprintf(sub, sizeof sub, "%s", _("Apps de PC para FBI · puerto 5000"));
+			ic = IC_LAPTOP, col = T.accent;
+		} else {
+			snprintf(title, sizeof title, "%s", _("Cambiar el nombre"));
+			snprintf(sub, sizeof sub, "%s", _("Para tener varias consolas: 3ds-de-mario.local"));
+			ic = IC_PEN, col = T.accent2;
+		}
+		row_icon(28, y + RH / 2, ic, col);
+		float right = BOT_W - 16;
+		if (i < 2) {
+			toggle(right - 36, y + RH / 2 - 10, i == 0 ? U.t_mdns : U.t_fbi);
+			right -= 46;
+		} else {
+			draw_icon(IC_CHEV_RIGHT, right - 4, y + RH / 2, 12, T.text3);
+			right -= 16;
+		}
+		text_draw_clip(title, 50, y + 7, right - 50, TS_BODY, T.text);
+		text_draw_clip(sub, 50, y + 25, right - 50, TS_SUB, T.text3);
+		if (t || activate(l, i)) {
+			if (i == 0) {
+				set_flag(&G.mdns);
+				remote_changed();
+			} else if (i == 1) {
+				set_flag(&G.fbi_remote);
+				remote_changed();
+			} else
+				U.want_netname = true;
+		}
+	}
 }
 
 static void settings_lang(void)
@@ -5934,6 +6033,8 @@ static void draw_bottom(void)
 		settings_pin();
 	else if (U.page == PAGE_UPDATE)
 		settings_update();
+	else if (U.page == PAGE_CONN)
+		settings_conn();
 	else
 		settings_main();
 	if (!viewer)
@@ -6221,6 +6322,25 @@ static void update(void)
 			}
 		}
 	}
+	if (U.want_netname) {
+		U.want_netname = false;
+		char nm[48];
+		if (kb_input(_("Nombre en la red (letras, números y guiones)"), V.net_name, nm, 41, false, false) && nm[0]) {
+			for (char *p = nm; *p; p++) // en la red, en minúsculas y con guiones en vez de espacios
+				*p = *p == ' ' ? '-' : (char)tolower((unsigned char)*p);
+			if (!remote_name_ok(nm))
+				toast_icon(_("Solo letras sin acentos, números y guiones"), IC_CLOSE, T.danger);
+			else {
+				state_lock();
+				util_strlcpy(G.net_name, nm, sizeof G.net_name);
+				state_unlock();
+				remote_changed();
+				char m[96];
+				snprintf(m, sizeof m, _("Ahora es %s.local"), nm);
+				toast_icon(m, IC_CHECK, T.ok);
+			}
+		}
+	}
 	if (U.want_dlurl) {
 		U.want_dlurl = false;
 		char url[1024];
@@ -6453,7 +6573,7 @@ static void update(void)
 	}
 	// atrás: de una subpágina a Ajustes (y la pantalla de arriba vuelve al QR)
 	if (U.page != PAGE_MAIN && ((g_kdown & KEY_B) || tap(0, 0, 170, VIEW_Y))) {
-		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : U.page == PAGE_UPDATE ? SET_UPDATE : SET_ABOUT;
+		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : U.page == PAGE_UPDATE ? SET_UPDATE : U.page == PAGE_CONN ? SET_CONN : SET_ABOUT;
 		U.page = PAGE_MAIN;
 	}
 	if ((g_kdown & KEY_START) && !(U.tab == TAB_FILES && VW.kind == VW_TXT)) // en el editor, START guarda
