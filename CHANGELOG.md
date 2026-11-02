@@ -1,5 +1,19 @@
 # Cambios
 
+## 1.2.0 — novedades y arreglos
+
+- Interfaz renovada en la consola: barra de almacenamiento fija al pie de la pantalla de arriba; botón central «Traer a la consola» (conectar un dispositivo, escanear un QR o descargar un enlace); menú de opciones de archivo con las acciones principales en grande y sin textos cortados; «+» solo para crear carpeta o documento; Dispositivos y Ajustes más limpios, con la explicación de cada opción en la pantalla de arriba; hojas de opciones con un mismo estilo.
+- Descargas de Internet en la consola: desde la web, escribiendo un enlace o escaneando un QR (como en FBI), con cola, pausa y reanudación, comprobación de MD5 o SHA-256, y releases de GitHub. Van por el servicio HTTP del sistema, como FBI, y comprueban el certificado (si no se puede, se puede descargar sin comprobarlo tras un aviso).
+- Los CIA pedidos desde la consola se instalan mientras se descargan, sin guardarlos en la SD.
+- Instalados: juegos y apps de la SD con su icono, versión, tamaño y DLC; copias de seguridad de partidas en el formato de Checkpoint y desinstalar.
+- Papelera (con recuperación durante 7 días), búsqueda en toda la SD, selección múltiple, MD5 y SHA-256, crear y extraer ZIP y descargar carpetas como ZIP.
+- Reproductor de música (MP3, OGG y WAV) que sigue sonando con la tapa cerrada, y capturas de pantalla que aparecen al instante en la web.
+- Escribir desde el teclado del PC en el editor de la consola (edición en directo).
+- cloud3ds.local e instalación remota desde las apps de PC para FBI. Vincular por la IP vale también para el nombre .local y al revés.
+- Actualizar Cloud3DS desde un archivo de la SD (Ajustes → Actualizaciones → Instalar desde un archivo) o subiendo su CIA desde la web, además de desde GitHub.
+- Arreglos de manejo: una pulsación ya no activa lo que queda debajo al cambiar de carpeta; atrás vuelve a donde se abrió una categoría; Y y X cierran los menús que abren; un CIA se abre con dos toques.
+- Textos revisados en la consola y en la web.
+
 ## 1.1.0 — novedades y arreglos
 
 - Actualizaciones: Cloud3DS busca versiones nuevas en GitHub al abrirse (se puede desactivar) y desde Ajustes → Actualizaciones. Descarga la nueva, comprueba su SHA-256 y la instala; solo ofrece versiones más nuevas que la instalada.
