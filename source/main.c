@@ -78,6 +78,7 @@ static struct {
 enum { QA_CONNECT, QA_SCAN, QA_LINK, QA_N };
 static void qa_top(float a);
 static void settings_top(float a);
+static void settings_sub_top(float a);
 
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones."
 
@@ -1363,6 +1364,8 @@ static void draw_top(void)
 			files_top(mini);
 		else if (U.tab == TAB_SETTINGS && U.page == PAGE_MAIN && mini > 0.01f)
 			settings_top(mini);
+		else if (U.tab == TAB_SETTINGS && (U.page == PAGE_PIN || U.page == PAGE_CONN) && mini > 0.01f)
+			settings_sub_top(mini);
 		else if (!(U.tab == TAB_DEVICES && mini > 0.01f && device_top(mini)))
 			mini_body(mini);
 	}
@@ -6415,6 +6418,54 @@ static void settings_action(int i)
 	case SET_EXIT:
 		ask_exit(); // el mismo diálogo que START
 		break;
+	}
+}
+
+// tarjeta de arriba que explica algo: icono, título, texto y una línea al pie
+static void explain_top(float a, IconId ic, u32 col, const char *title, const char *desc, const char *foot, u32 fc)
+{
+	float y0 = BODY_Y, h = BODY_B - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 16, W = CARD_W - 32;
+	float cx = X + 26, cy = y0 + 16 + 26;
+	draw_circle(cx, cy, 26, col_alpha(col, 0.16f * a));
+	draw_icon(ic, cx, cy, 24, col_alpha(col, a));
+	float rx = X + 66, rw = X + W - rx, y = y0 + 14;
+	text_draw_clip(title, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 4;
+	text_wrap_lines(desc, rw, TS_SUB, foot ? 4 : 5, rx, y, col_alpha(T.text2, a), true);
+	if (foot)
+		text_draw_clip(foot, rx, y0 + h - 10 - text_lineh(TS_SUB), rw, TS_SUB, col_alpha(fc, a));
+}
+
+// Ajustes → PIN y → Conexión: arriba, lo que hace la opción marcada
+static void settings_sub_top(float a)
+{
+	char foot[96];
+	if (U.page == PAGE_PIN) {
+		int i = U.list[TAB_COUNT + 2].sel;
+		snprintf(foot, sizeof foot, _("PIN actual: %s"), V.pin);
+		if (i == PIN_CUSTOM)
+			explain_top(a, IC_KEY, T.accent2, _("Elegir mi PIN"), _("Escribe cuatro cifras que te resulten fáciles de recordar. El código QR se renueva con él y los dispositivos ya vinculados siguen conectados."), foot, T.text3);
+		else
+			explain_top(a, IC_REFRESH, T.accent2, _("PIN aleatorio nuevo"), _("La consola crea un PIN al azar y un código QR nuevo; los anteriores dejan de servir. Los dispositivos ya vinculados siguen conectados."), foot, T.text3);
+		return;
+	}
+	int i = U.list[TAB_COUNT + 4].sel;
+	if (i == 0) {
+		snprintf(foot, sizeof foot, V.mdns ? _("Activado: %s.local") : _("Desactivado"), V.net_name);
+		explain_top(a, IC_GLOBE, T.ok, _("Nombre en la red"),
+		            _("El navegador encuentra la consola por su nombre aunque cambie su IP. Funciona en la mayoría de móviles y PC; si alguno no lo admite, usa la IP."),
+		            foot, V.mdns ? T.ok : T.text3);
+	} else if (i == 1)
+		explain_top(a, IC_LAPTOP, T.accent, _("Instalación remota (FBI)"),
+		            _("Las apps de PC hechas para FBI (como servefiles o sendurls) pueden enviar CIA a la consola por el puerto 5000, igual que a FBI."),
+		            V.fbi_remote ? _("Activado") : _("Desactivado"), V.fbi_remote ? T.ok : T.text3);
+	else {
+		snprintf(foot, sizeof foot, _("Ahora: %s.local"), V.net_name);
+		explain_top(a, IC_PEN, T.accent2, _("Cambiar el nombre"),
+		            _("Si tienes varias consolas, dale a cada una su nombre (por ejemplo, 3ds-salon) para distinguirlas en la red."), foot, T.text3);
 	}
 }
 

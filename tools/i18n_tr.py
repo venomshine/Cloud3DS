@@ -1847,4 +1847,28 @@ TR = {
     'Se ven al momento en la web':
         ('Shown instantly on the web',
          'Webにすぐ表示'),
+    'PIN actual: %s':
+        ('Current PIN: %s',
+         '現在のPIN: %s'),
+    'Escribe cuatro cifras que te resulten fáciles de recordar. El código QR se renueva con él y los dispositivos ya vinculados siguen conectados.':
+        ('Enter four digits that are easy for you to remember. The QR code is renewed with it, and linked devices stay connected.',
+         '覚えやすい4桁の数字を入力してください。QRコードも新しくなり、連携済みの端末は接続されたままです。'),
+    'La consola crea un PIN al azar y un código QR nuevo; los anteriores dejan de servir. Los dispositivos ya vinculados siguen conectados.':
+        ('The console creates a random PIN and a new QR code; the old ones stop working. Linked devices stay connected.',
+         '本体がランダムなPINと新しいQRコードを作成し、以前のものは使えなくなります。連携済みの端末は接続されたままです。'),
+    'Activado: %s.local':
+        ('On: %s.local',
+         'オン: %s.local'),
+    'El navegador encuentra la consola por su nombre aunque cambie su IP. Funciona en la mayoría de móviles y PC; si alguno no lo admite, usa la IP.':
+        ("Browsers find the console by name even if its IP changes. It works on most phones and PCs; if one doesn't support it, use the IP.",
+         'IPが変わっても、ブラウザは名前で本体を見つけられます。ほとんどのスマホやPCで使えます。対応していない場合はIPを使ってください。'),
+    'Las apps de PC hechas para FBI (como servefiles o sendurls) pueden enviar CIA a la consola por el puerto 5000, igual que a FBI.':
+        ('PC apps made for FBI (such as servefiles or sendurls) can send CIAs to the console over port 5000, just like to FBI.',
+         'FBI用のPCアプリ（servefilesやsendurlsなど）から、FBIと同じようにポート5000でCIAを本体に送れます。'),
+    'Ahora: %s.local':
+        ('Now: %s.local',
+         '現在: %s.local'),
+    'Si tienes varias consolas, dale a cada una su nombre (por ejemplo, 3ds-salon) para distinguirlas en la red.':
+        ('If you have several consoles, give each one its own name (for example, 3ds-livingroom) to tell them apart on the network.',
+         '本体が複数ある場合は、それぞれに名前（例: 3ds-living）を付けるとネットワーク上で区別できます。'),
 }
