@@ -3792,7 +3792,7 @@ static void pm_draw(void)
 		if (tap(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i && (g_kdown & KEY_A)))
 			run = i;
 	}
-	if (run == N - 1 || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= x && g_touch.sx < x + W && g_touch.sy >= y && g_touch.sy < y + N * RH + 12)))
+	if (run == N - 1 || (g_kdown & (KEY_B | KEY_X)) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= x && g_touch.sx < x + W && g_touch.sy >= y && g_touch.sy < y + N * RH + 12)))
 		PM.open = false;
 	else if (run == 2)
 		PM.open = false, U.want_search = true;
@@ -3804,7 +3804,7 @@ static void pm_draw(void)
 		PM.open = false, U.want_fnew = true;
 	else if (run == 1)
 		PM.open = false, U.want_tnew = true;
-	g_kdown &= ~(KEY_A | KEY_B);
+	g_kdown &= ~(KEY_A | KEY_B | KEY_X);
 	g_touch.up = false;
 }
 
@@ -4018,11 +4018,11 @@ static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char 
 		if (!fresh && (tap(16, ry, BOT_W - 32, RH) || (U.buttons && *sel == i && (g_kdown & KEY_A))))
 			run = i;
 	}
-	if (!fresh && (run == n || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y)))
+	if (!fresh && (run == n || (g_kdown & (KEY_B | KEY_Y)) || (g_touch.up && !g_touch.drag && g_touch.sy < y))) // con Y se abren casi todas: Y también las cierra
 		*open = false, run = -1;
 	else if (run >= 0)
 		*open = false;
-	g_kdown &= ~(KEY_A | KEY_B);
+	g_kdown &= ~(KEY_A | KEY_B | KEY_Y);
 	g_touch.up = false;
 	return run;
 }
@@ -5621,7 +5621,7 @@ static void f_menu(void)
 	text_draw_center(cl, BOT_W / 2, by + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
 	if (tap(X0, by, BOT_W - 2 * X0, 32) || (U.buttons && FM.sel == SX && (g_kdown & KEY_A)))
 		close = 1;
-	if (close || (g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y))
+	if (close || (g_kdown & (KEY_B | KEY_Y)) || (g_touch.up && !g_touch.drag && g_touch.sy < y)) // Y lo abre y Y lo cierra
 		FM.open = false;
 	else if (run == FA_COLORS) {
 		char full[700];
@@ -6566,6 +6566,11 @@ static void draw_bottom(void)
 		draw_tabbar();
 	bool lf = g_touch.long_fired; // una pulsación larga ya usada no vuelve a contar al soltar
 	g_kdown = kd, g_krepeat = kr, g_touch = tc, g_touch.long_fired |= lf;
+	if (U.nav_eat) { // lo que llevó a otra carpeta no sigue en las hojas y barras de después
+		g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y);
+		g_touch.up = false;
+	}
+	U.nav_eat = false;
 	if (!overlay && !g_dialog.open)
 		music_bar(); // con la entrada de verdad (lo de debajo no la recibió)
 	if (U.tab == TAB_FILES) {
