@@ -1577,9 +1577,9 @@ TR = {
     'Cambiar el nombre':
         ('Change the name',
          '名前を変更'),
-    'Para tener varias consolas: 3ds-de-mario.local':
-        ('For several consoles: marios-3ds.local',
-         '複数の本体用：mario-3ds.local'),
+    'Para tener varias consolas: 3ds-salon.local':
+        ('For several consoles: living-room-3ds.local',
+         '複数の本体用：3ds-living.local'),
     'Nombre en la red (letras, números y guiones)':
         ('Network name (letters, numbers and hyphens)',
          'ネットワーク名（英数字とハイフン）'),

@@ -6,7 +6,7 @@
 - Copiar y mover dentro de la SD desde la web («Mover a…» y «Copiar a…», también con varios a la vez), con un selector de carpetas.
 - Si un archivo ya existe al subir, copiar o mover: reemplazar (o combinar carpetas), renombrar, conservar ambos, omitir o cancelar todo, con «Aplicar a todos».
 - Las carpetas del sistema salen aparte en la web, en un grupo plegable, y cualquier carpeta o archivo se puede destacar con uno de seis colores.
-- Los dispositivos aparecen con su nombre real cuando la red lo da («iPhone de Mario», «DESKTOP-MARIO») y se pueden renombrar desde la consola o desde la web.
+- Los dispositivos aparecen con su nombre real cuando la red lo da («Mi iPhone», «DESKTOP-ABC123») y se pueden renombrar desde la consola o desde la web.
 - La tarjeta del QR se minimiza con SELECT o con el botón del QR de la barra de pestañas, y deja libre la pantalla de arriba.
 - Textos revisados en la consola y en la web para que sean más claros y consistentes.
 - Wi-Fi al abrir: si la red de la consola no estaba lista al arrancar, la app se quedaba en «Sin conexión Wi-Fi» para siempre. Ahora lo reintenta sola cada pocos segundos, distingue «Iniciando la red», «Conectado al Wi-Fi, esperando IP» y «Sin conexión Wi-Fi», y lo apunta todo en `net.log`.

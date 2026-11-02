@@ -506,7 +506,7 @@ static const TrEntry TR_TAB[] = {
 	{"El puerto 5000 está ocupado", "Port 5000 is in use", "ポート5000は使用中です"},
 	{"Apps de PC para FBI · puerto 5000", "PC apps for FBI · port 5000", "FBI用PCアプリ · ポート5000"},
 	{"Cambiar el nombre", "Change the name", "名前を変更"},
-	{"Para tener varias consolas: 3ds-de-mario.local", "For several consoles: marios-3ds.local", "複数の本体用：mario-3ds.local"},
+	{"Para tener varias consolas: 3ds-salon.local", "For several consoles: living-room-3ds.local", "複数の本体用：3ds-living.local"},
 	{"Usa el idioma de la consola", "Uses the console's language", "本体の言語を使用"},
 	{"Elegir mi PIN", "Choose my PIN", "PINを自分で決める"},
 	{"PIN aleatorio nuevo", "New random PIN", "ランダムな新しいPIN"},

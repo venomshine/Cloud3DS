@@ -1557,7 +1557,7 @@ static void tab_devices(void)
 			draw_circle(38, y + RH / 2 + 9, 3, T.ok);
 		}
 		text_draw_clip(d->name, 50, y + 7, ex - 58, TS_BODY, T.text);
-		// debajo, el estado y el modelo si el nombre ya no lo dice («iPhone de Mario» · iPhone · Safari)
+		// debajo, el estado y el modelo si el nombre ya no lo dice («Mi iPhone» · iPhone · Safari)
 		char sub[128], st[64], when[24];
 		if (on)
 			util_strlcpy(st, _("Conectado ahora"), sizeof st);
@@ -6260,7 +6260,7 @@ static void settings_conn(void)
 			ic = IC_LAPTOP, col = T.accent;
 		} else {
 			snprintf(title, sizeof title, "%s", _("Cambiar el nombre"));
-			snprintf(sub, sizeof sub, "%s", _("Para tener varias consolas: 3ds-de-mario.local"));
+			snprintf(sub, sizeof sub, "%s", _("Para tener varias consolas: 3ds-salon.local"));
 			ic = IC_PEN, col = T.accent2;
 		}
 		row_icon(28, y + RH / 2, ic, col);
