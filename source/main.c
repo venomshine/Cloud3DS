@@ -3887,13 +3887,18 @@ static void pm_draw(void)
 	if (PM.anim < 0.01f)
 		return;
 	float a = ease_out_cubic(PM.anim);
-	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a * 0.6f));
-	enum { N = 6 };
-	static const IconId IC[N] = {IC_FOLDER, IC_NOTE, IC_SEARCH, IC_GLOBE, IC_QR, IC_CLOSE};
-	const char *L[N] = {_("Carpeta nueva"), _("Documento de texto nuevo"), _("Buscar aquí"), _("Descargar de un enlace"), _("Escanear QR"), _("Cerrar")};
-	const float W = 214, RH = 30, x = BOT_W - 8 - W, y = 30 - (1 - a) * 8;
-	draw_rrect(x, y + 3, W, N * RH + 12, 14, col_alpha(T.shadow, a));
-	draw_rrect(x, y, W, N * RH + 12, 14, T.surface);
+	draw_rect(0, VIEW_Y, BOT_W, SCR_H - VIEW_Y, col_alpha(T.dim, a * 0.75f));
+	enum { N = 2 };
+	static const IconId IC[N] = {IC_FOLDER, IC_NOTE};
+	const u32 C[N] = {T.warn, T.accent};
+	const char *L[N] = {_("Carpeta nueva"), _("Documento de texto")};
+	char where[160];
+	const char *nm = strrchr(F.path, '/');
+	snprintf(where, sizeof where, _("Dentro de «%s»"), nm && nm[1] ? nm + 1 : "SD");
+	const char *S[N] = {where, _("Un .txt vacío para escribir")};
+	const float W = 214, RH = 40, x = BOT_W - 8 - W, y = 34 - (1 - a) * 8, H = N * RH + 12;
+	draw_rrect(x, y + 4, W, H, 14, col_alpha(T.shadow, a));
+	draw_rrect(x, y, W, H, 14, T.surface);
 	if (!PM.open)
 		return;
 	bool fresh = PM.just;
@@ -3901,30 +3906,24 @@ static void pm_draw(void)
 	if (fresh)
 		return; // el toque que lo abrió no cuenta
 	if (U.buttons) {
-		if (g_krepeat & KEY_DOWN) PM.sel = (PM.sel + 1) % N;
-		if (g_krepeat & KEY_UP) PM.sel = (PM.sel + N - 1) % N;
+		if (g_krepeat & (KEY_DOWN | KEY_UP))
+			PM.sel = (PM.sel + 1) % N;
 	}
 	int run = -1;
 	for (int i = 0; i < N; i++) {
 		float ry = y + 6 + i * RH;
-		if (i == 2 || i == N - 1)
-			draw_rect(x + 12, ry - 1, W - 24, 1, T.divider);
-		if (touch_in(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i))
-			draw_rrect(x + 6, ry + 2, W - 12, RH - 4, 9, T.surface2);
-		u32 c = i == 0 ? T.warn : i == 1 ? T.accent : i == N - 1 ? T.text3 : T.text2;
-		draw_icon(IC[i], x + 24, ry + RH / 2, 15, c);
-		text_draw_clip(L[i], x + 42, ry + (RH - text_lineh(TS_BODY)) / 2, W - 52, TS_BODY, i == N - 1 ? T.text2 : T.text);
+		bool hl = touch_in(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i);
+		if (hl)
+			draw_rrect(x + 6, ry, W - 12, RH, 10, T.surface2);
+		draw_rrect(x + 14, ry + 6, 28, 28, 9, col_alpha(C[i], 0.16f));
+		draw_icon(IC[i], x + 28, ry + 20, 14, C[i]);
+		text_draw_clip(L[i], x + 52, ry + 5, W - 62, 0.44f, T.text);
+		text_draw_clip(S[i], x + 52, ry + 22, W - 62, TS_SUB, T.text3);
 		if (tap(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i && (g_kdown & KEY_A)))
 			run = i;
 	}
-	if (run == N - 1 || (g_kdown & (KEY_B | KEY_X)) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= x && g_touch.sx < x + W && g_touch.sy >= y && g_touch.sy < y + N * RH + 12)))
+	if ((g_kdown & (KEY_B | KEY_X)) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= x && g_touch.sx < x + W && g_touch.sy >= y && g_touch.sy < y + H)))
 		PM.open = false;
-	else if (run == 2)
-		PM.open = false, U.want_search = true;
-	else if (run == 3)
-		PM.open = false, U.want_dlurl = true;
-	else if (run == 4)
-		PM.open = false, qrs_open();
 	else if (run == 0)
 		PM.open = false, U.want_fnew = true;
 	else if (run == 1)
@@ -5659,9 +5658,32 @@ static void fa_run(int a)
 	}
 }
 
-// menú de un archivo: una hoja compacta con las acciones en cuadrícula, los colores y «Cerrar».
-// Con botones: la cruceta recorre las casillas, luego los colores y luego Cerrar
-#define FM_COLS 3
+// menú de un archivo: arriba qué es (y «Cerrar»), las cuatro acciones de siempre en grande,
+// el resto en una lista a dos columnas y abajo los colores. Con botones, la cruceta va a la
+// casilla más cercana en esa dirección; en los colores, izquierda y derecha cambian el color
+static void f_type_text(const FEnt *e, char *out, size_t n);
+
+// la casilla más cercana desde la marcada en la dirección pulsada (dx, dy: -1, 0 o 1)
+static int nav_nearest(const float (*r)[4], int n, int cur, int dx, int dy)
+{
+	float cx = r[cur][0] + r[cur][2] / 2, cy = r[cur][1] + r[cur][3] / 2;
+	int best = -1;
+	float bd = 1e9f;
+	for (int i = 0; i < n; i++) {
+		if (i == cur)
+			continue;
+		float x = r[i][0] + r[i][2] / 2, y = r[i][1] + r[i][3] / 2, ddx = x - cx, ddy = y - cy;
+		if (dy && (dy > 0 ? ddy <= 2 : ddy >= -2))
+			continue;
+		if (dx && (fabsf(ddy) > 4 || (dx > 0 ? ddx <= 2 : ddx >= -2)))
+			continue;
+		float d = dy ? fabsf(ddy) * 4 + fabsf(ddx) : fabsf(ddx);
+		if (d < bd)
+			bd = d, best = i;
+	}
+	return best < 0 ? cur : best;
+}
+
 static void f_menu(void)
 {
 	FM.anim = approach(FM.anim, FM.open ? 1 : 0, 16);
@@ -5669,13 +5691,6 @@ static void f_menu(void)
 		return;
 	float a = ease_out_cubic(FM.anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-	const float TH = 46, TG = 6, X0 = 18, TW = (BOT_W - 2 * X0 - (FM_COLS - 1) * TG) / FM_COLS;
-	int rows = (FM.n + FM_COLS - 1) / FM_COLS;
-	float h = 34 + rows * (TH + TG) + 30 + 40, y = SCR_H - h - 6 + (1 - a) * 40;
-	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
-	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
-	if (!FM.open)
-		return;
 	if (FM.idx >= F.n || strcmp(F.e[FM.idx].name, FM.name)) { // la carpeta cambió (web, copia…): el mismo de antes
 		int k;
 		for (k = 0; k < F.n && strcmp(F.e[k].name, FM.name); k++)
@@ -5687,6 +5702,24 @@ static void f_menu(void)
 		FM.idx = k;
 	}
 	const FEnt *e = &F.e[FM.idx];
+	// las principales (Renombrar, Mover, Copiar, Eliminar) y las demás, en el orden en que se añadieron
+	int prim[4], np = 0, sec[16], ns = 0;
+	static const int PRIM_ORDER[4] = {FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE};
+	for (int k = 0; k < 4; k++)
+		for (int i = 0; i < FM.n; i++)
+			if (FM.acts[i] == PRIM_ORDER[k])
+				prim[np++] = FM.acts[i];
+	for (int i = 0; i < FM.n; i++)
+		if (FM.acts[i] != FA_RENAME && FM.acts[i] != FA_MOVE && FM.acts[i] != FA_COPY && FM.acts[i] != FA_DELETE)
+			sec[ns++] = FM.acts[i];
+	const float X = 6, W = BOT_W - 12, PAD = 10, HH = 34, PH = 56, RH = 24, CH = 26;
+	int srows = (ns + 1) / 2;
+	float h = PAD + HH + 6 + PH + 8 + 1 + 6 + srows * RH + 6 + CH + 6;
+	float y = SCR_H - 6 - h + (1 - a) * 40;
+	draw_rrect(X, y + 3, W, h, 18, col_alpha(T.shadow, a));
+	draw_rrect(X, y, W, h, 18, T.surface);
+	if (!FM.open)
+		return;
 	static const u32 MK[7] = {0, 0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
 	int run = -1, close = 0;
 	// el mismo toque o botón que abrió el menú no elige nada: ese frame no hay entrada
@@ -5698,77 +5731,115 @@ static void f_menu(void)
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
-	int SC = FM.n, SX = FM.n + 1; // posiciones de los colores y de Cerrar
-	if (U.buttons) {
-		int s0 = FM.sel;
-		if (g_krepeat & KEY_DOWN)
-			FM.sel = FM.sel < FM.n ? (FM.sel + FM_COLS < FM.n ? FM.sel + FM_COLS : SC) : FM.sel == SC ? SX : 0;
-		if (g_krepeat & KEY_UP)
-			FM.sel = FM.sel == SX ? SC : FM.sel == SC ? (rows - 1) * FM_COLS < FM.n ? (rows - 1) * FM_COLS : 0 : FM.sel - FM_COLS >= 0 ? FM.sel - FM_COLS : SX;
-		if (FM.sel < FM.n && s0 == FM.sel) {
-			if ((g_krepeat & KEY_RIGHT) && FM.sel + 1 < FM.n)
-				FM.sel++;
-			if ((g_krepeat & KEY_LEFT) && FM.sel > 0)
-				FM.sel--;
-		}
-		if (FM.sel == SC && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
-			FM.color = (FM.color + ((g_krepeat & KEY_RIGHT) ? 1 : 6)) % 7;
-	}
-	// cabecera: el nombre y una X para cerrar
-	text_draw_clip(e->name, 24, y + 10, BOT_W - 80, TS_BODY, T.text);
-	float xc = BOT_W - 32, yc = y + 17;
-	bool xp = touch_in(xc - 15, yc - 15, 30, 30);
-	draw_circle(xc, yc, 12, xp ? T.surface2 : T.bg);
-	draw_icon(IC_CLOSE, xc, yc, 11, T.text2);
-	if (tap(xc - 15, yc - 15, 30, 30))
+	// casillas (para la cruceta): principales, secundarias y la fila de colores
+	float rc[24][4];
+	int nr = 0, act_of[24];
+	// cabecera: icono, nombre, tipo y tamaño; a la derecha «Cerrar»
+	float hy = y + PAD;
+	IconId kic;
+	u32 kcol;
+	f_kind(e, &kic, &kcol);
+	draw_rrect(X + PAD + 2, hy + 3, 28, 28, 9, col_alpha(kcol, 0.16f));
+	draw_icon(kic, X + PAD + 16, hy + 17, 15, kcol);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	float cw = text_width(cl, TS_SUB) + 18, cx = X + W - PAD - cw;
+	bool cp = touch_in(cx, hy + 2, cw, 30);
+	draw_rrect(cx, hy + 7, cw, 20, 10, cp ? T.divider : T.surface2);
+	text_draw_center(cl, cx + cw / 2, hy + 17 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+	if (tap(cx, hy + 2, cw, 30))
 		close = 1;
-	// acciones
-	for (int i = 0; i < FM.n; i++) {
-		int act = FM.acts[i];
-		float tx = X0 + (i % FM_COLS) * (TW + TG), ty = y + 34 + (i / FM_COLS) * (TH + TG);
-		bool hl = (U.buttons && FM.sel == i) || touch_in(tx, ty, TW, TH);
-		u32 c = act == FA_DELETE ? T.danger : act == FA_INSTALL ? T.ok : T.text2;
-		draw_rrect(tx, ty, TW, TH, 12, hl ? T.surface2 : T.bg);
-		if (U.buttons && FM.sel == i)
-			draw_rrect_outline(tx, ty, TW, TH, 12, 1.5f, T.accent);
-		draw_icon(fa_icon(act), tx + TW / 2, ty + 15, 15, c);
-		text_draw_center_clip(fa_name(act), tx + TW / 2, ty + 27, TW - 8, TS_SUB, act == FA_DELETE ? T.danger : T.text);
-		if (tap(tx, ty, TW, TH) || (U.buttons && FM.sel == i && (g_kdown & KEY_A)))
+	float nx = X + PAD + 40, nw = cx - 8 - nx;
+	text_draw_clip(e->name, nx, hy + 1, nw, TS_BODY, T.text);
+	char tt[160], sz[24];
+	f_type_text(e, tt, sizeof tt);
+	if (!e->dir) {
+		util_fmt_size(sz, sizeof sz, e->size);
+		size_t l = strlen(tt);
+		snprintf(tt + l, sizeof tt - l, " · %s", sz);
+	}
+	text_draw_clip(tt, nx, hy + 18, nw, TS_SUB, T.text3);
+	// las cuatro de siempre, en grande
+	float py = hy + HH + 6, pw = (W - 2 * PAD) / (np ? np : 1);
+	for (int k = 0; k < np; k++) {
+		int act = prim[k];
+		float px = X + PAD + k * pw;
+		int me = nr;
+		rc[nr][0] = px, rc[nr][1] = py, rc[nr][2] = pw, rc[nr][3] = PH, act_of[nr++] = act;
+		bool hl = (U.buttons && FM.sel == me) || touch_in(px, py, pw, PH);
+		bool del = act == FA_DELETE;
+		float icx = px + pw / 2, icy = py + 18;
+		if (U.buttons && FM.sel == me)
+			draw_rrect_outline(px + 4, py, pw - 8, PH, 12, 1.5f, T.accent);
+		draw_circle(icx, icy, 17, del ? col_alpha(T.danger, hl ? 0.3f : 0.16f) : hl ? T.divider : T.surface2);
+		draw_icon(fa_icon(act), icx, icy, 15, del ? T.danger : T.text2);
+		const char *pl = act == FA_MOVE ? _("Mover") : act == FA_COPY ? _("Copiar") : fa_name(act);
+		text_draw_center_clip(pl, icx, py + 39, pw - 6, 0.38f, del ? T.danger : T.text);
+		if (tap(px, py, pw, PH))
+			run = act;
+	}
+	float dy = py + PH + 8;
+	draw_rect(X + PAD + 4, dy, W - 2 * PAD - 8, 1, T.divider);
+	// el resto, a dos columnas
+	float sy = dy + 7, sw = (W - 2 * PAD) / 2;
+	for (int k = 0; k < ns; k++) {
+		int act = sec[k];
+		float rx = X + PAD + (k % 2) * sw, ry = sy + (k / 2) * RH;
+		int me = nr;
+		rc[nr][0] = rx, rc[nr][1] = ry, rc[nr][2] = sw, rc[nr][3] = RH, act_of[nr++] = act;
+		bool hl = (U.buttons && FM.sel == me) || touch_in(rx, ry, sw, RH);
+		if (hl)
+			draw_rrect(rx + 2, ry + 1, sw - 4, RH - 2, 8, T.surface2);
+		if (U.buttons && FM.sel == me)
+			draw_rrect_outline(rx + 2, ry + 1, sw - 4, RH - 2, 8, 1.5f, T.accent);
+		u32 c = act == FA_INSTALL ? T.ok : T.text2;
+		draw_icon(fa_icon(act), rx + 16, ry + RH / 2, 13, c);
+		text_draw_clip(fa_name(act), rx + 30, ry + (RH - text_lineh(0.42f)) / 2, sw - 36, 0.42f, act == FA_INSTALL ? T.ok : T.text);
+		if (tap(rx, ry, sw, RH))
 			run = act;
 	}
 	// colores
-	float cy = y + 34 + rows * (TH + TG) + 2;
+	float cy = y + h - 6 - CH;
+	int SC = nr;
+	rc[nr][0] = X + PAD, rc[nr][1] = cy, rc[nr][2] = W - 2 * PAD, rc[nr][3] = CH, act_of[nr++] = FA_COLORS;
 	if (U.buttons && FM.sel == SC) {
-		draw_rrect(X0 - 4, cy - 2, BOT_W - 2 * X0 + 8, 28, 10, T.surface2);
-		draw_rrect_outline(X0 - 4, cy - 2, BOT_W - 2 * X0 + 8, 28, 10, 1.5f, T.accent);
+		draw_rrect(X + PAD, cy, W - 2 * PAD, CH, 10, T.surface2);
+		draw_rrect_outline(X + PAD, cy, W - 2 * PAD, CH, 10, 1.5f, T.accent);
 	}
-	draw_icon(IC_STAR, X0 + 8, cy + 12, 13, T.text2);
-	text_draw(_("Destacar"), X0 + 22, cy + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+	draw_icon(IC_STAR, X + PAD + 12, cy + CH / 2, 12, T.text3);
+	text_draw(_("Destacar"), X + PAD + 26, cy + (CH - text_lineh(TS_SUB)) / 2, TS_SUB, T.text3);
 	for (int k = 0; k < 7; k++) {
-		float sx = BOT_W - X0 - 10 - (6 - k) * 23, sy = cy + 12;
+		float dx = X + W - PAD - 14 - (6 - k) * 22, dcy = cy + CH / 2;
 		if (FM.color == k)
-			draw_circle(sx, sy, 10.5f, T.text);
-		draw_circle(sx, sy, 9, k ? MK[k] : T.surface2);
+			draw_circle(dx, dcy, 9.5f, T.text);
+		draw_circle(dx, dcy, 8, k ? MK[k] : T.surface2);
 		if (!k)
-			draw_line(sx - 4, sy + 4, sx + 4, sy - 4, 1.4f, T.text3);
-		if (tap(sx - 11, cy - 2, 22, 28)) {
+			draw_line(dx - 3.5f, dcy + 3.5f, dx + 3.5f, dcy - 3.5f, 1.4f, T.text3);
+		if (tap(dx - 11, cy, 22, CH)) {
 			FM.color = k;
 			run = FA_COLORS;
 		}
 	}
-	if (U.buttons && FM.sel == SC && (g_kdown & KEY_A))
-		run = FA_COLORS;
-	// Cerrar, siempre abajo
-	float by = y + h - 40;
-	bool bp = touch_in(X0, by, BOT_W - 2 * X0, 32);
-	draw_rrect(X0, by, BOT_W - 2 * X0, 32, 16, bp || (U.buttons && FM.sel == SX) ? T.surface2 : T.bg);
-	if (U.buttons && FM.sel == SX)
-		draw_rrect_outline(X0, by, BOT_W - 2 * X0, 32, 16, 1.5f, T.accent);
-	char cl[48];
-	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
-	text_draw_center(cl, BOT_W / 2, by + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, T.text);
-	if (tap(X0, by, BOT_W - 2 * X0, 32) || (U.buttons && FM.sel == SX && (g_kdown & KEY_A)))
-		close = 1;
+	// la cruceta
+	if (U.buttons && nr) {
+		if (FM.sel >= nr)
+			FM.sel = 0;
+		if (g_krepeat & KEY_DOWN)
+			FM.sel = nav_nearest(rc, nr, FM.sel, 0, 1);
+		if (g_krepeat & KEY_UP)
+			FM.sel = nav_nearest(rc, nr, FM.sel, 0, -1);
+		if (FM.sel == SC) {
+			if (g_krepeat & (KEY_LEFT | KEY_RIGHT))
+				FM.color = (FM.color + ((g_krepeat & KEY_RIGHT) ? 1 : 6)) % 7;
+		} else {
+			if (g_krepeat & KEY_RIGHT)
+				FM.sel = nav_nearest(rc, nr, FM.sel, 1, 0);
+			if (g_krepeat & KEY_LEFT)
+				FM.sel = nav_nearest(rc, nr, FM.sel, -1, 0);
+		}
+		if (g_kdown & KEY_A)
+			run = act_of[FM.sel];
+	}
 	if (close || (g_kdown & (KEY_B | KEY_Y)) || (g_touch.up && !g_touch.drag && g_touch.sy < y)) // Y lo abre y Y lo cierra
 		FM.open = false;
 	else if (run == FA_COLORS) {

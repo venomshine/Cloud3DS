@@ -1805,4 +1805,10 @@ TR = {
     'la raíz de la SD':
         ('the root of the SD card',
          'SDカードのルート'),
+    'Dentro de «%s»':
+        ('Inside “%s”',
+         '「%s」の中'),
+    'Un .txt vacío para escribir':
+        ('An empty .txt to write in',
+         '書き込み用の空の .txt'),
 }
