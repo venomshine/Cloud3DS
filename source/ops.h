@@ -16,7 +16,7 @@ enum { OPS_OK = 0, OPS_NOT_FOUND = -1, OPS_IO = -2, OPS_TYPE = -3, OPS_NO_SPACE 
 enum { OPS_IDLE, OPS_RUNNING, OPS_DONE, OPS_FAILED };
 
 bool ops_inside(const char *src, const char *dst);   /* dst es src o está dentro */
-void ops_free_name(char *out, size_t n, const char *dir, const char *name); /* «nombre (2).ext» libre */
+void ops_free_name(char *out, size_t n, const char *dir, const char *name); /* el nombre si está libre; si no, «nombre (2).ext»… */
 int  ops_move(const char *src, const char *dst);      /* si dst existe lo sustituye (carpetas: se combinan) */
 int  ops_copy_start(const char *src, const char *dst, const char *device);
 void ops_job(int *st, int *err, u64 *done, u64 *total);

@@ -75,6 +75,9 @@ void ops_free_name(char *out, size_t n, const char *dir, const char *name)
 	const char *ext = dot && dot != name ? dot : "";
 	bool d;
 	u64 s;
+	join(out, n, dir, name); // si el nombre está libre, ese
+	if (fsx_stat(out, &d, &s) < 0)
+		return;
 	for (int k = 2; k < 1000; k++) {
 		char nm[256];
 		snprintf(nm, sizeof nm, "%.*s (%d)%s", bl, name, k, ext);
