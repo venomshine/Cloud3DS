@@ -18,8 +18,8 @@
 #define MAX_REVOKED  8
 #define MAX_MARKS    96
 
-typedef enum { XF_UPLOAD, XF_DOWNLOAD, XF_COPY, XF_INSTALL, XF_ZIP, XF_UNZIP } XferKind;
-typedef enum { XS_FREE, XS_RUNNING, XS_DONE, XS_FAILED, XS_CANCELED } XferState;
+typedef enum { XF_UPLOAD, XF_DOWNLOAD, XF_COPY, XF_INSTALL, XF_ZIP, XF_UNZIP, XF_FETCH } XferKind;
+typedef enum { XS_FREE, XS_RUNNING, XS_DONE, XS_FAILED, XS_CANCELED, XS_PAUSED } XferState;
 
 typedef struct {
 	XferState st;
@@ -51,6 +51,7 @@ typedef enum {
 	EV_RESTORE,    /* recuperado de la papelera */
 	EV_ZIP,        /* ZIP creado en la consola */
 	EV_UNZIP,      /* ZIP extraído */
+	EV_FETCH,      /* descargado de Internet: device = el sitio */
 } EventKind;
 
 typedef struct {

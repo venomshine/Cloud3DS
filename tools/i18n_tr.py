@@ -1400,4 +1400,151 @@ TR = {
     'Extraído en %s':
         ('Extracted to %s',
          '%s に展開しました'),
+    'Descargado':
+        ('Downloaded',
+         'ダウンロード済み'),
+    'Descargando':
+        ('Downloading',
+         'ダウンロード中'),
+    'Sin conexión a Internet':
+        ('No Internet connection',
+         'インターネットに接続していません'),
+    'Conexión no segura (certificado)':
+        ('Insecure connection (certificate)',
+         '安全でない接続（証明書）'),
+    'Error de red':
+        ('Network error',
+         'ネットワークエラー'),
+    'No existe (404)':
+        ('Not found (404)',
+         '見つかりません（404）'),
+    'El servidor no lo permite':
+        ("The server doesn't allow it",
+         'サーバーが許可していません'),
+    'Error del servidor':
+        ('Server error',
+         'サーバーエラー'),
+    'No hay espacio en la SD':
+        ('Not enough space on the SD',
+         'SDの空き容量が足りません'),
+    'No se pudo escribir en la SD':
+        ("Couldn't write to the SD",
+         'SDに書き込めませんでした'),
+    'Esa release no tiene ningún .cia':
+        ('That release has no .cia',
+         'そのリリースには.ciaがありません'),
+    'No se pudo descomprimir':
+        ("Couldn't extract it",
+         '展開できませんでした'),
+    'No se pudo descargar':
+        ("Couldn't download it",
+         'ダウンロードできませんでした'),
+    'En cola':
+        ('Queued',
+         '待機中'),
+    'En pausa':
+        ('Paused',
+         '一時停止中'),
+    'Cancelada':
+        ('Canceled',
+         'キャンセル済み'),
+    'la suma no coincide':
+        ("checksum doesn't match",
+         'チェックサム不一致'),
+    'suma comprobada':
+        ('checksum OK',
+         'チェックサム一致'),
+    'Descargando: lo verás en Actividad':
+        ("Downloading: you'll see it in Activity",
+         'ダウンロード中：履歴で確認できます'),
+    'Descargando %d enlaces: los verás en Actividad':
+        ("Downloading %d links: you'll see them in Activity",
+         '%d 件をダウンロード中：履歴で確認できます'),
+    'Ese enlace no vale':
+        ("That link isn't valid",
+         'そのリンクは使えません'),
+    'No se pudo abrir la cámara':
+        ("Couldn't open the camera",
+         'カメラを起動できませんでした'),
+    'Abriendo la cámara…':
+        ('Opening the camera…',
+         'カメラを起動中…'),
+    'Código leído':
+        ('Code read',
+         'コードを読み取りました'),
+    'Apunta la cámara al código QR':
+        ('Point the camera at the QR code',
+         'カメラをQRコードに向けてください'),
+    'Escanear QR':
+        ('Scan QR',
+         'QRを読み取る'),
+    'No se pudo abrir la cámara (error %08lX). Ciérrala en otras aplicaciones y vuelve a intentarlo.':
+        ("Couldn't open the camera (error %08lX). Close it in other apps and try again.",
+         'カメラを起動できませんでした（エラー %08lX）。他のアプリを閉じてもう一度お試しください。'),
+    'Buscando un código QR…':
+        ('Looking for a QR code…',
+         'QRコードを探しています…'),
+    'Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se puede instalar al terminar.':
+        ("Any QR code with a link works, like FBI's. If it's a .cia, you can install it when it finishes.",
+         'FBIと同じく、リンク入りのQRコードなら使えます。.ciaなら完了後にインストールできます。'),
+    'Cámara de fuera':
+        ('Outer camera',
+         '外側カメラ'),
+    'Cámara de dentro':
+        ('Inner camera',
+         '内側カメラ'),
+    'Enlace leído':
+        ('Link read',
+         '読み取ったリンク'),
+    'Enlaces leídos':
+        ('Links read',
+         '読み取ったリンク'),
+    'Se guardará en %s':
+        ('It will be saved in %s',
+         '保存先：%s'),
+    'Este código no tiene ningún enlace':
+        ('This code has no link',
+         'このコードにはリンクがありません'),
+    'Descargar e instalar':
+        ('Download and install',
+         'ダウンロードしてインストール'),
+    'Descargar':
+        ('Download',
+         'ダウンロード'),
+    'Solo descargar':
+        ('Download only',
+         'ダウンロードのみ'),
+    'Escanear otro':
+        ('Scan another',
+         '別のコードを読み取る'),
+    'Descargar de un enlace':
+        ('Download a link',
+         'リンクからダウンロード'),
+    'Pausar':
+        ('Pause',
+         '一時停止'),
+    'Reintentar':
+        ('Retry',
+         '再試行'),
+    'Reanudar':
+        ('Resume',
+         '再開'),
+    'Descomprimir aquí':
+        ('Extract here',
+         'ここに展開'),
+    'Ver en su carpeta':
+        ('Show in its folder',
+         'フォルダで表示'),
+    'Cancelar la descarga':
+        ('Cancel the download',
+         'ダウンロードをキャンセル'),
+    'Quitar de la lista':
+        ('Remove from the list',
+         '一覧から削除'),
+    'descargando':
+        ('downloading',
+         'ダウンロード中'),
+    'Enlace para descargar (https://…)':
+        ('Link to download (https://…)',
+         'ダウンロードするリンク（https://…）'),
 }

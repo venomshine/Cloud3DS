@@ -158,6 +158,7 @@ AccessControlInfo:
    - apt:U
    - ac:u
    - am:net
+   - cam:u
    - cfg:u
    - cfg:i
    - csnd:SND

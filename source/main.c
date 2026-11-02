@@ -15,7 +15,9 @@
 #include "img.h"
 #include "txt.h"
 #include "hl.h"
+#include "dl.h"
 #include "hash.h"
+#include "qrcam.h"
 #include "zipjob.h"
 #include "search.h"
 #include "trash.h"
@@ -89,6 +91,7 @@ static struct {
 	bool want_fnew;              // crear una carpeta en Archivos
 	bool want_tnew;              // crear un documento de texto en Archivos
 	bool want_search;            // buscar desde la carpeta abierta (teclado)
+	bool want_dlurl;             // descargar un enlace escrito en la consola (teclado)
 	int want_txt;                // editor de texto: 1 editar la línea, 2 añadir una debajo
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 	float t_upd;                 // interruptor «Buscar al abrir»
@@ -202,6 +205,10 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 	case EV_RESTORE:
 		*ic = IC_REFRESH; *col = T.ok;
 		snprintf(sub, sn, "%s · %s", _("Recuperado de la papelera"), e->device);
+		break;
+	case EV_FETCH:
+		*ic = IC_GLOBE; *col = T.accent;
+		snprintf(sub, sn, "%s · %s · %s", _("Descargado"), sz, e->device);
 		break;
 	case EV_ZIP:
 		*ic = IC_ARCHIVE; *col = T.warn;
@@ -764,12 +771,20 @@ static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic)
 		*head = _("Instalando");
 		*col = T.ok;
 		*ic = IC_DOWNLOAD;
+	} else if (x->kind == XF_FETCH) {
+		*head = _("Descargando");
+		*col = T.accent;
+		*ic = IC_GLOBE;
 	} else if (x->kind == XF_ZIP || x->kind == XF_UNZIP) {
 		*head = x->kind == XF_ZIP ? _("Comprimiendo") : _("Descomprimiendo");
 		*col = T.warn;
 		*ic = IC_ARCHIVE;
 	}
-	if (x->st == XS_DONE) {
+	if (x->st == XS_PAUSED) { // una descarga en pausa: no es un fallo
+		*head = _("En pausa");
+		*col = T.text3;
+		*ic = IC_CLOCK;
+	} else if (x->st == XS_DONE) {
 		*head = _("Completado");
 		*col = T.ok;
 		*ic = IC_CHECK;
@@ -1029,11 +1044,19 @@ static void vw_top(void);
 static bool vw_is_open(void);
 static bool device_top(float a);
 
+static bool qrs_is_open(void);
+static void qr_top(void);
+
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
 	if (U.splash >= 0) {
 		splash_top(1);
+		return;
+	}
+	if (qrs_is_open()) { // escáner de QR: la cámara a pantalla completa
+		qr_top();
+		toast_draw_top();
 		return;
 	}
 	if (U.tab == TAB_FILES && vw_is_open()) { // visor: pantalla completa, sin cabecera
@@ -1184,6 +1207,77 @@ static void empty_state(IconId ic, const char *title, const char *text)
 	wrap_center(text, BOT_W / 2, cy + 52, 260, TS_SUB, 3, T.text3);
 }
 
+// descargas de Internet: una copia de la cola (se renueva cuando cambia) y la hoja de una
+static struct {
+	DlItem it[DL_MAX];
+	int n;
+	u32 rev;
+	bool open, just;
+	float anim;
+	int sel;
+	u32 id; // de cuál es la hoja
+} DS = {.rev = 0xFFFFFFFF};
+
+static void ds_refresh(void)
+{
+	if (dl_rev() != DS.rev) {
+		DS.rev = dl_rev();
+		DS.n = dl_list(DS.it, DL_MAX);
+	}
+}
+
+static const DlItem *ds_find(u32 id)
+{
+	for (int i = 0; i < DS.n; i++)
+		if (DS.it[i].id == id)
+			return &DS.it[i];
+	return NULL;
+}
+
+static const char *dl_err_text(const char *e)
+{
+	static const struct { const char *k, *v; } E[] = {
+		{"offline", N_("Sin conexión a Internet")}, {"tls", N_("Conexión no segura (certificado)")}, {"net", N_("Error de red")},
+		{"not_found", N_("No existe (404)")}, {"denied", N_("El servidor no lo permite")}, {"http", N_("Error del servidor")},
+		{"no_space", N_("No hay espacio en la SD")}, {"io", N_("No se pudo escribir en la SD")}, {"no_cia", N_("Esa release no tiene ningún .cia")},
+		{"unzip", N_("No se pudo descomprimir")}};
+	for (size_t i = 0; i < ARRAY_LEN(E); i++)
+		if (!strcmp(e, E[i].k))
+			return tr(E[i].v);
+	return _("No se pudo descargar");
+}
+
+// la línea de debajo del nombre: cómo va
+static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
+{
+	char a[24], b[24], sp[24];
+	*col = T.text3;
+	util_fmt_size(a, sizeof a, d->done);
+	util_fmt_size(b, sizeof b, d->total);
+	switch (d->st) {
+	case DL_RUN:
+		if (d->total && d->speed) {
+			util_fmt_speed(sp, sizeof sp, d->speed);
+			snprintf(out, n, "%d %% · %s · %s", (int)(d->done * 100 / d->total), sp, d->host);
+		} else
+			snprintf(out, n, "%s · %s", a, d->host);
+		break;
+	case DL_QUEUED: snprintf(out, n, "%s · %s", _("En cola"), d->host); break;
+	case DL_PAUSED: snprintf(out, n, d->total ? "%s · %s / %s" : "%s · %s", _("En pausa"), a, b); break;
+	case DL_CANCELED: snprintf(out, n, "%s", _("Cancelada")); break;
+	case DL_FAIL:
+		*col = T.danger;
+		snprintf(out, n, "%s", dl_err_text(d->err));
+		break;
+	default:
+		*col = T.ok;
+		if (d->hash[0] && d->hash_ok == 0)
+			*col = T.danger, snprintf(out, n, "%s · %s", b, _("la suma no coincide"));
+		else
+			snprintf(out, n, d->hash_ok == 1 ? "%s · %s · %s" : "%s · %s", b, d->hash_ok == 1 ? _("suma comprobada") : d->host, d->host);
+	}
+}
+
 static void tab_activity(void)
 {
 	List *l = cur_list();
@@ -1214,9 +1308,11 @@ static void tab_activity(void)
 	}
 	int n = V.hist_n;
 	const float RH = 40;
-	int rows = n;
+	ds_refresh();
+	int nd = DS.n; // las descargas, arriba (la más reciente primero)
+	int rows = n + nd;
 	list_update(l, rows, RH);
-	if (!n) {
+	if (!rows) {
 		empty_state(IC_CLOUD, _("Todo listo"), _("Aquí verás lo que subas o descargues desde tu móvil o tu PC."));
 		return;
 	}
@@ -1225,8 +1321,28 @@ static void tab_activity(void)
 		float y = VIEW_Y + i * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
+		if (i < nd) {
+			const DlItem *d = &DS.it[nd - 1 - i];
+			bool t = row(l, i, y, RH);
+			if (t || activate(l, i)) {
+				DS.id = d->id;
+				DS.open = DS.just = true, DS.sel = 0;
+			}
+			u32 sc;
+			char st[160];
+			dl_status(d, st, sizeof st, &sc);
+			row_icon(28, y + RH / 2, IC_GLOBE, d->st == DL_FAIL ? T.danger : d->st == DL_DONE ? T.ok : T.accent);
+			text_draw_clip(d->name[0] ? d->name : d->host, 50, y + 5, BOT_W - 64, TS_BODY, T.text);
+			text_draw_clip(st, 50, y + 22, BOT_W - 64, TS_SUB, sc);
+			if ((d->st == DL_RUN || d->st == DL_PAUSED) && d->total) {
+				float w = BOT_W - 64 - 50;
+				draw_rrect(50, y + RH - 5, w, 3, 1.5f, T.surface2);
+				draw_rrect(50, y + RH - 5, fmaxf(3, w * (float)((double)d->done / d->total)), 3, 1.5f, d->st == DL_RUN ? T.accent : T.text3);
+			}
+			continue;
+		}
 		row(l, i, y, RH);
-		const Event *e = ev(i);
+		const Event *e = ev(i - nd);
 		char title[128], sub[140], when[24];
 		IconId ic = IC_INFO;
 		u32 col = T.accent;
@@ -3141,6 +3257,230 @@ static struct {
 	int sel;
 } PM;
 
+// escanear un QR con la cámara (como en FBI): arriba la imagen; abajo lo leído y qué hacer con ello
+#define QRS_URLS 8
+static struct {
+	bool open, inner;
+	int st;              // 0 buscando, 1 leído
+	char text[1024];
+	char url[QRS_URLS][1024];
+	int nurl;
+	u16 *px;
+	u32 seen;
+	Texture tex;
+	float flash;
+	char dest[512];
+} QRS;
+
+static bool qrs_is_open(void)
+{
+	return QRS.open;
+}
+
+static void qrs_open(void)
+{
+	if (!QRS.px)
+		QRS.px = malloc(QRCAM_W * QRCAM_H * 2);
+	if (!QRS.px)
+		return;
+	memset(QRS.px, 0, QRCAM_W * QRCAM_H * 2);
+	QRS.seen = 0;
+	QRS.st = 0;
+	QRS.flash = 0;
+	QRS.open = true;
+	qrcam_start(QRS.inner);
+}
+
+static void qrs_close(void)
+{
+	qrcam_stop();
+	tex_free(&QRS.tex);
+	free(QRS.px);
+	QRS.px = NULL;
+	QRS.open = false;
+}
+
+// lo leído: los enlaces que traiga (separados por espacios o líneas)
+static void qrs_parse(const char *t)
+{
+	util_strlcpy(QRS.text, t, sizeof QRS.text);
+	QRS.nurl = 0;
+	const char *p = t;
+	while (*p && QRS.nurl < QRS_URLS) {
+		while (*p && (unsigned char)*p <= ' ')
+			p++;
+		const char *e = p;
+		while (*e && (unsigned char)*e > ' ')
+			e++;
+		char u[1024];
+		snprintf(u, sizeof u, "%.*s", (int)(e - p), p);
+		if (dl_url_ok(u))
+			util_strlcpy(QRS.url[QRS.nurl++], u, sizeof QRS.url[0]);
+		p = e;
+	}
+	// dónde se guarda: la carpeta abierta; desde la raíz, los .cia van a /cias
+	bool cia = false;
+	for (int i = 0; i < QRS.nurl; i++) {
+		size_t l = strcspn(QRS.url[i], "?#");
+		cia |= (l > 4 && !strncasecmp(QRS.url[i] + l - 4, ".cia", 4)) || strstr(QRS.url[i], "github.com/");
+	}
+	const char *dir = F.trash || F.search || F.nosaves || F.missing ? "/" : F.path;
+	util_strlcpy(QRS.dest, !strcmp(dir, "/") && cia ? "/cias" : dir, sizeof QRS.dest);
+}
+
+static bool qrs_cia(void)
+{
+	for (int i = 0; i < QRS.nurl; i++) {
+		size_t l = strcspn(QRS.url[i], "?#");
+		if ((l > 4 && !strncasecmp(QRS.url[i] + l - 4, ".cia", 4)) || strstr(QRS.url[i], "github.com/"))
+			return true;
+	}
+	return false;
+}
+
+static void qrs_download(bool install)
+{
+	int ok = 0;
+	for (int i = 0; i < QRS.nurl; i++)
+		ok += dl_add(QRS.url[i], QRS.dest, "", install ? DLA_INSTALL : DLA_NONE, G.console, NULL) == 0;
+	char m[120];
+	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo verás en Actividad") : _("Descargando %d enlaces: los verás en Actividad"), ok);
+	toast_icon(ok ? m : _("Ese enlace no vale"), ok ? IC_GLOBE : IC_CLOSE, ok ? T.accent : T.danger);
+	qrs_close();
+}
+
+// pantalla de arriba: la cámara a pantalla completa, con el recuadro donde poner el código
+static void qr_top(void)
+{
+	if (QRS.px && qrcam_frame(QRS.px, &QRS.seen))
+		tex_from_rgb565(&QRS.tex, QRS.px, QRCAM_W, QRCAM_H);
+	draw_rect(0, 0, TOP_W, SCR_H, 0xFF000000);
+	if (QRS.tex.ok)
+		draw_texture(&QRS.tex, 0, 0, TOP_W, SCR_H, 1);
+	Result err;
+	int cs = qrcam_state(&err);
+	const float S = 170, x0 = (TOP_W - S) / 2, y0 = (SCR_H - S) / 2 - 8;
+	u32 dim = col_alpha(0xFF000000, 0.45f);
+	draw_rect(0, 0, TOP_W, y0, dim);
+	draw_rect(0, y0 + S, TOP_W, SCR_H - y0 - S, dim);
+	draw_rect(0, y0, x0, S, dim);
+	draw_rect(x0 + S, y0, TOP_W - x0 - S, S, dim);
+	QRS.flash = approach(QRS.flash, QRS.st == 1 ? 1 : 0, 8);
+	u32 bc = col_lerp(0xFFFFFFFF, T.ok, QRS.flash);
+	const float L = 26, Wd = 3 + QRS.flash * 2;
+	draw_rect(x0, y0, L, Wd, bc), draw_rect(x0, y0, Wd, L, bc);
+	draw_rect(x0 + S - L, y0, L, Wd, bc), draw_rect(x0 + S - Wd, y0, Wd, L, bc);
+	draw_rect(x0, y0 + S - Wd, L, Wd, bc), draw_rect(x0, y0 + S - L, Wd, L, bc);
+	draw_rect(x0 + S - L, y0 + S - Wd, L, Wd, bc), draw_rect(x0 + S - Wd, y0 + S - L, Wd, L, bc);
+	const char *msg = cs == QRC_FAIL ? _("No se pudo abrir la cámara") : cs == QRC_STARTING ? _("Abriendo la cámara…")
+	                : QRS.st == 1 ? _("Código leído") : _("Apunta la cámara al código QR");
+	float mw = text_width(msg, TS_BODY) + 28;
+	draw_rrect(TOP_W / 2 - mw / 2, SCR_H - 34, mw, 24, 12, col_alpha(0xFF000000, 0.6f));
+	text_draw_center(msg, TOP_W / 2, SCR_H - 34 + 12 - text_lineh(TS_BODY) / 2, TS_BODY, QRS.st == 1 ? T.ok : cs == QRC_FAIL ? T.danger : 0xFFFFFFFF);
+}
+
+static void qrs_draw(void)
+{
+	if (!QRS.open)
+		return;
+	if (QRS.st == 0) {
+		char t[1024];
+		if (qrcam_take(t, sizeof t)) {
+			qrs_parse(t);
+			QRS.st = 1;
+		}
+	}
+	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
+	// cabecera: título y cerrar
+	text_draw(_("Escanear QR"), 14, 7, TS_TITLE, T.text);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	float cw = text_width(cl, TS_SUB) + 20, cx = BOT_W - 10 - cw;
+	draw_rrect(cx, 6, cw, 20, 10, touch_in(cx, 4, cw, 24) ? T.surface2 : T.surface);
+	text_draw_center(cl, cx + cw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+	if (tap(cx, 4, cw, 24) || (g_kdown & KEY_B)) {
+		qrs_close();
+		g_kdown = 0;
+		return;
+	}
+	float y = 40;
+	if (QRS.st == 0) {
+		Result err;
+		int cs = qrcam_state(&err);
+		draw_circle(BOT_W / 2, y + 40, 26, T.surface);
+		draw_icon(IC_QR, BOT_W / 2, y + 40, 26, cs == QRC_FAIL ? T.danger : T.accent);
+		if (cs == QRC_FAIL) {
+			char e[160];
+			snprintf(e, sizeof e, _("No se pudo abrir la cámara (error %08lX). Ciérrala en otras aplicaciones y vuelve a intentarlo."), (unsigned long)err);
+			wrap_center(e, BOT_W / 2, y + 80, BOT_W - 40, TS_SUB, 4, T.text3);
+		} else {
+			text_draw_center(_("Buscando un código QR…"), BOT_W / 2, y + 78, TS_BODY, T.text);
+			wrap_center(_("Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se puede instalar al terminar."),
+			            BOT_W / 2, y + 100, BOT_W - 40, TS_SUB, 3, T.text3);
+		}
+		char sw[64];
+		snprintf(sw, sizeof sw, "%s %s", GLYPH_X, QRS.inner ? _("Cámara de fuera") : _("Cámara de dentro"));
+		float sx = BOT_W / 2 - 80;
+		draw_rrect(sx, SCR_H - 50, 160, 30, 15, touch_in(sx, SCR_H - 50, 160, 30) ? T.surface2 : T.surface);
+		text_draw_center(sw, BOT_W / 2, SCR_H - 35 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+		if (tap(sx, SCR_H - 50, 160, 30) || (g_kdown & KEY_X)) {
+			QRS.inner = !QRS.inner;
+			qrcam_start(QRS.inner);
+		}
+		g_kdown = 0;
+		g_touch.up = false;
+		return;
+	}
+	// leído: los enlaces y adónde van
+	if (QRS.nurl) {
+		text_draw(QRS.nurl == 1 ? _("Enlace leído") : _("Enlaces leídos"), 14, y, TS_SUB, T.text3);
+		y += 16;
+		for (int i = 0; i < QRS.nurl && i < 3; i++, y += 18)
+			text_draw_clip(QRS.url[i], 14, y, BOT_W - 28, TS_SUB, T.accent);
+		if (QRS.nurl > 3) {
+			char more[48];
+			snprintf(more, sizeof more, _("y %d más"), QRS.nurl - 3);
+			text_draw(more, 14, y, TS_SUB, T.text3);
+			y += 18;
+		}
+		char d[600];
+		snprintf(d, sizeof d, _("Se guardará en %s"), QRS.dest);
+		text_draw_clip(d, 14, y + 4, BOT_W - 28, TS_SUB, T.text2);
+	} else {
+		text_draw(_("Este código no tiene ningún enlace"), 14, y, TS_SUB, T.text3);
+		wrap_center(QRS.text, BOT_W / 2, y + 22, BOT_W - 28, TS_BODY, 4, T.text);
+	}
+	// botones: A descargar (e instalar), X solo descargar, Y otro
+	bool cia = qrs_cia();
+	struct { const char *g, *t; u32 bg, fg; bool on; u32 key; } B[3] = {
+		{GLYPH_A, cia ? _("Descargar e instalar") : _("Descargar"), T.accent, 0xFFFFFFFF, QRS.nurl > 0, KEY_A},
+		{GLYPH_X, _("Solo descargar"), T.surface2, T.text, QRS.nurl > 0 && cia, KEY_X},
+		{GLYPH_Y, _("Escanear otro"), T.surface2, T.text, true, KEY_Y}};
+	float by = SCR_H - 12 - 3 * 32;
+	for (int i = 0; i < 3; i++) {
+		if (!B[i].on)
+			continue;
+		bool p = touch_in(14, by, BOT_W - 28, 28);
+		draw_rrect(14, by, BOT_W - 28, 28, 14, p ? col_lerp(B[i].bg, T.text, 0.12f) : B[i].bg);
+		char t[96];
+		snprintf(t, sizeof t, "%s %s", B[i].g, B[i].t);
+		text_draw_center(t, BOT_W / 2, by + 14 - text_lineh(TS_BODY) / 2, TS_BODY, B[i].fg);
+		if (tap(14, by, BOT_W - 28, 28) || (g_kdown & B[i].key)) {
+			g_kdown = 0;
+			if (i == 0)
+				qrs_download(cia);
+			else if (i == 1)
+				qrs_download(false);
+			else
+				QRS.st = 0;
+			return;
+		}
+		by += 32;
+	}
+	g_kdown = 0;
+	g_touch.up = false;
+}
+
 static void f_new_menu(void)
 {
 	PM.open = true;
@@ -3155,10 +3495,10 @@ static void pm_draw(void)
 		return;
 	float a = ease_out_cubic(PM.anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a * 0.6f));
-	enum { N = 4 };
-	static const IconId IC[N] = {IC_FOLDER, IC_NOTE, IC_SEARCH, IC_CLOSE};
-	const char *L[N] = {_("Carpeta"), _("Documento de texto"), _("Buscar aquí"), _("Cerrar")};
-	const float W = 190, RH = 34, x = BOT_W - 8 - W, y = 30 - (1 - a) * 8;
+	enum { N = 6 };
+	static const IconId IC[N] = {IC_FOLDER, IC_NOTE, IC_SEARCH, IC_GLOBE, IC_QR, IC_CLOSE};
+	const char *L[N] = {_("Carpeta"), _("Documento de texto"), _("Buscar aquí"), _("Descargar de un enlace"), _("Escanear QR"), _("Cerrar")};
+	const float W = 200, RH = 30, x = BOT_W - 8 - W, y = 30 - (1 - a) * 8;
 	draw_rrect(x, y + 3, W, N * RH + 12, 14, col_alpha(T.shadow, a));
 	draw_rrect(x, y, W, N * RH + 12, 14, T.surface);
 	if (!PM.open)
@@ -3178,7 +3518,7 @@ static void pm_draw(void)
 			draw_rect(x + 12, ry - 1, W - 24, 1, T.divider);
 		if (touch_in(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i))
 			draw_rrect(x + 6, ry + 2, W - 12, RH - 4, 9, T.surface2);
-		u32 c = i == 0 ? T.warn : i == 1 ? T.accent : i == 2 ? T.text2 : T.text3;
+		u32 c = i == 0 ? T.warn : i == 1 ? T.accent : i == N - 1 ? T.text3 : T.text2;
 		draw_icon(IC[i], x + 24, ry + RH / 2, 15, c);
 		text_draw_clip(L[i], x + 42, ry + (RH - text_lineh(TS_BODY)) / 2, W - 52, TS_BODY, i == N - 1 ? T.text2 : T.text);
 		if (tap(x + 6, ry, W - 12, RH) || (U.buttons && PM.sel == i && (g_kdown & KEY_A)))
@@ -3188,6 +3528,10 @@ static void pm_draw(void)
 		PM.open = false;
 	else if (run == 2)
 		PM.open = false, U.want_search = true;
+	else if (run == 3)
+		PM.open = false, U.want_dlurl = true;
+	else if (run == 4)
+		PM.open = false, qrs_open();
 	else if (run == 0)
 		PM.open = false, U.want_fnew = true;
 	else if (run == 1)
@@ -3762,6 +4106,77 @@ static void ts_draw(void)
 		char msg[200];
 		snprintf(msg, sizeof msg, _("«%s» se borrará de la tarjeta SD. Esta acción no se puede deshacer."), e->name);
 		dialog_open(DLG_TRASHDEL, _("¿Eliminar para siempre?"), msg, _("Eliminar"), true);
+	}
+}
+
+static void ds_open_folder(const DlItem *d)
+{
+	char dir[512], nm[256];
+	util_strlcpy(dir, d->dir, sizeof dir);
+	const char *b = strrchr(d->path, '/');
+	util_strlcpy(nm, b ? b + 1 : "", sizeof nm);
+	U.tab = TAB_FILES;
+	f_load(dir);
+	for (int i = 0; i < F.nv; i++)
+		if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm)) {
+			F.sel = i;
+			F.target = fmaxf(0, F.v[i].y - VIEW_H / 2);
+		}
+}
+
+static void ds_draw(void)
+{
+	const DlItem *d = ds_find(DS.id);
+	if (!d && DS.open)
+		DS.open = false;
+	int acts[5] = {0}, n = 0;
+	IconId ic[5] = {0};
+	const char *lab[5] = {0};
+	u32 col[5] = {0};
+	enum { A_PAUSE, A_RESUME, A_CANCEL, A_REMOVE, A_INSTALL, A_UNZIP, A_FOLDER };
+	if (d) {
+		size_t l = strlen(d->name);
+		bool isdir;
+		u64 fsz;
+		bool there = d->st == DL_DONE && d->path[0] && fsx_stat(d->path, &isdir, &fsz) == 0; // pudo borrarse (rechazar la instalación lo borra)
+		bool cia = there && l > 4 && !strcasecmp(d->name + l - 4, ".cia"), zip = there && l > 4 && !strcasecmp(d->name + l - 4, ".zip");
+		if (d->st == DL_RUN)
+			acts[n] = A_PAUSE, ic[n] = IC_CLOCK, lab[n] = _("Pausar"), col[n++] = T.text;
+		if (d->st == DL_PAUSED || d->st == DL_FAIL)
+			acts[n] = A_RESUME, ic[n] = IC_REFRESH, lab[n] = d->st == DL_FAIL ? _("Reintentar") : _("Reanudar"), col[n++] = T.accent;
+		if (d->st == DL_DONE && cia)
+			acts[n] = A_INSTALL, ic[n] = IC_DOWNLOAD, lab[n] = _("Instalar"), col[n++] = T.ok;
+		if (d->st == DL_DONE && zip)
+			acts[n] = A_UNZIP, ic[n] = IC_ARCHIVE, lab[n] = _("Descomprimir aquí"), col[n++] = T.text;
+		if (there)
+			acts[n] = A_FOLDER, ic[n] = IC_FOLDER, lab[n] = _("Ver en su carpeta"), col[n++] = T.text;
+		if (d->st == DL_RUN || d->st == DL_QUEUED || d->st == DL_PAUSED || d->st == DL_FAIL)
+			acts[n] = A_CANCEL, ic[n] = IC_CLOSE, lab[n] = _("Cancelar la descarga"), col[n++] = T.danger;
+		else
+			acts[n] = A_REMOVE, ic[n] = IC_TRASH, lab[n] = _("Quitar de la lista"), col[n++] = T.text2;
+	}
+	int r = sheet_list(&DS.open, &DS.just, &DS.anim, &DS.sel, d ? (d->name[0] ? d->name : d->host) : "", ic, lab, col, n);
+	if (r < 0 || !d)
+		return;
+	switch (acts[r]) {
+	case A_PAUSE: dl_op(d->id, DL_PAUSE); break;
+	case A_RESUME: dl_op(d->id, DL_RESUME); break;
+	case A_CANCEL: dl_op(d->id, DL_CANCEL); break;
+	case A_REMOVE: dl_op(d->id, DL_REMOVE); break;
+	case A_INSTALL: {
+		char err[24] = "";
+		if (strlen(d->path) >= 256 || ins_request(d->path, G.console, false, err, sizeof err) < 0)
+			toast_icon(!strcmp(err, "already") ? _("Ya está esperando en la consola") : _("La consola no reconoce este CIA"), IC_CLOSE, T.danger);
+		else
+			ins_refresh();
+		break;
+	}
+	case A_UNZIP: {
+		int zr = zipjob_extract(d->path, false, G.console);
+		toast_icon(zr == ZIP_OK ? _("Extrayendo…") : zip_err_text(zr), zr == ZIP_OK ? IC_ARCHIVE : IC_CLOSE, zr == ZIP_OK ? T.warn : T.danger);
+		break;
+	}
+	case A_FOLDER: ds_open_folder(d); break;
 	}
 }
 
@@ -5496,7 +5911,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -5536,6 +5951,8 @@ static void draw_bottom(void)
 		hs_draw();
 		zs_draw();
 	}
+	ds_draw();
+	qrs_draw();
 	install_card();
 	dialog_draw();
 	if (U.fade > 0) {
@@ -5691,7 +6108,7 @@ static void exit_text(char *msg, size_t n, bool *danger)
 	char name[64];
 	util_strlcpy(name, x->name, sizeof name);
 	int pct = x->total ? (int)((double)x->done * 100 / x->total) : 0;
-	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : x->kind == XF_COPY ? _("copiando") : x->kind == XF_INSTALL ? _("instalando") : x->kind == XF_ZIP ? _("comprimiendo") : x->kind == XF_UNZIP ? _("descomprimiendo") : _("enviando");
+	const char *dir = x->kind == XF_UPLOAD ? _("recibiendo") : x->kind == XF_COPY ? _("copiando") : x->kind == XF_INSTALL ? _("instalando") : x->kind == XF_ZIP ? _("comprimiendo") : x->kind == XF_UNZIP ? _("descomprimiendo") : x->kind == XF_FETCH ? _("descargando") : _("enviando");
 	if (cnt == 1)
 		snprintf(msg, n, _("Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará."), dir, name, pct);
 	else
@@ -5802,6 +6219,17 @@ static void update(void)
 				HS.cmp = r;
 				toast_icon(r == HCHK_OK ? _("Coincide") : _("No coincide"), r == HCHK_OK ? IC_CHECK : IC_CLOSE, r == HCHK_OK ? T.ok : T.danger);
 			}
+		}
+	}
+	if (U.want_dlurl) {
+		U.want_dlurl = false;
+		char url[1024];
+		if (kb_input(_("Enlace para descargar (https://…)"), "https://", url, sizeof url, false, false) && url[0]) {
+			const char *dir = F.trash || F.search || F.nosaves || F.missing ? "/" : F.path;
+			if (dl_add(url, dir, "", DLA_INSTALL, G.console, NULL) == 0)
+				toast_icon(_("Descargando: lo verás en Actividad"), IC_GLOBE, T.accent);
+			else
+				toast_icon(_("Ese enlace no vale"), IC_CLOSE, T.danger);
 		}
 	}
 	if (U.want_search) {
@@ -6077,6 +6505,7 @@ int main(int argc, char **argv)
 
 	server_start();
 	upd_init(argc > 0 ? argv[0] : NULL);
+	dl_init(); // después de upd_init, que prepara curl
 	ins_init();
 	if (G.upd_auto)
 		upd_check();
@@ -6135,6 +6564,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	dl_exit();
 	ops_exit();
 	th_exit();
 	ins_exit();

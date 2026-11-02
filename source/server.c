@@ -13,6 +13,7 @@
 #include "install.h"
 #include "state.h"
 #include "util.h"
+#include "dl.h"
 #include "hash.h"
 #include "zipjob.h"
 #include "search.h"
@@ -852,6 +853,81 @@ static void h_zipjob(Conn *c)
 	free(b.p);
 }
 
+/* ---------- descargas de Internet: POST dl (url, d, hash, after=install|unzip), GET dls, POST dl_op (id, op) ---------- */
+static void h_dl(Conn *c, const char *body)
+{
+	char url[1024], d[512] = "/", hash[80] = "", after[32] = "";
+	// la URL puede venir en el cuerpo (url=…) para no chocar con el límite de la petición
+	if (!qget(body, "url", url, sizeof url) && !qget(c->query, "url", url, sizeof url)) {
+		resp_err(c, 400, "bad_url");
+		return;
+	}
+	qget(c->query, "d", d, sizeof d);
+	qget(c->query, "hash", hash, sizeof hash);
+	qget(c->query, "after", after, sizeof after);
+	if (!fsx_path_ok(d)) {
+		resp_err(c, 400, "bad_path");
+		return;
+	}
+	if (!check_write(c, d, SYS_CONFIRM))
+		return;
+	char dev[48];
+	state_lock();
+	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
+	state_unlock();
+	u32 id = 0;
+	int r = dl_add(url, d, hash, (strstr(after, "install") ? DLA_INSTALL : 0) | (strstr(after, "unzip") ? DLA_UNZIP : 0), dev, &id);
+	if (r < 0) {
+		resp_err(c, r == -3 ? 409 : 400, r == -1 ? "bad_url" : r == -2 ? "bad_hash" : "dl_full");
+		return;
+	}
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"id\":%lu}", (unsigned long)id);
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
+static void h_dls(Conn *c)
+{
+	static DlItem it[DL_MAX];
+	int n = dl_list(it, DL_MAX);
+	static const char *const ST[] = {"queued", "run", "paused", "done", "fail", "canceled"};
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"rev\":%lu,\"items\":[", (unsigned long)dl_rev());
+	for (int i = 0; i < n; i++) {
+		DlItem *x = &it[i];
+		buf_printf(&b, "%s{\"id\":%lu,\"st\":\"%s\",\"url\":", i ? "," : "", (unsigned long)x->id, ST[x->st]);
+		buf_json_str(&b, x->url);
+		buf_puts(&b, ",\"host\":");
+		buf_json_str(&b, x->host);
+		buf_puts(&b, ",\"name\":");
+		buf_json_str(&b, x->name);
+		buf_puts(&b, ",\"dir\":");
+		buf_json_str(&b, x->dir);
+		buf_puts(&b, ",\"path\":");
+		buf_json_str(&b, x->path);
+		buf_printf(&b, ",\"done\":%llu,\"total\":%llu,\"speed\":%llu,\"resumable\":%s,\"hash\":%s,\"hashOk\":%d,\"after\":\"%s\",\"err\":\"%s\"}",
+		           (unsigned long long)x->done, (unsigned long long)x->total, (unsigned long long)x->speed, x->resumable ? "true" : "false",
+		           x->hash[0] ? "true" : "false", x->hash_ok, x->after == (DLA_INSTALL | DLA_UNZIP) ? "install,unzip" : x->after == DLA_INSTALL ? "install" : x->after == DLA_UNZIP ? "unzip" : "", x->err);
+	}
+	buf_puts(&b, "]}");
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
+static void h_dl_op(Conn *c)
+{
+	char ids[16] = "", op[16] = "";
+	qget(c->query, "id", ids, sizeof ids);
+	qget(c->query, "op", op, sizeof op);
+	int o = !strcmp(op, "pause") ? DL_PAUSE : !strcmp(op, "resume") ? DL_RESUME : !strcmp(op, "cancel") ? DL_CANCEL : !strcmp(op, "remove") ? DL_REMOVE : -1;
+	if (o < 0 || dl_op((u32)strtoul(ids, NULL, 10), o) < 0) {
+		resp_err(c, 400, "bad_op");
+		return;
+	}
+	resp_ok(c);
+}
+
 /* MD5 y SHA-256: POST empieza (p = archivo), GET dice cómo va (el mismo trabajo que en la consola) */
 static void h_hash(Conn *c, bool post)
 {
@@ -1640,6 +1716,12 @@ static void route(Conn *c, const char *body)
 		h_info(c);
 	else if (strcmp(p, "hash") == 0)
 		h_hash(c, post);
+	else if (strcmp(p, "dl") == 0 && post)
+		h_dl(c, body);
+	else if (strcmp(p, "dls") == 0 && get)
+		h_dls(c);
+	else if (strcmp(p, "dl_op") == 0 && post)
+		h_dl_op(c);
 	else if (strcmp(p, "zip_prep") == 0 && post)
 		h_zip_prep(c, body);
 	else if (strcmp(p, "zip") == 0 && get)

@@ -214,6 +214,11 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .qlist{max-height:260px;overflow:auto;border-top:1px solid var(--line)}
 .queue.min .qlist{display:none}
 #insq{z-index:46}
+#dlq{z-index:44;right:auto;left:20px}
+.dlf label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+.dlf textarea.field{min-height:74px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.dlf .chk2{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px}
+.dlf .chk2 input{width:18px;height:18px;accent-color:var(--a)}
 .qi{display:flex;gap:10px;align-items:center;padding:10px 12px 10px 16px;border-bottom:1px solid var(--line)}
 .qi:last-child{border-bottom:0}
 .qi .meta span.err{color:var(--err)}
@@ -304,6 +309,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
   .fab{display:flex}
   .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
   .queue{right:12px;left:12px;bottom:12px;width:auto;max-width:none}
+  #dlq{right:12px;left:12px}
   .selbar span.n{display:none}
 }
 </style>
@@ -355,6 +361,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 <div class="selbar" id="selbar"></div>
 <div class="queue" id="queue"></div>
 <div class="queue" id="insq"></div>
+<div class="queue" id="dlq"></div>
 <div class="drop" id="drop"></div>
 <div class="toast" id="toast"></div>
 <div class="offline" id="offline"></div>
@@ -395,6 +402,7 @@ es:{
  err_exists:"Ya existe un archivo con ese nombre.", err_not_found:"El elemento ya no existe. Es posible que se haya movido o eliminado.", err_io:"Error de escritura en la tarjeta SD.",
  err_net:"Se perdió la conexión con la consola.", err_is_dir:"Ya hay una carpeta con ese nombre.", err:"Se produjo un error (%1).",
  offline:"Se perdió la conexión con la consola. Reintentando…", logout:"Desvincular este dispositivo", logoutD:"Para volver a entrar tendrás que escanear el código QR o introducir el PIN.",
+ dlNet:"De Internet", dlT:"Descargar de Internet en la consola", dlD:"Pega uno o varios enlaces y la consola los baja directamente a la SD. Puedes cerrar esta página: sigue sola.", dlUrls:"Enlaces (uno por línea)", dlTo:"Guardar en", dlHash:"MD5 o SHA-256 para comprobarlo", optional:"Opcional", dlInstall:"Al terminar, ofrecer instalar los .cia en la consola", dlUnzip:"Al terminar, descomprimir los .zip", dlGo:"Descargar en la consola", dlBad:"Revisa los enlaces: deben empezar por http:// o https://", dlSent:"Enviado a la consola: %1", dlHead:"Descargando en la consola · %1", dlHeadDone:"Descargas en la consola", dlPaused:"En pausa", dlPause:"Pausar", dlResume:"Reanudar", dlForget:"Quitar de la lista", dlHashOk:"suma comprobada", dlHashBad:"la suma no coincide", dlToInstall:"confírmalo en la consola", dlToUnzip:"descomprimido", dlerr_offline:"Sin conexión a Internet", dlerr_tls:"Conexión no segura (certificado)", dlerr_net:"Error de red", dlerr_not_found:"No existe (404)", dlerr_denied:"El servidor no lo permite", dlerr_http:"Error del servidor", dlerr_no_space:"No hay espacio en la SD", dlerr_io:"No se pudo escribir en la SD", dlerr_no_cia:"Esa release no tiene ningún .cia", err_bad_url:"Ese enlace no vale.", err_bad_hash:"El MD5 o SHA-256 no es válido.", err_dl_full:"La cola de descargas está llena.",
  dlZip:"Descargar como ZIP", zipDl:"Preparando el ZIP: la descarga empieza enseguida", zipMany:"Son demasiados para un ZIP: descarga la carpeta entera", unzipA:"Descomprimir en la consola", unzipT:"¿Descomprimir «%1»?", unzipD:"La consola lo extrae en la tarjeta SD. Nunca sustituye nada: si algo ya existe, se guarda con otro nombre.", unzipHere:"Aquí", unzipNew:"En una carpeta nueva «%1»", unzipKeep:"Dejar el ZIP así", unzipRun:"Descomprimiendo «%1» en la consola…", unzipDone:"Extraído en %1", err_bad_zip:"No es un ZIP o está dañado.", err_zip_unsupported:"Este ZIP tiene contraseña o un formato que Cloud3DS no sabe abrir.", err_zip_damaged:"Un archivo del ZIP está dañado.", err_busy:"La consola ya está comprimiendo o extrayendo algo.", err_zip_too_big:"Pasa de 4 GB: no cabe en un ZIP.",
  close:"Cerrar", hashA:"MD5 y SHA-256", hashRun:"La consola lo está calculando… %1 %", hashBg:"Puedes cerrar esto: la consola sigue calculando y lo verás al volver a abrirlo.", hashErr:"La consola no pudo leer el archivo.", hashOther:"La consola empezó a calcular otro archivo.", hashOk:"Coincide con %1", hashBad:"No coincide con %1", hashCmp:"Pega aquí el valor esperado para comparar", hashSame:"Coincide", hashDiff:"No coincide", copied:"Copiado",
  findAll:"Buscar «%1» en toda la SD", findT:"«%1» en toda la SD", finding:"Buscando en la SD…", findNone:"No hay nada que se llame «%1» en la SD.", findMore:"Hay más resultados: escribe algo más concreto.", fAll:"Todo", fDir:"Carpetas", fImg:"Fotos", fVid:"Vídeo y música", fTxt:"Texto", fApp:"Apps y CIA", fRom:"ROMs", fZip:"Comprimidos", fSav:"Partidas", fFile:"Otros",
@@ -433,6 +441,7 @@ en:{
  err_exists:"A file with that name already exists.", err_not_found:"The item no longer exists. It may have been moved or deleted.", err_io:"Write error on the SD card.",
  err_net:"Lost connection to the console.", err_is_dir:"There's already a folder with that name.", err:"An error occurred (%1).",
  offline:"Lost connection to the console. Retrying…", logout:"Unpair this device", logoutD:"To sign in again, you'll need to scan the QR code or enter the PIN.",
+ dlNet:"From the Internet", dlT:"Download from the Internet on the console", dlD:"Paste one or more links and the console downloads them straight to the SD card. You can close this page: it keeps going.", dlUrls:"Links (one per line)", dlTo:"Save to", dlHash:"MD5 or SHA-256 to check it", optional:"Optional", dlInstall:"When done, offer to install .cia files on the console", dlUnzip:"When done, extract .zip files", dlGo:"Download on the console", dlBad:"Check the links: they must start with http:// or https://", dlSent:"Sent to the console: %1", dlHead:"Downloading on the console · %1", dlHeadDone:"Downloads on the console", dlPaused:"Paused", dlPause:"Pause", dlResume:"Resume", dlForget:"Remove from the list", dlHashOk:"checksum OK", dlHashBad:"checksum doesn't match", dlToInstall:"confirm it on the console", dlToUnzip:"extracted", dlerr_offline:"No Internet connection", dlerr_tls:"Insecure connection (certificate)", dlerr_net:"Network error", dlerr_not_found:"Not found (404)", dlerr_denied:"The server doesn't allow it", dlerr_http:"Server error", dlerr_no_space:"Not enough space on the SD", dlerr_io:"Couldn't write to the SD", dlerr_no_cia:"That release has no .cia", err_bad_url:"That link isn't valid.", err_bad_hash:"The MD5 or SHA-256 isn't valid.", err_dl_full:"The download queue is full.",
  dlZip:"Download as ZIP", zipDl:"Preparing the ZIP: the download starts in a moment", zipMany:"Too many for one ZIP: download the whole folder", unzipA:"Extract on the console", unzipT:"Extract “%1”?", unzipD:"The console extracts it on the SD card. Nothing is replaced: if something already exists, it gets another name.", unzipHere:"Here", unzipNew:"In a new folder “%1”", unzipKeep:"Leave the ZIP as is", unzipRun:"Extracting “%1” on the console…", unzipDone:"Extracted to %1", err_bad_zip:"It isn't a ZIP or it's damaged.", err_zip_unsupported:"This ZIP has a password or a format Cloud3DS can't open.", err_zip_damaged:"A file in the ZIP is damaged.", err_busy:"The console is already compressing or extracting something.", err_zip_too_big:"Over 4 GB: it doesn't fit in a ZIP.",
  close:"Close", hashA:"MD5 & SHA-256", hashRun:"The console is calculating it… %1 %", hashBg:"You can close this: the console keeps going and you'll see it when you open it again.", hashErr:"The console couldn't read the file.", hashOther:"The console started on another file.", hashOk:"Matches %1", hashBad:"Doesn't match %1", hashCmp:"Paste the expected value here to compare", hashSame:"It matches", hashDiff:"It doesn't match", copied:"Copied",
  findAll:"Search “%1” on the whole SD", findT:"“%1” on the whole SD", finding:"Searching the SD…", findNone:"Nothing called “%1” on the SD.", findMore:"There are more results: try something more specific.", fAll:"All", fDir:"Folders", fImg:"Photos", fVid:"Video & music", fTxt:"Text", fApp:"Apps & CIA", fRom:"ROMs", fZip:"Archives", fSav:"Saves", fFile:"Other",
@@ -471,6 +480,7 @@ ja:{
  err_exists:"同じ名前のファイルがあります。", err_not_found:"この項目はもうありません。移動または削除された可能性があります。", err_io:"SDカードへの書き込みエラーです。",
  err_net:"本体との接続が切れました。", err_is_dir:"同じ名前のフォルダがあります。", err:"エラーが発生しました(%1)。",
  offline:"本体との接続が切れました。再試行中…", logout:"このデバイスの登録を解除", logoutD:"もう一度入るには、QRコードを読み取るかPINを入力する必要があります。",
+ dlNet:"インターネットから", dlT:"本体でインターネットからダウンロード", dlD:"リンクを貼り付けると、本体がSDカードに直接ダウンロードします。このページを閉じても続きます。", dlUrls:"リンク（1行に1つ）", dlTo:"保存先", dlHash:"確認用のMD5またはSHA-256", optional:"任意", dlInstall:"完了後、.ciaのインストールを本体で確認する", dlUnzip:"完了後、.zipを展開する", dlGo:"本体でダウンロード", dlBad:"リンクを確認してください。http:// か https:// で始まる必要があります", dlSent:"本体に送りました：%1", dlHead:"本体でダウンロード中 · %1", dlHeadDone:"本体のダウンロード", dlPaused:"一時停止中", dlPause:"一時停止", dlResume:"再開", dlForget:"一覧から削除", dlHashOk:"チェックサム一致", dlHashBad:"チェックサム不一致", dlToInstall:"本体で確認してください", dlToUnzip:"展開済み", dlerr_offline:"インターネットに接続していません", dlerr_tls:"安全でない接続（証明書）", dlerr_net:"ネットワークエラー", dlerr_not_found:"見つかりません（404）", dlerr_denied:"サーバーが許可していません", dlerr_http:"サーバーエラー", dlerr_no_space:"SDの空き容量が足りません", dlerr_io:"SDに書き込めませんでした", dlerr_no_cia:"そのリリースには.ciaがありません", err_bad_url:"そのリンクは使えません。", err_bad_hash:"MD5またはSHA-256が正しくありません。", err_dl_full:"ダウンロードの待ち行列がいっぱいです。",
  dlZip:"ZIPでダウンロード", zipDl:"ZIPを準備中です。まもなくダウンロードが始まります", zipMany:"1つのZIPには多すぎます。フォルダごとダウンロードしてください", unzipA:"本体で展開", unzipT:"「%1」を展開しますか?", unzipD:"本体がSDカードに展開します。上書きはしません。同じ名前があれば別の名前で保存します。", unzipHere:"ここに", unzipNew:"新しいフォルダ「%1」に", unzipKeep:"ZIPのままにする", unzipRun:"本体で「%1」を展開中…", unzipDone:"%1 に展開しました", err_bad_zip:"ZIPではないか、壊れています。", err_zip_unsupported:"このZIPはパスワード付きか、Cloud3DSが開けない形式です。", err_zip_damaged:"ZIP内のファイルが壊れています。", err_busy:"本体はすでに圧縮か展開をしています。", err_zip_too_big:"4 GBを超えるためZIPにできません。",
  close:"閉じる", hashA:"MD5とSHA-256", hashRun:"本体で計算中… %1 %", hashBg:"閉じても大丈夫です。本体が計算を続け、もう一度開くと表示されます。", hashErr:"本体がファイルを読めませんでした。", hashOther:"本体が別のファイルの計算を始めました。", hashOk:"%1 と一致", hashBad:"%1 と一致しません", hashCmp:"比較する値をここに貼り付け", hashSame:"一致します", hashDiff:"一致しません", copied:"コピーしました",
  findAll:"SD全体で「%1」を検索", findT:"SD全体の「%1」", finding:"SDを検索中…", findNone:"SDに「%1」という名前のものはありません。", findMore:"ほかにも結果があります。もっと具体的に入力してください。", fAll:"すべて", fDir:"フォルダ", fImg:"写真", fVid:"動画と音楽", fTxt:"テキスト", fApp:"アプリとCIA", fRom:"ROM", fZip:"圧縮ファイル", fSav:"セーブ", fFile:"その他",
@@ -508,7 +518,7 @@ const I = {
  down:'<path d="M12 4v12M6 10l6 6 6-6"/><path d="M4 20h16"/>',
  plusf:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/>',
  upf:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 16v-6M9.5 12.5 12 10l2.5 2.5"/>',
- check:'<path d="m5 12 5 5 9-10"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>',
+ check:'<path d="m5 12 5 5 9-10"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>', globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/>', pause:'<path d="M9 5v14M15 5v14"/>', play:'<path d="M8 5v14l11-7z"/>',
  dots:'<circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/>',
  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', shield:'<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>', pen:'<path d="M4 20h4L20 8l-4-4L4 16z"/>',
  eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -640,6 +650,7 @@ const SAVE_DIRS=["/3ds/Checkpoint/saves","/JKSV/Saves","/JKSV"];
 const inSaves=p=>S.nosaves||SAVE_DIRS.some(d=>p===d||p.startsWith(d+"/"));
 
 function startApp(){
+ setTimeout(pollDl,800); // descargas que ya estaban en marcha (desde aquí o desde otro dispositivo)
  $("#login").classList.add("hide");$("#app").classList.remove("hide");$("#fab").classList.remove("hide");
  const p=decodeURIComponent((location.hash.match(/^#p=(.*)$/)||[])[1]||"");
  go(p&&(p.startsWith("/")||p==="@trash")?p:"/",true);
@@ -804,7 +815,8 @@ function renderChrome(){
  $("#tools").innerHTML=S.trash||S.find?"":
   (ro||S.trash?"":`<button class="btn pri up" id="tUp">${svg("up")}<span class="lbl">${t("upload")}</span></button>`+
    `<button class="btn up" id="tUpF">${svg("upf")}<span class="lbl">${t("uploadFolder")}</span></button>`+
-   `<button class="btn" id="tNew">${svg("plusf")}<span class="lbl">${t("newFolder")}</span></button>`)+
+   `<button class="btn" id="tNew">${svg("plusf")}<span class="lbl">${t("newFolder")}</span></button>`+
+   `<button class="btn" id="tDl" title="${t("dlT")}">${svg("globe")}<span class="lbl">${t("dlNet")}</span></button>`)+
   `<div class="grow"></div>`+
   `<button class="btn" id="tSort" title="${t("sortBy")}">${svg("sort")}<span class="lbl">${t(sortIc)}</span></button>`+
   `<button class="btn" id="tView" title="${t(S.view==="grid"?"listv":"grid")}">${svg(S.view==="grid"?"list":"grid")}</button>`;
@@ -1003,6 +1015,68 @@ async function confirmDelete(list){
  if(!errs)toast(t("deleted"));
  S.sel.clear();go(S.path,true);refreshInfo();
 }
+/* ---------- descargas de Internet (las baja la consola) ---------- */
+const DL={items:[],timer:0,min:false,seen:false};
+function dlDialog(){
+ const m=modal(`<div class="dlg dlf"><h3>${t("dlT")}</h3><p>${t("dlD")}</p>
+  <label>${t("dlUrls")}</label><textarea class="field" id="dlU" spellcheck="false" autocapitalize="off" placeholder="https://…"></textarea>
+  <label>${t("dlTo")}</label><input class="field" id="dlP" spellcheck="false" autocapitalize="off" value="${esc(S.trash||S.find||S.nosaves?"/":S.path)}">
+  <label>${t("dlHash")}</label><input class="field" id="dlH" spellcheck="false" autocapitalize="off" placeholder="${t("optional")}">
+  <div class="chk2"><input type="checkbox" id="dlI" checked><span>${t("dlInstall")}</span></div>
+  <div class="chk2"><input type="checkbox" id="dlZ"><span>${t("dlUnzip")}</span></div>
+  <div class="btns"><button class="btn" data-r="0">${t("cancel")}</button><button class="btn pri" data-r="1">${t("dlGo")}</button></div></div>`,true);
+ const u=m.el.querySelector("#dlU");setTimeout(()=>u.focus(),60);
+ m.el.addEventListener("click",async e=>{
+  const r=e.target.closest("[data-r]");if(!r)return;
+  if(r.dataset.r==="0"){m.close();return}
+  const urls=u.value.split(/\s+/).map(x=>x.trim()).filter(Boolean);
+  if(!urls.length||urls.some(x=>!/^https?:\/\/\S+$/i.test(x))){toast(t("dlBad"));return}
+  const d=m.el.querySelector("#dlP").value.trim()||"/",hash=m.el.querySelector("#dlH").value.trim();
+  const after=[m.el.querySelector("#dlI").checked?"install":"",m.el.querySelector("#dlZ").checked?"unzip":""].filter(Boolean).join(",");
+  m.close();
+  let ok=0;
+  for(const url of urls){try{await api("POST","dl",{d,hash:urls.length===1?hash:"",after},"url="+encodeURIComponent(url));ok++}catch(err){toast(errText(err))}}
+  if(ok){toast(t("dlSent",ok));DL.min=false;pollDl()}
+ });
+}
+async function pollDl(){
+ clearTimeout(DL.timer);
+ try{const r=await api("GET","dls");DL.items=r.items}catch(e){}
+ renderDl();
+ const live=DL.items.some(i=>i.st==="run"||i.st==="queued");
+ DL.timer=setTimeout(pollDl,live?1200:document.hidden?15000:5000);
+}
+function renderDl(){
+ const el=$("#dlq"),items=DL.items;
+ if(!items.length){el.classList.remove("show");return}
+ el.classList.add("show");el.classList.toggle("min",DL.min);
+ const run=items.find(i=>i.st==="run"),active=items.filter(i=>i.st==="run"||i.st==="queued").length;
+ const head=active?t("dlHead",active):t("dlHeadDone");
+ const sub=run&&run.total?`${Math.floor(run.done/run.total*100)} % · ${fsize(run.done)} / ${fsize(run.total)}${run.speed?` · ${fsize(run.speed)}/s · ${t("left",feta((run.total-run.done)/run.speed))}`:""}`:run?fsize(run.done):"";
+ const row=i=>{
+  const nm=i.name||i.host;
+  let st=i.st==="run"?(i.total?`${fsize(i.done)} / ${fsize(i.total)}${i.speed?" · "+fsize(i.speed)+"/s":""}`:fsize(i.done)):
+   i.st==="queued"?t("queued"):i.st==="paused"?t("dlPaused")+(i.done?" · "+fsize(i.done)+(i.total?" / "+fsize(i.total):""):""):
+   i.st==="done"?`<span class="ok">${t("done")}</span>`:i.st==="canceled"?t("canceled"):`<span class="err">${esc(t("dlerr_"+i.err)!=="dlerr_"+i.err?t("dlerr_"+i.err):t("failed"))}</span>`;
+  if(i.st==="done"&&i.hash)st+=i.hashOk===1?` · <span class="ok">${t("dlHashOk")}</span>`:` · <span class="err">${t("dlHashBad")}</span>`;
+  if(i.st==="done"&&i.err)st+=` · <span class="err">${esc(t("err_"+i.err)!=="err_"+i.err?t("err_"+i.err):i.err)}</span>`;
+  else if(i.st==="done"&&/\.cia$/i.test(i.name)&&i.after.includes("install")&&i.hashOk!==0)st+=" · "+t("dlToInstall");
+  else if(i.st==="done"&&/\.zip$/i.test(i.name)&&i.after.includes("unzip")&&i.hashOk!==0)st+=" · "+t("dlToUnzip");
+  st+=` · ${esc(i.host)}`;
+  const pct=i.total?i.done/i.total*100:0,k=kind({n:nm});
+  const btn=(op,ic,tt)=>`<button class="more" data-dop="${op}" data-id="${i.id}" title="${tt}">${svg(ic)}</button>`;
+  return `<div class="qi"><div class="ic ${k}">${kindSvg(k)}</div><div class="meta"><b>${esc(nm)}</b><span>${st}</span>${i.st==="run"||i.st==="paused"?`<div class="pbar"><i style="width:${pct.toFixed(1)}%"></i></div>`:""}</div>`+
+   (i.st==="run"?btn("pause","pause",t("dlPause")):i.st==="paused"||i.st==="fail"?btn("resume","play",t("dlResume")):"")+
+   (i.st==="run"||i.st==="queued"||i.st==="paused"?btn("cancel","x",t("cancel")):btn("remove","x",t("dlForget")))+`</div>`;
+ };
+ el.innerHTML=`<div class="qh" id="dlh"><div class="ic">${svg("globe")}</div><div class="meta"><b>${head}</b><span class="muted">${sub}</span></div></div>
+  <div class="qlist">${items.slice().reverse().map(row).join("")}</div>`;
+}
+$("#dlq").addEventListener("click",async e=>{
+ const b=e.target.closest("[data-dop]");
+ if(b){e.stopPropagation();try{await api("POST","dl_op",{id:b.dataset.id,op:b.dataset.dop})}catch(err){toast(errText(err))}pollDl();return}
+ if(e.target.closest("#dlh")){DL.min=!DL.min;renderDl()}
+});
 /* ---------- ZIP ---------- */
 // varios elementos (o una carpeta) en un ZIP que la consola arma mientras lo manda
 async function zipDownload(dir,names){
@@ -1172,6 +1246,7 @@ document.addEventListener("click",e=>{
  if(id==="tUp"||id==="fab")$("#fpick").click();
  if(id==="tUpF")$("#dpick").click();
  if(id==="tNew")newFolder();
+ if(id==="tDl")dlDialog();
  if(id==="tSort")sortMenu();
  if(id==="bref"){if(S.find)findAll(S.find.q);else go(S.trash?"@trash":S.path,true);refreshInfo()}
  if(id==="tView"){S.view=S.view==="grid"?"list":"grid";try{localStorage.setItem("c3d_view",S.view)}catch(e){}render()}
