@@ -15,6 +15,7 @@
 #include "util.h"
 #include "dl.h"
 #include "hash.h"
+#include "live.h"
 #include "titles.h"
 #include "remote.h"
 #include "zipjob.h"
@@ -1124,6 +1125,68 @@ static void h_save_backup(Conn *c)
 	free(b.p);
 }
 
+/* ---------- escribir desde el PC en el editor de la consola ---------- */
+static void h_live_open(Conn *c)
+{
+	char p[700];
+	bool d;
+	u64 sz;
+	if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p) || fsx_stat(p, &d, &sz) < 0 || d) {
+		resp_err(c, 400, "bad_path");
+		return;
+	}
+	if (!check_write(c, p, SYS_BLOCK))
+		return;
+	char dev[48];
+	state_lock();
+	util_strlcpy(dev, G.dev[c->dev].name, sizeof dev);
+	state_unlock();
+	live_open(p, dev);
+	resp_ok(c);
+}
+
+/* un trozo: las líneas [i, i+d) pasan a ser t (n=1: se quitan) */
+static void h_live_op(Conn *c, const char *body)
+{
+	char p[700], is[16] = "", ds[16] = "", cs[16] = "0";
+	static char t[SMALL_BODY + 1];
+	if (!qget(c->query, "p", p, sizeof p) || !qget(c->query, "i", is, sizeof is) || !qget(c->query, "d", ds, sizeof ds)) {
+		resp_err(c, 400, "bad_op");
+		return;
+	}
+	qget(c->query, "cur", cs, sizeof cs);
+	bool none = qflag(c->query, "n");
+	if (!none && !qget(body, "t", t, sizeof t))
+		t[0] = 0;
+	if (!live_push(p, atoi(is), atoi(ds), none ? NULL : t, atoi(cs))) {
+		resp_err(c, 409, "live_off");
+		return;
+	}
+	resp_ok(c);
+}
+
+static void h_live(Conn *c)
+{
+	char rs[16] = "0", path[700];
+	qget(c->query, "rev", rs, sizeof rs);
+	u32 rev;
+	int cur;
+	bool dirty, ok;
+	char *text = live_get((u32)strtoul(rs, NULL, 10), &rev, &cur, &dirty, &ok, path, sizeof path);
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"on\":%s,\"doc\":%s,\"rev\":%lu,\"cur\":%d,\"dirty\":%s,\"path\":", path[0] ? "true" : "false",
+	           ok ? "true" : "false", (unsigned long)rev, cur, dirty ? "true" : "false");
+	buf_json_str(&b, path);
+	if (text) {
+		buf_puts(&b, ",\"text\":");
+		buf_json_str(&b, text);
+		free(text);
+	}
+	buf_puts(&b, "}");
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
 /* MD5 y SHA-256: POST empieza (p = archivo), GET dice cómo va (el mismo trabajo que en la consola) */
 static void h_hash(Conn *c, bool post)
 {
@@ -1912,7 +1975,19 @@ static void route(Conn *c, const char *body)
 		h_info(c);
 	else if (strcmp(p, "hash") == 0)
 		h_hash(c, post);
-	else if (strcmp(p, "shot") == 0 && get)
+	else if (strcmp(p, "live_open") == 0 && post)
+		h_live_open(c);
+	else if (strcmp(p, "live_op") == 0 && post)
+		h_live_op(c, body);
+	else if (strcmp(p, "live") == 0 && get)
+		h_live(c);
+	else if (strcmp(p, "live_save") == 0 && post) {
+		live_request_save();
+		resp_ok(c);
+	} else if (strcmp(p, "live_close") == 0 && post) {
+		live_close();
+		resp_ok(c);
+	} else if (strcmp(p, "shot") == 0 && get)
 		h_shot(c);
 	else if (strcmp(p, "titles") == 0 && get)
 		h_titles(c);

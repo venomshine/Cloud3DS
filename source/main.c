@@ -17,6 +17,7 @@
 #include "hl.h"
 #include "dl.h"
 #include "hash.h"
+#include "live.h"
 #include "titles.h"
 #include "remote.h"
 #include "qrcam.h"
@@ -2767,6 +2768,24 @@ static bool vw_button(float x, float y, float w, float h, IconId ic, const char 
 
 static void vw_save(bool force);
 
+// ¿se está escribiendo desde la web en el documento abierto?
+static bool live_here(char *who, size_t n)
+{
+	char p[700];
+	char dev[48];
+	if (VW.kind != VW_TXT || !live_active(dev, sizeof dev))
+		return false;
+	u32 rev;
+	int cur;
+	bool d, ok;
+	free(live_get(0xFFFFFFFF, &rev, &cur, &d, &ok, p, sizeof p)); // solo la ruta
+	if (strcmp(p, VW.path))
+		return false;
+	if (who)
+		util_strlcpy(who, dev, n);
+	return true;
+}
+
 static void vw_bottom_text(void)
 {
 	bool ed = vw_editable();
@@ -2782,7 +2801,11 @@ static void vw_bottom_text(void)
 		util_strlcpy(sub, _("Solo lectura: el texto no está en UTF-8"), sizeof sub), sc = T.warn;
 	else if (VW.doc.ro == TXT_RO_BIG)
 		util_strlcpy(sub, VW.doc.cut ? _("Solo lectura: archivo muy grande, se ve el principio") : _("Solo lectura: archivo muy grande"), sizeof sub), sc = T.warn;
-	else if (VW.doc.dirty)
+	else if (live_here(NULL, 0)) { // alguien escribe desde el PC en este mismo documento
+		char who[48];
+		live_here(who, sizeof who);
+		snprintf(sub, sizeof sub, _("En vivo: %s"), who), sc = T.accent;
+	} else if (VW.doc.dirty)
 		snprintf(sub, sizeof sub, _("Línea %d de %d"), VW.cur + 1, n), sc = T.warn; // sin guardar: también se enciende «Guardar»
 	else
 		snprintf(sub, sizeof sub, _("Línea %d de %d"), VW.cur + 1, n);
@@ -6591,6 +6614,72 @@ static void update(void)
 				toast_icon(r == HCHK_OK ? _("Coincide") : _("No coincide"), r == HCHK_OK ? IC_CHECK : IC_CLOSE, r == HCHK_OK ? T.ok : T.danger);
 			}
 		}
+	}
+	{ // escribir desde el PC: abrir el documento, aplicar lo que llega y publicar cómo queda
+		char lp[700];
+		if (live_take_open(lp, sizeof lp)) {
+			if (VW.kind == VW_TXT && strcmp(VW.path, lp) && vw_dirty()) {
+				toast_icon(_("Guarda o cierra el documento abierto para escribir desde el PC"), IC_NOTE, T.warn);
+				live_publish(lp, "", 0, false, false);
+			} else if (VW.kind != VW_TXT || strcmp(VW.path, lp)) {
+				char dir[700], nm[256];
+				util_strlcpy(dir, lp, sizeof dir);
+				char *sl = strrchr(dir, '/');
+				util_strlcpy(nm, sl ? sl + 1 : lp, sizeof nm);
+				if (sl == dir)
+					dir[1] = 0;
+				else if (sl)
+					*sl = 0;
+				if (VW.kind)
+					vw_close();
+				U.tab = TAB_FILES;
+				f_load(dir);
+				for (int i = 0; i < F.nv; i++)
+					if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm)) {
+						F.sel = i;
+						vw_load(F.v[i].idx);
+					}
+			}
+		}
+		static int sig_pos = -1, sig_n = -1, sig_cur = -1, sig_saved = -2;
+		static char sig_path[700];
+		if (live_active(NULL, 0)) {
+			bool here = VW.kind == VW_TXT && VW.doc.ro == TXT_RW && !VW.prot;
+			LiveOp op;
+			while (live_pop(&op)) {
+				if (here && op.i == -1 && op.cur >= 0 && op.cur < VW.doc.n) // solo se movió el cursor
+					VW.cur = op.cur;
+				else if (here && op.i >= 0 && op.i <= VW.doc.n && op.d >= 0 && op.i + op.d <= VW.doc.n && (op.text || VW.doc.n - op.d >= 1)) {
+					txt_splice(&VW.doc, op.i, op.d, op.text);
+					VW.cur = op.cur < 0 ? 0 : op.cur >= VW.doc.n ? VW.doc.n - 1 : op.cur;
+					VW.hlv = 0;
+					if (VW.cur < VW.top || VW.cur >= VW.top + 10) // que se vea por dónde va
+						VW.top = VW.cur > 3 ? VW.cur - 3 : 0;
+				}
+				free(op.text);
+			}
+			if (here && live_want_save())
+				vw_save(false);
+			if (VW.kind == VW_TXT && (VW.doc.pos != sig_pos || VW.doc.n != sig_n || VW.cur != sig_cur || VW.doc.saved != sig_saved ||
+			                          strcmp(sig_path, VW.path))) {
+				sig_pos = VW.doc.pos, sig_n = VW.doc.n, sig_cur = VW.cur, sig_saved = VW.doc.saved;
+				util_strlcpy(sig_path, VW.path, sizeof sig_path);
+				char *t = txt_join(&VW.doc, 0, VW.doc.n);
+				if (t)
+					live_publish(VW.path, t, VW.cur, VW.doc.dirty, here);
+				free(t);
+			} else if (VW.kind != VW_TXT && sig_n != -2) { // se cerró en la consola
+				sig_n = -2, sig_path[0] = 0;
+				char lp2[700], who[4];
+				(void)who;
+				u32 rv;
+				int cr;
+				bool dd, ok2;
+				free(live_get(0xFFFFFFFF, &rv, &cr, &dd, &ok2, lp2, sizeof lp2));
+				live_publish(lp2, "", 0, false, false);
+			}
+		} else
+			sig_n = -1;
 	}
 	if (U.want_netname) {
 		U.want_netname = false;

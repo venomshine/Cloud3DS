@@ -1682,4 +1682,10 @@ TR = {
     'Captura enviada a %d dispositivos':
         ('Screenshot sent to %d devices',
          'スクリーンショットを%d台に送りました'),
+    'En vivo: %s':
+        ('Live: %s',
+         'ライブ：%s'),
+    'Guarda o cierra el documento abierto para escribir desde el PC':
+        ('Save or close the open document to type from the PC',
+         'PCから入力するには開いているドキュメントを保存するか閉じてください'),
 }

@@ -294,6 +294,11 @@ bool txt_replace(TxtDoc *d, int i, int count, const char *s)
 	return splice(d, i, count, s);
 }
 
+bool txt_splice(TxtDoc *d, int i, int count, const char *s)
+{
+	return splice(d, i, count, s);
+}
+
 bool txt_set(TxtDoc *d, int i, const char *s)
 {
 	if (i < 0 || i >= d->n)
