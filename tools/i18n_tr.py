@@ -1733,4 +1733,13 @@ TR = {
     '%s libres':
         ('%s free',
          '空き %s'),
+    'Escanear un QR':
+        ('Scan a QR code',
+         'QRコードを読み取る'),
+    'Un archivo o la última versión de un proyecto de GitHub':
+        ('A file, or the latest release of a GitHub project',
+         'ファイル、またはGitHubプロジェクトの最新リリース'),
+    'Con la cámara, como en FBI':
+        ('With the camera, like in FBI',
+         'FBIと同じく、カメラで'),
 }

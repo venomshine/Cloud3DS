@@ -1465,6 +1465,8 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 	}
 }
 
+static void qrs_open(void);
+
 static void tab_activity(void)
 {
 	List *l = cur_list();
@@ -1497,22 +1499,39 @@ static void tab_activity(void)
 	const float RH = 40;
 	ds_refresh();
 	int nd = DS.n; // las descargas, arriba (la más reciente primero)
-	int rows = n + nd;
+	enum { NA = 2 }; // primero, a la vista: descargar de un enlace y escanear un QR
+	int rows = NA + n + nd;
 	list_update(l, rows, RH);
-	if (!rows) {
-		empty_state(IC_CLOUD, _("Todo listo"), _("Aquí verás lo que subas o descargues desde tu móvil o tu PC."));
-		return;
-	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
-	for (int i = 0; i < rows; i++) {
-		float y = VIEW_Y + i * RH - l->off;
+	for (int r = 0; r < rows; r++) {
+		float y = VIEW_Y + r * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
-		g_clip_ell = l->sel != i; // solo la marcada se desplaza si no cabe
+		g_clip_ell = l->sel != r; // solo la marcada se desplaza si no cabe
+		if (r < NA) {
+			bool t = row(l, r, y, RH);
+			static const IconId aic[NA] = {IC_GLOBE, IC_QR};
+			const char *at[NA] = {_("Descargar de un enlace"), _("Escanear un QR")};
+			const char *as[NA] = {_("Un archivo o la última versión de un proyecto de GitHub"), _("Con la cámara, como en FBI")};
+			draw_circle(28, y + RH / 2, 13, col_alpha(T.accent, 0.16f));
+			draw_icon(aic[r], 28, y + RH / 2, 15, T.accent);
+			text_draw_clip(at[r], 50, y + 5, BOT_W - 64, TS_BODY, T.accent);
+			text_draw_clip(as[r], 50, y + 22, BOT_W - 64, TS_SUB, T.text3);
+			if (r == NA - 1)
+				draw_rect(14, y + RH - 0.5f, BOT_W - 28, 1, T.divider);
+			if (!g_dialog.open && (t || activate(l, r))) {
+				if (r == 0)
+					U.want_dlurl = true;
+				else
+					qrs_open();
+			}
+			continue;
+		}
+		int i = r - NA;
 		if (i < nd) {
 			const DlItem *d = &DS.it[nd - 1 - i];
-			bool t = row(l, i, y, RH);
-			if (t || activate(l, i)) {
+			bool t = row(l, r, y, RH);
+			if (t || activate(l, r)) {
 				DS.id = d->id;
 				DS.open = DS.just = true, DS.sel = 0;
 			}
@@ -1529,7 +1548,7 @@ static void tab_activity(void)
 			}
 			continue;
 		}
-		row(l, i, y, RH);
+		row(l, r, y, RH);
 		const Event *e = ev(i - nd);
 		char title[128], sub[140], when[24];
 		IconId ic = IC_INFO;
@@ -1544,6 +1563,11 @@ static void tab_activity(void)
 	}
 	gfx_clip_off();
 	g_clip_ell = false;
+	if (!n && !nd) { // nada más: lo que se verá aquí
+		float cy = VIEW_Y + NA * RH - l->off + 34;
+		draw_icon(IC_CLOUD, BOT_W / 2, cy, 22, T.text3);
+		wrap_center(_("Aquí verás lo que subas o descargues desde tu móvil o tu PC."), BOT_W / 2, cy + 20, 260, TS_SUB, 3, T.text3);
+	}
 }
 
 static void ask_revoke(int d)
@@ -3594,6 +3618,16 @@ static bool qrs_is_open(void)
 	return QRS.open;
 }
 
+// dónde se guarda lo que se descarga: la carpeta abierta en Archivos; desde la raíz o desde
+// otra pestaña, la raíz, y los .cia (o las releases de GitHub) en /cias
+static const char *dl_dest_dir(const char *url)
+{
+	const char *dir = U.tab != TAB_FILES || F.trash || F.search || F.titles || F.nosaves || F.missing ? "/" : F.path;
+	size_t l = strcspn(url, "?#");
+	bool cia = (l > 4 && !strncasecmp(url + l - 4, ".cia", 4)) || strstr(url, "github.com/");
+	return !strcmp(dir, "/") && cia ? "/cias" : dir;
+}
+
 static void qrs_open(void)
 {
 	if (!QRS.px)
@@ -3641,7 +3675,7 @@ static void qrs_parse(const char *t)
 		size_t l = strcspn(QRS.url[i], "?#");
 		cia |= (l > 4 && !strncasecmp(QRS.url[i] + l - 4, ".cia", 4)) || strstr(QRS.url[i], "github.com/");
 	}
-	const char *dir = F.trash || F.search || F.nosaves || F.missing ? "/" : F.path;
+	const char *dir = U.tab != TAB_FILES || F.trash || F.search || F.titles || F.nosaves || F.missing ? "/" : F.path;
 	util_strlcpy(QRS.dest, !strcmp(dir, "/") && cia ? "/cias" : dir, sizeof QRS.dest);
 }
 
@@ -7047,8 +7081,7 @@ static void update(void)
 		U.want_dlurl = false;
 		char url[1024];
 		if (kb_input(_("Enlace para descargar (https://…)"), "https://", url, sizeof url, false, false) && url[0]) {
-			const char *dir = F.trash || F.search || F.nosaves || F.missing ? "/" : F.path;
-			if (dl_add(url, dir, "", DLA_INSTALL, G.console, NULL) == 0)
+			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL, G.console, NULL) == 0)
 				toast_icon(_("Descargando: lo verás en Actividad"), IC_GLOBE, T.accent);
 			else
 				toast_icon(_("Ese enlace no vale"), IC_CLOSE, T.danger);
