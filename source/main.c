@@ -3197,6 +3197,18 @@ static void vw_save(bool force)
 	toast_icon(_("Guardado"), IC_CHECK, T.ok);
 }
 
+// un CIA no se abre de un solo toque (su tarjeta es la de instalar): el primer toque lo marca
+// y el segundo, ya marcado, lo abre. Con A se abre el marcado, como siempre
+static int f_tap_open(int vi)
+{
+	const FEnt *e = &F.e[F.v[vi].idx];
+	if (vi != F.sel && !e->dir && !strcasecmp(f_ext(e->name), "cia")) {
+		F.sel = vi;
+		return -1;
+	}
+	return vi;
+}
+
 // abrir: carpeta → entra; foto o texto → visor; CIA → su tarjeta de instalar; lo demás → opciones
 static bool f_open_item(int vi)
 {
@@ -5057,7 +5069,7 @@ static void tab_files(void)
 			else if (!MS.on && inview && long_press(v->x, y, v->w, v->h))
 				msel = i;
 			else if (!MS.on && inview && tap(v->x, y, v->w, v->h))
-				open = i;
+				open = f_tap_open(i);
 			continue;
 		}
 		// a la derecha, «⋮» para las opciones (como en la web); se comprueba antes que la fila
@@ -5120,7 +5132,7 @@ static void tab_files(void)
 		else if (!MS.on && inview && long_press(6, y, rw, v->h))
 			msel = i; // pulsación larga: a elegir varios, empezando por este
 		else if (!MS.on && inview && tap(6, y, rw, v->h))
-			open = i;
+			open = f_tap_open(i);
 	}
 	gfx_clip_off();
 	g_clip_ell = false;
