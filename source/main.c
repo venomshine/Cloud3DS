@@ -3765,8 +3765,8 @@ static void pm_draw(void)
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a * 0.6f));
 	enum { N = 6 };
 	static const IconId IC[N] = {IC_FOLDER, IC_NOTE, IC_SEARCH, IC_GLOBE, IC_QR, IC_CLOSE};
-	const char *L[N] = {_("Carpeta"), _("Documento de texto"), _("Buscar aquí"), _("Descargar de un enlace"), _("Escanear QR"), _("Cerrar")};
-	const float W = 200, RH = 30, x = BOT_W - 8 - W, y = 30 - (1 - a) * 8;
+	const char *L[N] = {_("Carpeta nueva"), _("Documento de texto nuevo"), _("Buscar aquí"), _("Descargar de un enlace"), _("Escanear QR"), _("Cerrar")};
+	const float W = 214, RH = 30, x = BOT_W - 8 - W, y = 30 - (1 - a) * 8;
 	draw_rrect(x, y + 3, W, N * RH + 12, 14, col_alpha(T.shadow, a));
 	draw_rrect(x, y, W, N * RH + 12, 14, T.surface);
 	if (!PM.open)

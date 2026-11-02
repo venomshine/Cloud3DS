@@ -1724,4 +1724,10 @@ TR = {
     'Nuevo':
         ('New',
          '新規'),
+    'Carpeta nueva':
+        ('New folder',
+         '新しいフォルダ'),
+    'Documento de texto nuevo':
+        ('New text document',
+         '新しいテキスト文書'),
 }
