@@ -556,7 +556,7 @@ static void ins_button(float y, const char *glyph, const char *label, u32 fg, u3
 }
 
 // botones de la tarjeta: si lo que espera se acaba de subir, «Solo copiar» y «Cancelar la copia»
-// (que lo borra); si ya estaba en la SD, solo «Instalar» o «No instalar»
+// (que lo borra); si ya estaba en la SD, solo «Instalar» o «Cerrar» (se queda en la SD)
 typedef struct {
 	const char *glyph, *label;
 	u32 fg, bg;
@@ -579,9 +579,20 @@ static int ins_buttons(InsBtn *b)
 		b[n++] = (InsBtn){GLYPH_X, _("Solo copiar a la SD"), T.text, T.surface2, true, INS_KEEP, KEY_X};
 		b[n++] = (InsBtn){GLYPH_B, _("Cancelar la copia"), T.danger, col_alpha(T.danger, 0.16f), true, INS_REJECT, KEY_B};
 	} else {
-		b[n++] = (InsBtn){GLYPH_B, _("No instalar"), T.text, T.surface2, true, INS_REJECT, KEY_B};
+		b[n++] = (InsBtn){GLYPH_B, _("Cerrar"), T.text, T.surface2, true, INS_REJECT, KEY_B};
 	}
 	return n;
+}
+
+// la tarjeta mide lo que sus botones (sin hueco vacío debajo) y va centrada
+static float ins_card_h(int n)
+{
+	return 80 + n * 44;
+}
+
+static float ins_card_y(int n)
+{
+	return (SCR_H - ins_card_h(n)) / 2;
 }
 
 static void install_card(void)
@@ -592,9 +603,11 @@ static void install_card(void)
 	const InsReq *r = ins_first_pending();
 	float a = ease_out_cubic(U.ins_anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-	float y = 26 + (1 - a) * 30;
-	draw_rrect(10, y + 3, BOT_W - 20, SCR_H - y - 10, 16, col_alpha(T.shadow, a));
-	draw_rrect(10, y, BOT_W - 20, SCR_H - y - 10, 16, T.surface);
+	InsBtn b[3];
+	int n = ins_buttons(b);
+	float y = ins_card_y(n) + (1 - a) * 30, ch = ins_card_h(n);
+	draw_rrect(10, y + 3, BOT_W - 20, ch, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, ch, 16, T.surface);
 	if (!r)
 		return;
 	char title[96];
@@ -610,8 +623,6 @@ static void install_card(void)
 			text_draw_center_clip(U.ins[i].title, BOT_W / 2, y + 36 + shown * 16, BOT_W - 60, TS_SUB, T.text3);
 			shown++;
 		}
-	InsBtn b[3];
-	int n = ins_buttons(b);
 	for (int k = 0; k < n; k++)
 		ins_button(y + 76 + k * 44, b[k].glyph, b[k].label, b[k].fg, b[k].bg, b[k].on);
 }
@@ -624,7 +635,7 @@ static bool install_input(void)
 	InsBtn b[3];
 	int n = ins_buttons(b), what = -1;
 	for (int k = 0; k < n && what < 0; k++)
-		if (b[k].on && ((g_kdown & b[k].key) || tap(INS_BX, 26 + 76 + k * 44, INS_BW, 36)))
+		if (b[k].on && ((g_kdown & b[k].key) || tap(INS_BX, ins_card_y(n) + 76 + k * 44, INS_BW, 36)))
 			what = b[k].what;
 	if (what < 0)
 		return true; // la tarjeta tapa lo de debajo: no pasa nada más
