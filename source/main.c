@@ -4371,13 +4371,24 @@ static void tt_draw(void)
 	const TitleInfo *t = tt_selected();
 	if (!t && TT.open)
 		TT.open = false;
-	static const IconId ic[3] = {IC_DOWNLOAD, IC_FOLDER, IC_TRASH};
-	const char *lab[3] = {_("Hacer copia de la partida"), _("Ver sus copias"), _("Desinstalar")};
-	const u32 col[3] = {T.ok, T.text, T.danger};
-	int n = t && title_is_self(t->tid) ? 2 : 3; // Cloud3DS no se desinstala a sí mismo
+	if (t && TT.info_tid != t->tid) { // cuántas copias tiene (la pantalla de arriba usa lo mismo)
+		TT.info_tid = t->tid;
+		TT.copies = save_backups_count(t, &TT.last);
+	}
+	// «Ver sus copias» solo si las hay; Cloud3DS no se desinstala a sí mismo
+	IconId ic[3];
+	const char *lab[3];
+	u32 col[3];
+	int act[3], n = 0;
+	ic[n] = IC_DOWNLOAD, lab[n] = _("Hacer copia de la partida"), col[n] = T.ok, act[n++] = 0;
+	if (t && TT.copies > 0)
+		ic[n] = IC_FOLDER, lab[n] = _("Ver sus copias"), col[n] = T.text, act[n++] = 1;
+	if (t && !title_is_self(t->tid))
+		ic[n] = IC_TRASH, lab[n] = _("Desinstalar"), col[n] = T.danger, act[n++] = 2;
 	int r = sheet_list(&TT.open, &TT.just, &TT.anim, &TT.sel, t ? t->title : "", ic, lab, col, n);
 	if (r < 0 || !t)
 		return;
+	r = act[r];
 	if (r == 0)
 		tt_backup(t);
 	else if (r == 1) {
