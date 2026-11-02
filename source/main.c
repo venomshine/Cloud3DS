@@ -901,7 +901,7 @@ static void mini_strip(float a)
 	} else {
 		lx += text_width(url, sc);
 	}
-	// lo que está en curso (instalar, copiar, recibir…): qué es y cuánto va, con una barra abajo
+	// lo que está en curso (instalar, copiar, recibir…): qué es y cuánto va (la barra es la de bajo la cabecera)
 	const Xfer *xs[1];
 	if (visible_xfers(xs, 1)) {
 		const Xfer *x = xs[0];
@@ -920,8 +920,6 @@ static void mini_strip(float a)
 			draw_icon(ic, x0 + 7, cy, 12, col_alpha(col, a));
 			text_draw_clip(t, x0 + 17, cy - text_lineh(TS_SUB) / 2, x1 - x0 - 17, TS_SUB, col_alpha(col, a));
 		}
-		draw_rect(CARD_X + 12, y + MINI_H - 4, CARD_W - 24, 2, col_alpha(T.surface2, a));
-		draw_rect(CARD_X + 12, y + MINI_H - 4, (CARD_W - 24) * f, 2, col_alpha(col, a));
 	}
 }
 
