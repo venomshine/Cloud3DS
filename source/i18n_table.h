@@ -67,6 +67,7 @@ static const TrEntry TR_TAB[] = {
 	{"Instalando…", "Installing…", "インストール中…"},
 	{"Copiado a la SD sin instalar", "Copied to the SD without installing", "インストールせずSDにコピーしました"},
 	{"Copia cancelada: se borró de la SD", "Copy canceled: deleted from the SD", "コピーを取り消しました(SDから削除)"},
+	{"%s libres", "%s free", "空き %s"},
 	{"%d dispositivo conectado", "%d device online", "%d 台接続中"},
 	{"%d dispositivos conectados", "%d devices online", "%d 台接続中"},
 	{"Esperando conexión%.*s", "Waiting for a device%.*s", "接続を待っています%.*s"},

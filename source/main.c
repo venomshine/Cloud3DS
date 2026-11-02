@@ -706,6 +706,34 @@ static void draw_header(void)
 	rx -= 6;
 	util_fmt_today(day, sizeof day);
 	text_draw_right(day, rx, 4, TS_HDR, T.text3);
+	rx -= text_width(day, TS_HDR) + 12;
+	// espacio libre de la SD, siempre a la vista (se mira cada pocos segundos)
+	static u64 sd_free, sd_total;
+	static float sd_t = -100;
+	if (g_time - sd_t > 4) {
+		sd_t = g_time;
+		if (!fsx_space(&sd_free, &sd_total))
+			sd_free = sd_total = 0;
+	}
+	if (sd_total) {
+		char sz[24], fl[48];
+		util_fmt_size(sz, sizeof sz, sd_free);
+		snprintf(fl, sizeof fl, _("%s libres"), sz);
+		u32 c = sd_free < 512ull * 1024 * 1024 ? T.danger : sd_free < sd_total / 20 ? T.warn : T.text3;
+		float left = 32 + text_width(APP_NAME, 0.5f) + 4;
+		if (rx - text_width(fl, TS_HDR) - 12 < left)
+			util_strlcpy(fl, sz, sizeof fl); // sin sitio: solo la cifra
+		float tw = text_width(fl, TS_HDR);
+		if (rx - tw - 12 >= left) {
+			text_draw_right(fl, rx, 4, TS_HDR, c);
+			// una tarjeta SD pequeña, con su esquina cortada
+			float ix = rx - tw - 12, iy = 6;
+			draw_rrect(ix, iy, 8, 10, 1.5f, c);
+			draw_tri(ix + 4.5f, iy - 0.5f, ix + 8.5f, iy - 0.5f, ix + 8.5f, iy + 3.5f, T.bg);
+			draw_rect(ix + 2, iy + 2, 1, 2.5f, T.bg);
+			draw_rect(ix + 4, iy + 2, 1, 2.5f, T.bg);
+		}
+	}
 	// con un aviso en la cabecera (según su estilo), lo de siempre se aparta
 	float ha = toast_header_alpha();
 	if (ha < 1)

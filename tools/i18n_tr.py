@@ -1730,4 +1730,7 @@ TR = {
     'Documento de texto nuevo':
         ('New text document',
          '新しいテキスト文書'),
+    '%s libres':
+        ('%s free',
+         '空き %s'),
 }
