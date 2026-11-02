@@ -882,7 +882,7 @@ function renderChrome(){
   `<button class="btn" id="tSort" title="${t("sortBy")}">${svg("sort")}<span class="lbl">${t(sortIc)}</span></button>`+
   `<button class="btn" id="tView" title="${t(S.view==="grid"?"listv":"grid")}">${svg(S.view==="grid"?"list":"grid")}</button>`;
  $("#bref").title=t("refresh");$("#bout").title=t("logout");
- $("#bUp").disabled=S.path==="/"&&!S.trash&&!S.find&&!S.titles;$("#bUp").title=t("back");
+ $("#bUp").disabled=S.path==="/"&&!S.trash&&!S.find&&!S.titles&&!(S.origin&&S.origin.from===S.path);$("#bUp").title=t("back");
  $("#sLens").title=t("search");
  $("#fab").innerHTML=svg("up")+t("upload");$("#fab").classList.toggle("hide",ro||S.trash||$("#app").classList.contains("hide"));
  $("#q").placeholder=t("search");
@@ -1359,7 +1359,11 @@ async function disconnect(){
 }
 
 document.addEventListener("click",e=>{
- const c=e.target.closest("[data-p]");if(c&&(c.closest("#chips")||c.closest("#crumbs"))){go(c.dataset.p);return}
+ const c=e.target.closest("[data-p]");
+ if(c&&c.closest("#chips")){ // atrás desde la categoría vuelve a donde se estaba
+  const from=S.trash?"@trash":S.titles?"@titles":S.find||S.nosaves?"/":S.path;
+  S.origin=c.dataset.p!==from&&c.dataset.p!=="/"?{from:c.dataset.p,to:from}:null;go(c.dataset.p);return}
+ if(c&&c.closest("#crumbs")){go(c.dataset.p);return}
  const id=(e.target.closest("button")||{}).id;
  if(id==="tUp"||id==="fab")$("#fpick").click();
  if(id==="tUpF")$("#dpick").click();
@@ -1369,7 +1373,11 @@ document.addEventListener("click",e=>{
  if(id==="bref"){if(S.find)findAll(S.find.q);else go(S.titles?"@titles":S.trash?"@trash":S.path,true);refreshInfo()}
  if(id==="tView"){S.view=S.view==="grid"?"list":"grid";try{localStorage.setItem("c3d_view",S.view)}catch(e){}render()}
  if(id==="bout")deviceMenu();
- if(id==="bUp"&&(S.path!=="/"||S.trash||S.find||S.titles))go(S.find?S.find.from:S.trash||S.titles?"/":parent(S.path));
+ if(id==="bUp"){
+  const here=S.trash?"@trash":S.titles?"@titles":S.path;
+  if(S.origin&&!S.find&&S.origin.from===here){const to=S.origin.to;S.origin=null;go(to)}
+  else if(S.path!=="/"||S.trash||S.find||S.titles)go(S.find?S.find.from:S.trash||S.titles?"/":parent(S.path));
+ }
  if(id==="tEmpty")trashEmpty();
  if(id==="sLens"){const o=$("#search").classList.toggle("open");if(o)setTimeout(()=>$("#q").focus(),120);else closeSearch()}
  if(id==="sX")closeSearch();

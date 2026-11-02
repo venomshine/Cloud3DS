@@ -1627,6 +1627,7 @@ static struct {
 	bool trash;        // se está viendo la papelera (F.path = "@trash")
 	bool search;       // se ven los resultados de una búsqueda (F.path = "@search")
 	bool titles;       // los títulos instalados (F.path = "@titles"); FEnt.tid es su posición en TI
+	char ret_from[512], ret_to[512]; // una categoría abierta (ret_from) y desde dónde: atrás vuelve ahí
 	float pull;        // cuánto se está tirando hacia abajo estando arriba del todo
 	int nv;
 	float off, target, total;
@@ -2360,7 +2361,11 @@ static void f_reload_keep(void)
 static void f_open_chip(int c)
 {
 	const char *p = CHIP_PATH[c];
+	// atrás desde la categoría vuelve a donde estaba (no a la carpeta de encima)
+	util_strlcpy(F.ret_to, F.trash || F.search || F.nosaves || !F.path[0] ? "/" : F.path, sizeof F.ret_to);
+	F.ret_from[0] = 0; // «Inicio» es la raíz: no hay a dónde volver
 	if (c == CH_TITLES) {
+		util_strlcpy(F.ret_from, "@titles", sizeof F.ret_from);
 		f_load("@titles");
 		return;
 	}
@@ -2381,11 +2386,27 @@ static void f_open_chip(int c)
 			return;
 		}
 	}
+	util_strlcpy(F.ret_from, p, sizeof F.ret_from);
 	f_load(p);
+}
+
+// atrás desde una categoría abierta con su acceso rápido: a donde se estaba
+static bool f_back_to_origin(void)
+{
+	if (!F.ret_from[0] || strcasecmp(F.path, F.ret_from) || !strcmp(F.ret_to, F.path))
+		return false;
+	char to[512], from[512];
+	util_strlcpy(to, F.ret_to, sizeof to);
+	util_strlcpy(from, F.ret_from, sizeof from);
+	F.ret_from[0] = 0;
+	f_load(to);
+	return true;
 }
 
 static void f_up(void)
 {
+	if (f_back_to_origin())
+		return;
 	if (!strcmp(F.path, "/"))
 		return;
 	char p[512], from[128];
@@ -4748,7 +4769,8 @@ static void tab_files(void)
 		snprintf(c, sizeof c, TI_n == 1 ? _("1 título · %s") : _("%d títulos · %s"), TI_n, sz);
 		text_draw_right(c, BOT_W - 14, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
 		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
-			f_load("/");
+			if (!f_back_to_origin())
+				f_load("/");
 			g_kdown &= ~KEY_B;
 			return;
 		}
