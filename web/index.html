@@ -253,6 +253,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .sh .meta b{white-space:normal;word-break:break-word}
 .act{display:flex;align-items:center;gap:14px;width:100%;padding:13px 12px;border-radius:12px;text-align:left;font-size:15.5px}
 .act:hover{background:var(--card2)}
+.sheet .dv{height:1px;background:var(--line,rgba(127,127,127,.18));margin:6px 12px}
 .act svg{color:var(--muted)}
 .act.danger,.act.danger svg{color:var(--err)}
 .act.off{cursor:default;align-items:flex-start}
@@ -413,7 +414,7 @@ es:{
  exists:"Ya existe «%1»", existsD:"Elige qué hacer con este archivo.", replace:"Reemplazar", skip:"Omitir", keep:"Conservar ambos", all:"Aplicar a todos",
  insConsole:"Instalar en la consola", insSent:"Enviado a la consola: confírmalo allí.", insHead:"Instalar en la consola", insDone:"Instalaciones", st_pending:"Esperando confirmación en la consola", st_queued:"En cola", st_running:"Instalando · %1", st_done:"Instalado", st_failed:"No se instaló", st_kept:"Guardado en la SD sin instalar", st_rejected:"Rechazado en la consola", insAskT:"¿Instalar en la consola?", insKeep:"Solo copiar", insCancel:"Cancelar la copia", insCanceled:"Copia cancelada: se borró de la SD.", st_deleted:"Copia cancelada en la consola: se borró de la SD", insAskD:"Has subido %1 CIA. Puedes instalarlos (la consola te pedirá confirmación), dejarlos solo copiados en la SD o cancelar la copia, que los borra.", insOk:"Instalar", insSelf:"Cloud3DS se actualiza desde Ajustes → Actualizaciones.", err_not_cia:"Solo se pueden instalar archivos .cia.", err_bad_cia:"La consola no reconoce este CIA. Puede estar dañado o incompleto.", err_system_title:"Por seguridad, Cloud3DS no instala títulos del sistema, DSiWare ni firmware.", err_already:"Ya está esperando confirmación en la consola.", err_full:"Hay demasiadas instalaciones pendientes en la consola.", err_newer:"Ya hay una versión más nueva instalada.", err_damaged:"El CIA está dañado.", err_am:"La consola no pudo instalarlo.", err_am_busy:"El servicio de instalación estaba ocupado. Reinicia la consola y vuelve a intentarlo.", err_canceled:"Se canceló.",
  thisDev:"Este dispositivo", renameDev:"Cambiar nombre", devNameT:"Nombre de este dispositivo", devNameD:"Así aparecerá en la consola. Déjalo vacío para usar el nombre automático.", nameSaved:"Nombre guardado",
- sysGroup:"Carpetas del sistema", highlight:"Destacar", mk0:"Sin color", mk1:"Rojo", mk2:"Naranja", mk3:"Amarillo", mk4:"Verde", mk5:"Azul", mk6:"Morado",
+ sysGroup:"Carpetas del sistema", sysApart:"Carpetas del sistema aparte", highlight:"Destacar", mk0:"Sin color", mk1:"Rojo", mk2:"Naranja", mk3:"Amarillo", mk4:"Verde", mk5:"Azul", mk6:"Morado",
  renameAs:"Renombrar…", cancelAll:"Cancelar todo", merge:"Combinar", existsDirD:"Ya hay una carpeta con ese nombre. Puedes combinar su contenido.", newName:"Nuevo nombre", copy:"Copiar", move:"Mover", copyTo:"Copiar a…", moveTo:"Mover a…", pickT:"Elige la carpeta de destino", copyHere:"Copiar aquí", moveHere:"Mover aquí", copying:"Copiando %1…", copied:"Copiado", moved:"Movido", err_into_self:"No puedes copiar ni mover una carpeta dentro de sí misma.", err_busy:"Ya hay una copia en curso. Espera a que termine.", err_is_file:"Ya hay un archivo con ese nombre.", err_no_dir:"La carpeta de destino ya no existe.", err_bad_name:"Ese nombre no es válido.",
  ro:"Modo solo lectura: puedes ver y descargar archivos, pero no modificarlos.", sysHere:"Estás en una carpeta del sistema. Modifícala con precaución.",
  uploading:"Subiendo %1 de %2", uploadsDone:"Subidas terminadas", upDone:"%1 subidos", left:"quedan %1", queued:"En cola",
@@ -456,7 +457,7 @@ en:{
  exists:"“%1” already exists", existsD:"Choose what to do with this file.", replace:"Replace", skip:"Skip", keep:"Keep both", all:"Apply to all",
  insConsole:"Install on the console", insSent:"Sent to the console: confirm it there.", insHead:"Install on the console", insDone:"Installs", st_pending:"Waiting for confirmation on the console", st_queued:"Queued", st_running:"Installing · %1", st_done:"Installed", st_failed:"Not installed", st_kept:"Saved to the SD without installing", st_rejected:"Declined on the console", insAskT:"Install on the console?", insKeep:"Just copy", insCancel:"Cancel the copy", insCanceled:"Copy canceled: it was deleted from the SD.", st_deleted:"Copy canceled on the console: deleted from the SD", insAskD:"You uploaded %1 CIA. You can install them (the console will ask for confirmation), just keep them copied on the SD, or cancel the copy, which deletes them.", insOk:"Install", insSelf:"Cloud3DS is updated from Settings → Updates.", err_not_cia:"Only .cia files can be installed.", err_bad_cia:"The console doesn't recognize this CIA. It may be damaged or incomplete.", err_system_title:"For safety, Cloud3DS doesn't install system titles, DSiWare or firmware.", err_already:"It's already waiting for confirmation on the console.", err_full:"Too many installs are waiting on the console.", err_newer:"A newer version is already installed.", err_damaged:"The CIA is damaged.", err_am:"The console couldn't install it.", err_am_busy:"The install service was busy. Restart the console and try again.", err_canceled:"It was canceled.",
  thisDev:"This device", renameDev:"Rename", devNameT:"Name of this device", devNameD:"This is how it will appear on the console. Leave it empty to use the automatic name.", nameSaved:"Name saved",
- sysGroup:"System folders", highlight:"Highlight", mk0:"No color", mk1:"Red", mk2:"Orange", mk3:"Yellow", mk4:"Green", mk5:"Blue", mk6:"Purple",
+ sysGroup:"System folders", sysApart:"Keep system folders separate", highlight:"Highlight", mk0:"No color", mk1:"Red", mk2:"Orange", mk3:"Yellow", mk4:"Green", mk5:"Blue", mk6:"Purple",
  renameAs:"Rename…", cancelAll:"Cancel all", merge:"Merge", existsDirD:"A folder with that name already exists. You can merge their contents.", newName:"New name", copy:"Copy", move:"Move", copyTo:"Copy to…", moveTo:"Move to…", pickT:"Choose the destination folder", copyHere:"Copy here", moveHere:"Move here", copying:"Copying %1…", copied:"Copied", moved:"Moved", err_into_self:"You can't copy or move a folder into itself.", err_busy:"A copy is already in progress. Wait for it to finish.", err_is_file:"A file with that name already exists.", err_no_dir:"The destination folder no longer exists.", err_bad_name:"That name isn't valid.",
  ro:"Read-only mode: you can view and download files, but not change them.", sysHere:"You're in a system folder. Change it with care.",
  uploading:"Uploading %1 of %2", uploadsDone:"Uploads finished", upDone:"%1 uploaded", left:"%1 left", queued:"Queued",
@@ -499,7 +500,7 @@ ja:{
  exists:"「%1」はすでにあります", existsD:"このファイルをどうするか選んでください。", replace:"置き換え", skip:"スキップ", keep:"両方残す", all:"すべてに適用",
  insConsole:"本体にインストール", insSent:"本体に送りました。本体で確認してください。", insHead:"本体にインストール", insDone:"インストール", st_pending:"本体での確認を待っています", st_queued:"待機中", st_running:"インストール中 · %1", st_done:"インストール済み", st_failed:"インストールできませんでした", st_kept:"インストールせずにSDに保存", st_rejected:"本体で拒否されました", insAskT:"本体にインストールしますか?", insKeep:"コピーのみ", insCancel:"コピーを取り消す", insCanceled:"コピーを取り消しました(SDから削除)。", st_deleted:"本体でコピーを取り消しました(SDから削除)", insAskD:"%1 個のCIAをアップロードしました。インストール(本体で確認します)、SDへのコピーのみ、またはコピーの取り消し(削除)を選べます。", insOk:"インストール", insSelf:"Cloud3DSは設定 → アップデートから更新します。", err_not_cia:"インストールできるのは.ciaファイルだけです。", err_bad_cia:"本体がこのCIAを認識できません。壊れているか不完全な可能性があります。", err_system_title:"安全のため、Cloud3DSはシステムタイトル、DSiWare、ファームウェアをインストールしません。", err_already:"すでに本体で確認を待っています。", err_full:"本体で待機中のインストールが多すぎます。", err_newer:"より新しいバージョンがインストールされています。", err_damaged:"CIAが壊れています。", err_am:"本体でインストールできませんでした。", err_am_busy:"インストールサービスが使用中でした。本体を再起動して、もう一度お試しください。", err_canceled:"キャンセルされました。",
  thisDev:"このデバイス", renameDev:"名前を変更", devNameT:"このデバイスの名前", devNameD:"本体にこの名前で表示されます。空欄にすると自動の名前になります。", nameSaved:"名前を保存しました",
- sysGroup:"システムフォルダ", highlight:"色分け", mk0:"色なし", mk1:"赤", mk2:"オレンジ", mk3:"黄", mk4:"緑", mk5:"青", mk6:"紫",
+ sysGroup:"システムフォルダ", sysApart:"システムフォルダを分けて表示", highlight:"色分け", mk0:"色なし", mk1:"赤", mk2:"オレンジ", mk3:"黄", mk4:"緑", mk5:"青", mk6:"紫",
  renameAs:"名前を変更…", cancelAll:"すべてキャンセル", merge:"統合", existsDirD:"同じ名前のフォルダがあります。中身を統合できます。", newName:"新しい名前", copy:"コピー", move:"移動", copyTo:"コピー先…", moveTo:"移動先…", pickT:"移動先のフォルダを選択", copyHere:"ここにコピー", moveHere:"ここに移動", copying:"%1 をコピー中…", copied:"コピーしました", moved:"移動しました", err_into_self:"フォルダをその中にコピー・移動することはできません。", err_busy:"コピー中です。終わるまでお待ちください。", err_is_file:"同じ名前のファイルがあります。", err_no_dir:"移動先のフォルダがもうありません。", err_bad_name:"その名前は使えません。",
  ro:"読み取り専用モード: ファイルの表示とダウンロードはできますが、変更はできません。", sysHere:"システムフォルダです。変更には注意してください。",
  uploading:"アップロード中 %1 / %2", uploadsDone:"アップロード完了", upDone:"%1 件アップロード", left:"残り %1", queued:"待機中",
@@ -675,7 +676,7 @@ async function tryPin(pin){
 
 /* ---------- app ---------- */
 const S={titles:null,find:null,trash:false,tr:null,nosaves:false,path:"/",items:[],sort:"name",asc:true,view:"list",sel:new Set(),info:{},filter:"",missing:false,system:false,loading:false};
-try{S.view=localStorage.getItem("c3d_view")||"list";S.sort=localStorage.getItem("c3d_sort")||"name";S.sysOpen=localStorage.getItem("c3d_sys")!=="0"}catch(e){S.sysOpen=true}
+try{S.view=localStorage.getItem("c3d_view")||"list";S.sort=localStorage.getItem("c3d_sort")||"name";S.sysOpen=localStorage.getItem("c3d_sys")!=="0";S.sysApart=localStorage.getItem("c3d_sysapart")!=="0"}catch(e){S.sysOpen=true;S.sysApart=true}
 const PLACES=[["/","home","home"],["/luma/screenshots","shots","cam"],["/DCIM","photos","pic"],["/cias","cias","box"],["/3ds","hb","game"],["@titles","titles","app"],["@saves","saves","save"],["@trash","trash","trash"]];
 // las partidas solo existen como archivos si se copian con un gestor: se abre el que haya en la SD
 const SAVE_DIRS=["/3ds/Checkpoint/saves","/JKSV/Saves","/JKSV"];
@@ -915,8 +916,8 @@ function render(){
   return;
  }
  const selMode=S.sel.size>0;
- // las carpetas del sistema van aparte, en su propio grupo plegable
- const mine=a.filter(it=>!isSys(join(S.path,it.n))),sys=a.filter(it=>isSys(join(S.path,it.n)));
+ // las carpetas del sistema van aparte, en su propio grupo plegable (si no se ha quitado en «Ordenar»)
+ const sep=S.sysApart!==false,mine=sep?a.filter(it=>!isSys(join(S.path,it.n))):a,sys=sep?a.filter(it=>isSys(join(S.path,it.n))):[];
  const tile=it=>{const k=kind(it),p=join(S.path,it.n);
    const th=k==="img"?`<img loading="lazy" src="${fileUrl(p)}" alt="">`:kindSvg(k);
    return `<div class="tile${S.sel.has(it.n)?" sel":""}${it.c?" mk"+it.c:""}" data-n="${esc(it.n)}"><div class="th ${k}">${th}${isProt(p)?`<span class="lockb">${svg("lock")}</span>`:""}</div><div class="nm" title="${esc(it.n)}">${esc(it.n)}</div></div>`};
@@ -1336,8 +1337,10 @@ async function transfer(kind,list){
  S.sel.clear();go(S.path,true);refreshInfo();
 }
 function sortMenu(){
- const m=modal(`<div class="sheet"><div class="grab"></div>${["name","date","size"].map(k=>`<button class="act" data-s="${k}">${svg(S.sort===k?"check":"sort")}${t({name:"sortName",date:"sortDate",size:"sortSize"}[k])}</button>`).join("")}</div>`);
- m.el.addEventListener("click",e=>{const s=e.target.closest("[data-s]");if(!s)return;S.sort=s.dataset.s;try{localStorage.setItem("c3d_sort",S.sort)}catch(e){}m.close();render()});
+ const m=modal(`<div class="sheet"><div class="grab"></div>${["name","date","size"].map(k=>`<button class="act" data-s="${k}">${svg(S.sort===k?"check":"sort")}${t({name:"sortName",date:"sortDate",size:"sortSize"}[k])}</button>`).join("")}<div class="dv"></div><button class="act" data-sys="1">${svg(S.sysApart!==false?"check":"folder")}${t("sysApart")}</button></div>`);
+ m.el.addEventListener("click",e=>{
+  if(e.target.closest("[data-sys]")){S.sysApart=S.sysApart===false;try{localStorage.setItem("c3d_sysapart",S.sysApart?"1":"0")}catch(err){}m.close();render();return}
+  const s=e.target.closest("[data-s]");if(!s)return;S.sort=s.dataset.s;try{localStorage.setItem("c3d_sort",S.sort)}catch(e){}m.close();render()});
 }
 // botón de salir: este dispositivo, su nombre (se puede cambiar) y desvincularlo
 function deviceMenu(){
