@@ -1811,4 +1811,40 @@ TR = {
     'Un .txt vacío para escribir':
         ('An empty .txt to write in',
          '書き込み用の空の .txt'),
+    'Las carpetas del sistema (Nintendo 3DS, 3ds, luma, boot.firm…) no se pueden renombrar, mover ni borrar, ni desde la consola ni desde la web.':
+        ("System folders (Nintendo 3DS, 3ds, luma, boot.firm…) can't be renamed, moved or deleted, either on the console or from the web.",
+         'システムフォルダ（Nintendo 3DS、3ds、luma、boot.firmなど）は、本体からもWebからも名前の変更・移動・削除ができません。'),
+    'El PIN sirve para vincular un dispositivo sin escanear el QR. Se mantiene hasta que lo cambies; los ya vinculados siguen conectados.':
+        ('The PIN lets you link a device without scanning the QR code. It stays the same until you change it; linked devices stay connected.',
+         'PINを使うと、QRコードを読み取らずに端末を連携できます。変更するまで同じPINのままで、連携済みの端末は接続されたままです。'),
+    'El nombre de la consola en la red (para entrar por .local) y la instalación remota desde FBI.':
+        ("The console's network name (to connect via .local) and remote install from FBI.",
+         'ネットワーク上の本体名（.localで接続するため）とFBIからのリモートインストール。'),
+    'Cada captura de pantalla nueva aparece al momento en la web abierta, lista para descargar.':
+        ('Each new screenshot appears instantly in the open web page, ready to download.',
+         '新しいスクリーンショットは、開いているWebページにすぐ表示され、ダウンロードできます。'),
+    'Busca versiones nuevas de Cloud3DS y las instala sin salir de la app.':
+        ('Checks for new versions of Cloud3DS and installs them without leaving the app.',
+         'Cloud3DSの新しいバージョンを確認し、アプリを閉じずにインストールします。'),
+    'Cierra Cloud3DS. Lo que se esté copiando o instalando se detiene.':
+        ('Closes Cloud3DS. Any copy or installation in progress stops.',
+         'Cloud3DSを終了します。進行中のコピーやインストールは中止されます。'),
+    'Activado':
+        ('On',
+         'オン'),
+    'Desactivado':
+        ('Off',
+         'オフ'),
+    'Solo ver y descargar':
+        ('View and download only',
+         '閲覧とダウンロードのみ'),
+    'Nintendo 3DS, luma y otras':
+        ('Nintendo 3DS, luma and more',
+         'Nintendo 3DS、lumaなど'),
+    'Fijo hasta que lo cambies':
+        ('Stays until you change it',
+         '変更するまで固定'),
+    'Se ven al momento en la web':
+        ('Shown instantly on the web',
+         'Webにすぐ表示'),
 }

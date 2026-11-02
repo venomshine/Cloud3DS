@@ -77,6 +77,7 @@ static struct {
 
 enum { QA_CONNECT, QA_SCAN, QA_LINK, QA_N };
 static void qa_top(float a);
+static void settings_top(float a);
 
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones."
 
@@ -1360,6 +1361,8 @@ static void draw_top(void)
 			music_top(mini);
 		else if (U.tab == TAB_FILES && mini > 0.01f)
 			files_top(mini);
+		else if (U.tab == TAB_SETTINGS && U.page == PAGE_MAIN && mini > 0.01f)
+			settings_top(mini);
 		else if (!(U.tab == TAB_DEVICES && mini > 0.01f && device_top(mini)))
 			mini_body(mini);
 	}
@@ -6415,6 +6418,52 @@ static void settings_action(int i)
 	}
 }
 
+// pantalla de arriba en Ajustes: qué hace el ajuste marcado, entero y sin prisas
+static void settings_top(float a)
+{
+	int i = U.list[TAB_SETTINGS].sel;
+	if (i < 0 || i >= SET_COUNT)
+		i = 0;
+	float y0 = BODY_Y, h = BODY_B - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	static const IconId IC[SET_COUNT] = {IC_LOCK, IC_SHIELD, IC_KEY, IC_WIFI, IC_CAMERA, IC_GLOBE, IC_PALETTE, IC_REFRESH, IC_INFO, IC_POWER};
+	const u32 C[SET_COUNT] = {T.warn, T.danger, T.accent2, T.ok, T.accent, T.accent, T.accent2, T.ok, T.text3, T.danger};
+	const char *TT_[SET_COUNT] = {_("Solo lectura"), _("Proteger carpetas del sistema"), _("PIN"), _("Conexión"), _("Capturas al momento"),
+	                              _("Idioma"), _("Tema"), _("Actualizaciones"), _("Acerca de Cloud3DS"), _("Salir")};
+	const char *D[SET_COUNT] = {
+	    _("Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada."),
+	    _("Las carpetas del sistema (Nintendo 3DS, 3ds, luma, boot.firm…) no se pueden renombrar, mover ni borrar, ni desde la consola ni desde la web."),
+	    _("El PIN sirve para vincular un dispositivo sin escanear el QR. Se mantiene hasta que lo cambies; los ya vinculados siguen conectados."),
+	    _("El nombre de la consola en la red (para entrar por .local) y la instalación remota desde FBI."),
+	    _("Cada captura de pantalla nueva aparece al momento en la web abierta, lista para descargar."),
+	    _("Idioma de la consola. La web usa el idioma de tu móvil o tu PC."),
+	    _("Tema oscuro o claro para la consola. La web sigue el tema de tu móvil o tu PC."),
+	    _("Busca versiones nuevas de Cloud3DS y las instala sin salir de la app."),
+	    _("Versión, créditos y enlaces a la comunidad."),
+	    _("Cierra Cloud3DS. Lo que se esté copiando o instalando se detiene."),
+	};
+	const float X = CARD_X + 16, W = CARD_W - 32;
+	float cx = X + 26, cy = y0 + 16 + 26;
+	draw_circle(cx, cy, 26, col_alpha(C[i], 0.16f * a));
+	draw_icon(IC[i], cx, cy, 24, col_alpha(C[i], a));
+	float rx = X + 66, rw = X + W - rx, y = y0 + 14;
+	text_draw_clip(TT_[i], rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 4;
+	y += text_wrap_lines(D[i], rw, TS_SUB, 4, rx, y, col_alpha(T.text2, a), true) * text_lineh(TS_SUB) + 6;
+	// el estado, si es un interruptor
+	const char *st = NULL;
+	u32 sc = T.text3;
+	if (i == SET_READONLY)
+		st = V.readonly ? _("Activado") : _("Desactivado"), sc = V.readonly ? T.warn : T.text3;
+	else if (i == SET_PROTECT)
+		st = V.protect_sys ? _("Activado") : _("Desactivado"), sc = V.protect_sys ? T.ok : T.text3;
+	else if (i == SET_SHOTS)
+		st = V.shots_live ? _("Activado") : _("Desactivado"), sc = V.shots_live ? T.ok : T.text3;
+	if (st)
+		text_draw_clip(st, rx, y0 + h - 10 - text_lineh(TS_SUB), rw, TS_SUB, col_alpha(sc, a));
+}
+
 static void settings_main(void)
 {
 	List *l = cur_list();
@@ -6437,14 +6486,14 @@ static void settings_main(void)
 		bool chev = false;
 		switch (i) {
 		case SET_READONLY:
-			title = _("Solo lectura"); sub = _("Los dispositivos solo podrán ver y descargar"); ic = IC_LOCK; col = T.warn;
+			title = _("Solo lectura"); sub = _("Solo ver y descargar"); ic = IC_LOCK; col = T.warn;
 			break;
 		case SET_PROTECT:
-			title = _("Proteger carpetas del sistema"); sub = _("Impide borrar Nintendo 3DS, 3ds, luma…");
+			title = _("Proteger carpetas del sistema"); sub = _("Nintendo 3DS, luma y otras");
 			ic = IC_SHIELD; col = T.danger;
 			break;
 		case SET_PIN:
-			title = _("PIN"); sub = _("Se mantiene hasta que lo cambies"); ic = IC_KEY; col = T.accent2; val = V.pin;
+			title = _("PIN"); sub = _("Fijo hasta que lo cambies"); ic = IC_KEY; col = T.accent2; val = V.pin;
 			chev = true;
 			break;
 		case SET_CONN:
@@ -6453,7 +6502,7 @@ static void settings_main(void)
 			sub = V.mdns ? vbuf : _("Nombre en la red y FBI remoto");
 			break;
 		case SET_SHOTS:
-			title = _("Capturas al momento"); sub = _("Las capturas nuevas aparecen en la web abierta"); ic = IC_CAMERA; col = T.accent;
+			title = _("Capturas al momento"); sub = _("Se ven al momento en la web"); ic = IC_CAMERA; col = T.accent;
 			break;
 		case SET_LANG:
 			title = _("Idioma"); ic = IC_GLOBE; chev = true;
