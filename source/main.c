@@ -5097,8 +5097,11 @@ static void tab_files(void)
 				if (hl)
 					draw_rrect(cx + 2, y + 3, cw - 4, 38, 10, here ? col_alpha(T.accent, 0.18f) : T.surface);
 				draw_icon(chip_icon(c), cx + cw / 2, y + 15, 16, here ? T.accent : T.text2);
-				float lw = fminf(text_width(chip_name(c), 0.32f), cw - 4);
-				text_draw_clip(chip_name(c), cx + (cw - lw) / 2, y + 26, cw - 4, 0.32f, here ? T.accent : T.text3);
+				// el nombre entero: si no cabe, un poco más pequeño (nunca cortado)
+				float sc = 0.32f, lw = text_width(chip_name(c), sc);
+				if (lw > cw - 4)
+					sc *= (cw - 4) / lw, lw = cw - 4;
+				text_draw(chip_name(c), cx + (cw - lw) / 2, y + 26 + (text_lineh(0.32f) - text_lineh(sc)) / 2, sc, here ? T.accent : T.text3);
 				if (inview && tap(cx, y + 2, cw, 40))
 					f_open_chip(c);
 			}
