@@ -87,7 +87,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2 };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE };
 
 typedef struct {
 	float off, target;
@@ -1492,7 +1492,7 @@ static const DlItem *ds_find(u32 id)
 static const char *dl_err_text(const char *e)
 {
 	static const struct { const char *k, *v; } E[] = {
-		{"offline", N_("Sin conexión a Internet")}, {"tls", N_("Conexión no segura (certificado)")}, {"net", N_("Error de red")},
+		{"offline", N_("Sin conexión a Internet")}, {"tls", N_("No se pudo comprobar el certificado")}, {"net", N_("Error de red")},
 		{"not_found", N_("No existe (404)")}, {"denied", N_("El servidor no lo permite")}, {"http", N_("Error del servidor")},
 		{"no_space", N_("No hay espacio en la SD")}, {"io", N_("No se pudo escribir en la SD")}, {"no_cia", N_("Esa release no tiene ningún .cia")},
 		{"unzip", N_("No se pudo descomprimir")}};
@@ -4715,11 +4715,11 @@ static void ds_draw(void)
 	const DlItem *d = ds_find(DS.id);
 	if (!d && DS.open)
 		DS.open = false;
-	int acts[5] = {0}, n = 0;
-	IconId ic[5] = {0};
-	const char *lab[5] = {0};
-	u32 col[5] = {0};
-	enum { A_PAUSE, A_RESUME, A_CANCEL, A_REMOVE, A_INSTALL, A_UNZIP, A_FOLDER };
+	int acts[6] = {0}, n = 0;
+	IconId ic[6] = {0};
+	const char *lab[6] = {0};
+	u32 col[6] = {0};
+	enum { A_PAUSE, A_RESUME, A_CANCEL, A_REMOVE, A_INSTALL, A_UNZIP, A_FOLDER, A_INSECURE };
 	if (d) {
 		size_t l = strlen(d->name);
 		bool isdir;
@@ -4730,6 +4730,8 @@ static void ds_draw(void)
 			acts[n] = A_PAUSE, ic[n] = IC_CLOCK, lab[n] = _("Pausar"), col[n++] = T.text;
 		if (d->st == DL_PAUSED || d->st == DL_FAIL)
 			acts[n] = A_RESUME, ic[n] = IC_REFRESH, lab[n] = d->st == DL_FAIL ? _("Reintentar") : _("Reanudar"), col[n++] = T.accent;
+		if (d->st == DL_FAIL && !strcmp(d->err, "tls"))
+			acts[n] = A_INSECURE, ic[n] = IC_SHIELD, lab[n] = _("Descargar sin comprobarlo"), col[n++] = T.warn;
 		if (d->st == DL_DONE && cia)
 			acts[n] = A_INSTALL, ic[n] = IC_DOWNLOAD, lab[n] = _("Instalar"), col[n++] = T.ok;
 		if (d->st == DL_DONE && zip)
@@ -4746,6 +4748,12 @@ static void ds_draw(void)
 		return;
 	switch (acts[r]) {
 	case A_PAUSE: dl_op(d->id, DL_PAUSE); break;
+	case A_INSECURE:
+		U.dlg_arg = (int)d->id;
+		dialog_open(DLG_DLINSECURE, _("¿Descargar sin comprobar el certificado?"),
+		            _("La consola no pudo comprobar que el servidor es quien dice ser. Si sigues, nada garantiza que el archivo no se haya cambiado por el camino. Hazlo solo si confías en el enlace y en tu red."),
+		            _("Descargar"), true);
+		break;
 	case A_RESUME: dl_op(d->id, DL_RESUME); break;
 	case A_CANCEL: dl_op(d->id, DL_CANCEL); break;
 	case A_REMOVE: dl_op(d->id, DL_REMOVE); break;
@@ -7121,6 +7129,8 @@ static void handle_dialog(int ctx, bool ok)
 				event_add(EV_DELETE, F.e[i].name, G.console, 0);
 			}
 		}
+	} else if (ctx == DLG_DLINSECURE) {
+		dl_op((u32)U.dlg_arg, DL_INSECURE);
 	} else if (ctx == DLG_UNINSTALL && U.dlg_arg >= 0 && U.dlg_arg < TI_n) {
 		const TitleInfo *t = &TI[U.dlg_arg];
 		if (t->size + t->upd_size + t->dlc_size >= (1ull << 30)) { // lo grande se confirma dos veces

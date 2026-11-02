@@ -1871,4 +1871,16 @@ TR = {
     'Si tienes varias consolas, dale a cada una su nombre (por ejemplo, 3ds-salon) para distinguirlas en la red.':
         ('If you have several consoles, give each one its own name (for example, 3ds-livingroom) to tell them apart on the network.',
          '本体が複数ある場合は、それぞれに名前（例: 3ds-living）を付けるとネットワーク上で区別できます。'),
+    'No se pudo comprobar el certificado':
+        ("Couldn't verify the certificate",
+         '証明書を確認できませんでした'),
+    'Descargar sin comprobarlo':
+        ('Download without verifying',
+         '確認せずにダウンロード'),
+    '¿Descargar sin comprobar el certificado?':
+        ('Download without verifying the certificate?',
+         '証明書を確認せずにダウンロードしますか？'),
+    'La consola no pudo comprobar que el servidor es quien dice ser. Si sigues, nada garantiza que el archivo no se haya cambiado por el camino. Hazlo solo si confías en el enlace y en tu red.':
+        ("The console couldn't verify that the server is who it claims to be. If you continue, nothing guarantees the file wasn't altered on the way. Only do it if you trust the link and your network.",
+         '本体はサーバーが本物であることを確認できませんでした。続けると、途中でファイルが書き換えられていない保証はありません。リンクとネットワークを信頼できる場合にのみ行ってください。'),
 }

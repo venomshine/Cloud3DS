@@ -19,7 +19,7 @@
 
 enum { DL_QUEUED, DL_RUN, DL_PAUSED, DL_DONE, DL_FAIL, DL_CANCELED };
 enum { DLA_NONE = 0, DLA_INSTALL = 1, DLA_UNZIP = 2 }; /* se pueden juntar: lo que toque según sea .cia o .zip */
-enum { DL_PAUSE, DL_RESUME, DL_CANCEL, DL_REMOVE };
+enum { DL_PAUSE, DL_RESUME, DL_CANCEL, DL_REMOVE, DL_INSECURE };
 
 typedef struct {
 	u32  id;
@@ -37,6 +37,7 @@ typedef struct {
 	char err[24];      /* «offline», «tls», «http», «not_found», «no_space», «no_cia», «io»… */
 	u64  done, total, speed;
 	bool resumable;
+	bool insecure;     /* el usuario pidió bajarla sin comprobar el certificado (tras un error «tls») */
 } DlItem;
 
 void dl_init(void);

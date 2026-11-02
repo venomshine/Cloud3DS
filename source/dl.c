@@ -24,7 +24,9 @@
 #include <strings.h>
 
 #define CA_BUNDLE "romfs:/certs/cacert.pem"
-#define UA "Cloud3DS/" APP_VERSION " (Nintendo 3DS; libcurl)"
+#define UA "Cloud3DS/" APP_VERSION " (Nintendo 3DS)"
+#define HC_ROOTS "romfs:/certs/httpc_roots.bin"
+#define HC_BUF (256 * 1024)
 
 static struct {
 	LightLock lock;
@@ -196,6 +198,13 @@ int dl_op(u32 id, int op)
 			else if (it->st == DL_QUEUED)
 				it->st = DL_PAUSED;
 			break;
+		case DL_INSECURE: // solo tras un error de certificado, y solo esta descarga
+			if (it->st == DL_FAIL && !strcmp(it->err, "tls")) {
+				it->insecure = true;
+				it->st = DL_QUEUED;
+				it->err[0] = 0;
+			}
+			break;
 		case DL_RESUME:
 			if (it->st == DL_PAUSED || it->st == DL_FAIL) {
 				it->st = DL_QUEUED;
@@ -254,6 +263,132 @@ static size_t mem_cb(char *d, size_t s, size_t m, void *u)
 	b->p = np, b->n += k, b->p[b->n] = 0;
 	return k;
 }
+
+/* ---------------------------------------------------------------- httpc
+ * Se descarga con el servicio HTTP del sistema (httpc), como FBI: el TLS lo hace el propio
+ * sistema y va mucho más rápido que libcurl+mbedTLS en la CPU de la app. El certificado se
+ * comprueba con las raíces del sistema más las de romfs/certs/httpc_roots.bin (las modernas que
+ * le faltan). Si httpc no consigue conectar (p. ej. un certificado que no sabe comprobar), se
+ * prueba con libcurl, que lleva todas las raíces de Mozilla. Sin comprobar el certificado solo
+ * se baja si el usuario lo pide para esa descarga. */
+static u32 hc_chain;
+static bool hc_ready;
+
+static void hc_init(void)
+{
+	if (R_FAILED(httpcInit(0)))
+		return;
+	hc_ready = true;
+	if (R_FAILED(httpcCreateRootCertChain(&hc_chain))) {
+		hc_chain = 0;
+		return;
+	}
+	u32 h;
+	for (int id = SSLC_DefaultRootCert_Nintendo_CA; id <= SSLC_DefaultRootCert_DigiCert_EV; id++)
+		httpcRootCertChainAddDefaultCert(hc_chain, (SSLC_DefaultRootCert)id, &h);
+	FILE *f = fopen(HC_ROOTS, "rb");
+	int n = 0;
+	if (f) {
+		u8 len[4];
+		while (fread(len, 1, 4, f) == 4) {
+			u32 l = len[0] | len[1] << 8 | len[2] << 16 | (u32)len[3] << 24;
+			u8 *der = l < 8192 ? malloc(l) : NULL;
+			if (!der || fread(der, 1, l, f) != l) {
+				free(der);
+				break;
+			}
+			if (R_SUCCEEDED(httpcRootCertChainAddCert(hc_chain, der, l, &h)))
+				n++;
+			free(der);
+		}
+		fclose(f);
+	}
+	util_log("dl: httpc listo, %d raíces añadidas", n);
+}
+
+enum { HC_OK, HC_NOCONN, HC_HTTP, HC_NET, HC_ABORT, HC_WRITE };
+
+/* abre la petición (siguiendo redirecciones) y la deja lista para leer el cuerpo */
+static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 range_from, const char *accept, u32 *code)
+{
+	for (int redir = 0; redir < 10; redir++) {
+		Result r = httpcOpenContext(ctx, HTTPC_METHOD_GET, url, 0);
+		if (R_FAILED(r)) {
+			util_log("dl: httpc abrir 0x%08lX", (unsigned long)r);
+			return HC_NOCONN;
+		}
+		httpcSetSSLOpt(ctx, verify ? SSLCOPT_Default : SSLCOPT_DisableVerify);
+		if (verify && hc_chain)
+			httpcSelectRootCertChain(ctx, hc_chain);
+		httpcSetKeepAlive(ctx, HTTPC_KEEPALIVE_ENABLED);
+		httpcAddRequestHeaderField(ctx, "User-Agent", UA);
+		httpcAddRequestHeaderField(ctx, "Connection", "Keep-Alive");
+		if (accept)
+			httpcAddRequestHeaderField(ctx, "Accept", accept);
+		if (range_from) {
+			char rg[40];
+			snprintf(rg, sizeof rg, "bytes=%llu-", (unsigned long long)range_from);
+			httpcAddRequestHeaderField(ctx, "Range", rg);
+		}
+		r = httpcBeginRequest(ctx);
+		if (R_SUCCEEDED(r))
+			r = httpcGetResponseStatusCodeTimeout(ctx, code, 30ull * 1000000000ull);
+		if (R_FAILED(r)) {
+			util_log("dl: httpc %s -> 0x%08lX", url, (unsigned long)r);
+			httpcCloseContext(ctx);
+			return HC_NOCONN;
+		}
+		if (*code >= 300 && *code < 400 && *code != 304) {
+			char loc[1024] = "";
+			httpcGetResponseHeader(ctx, "Location", loc, sizeof loc);
+			httpcCloseContext(ctx);
+			if (!loc[0])
+				return HC_HTTP;
+			if (loc[0] == '/') { // relativa: mismo esquema y servidor
+				const char *p = strstr(url, "://");
+				size_t hl = p ? (size_t)(strchr(p + 3, '/') ? strchr(p + 3, '/') - url : (ptrdiff_t)strlen(url)) : 0;
+				char nu[1024];
+				snprintf(nu, sizeof nu, "%.*s%s", (int)hl, url, loc);
+				util_strlcpy(url, nu, un);
+			} else
+				util_strlcpy(url, loc, un);
+			continue;
+		}
+		return HC_OK;
+	}
+	return HC_HTTP;
+}
+
+/* una respuesta pequeña entera en memoria (la API de GitHub) */
+static int hc_get_mem(const char *url0, const char *accept, Mem *m, long *code_out)
+{
+	if (!hc_ready)
+		return HC_NOCONN;
+	char url[1024];
+	util_strlcpy(url, url0, sizeof url);
+	httpcContext ctx;
+	u32 code = 0;
+	int e = hc_open(&ctx, url, sizeof url, true, 0, accept, &code);
+	if (e != HC_OK)
+		return e;
+	*code_out = code;
+	u8 *buf = malloc(64 * 1024);
+	Result r;
+	u32 dl = 0, tot = 0, before;
+	do {
+		before = dl;
+		r = buf ? httpcReceiveDataTimeout(&ctx, buf, 64 * 1024, 30ull * 1000000000ull) : -1;
+		httpcGetDownloadSizeState(&ctx, &dl, &tot);
+		if (buf && dl > before && mem_cb((char *)buf, 1, dl - before, m) != dl - before) {
+			r = -1;
+			break;
+		}
+	} while (r == (Result)HTTPC_RESULTCODE_DOWNLOADPENDING && !D.quit && !D.cancel);
+	free(buf);
+	httpcCloseContext(&ctx);
+	return R_FAILED(r) && r != (Result)HTTPC_RESULTCODE_DOWNLOADPENDING ? HC_NET : HC_OK;
+}
+
 
 static int quit_cb(void *u, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t d)
 {
@@ -332,11 +467,22 @@ static const char *github_resolve(DlItem *it, char *url, size_t un, char *name, 
 		snprintf(api, sizeof api, "https://api.github.com/repos/%s/%s/releases/latest", owner, repo);
 	else
 		return NULL; // otra página de GitHub: se baja tal cual
+	Mem m = {NULL, 0, 512 * 1024};
+	long code = 0;
+	int hr = hc_get_mem(api, "application/vnd.github+json", &m, &code);
+	util_log("dl: github %s -> httpc %d, HTTP %ld", api, hr, code);
+	const char *e = hr == HC_OK ? curl_err(CURLE_OK, code) : hr == HC_NOCONN ? "?" : "net";
+	if (e && strcmp(e, "?")) {
+		free(m.p);
+		return e;
+	}
+	if (e) { // httpc no conectó: con libcurl
+	free(m.p);
+	m.p = NULL, m.n = 0;
 	CURL *c = curl_easy_init();
 	if (!c)
 		return "net";
 	char eb[CURL_ERROR_SIZE] = "";
-	Mem m = {NULL, 0, 512 * 1024};
 	struct curl_slist *h = curl_slist_append(NULL, "Accept: application/vnd.github+json");
 	common_opts(c, eb);
 	curl_easy_setopt(c, CURLOPT_URL, api);
@@ -346,15 +492,15 @@ static const char *github_resolve(DlItem *it, char *url, size_t un, char *name, 
 	curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
 	curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, quit_cb);
 	CURLcode r = curl_easy_perform(c);
-	long code = 0;
 	curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
 	curl_easy_cleanup(c);
 	curl_slist_free_all(h);
 	util_log("dl: github %s -> curl %d, HTTP %ld %s", api, (int)r, code, eb);
-	const char *e = curl_err(r, code);
+	e = curl_err(r, code);
 	if (e) {
 		free(m.p);
 		return e;
+	}
 	}
 	cJSON *j = cJSON_Parse(m.p ? m.p : "");
 	free(m.p);
@@ -502,6 +648,60 @@ static int prog_cb(void *u, curl_off_t dt, curl_off_t dn, curl_off_t ut, curl_of
 	return D.quit || D.pause || D.cancel;
 }
 
+/* la descarga con httpc: cabeceras como head_cb y el cuerpo por body_cb y prog_cb */
+static int hc_body(Job *j, const char *url0, bool verify, long *code_out, char *eff, size_t en)
+{
+	char url[1024];
+	util_strlcpy(url, url0, sizeof url);
+	httpcContext ctx;
+	u32 code = 0;
+	int e = hc_open(&ctx, url, sizeof url, verify, j->base, NULL, &code);
+	if (e != HC_OK)
+		return e;
+	*code_out = code;
+	j->status = code;
+	util_strlcpy(eff, url, en);
+	char v[512];
+	if (R_SUCCEEDED(httpcGetResponseHeader(&ctx, "Content-Disposition", v, sizeof v)) && v[0])
+		cd_filename(v, j->cd_name, sizeof j->cd_name);
+	if (R_SUCCEEDED(httpcGetResponseHeader(&ctx, "Accept-Ranges", v, sizeof v)) && ci_find(v, "bytes"))
+		j->accept_ranges = true;
+	if (R_SUCCEEDED(httpcGetResponseHeader(&ctx, "Content-Range", v, sizeof v)) && v[0])
+		j->accept_ranges = true;
+	if (code >= 400) {
+		httpcCloseContext(&ctx);
+		return HC_HTTP;
+	}
+	u8 *buf = malloc(HC_BUF);
+	if (!buf) {
+		httpcCloseContext(&ctx);
+		return HC_NET;
+	}
+	u32 dl = 0, tot = 0, before;
+	Result r;
+	int out = HC_OK;
+	do {
+		before = dl;
+		r = httpcReceiveDataTimeout(&ctx, buf, HC_BUF, 30ull * 1000000000ull);
+		httpcGetDownloadSizeState(&ctx, &dl, &tot);
+		if (dl > before && body_cb((char *)buf, 1, dl - before, j) != dl - before) {
+			out = HC_WRITE;
+			break;
+		}
+		if (prog_cb(j, tot, dl, 0, 0)) {
+			out = HC_ABORT;
+			break;
+		}
+	} while (r == (Result)HTTPC_RESULTCODE_DOWNLOADPENDING);
+	if (out == HC_OK && R_FAILED(r)) {
+		util_log("dl: httpc recibir 0x%08lX tras %lu bytes", (unsigned long)r, (unsigned long)dl);
+		out = HC_NET;
+	}
+	free(buf);
+	httpcCloseContext(&ctx);
+	return out;
+}
+
 /* comprueba el MD5 o SHA-256 del archivo; 1 coincide, 0 no */
 static int check_hash(const char *path, const char *want)
 {
@@ -585,31 +785,54 @@ static void run(DlItem *s)
 	state_unlock();
 	j.t_last = util_ms();
 	j.d_last = j.base;
-	CURL *c = curl_easy_init();
 	char eb[CURL_ERROR_SIZE] = "";
 	CURLcode r = CURLE_FAILED_INIT;
 	long code = 0;
-	if (c) {
-		common_opts(c, eb);
-		curl_easy_setopt(c, CURLOPT_URL, url);
-		curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, head_cb);
-		curl_easy_setopt(c, CURLOPT_HEADERDATA, &j);
-		curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, body_cb);
-		curl_easy_setopt(c, CURLOPT_WRITEDATA, &j);
-		curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
-		curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, prog_cb);
-		curl_easy_setopt(c, CURLOPT_XFERINFODATA, &j);
-		curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
-		if (j.base)
-			curl_easy_setopt(c, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)j.base);
-		r = curl_easy_perform(c);
-		curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
-		char *eff = NULL;
-		curl_easy_getinfo(c, CURLINFO_EFFECTIVE_URL, &eff);
-		if (!j.cd_name[0] && eff && !gname[0]) // el nombre del enlace final (tras las redirecciones)
-			name_from_url(eff, j.cd_name, sizeof j.cd_name);
-		curl_easy_cleanup(c);
+	char eff[1024] = "";
+	int hr = hc_ready ? hc_body(&j, url, !s->insecure, &code, eff, sizeof eff) : HC_NOCONN;
+	const char *engine = "httpc";
+	if (hr == HC_OK)
+		r = CURLE_OK;
+	else if (hr == HC_HTTP)
+		r = CURLE_HTTP_RETURNED_ERROR;
+	else if (hr == HC_ABORT)
+		r = CURLE_ABORTED_BY_CALLBACK;
+	else if (hr == HC_WRITE)
+		r = CURLE_WRITE_ERROR;
+	else if (hr == HC_NET)
+		r = CURLE_RECV_ERROR;
+	if (hr == HC_NOCONN && !j.f) { // httpc no pudo conectar: con libcurl y las raíces de Mozilla
+		engine = "curl";
+		j.status = 0, j.accept_ranges = false, j.cd_name[0] = 0;
+		CURL *c = curl_easy_init();
+		if (c) {
+			common_opts(c, eb);
+			if (s->insecure) { // lo pidió el usuario para esta descarga
+				curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+				curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+			}
+			curl_easy_setopt(c, CURLOPT_URL, url);
+			curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, head_cb);
+			curl_easy_setopt(c, CURLOPT_HEADERDATA, &j);
+			curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, body_cb);
+			curl_easy_setopt(c, CURLOPT_WRITEDATA, &j);
+			curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
+			curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, prog_cb);
+			curl_easy_setopt(c, CURLOPT_XFERINFODATA, &j);
+			curl_easy_setopt(c, CURLOPT_FAILONERROR, 1L);
+			if (j.base)
+				curl_easy_setopt(c, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)j.base);
+			r = curl_easy_perform(c);
+			curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+			char *ce = NULL;
+			curl_easy_getinfo(c, CURLINFO_EFFECTIVE_URL, &ce);
+			if (ce)
+				util_strlcpy(eff, ce, sizeof eff);
+			curl_easy_cleanup(c);
+		}
 	}
+	if (!j.cd_name[0] && eff[0] && !gname[0]) // el nombre del enlace final (tras las redirecciones)
+		name_from_url(eff, j.cd_name, sizeof j.cd_name);
 	bool wrote_ok = true;
 	if (j.f)
 		wrote_ok = fclose(j.f) == 0;
@@ -623,7 +846,7 @@ static void run(DlItem *s)
 			got = sz;
 	}
 	s->done = got;
-	util_log("dl: %s -> curl %d, HTTP %ld, %llu bytes %s", url, (int)r, code, (unsigned long long)got, eb);
+	util_log("dl: %s -> %s %d, HTTP %ld, %llu bytes %s", url, engine, (int)r, code, (unsigned long long)got, eb);
 	char sp[720];
 	snprintf(sp, sizeof sp, "sdmc:%s", j.part);
 	int xs = XS_FAILED;
@@ -728,6 +951,7 @@ static void dl_thread(void *arg)
 
 void dl_init(void)
 {
+	hc_init();
 	LightLock_Init(&D.lock);
 	LightEvent_Init(&D.ev, RESET_ONESHOT);
 	D.ready = true;
@@ -750,5 +974,11 @@ void dl_exit(void)
 		threadJoin(D.thr, 5000000000ull);
 		threadFree(D.thr);
 		D.thr = NULL;
+	}
+	if (hc_ready) {
+		if (hc_chain)
+			httpcDestroyRootCertChain(hc_chain);
+		httpcExit();
+		hc_ready = false;
 	}
 }

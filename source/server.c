@@ -1147,7 +1147,7 @@ static void h_dl_op(Conn *c)
 	char ids[16] = "", op[16] = "";
 	qget(c->query, "id", ids, sizeof ids);
 	qget(c->query, "op", op, sizeof op);
-	int o = !strcmp(op, "pause") ? DL_PAUSE : !strcmp(op, "resume") ? DL_RESUME : !strcmp(op, "cancel") ? DL_CANCEL : !strcmp(op, "remove") ? DL_REMOVE : -1;
+	int o = !strcmp(op, "pause") ? DL_PAUSE : !strcmp(op, "resume") ? DL_RESUME : !strcmp(op, "cancel") ? DL_CANCEL : !strcmp(op, "remove") ? DL_REMOVE : !strcmp(op, "insecure") ? DL_INSECURE : -1;
 	if (o < 0 || dl_op((u32)strtoul(ids, NULL, 10), o) < 0) {
 		resp_err(c, 400, "bad_op");
 		return;
