@@ -34,6 +34,8 @@ Las siguientes partes conservan sus propias licencias:
 
 - `lib/cJSON.*` — [cJSON](https://github.com/DaveGamble/cJSON), licencia MIT.
 - `lib/qrcodegen.*` — [QR Code generator](https://github.com/nayuki/QR-Code-generator) de Project Nayuki, licencia MIT.
+- `lib/quirc*` — [quirc](https://github.com/dlbeer/quirc) 1.2 de Daniel Beer (lectura de códigos QR), licencia ISC.
+- `source/qrcam.c` sigue la secuencia de la cámara de [FBI](https://github.com/Steveice10/FBI) de Steveice10, licencia MIT.
 - `lib/stb_image.h` — [stb_image](https://github.com/nothings/stb) de Sean Barrett, dominio público o licencia MIT (a elegir).
 - [libctru, citro2d y citro3d](https://github.com/devkitPro) (enlazadas al compilar), licencia zlib.
 - [libcurl](https://curl.se/) (enlazada al compilar), licencia curl (tipo MIT).
