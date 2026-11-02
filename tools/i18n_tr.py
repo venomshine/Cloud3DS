@@ -1,589 +1,843 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
-    "Intentos de PIN fallidos": ("Failed PIN attempts", "PINの入力ミス"),
-    "Bloqueado %s · %s": ("Locked %s · %s", "%s ロック · %s"),
-    "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones.":
-        ("Your local cloud for Nintendo 3DS. Manage the SD card from your phone or PC just by scanning a QR code: no apps, no cables and no setup. Your files never leave your local network; GitHub is only checked for updates.",
-         "3DSのローカルクラウド。QRを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。ファイルはネットワークの外に出ません(GitHubはアップデート確認のみ)。"),
-    "Transferencia incompleta":
-        ("Transfer incomplete",
-         "転送が完了しませんでした"),
-    "Elegir mi PIN": ("Choose my PIN", "PINを自分で決める"),
-    "PIN aleatorio nuevo": ("New random PIN", "ランダムな新しいPIN"),
-    "Transferencia incompleta: %s":
-        ("Transfer incomplete: %s",
-         "未完了: %s"),
-    "Dispositivo desvinculado":
-        ("Device unpaired",
-         "デバイスを解除"),
-    "¿Desvincular este dispositivo?":
-        ("Unpair this device?",
-         "デバイスを解除しますか?"),
-    "PIN de 4 cifras": ("4-digit PIN", "4桁のPIN"),
-    "PIN guardado": ("PIN saved", "PINを保存しました"),
-    "Gracias por usar!": ("Thanks for using!", "ご利用ありがとう!"),
-    "Desvincular":
-        ("Unpair",
-         "解除"),
-    "Comunidad y ayuda": ("Community and help", "コミュニティとサポート"),
-    "Ábrelo con la cámara. Tu móvil debe estar en la misma red Wi-Fi.":
-        ("Open it with your camera. Your phone must be on the same Wi-Fi network.",
-         "カメラで読み取るだけ。本体と同じWi-Fiで使えます。"),
-    "Código fuente y nuevas versiones. Si encuentras un error, abre un issue y lo revisaré.":
+    'Intentos de PIN fallidos':
+        ('Failed PIN attempts',
+         'PINの入力ミス'),
+    'Bloqueado %s · %s':
+        ('Locked %s · %s',
+         '%s ロック · %s'),
+    'Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones.':
+        ('Your local cloud for Nintendo 3DS. Manage the SD card from your phone or PC just by scanning a QR code: no apps, no cables and no setup. Your files never leave your local network; GitHub is only checked for updates.',
+         '3DSのローカルクラウド。QRを読み取るだけで、スマホやPCからSDカードを操作できます。アプリもケーブルも設定も不要。ファイルはネットワークの外に出ません(GitHubはアップデート確認のみ)。'),
+    'Transferencia incompleta':
+        ('Transfer incomplete',
+         '転送が完了しませんでした'),
+    'PIN aleatorio nuevo':
+        ('New random PIN',
+         'ランダムな新しいPIN'),
+    'Transferencia incompleta: %s':
+        ('Transfer incomplete: %s',
+         '未完了: %s'),
+    'Dispositivo desvinculado':
+        ('Device unpaired',
+         'デバイスを解除'),
+    '¿Desvincular este dispositivo?':
+        ('Unpair this device?',
+         'デバイスを解除しますか?'),
+    'PIN de 4 cifras':
+        ('4-digit PIN',
+         '4桁のPIN'),
+    'PIN guardado':
+        ('PIN saved',
+         'PINを保存しました'),
+    'Desvincular':
+        ('Unpair',
+         '解除'),
+    'Comunidad y ayuda':
+        ('Community and help',
+         'コミュニティとサポート'),
+    'Ábrelo con la cámara. Tu móvil debe estar en la misma red Wi-Fi.':
+        ('Open it with your camera. Your phone must be on the same Wi-Fi network.',
+         'カメラで読み取るだけ。本体と同じWi-Fiで使えます。'),
+    'Código fuente y nuevas versiones. Si encuentras un error, abre un issue y lo revisaré.':
         ("Source code and new versions. If you find a bug, open an issue and I'll look into it.",
-         "コードと新しいバージョン。不具合があればissueを立ててください。確認します。"),
-    "Únete a la comunidad: soporte, ideas y novedades de cada versión.":
-        ("Join the community: support, ideas and news about every version.",
-         "コミュニティに参加: サポート、アイデア、各バージョンの最新情報。"),
-    "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
-    "Si Cloud3DS te resulta útil, puedes invitarme a un café. Me ayuda a seguir mejorándolo.":
-        ("If Cloud3DS is useful to you, you can buy me a coffee. It helps me keep improving it.",
-         "Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!"),
-    "O escribe en el navegador:": ("Or type in your browser:", "またはブラウザで入力:"),
-    "PIN": ("PIN", "PIN"),
-    "Recibido de %s": ("Received from %s", "%s から受信"),
-    "Enviado a %s": ("Sent to %s", "%s へ送信"),
-    "Recibiendo de %s": ("Receiving from %s", "%s から受信中"),
-    "Enviando a %s": ("Sending to %s", "%s へ送信中"),
-    "Cancelado o conexión perdida": ("Canceled or connection lost", "キャンセルまたは接続切れ"),
-    "%s de %s": ("%s of %s", "%s / %s"),
-    "%s · quedan %s": ("%s · %s left", "%s · 残り %s"),
-    "Completado": ("Done", "完了"),
-    "%s · PIN %s": ("%s · PIN %s", "%s · PIN %s"),
-    "Tu nube local": ("Your local cloud", "あなたのローカルクラウド"),
-    "hecho por VENOMSHiNE": ("made by VENOMSHiNE", "制作: VENOMSHiNE"),
-    "Escanea para unirte al Discord de la comunidad.":
-        ("Scan to join the community Discord.", "スキャンしてコミュニティのDiscordに参加。"),
-    "Sin conexión Wi-Fi": ("No Wi-Fi connection", "Wi-Fiに接続されていません"),
-    "¿Algún problema? Escríbeme por GitHub o Discord.":
-        ("Any problems? Write to me on GitHub or Discord.",
-         "問題があれば、GitHubかDiscordで教えてください。"),
-    "El servicio de red de la consola no responde (error %08lX). Reintentando automáticamente…":
+         'コードと新しいバージョン。不具合があればissueを立ててください。確認します。'),
+    'Únete a la comunidad: soporte, ideas y novedades de cada versión.':
+        ('Join the community: support, ideas and news about every version.',
+         'コミュニティに参加: サポート、アイデア、各バージョンの最新情報。'),
+    'Escanea con tu móvil':
+        ('Scan with your phone',
+         'スマホでスキャン'),
+    'Si Cloud3DS te resulta útil, puedes invitarme a un café. Me ayuda a seguir mejorándolo.':
+        ('If Cloud3DS is useful to you, you can buy me a coffee. It helps me keep improving it.',
+         'Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!'),
+    'O escribe en el navegador:':
+        ('Or type in your browser:',
+         'またはブラウザで入力:'),
+    'PIN':
+        ('PIN',
+         'PIN'),
+    'Recibido de %s':
+        ('Received from %s',
+         '%s から受信'),
+    'Enviado a %s':
+        ('Sent to %s',
+         '%s へ送信'),
+    'Recibiendo de %s':
+        ('Receiving from %s',
+         '%s から受信中'),
+    'Enviando a %s':
+        ('Sending to %s',
+         '%s へ送信中'),
+    'Cancelado o conexión perdida':
+        ('Canceled or connection lost',
+         'キャンセルまたは接続切れ'),
+    '%s de %s':
+        ('%s of %s',
+         '%s / %s'),
+    '%s · quedan %s':
+        ('%s · %s left',
+         '%s · 残り %s'),
+    'Completado':
+        ('Done',
+         '完了'),
+    '%s · PIN %s':
+        ('%s · PIN %s',
+         '%s · PIN %s'),
+    'Tu nube local':
+        ('Your local cloud',
+         'あなたのローカルクラウド'),
+    'hecho por VENOMSHiNE':
+        ('made by VENOMSHiNE',
+         '制作: VENOMSHiNE'),
+    'Escanea para unirte al Discord de la comunidad.':
+        ('Scan to join the community Discord.',
+         'スキャンしてコミュニティのDiscordに参加。'),
+    'Sin conexión Wi-Fi':
+        ('No Wi-Fi connection',
+         'Wi-Fiに接続されていません'),
+    'El servicio de red de la consola no responde (error %08lX). Reintentando automáticamente…':
         ("The console's network service isn't responding (error %08lX). Retrying automatically…",
-         "本体のネットワークが応答しません(エラー %08lX)。自動で再試行中…"),
-    "Esperando a que el router asigne una dirección IP…":
-        ("Waiting for the router to assign an IP address…",
-         "ルーターからIPアドレスを取得中…"),
-    "Preparando tu nube…": ("Getting your cloud ready…", "クラウドを準備中…"),
-    "Recibido": ("Received", "受信"),
-    "Enviado": ("Sent", "送信"),
-    "Conecta la consola a una red Wi-Fi. Si no tienes router, puedes usar el punto de acceso de tu móvil.":
+         '本体のネットワークが応答しません(エラー %08lX)。自動で再試行中…'),
+    'Esperando a que el router asigne una dirección IP…':
+        ('Waiting for the router to assign an IP address…',
+         'ルーターからIPアドレスを取得中…'),
+    'Preparando tu nube…':
+        ('Getting your cloud ready…',
+         'クラウドを準備中…'),
+    'Recibido':
+        ('Received',
+         '受信'),
+    'Enviado':
+        ('Sent',
+         '送信'),
+    'Conecta la consola a una red Wi-Fi. Si no tienes router, puedes usar el punto de acceso de tu móvil.':
         ("Connect the console to a Wi-Fi network. If you don't have a router, you can use your phone's hotspot.",
-         "本体をWi-Fiに接続してください。ルーターがない場合はスマホのテザリングを使えます。"),
-    "Carpeta creada": ("Folder created", "フォルダ作成"),
-    "Renombrado": ("Renamed", "名前変更"),
-    "Eliminado": ("Deleted", "削除"),
-    "Nuevo dispositivo vinculado": ("New device paired", "新しいデバイスを登録"),
-    "No se pudo iniciar el servidor":
+         '本体をWi-Fiに接続してください。ルーターがない場合はスマホのテザリングを使えます。'),
+    'Carpeta creada':
+        ('Folder created',
+         'フォルダ作成'),
+    'Renombrado':
+        ('Renamed',
+         '名前変更'),
+    'Eliminado':
+        ('Deleted',
+         '削除日時'),
+    'Nuevo dispositivo vinculado':
+        ('New device paired',
+         '新しいデバイスを登録'),
+    'No se pudo iniciar el servidor':
         ("Couldn't start the server",
-         "サーバーを開始できません"),
-    "PIN cambiado por seguridad": ("PIN changed for security", "安全のためPINを変更"),
-    "Demasiados intentos fallidos": ("Too many failed attempts", "失敗回数が多すぎます"),
-    "Actividad": ("Activity", "履歴"),
-    "Todo listo": ("All set", "準備完了"),
-    "Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS.":
-        ("Close other network apps (such as FTPD) and reopen Cloud3DS.",
-         "他のネットワークアプリ(FTPDなど)を閉じて、Cloud3DSを開き直してください。"),
-    "%d conectado": ("%d online", "%d 台接続中"),
-    "%d conectados": ("%d online", "%d 台接続中"),
-    "Dispositivos": ("Devices", "デバイス"),
-    "Sin dispositivos": ("No devices", "デバイスなし"),
-    "Se borrará la lista de actividad. Tus archivos no se modifican.":
+         'サーバーを開始できません'),
+    'PIN cambiado por seguridad':
+        ('PIN changed for security',
+         '安全のためPINを変更'),
+    'Demasiados intentos fallidos':
+        ('Too many failed attempts',
+         '失敗回数が多すぎます'),
+    'Actividad':
+        ('Activity',
+         '履歴'),
+    'Todo listo':
+        ('All set',
+         '準備完了'),
+    'Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS.':
+        ('Close other network apps (such as FTPD) and reopen Cloud3DS.',
+         '他のネットワークアプリ(FTPDなど)を閉じて、Cloud3DSを開き直してください。'),
+    '%d conectado':
+        ('%d online',
+         '%d 台接続中'),
+    '%d conectados':
+        ('%d online',
+         '%d 台接続中'),
+    'Dispositivos':
+        ('Devices',
+         'デバイス'),
+    'Sin dispositivos':
+        ('No devices',
+         'デバイスなし'),
+    'Se borrará la lista de actividad. Tus archivos no se modifican.':
         ("The activity list will be cleared. Your files aren't changed.",
-         "履歴の一覧だけを消去します。ファイルはそのままです。"),
-    "%s tendrá que volver a escanear el QR o escribir el PIN.":
-        ("%s will need to scan the QR code or enter the PIN again.", "%s は再びQRコードの読み取りかPINの入力が必要になります。"),
-    "Aquí verás lo que subas o descargues desde tu móvil o tu PC.":
-        ("Files you upload or download from your phone or PC will appear here.",
-         "スマホやPCからアップロードするとここに表示されます。"),
-    "Escanea el código QR de la pantalla superior para vincular tu móvil.":
-        ("Scan the QR code on the top screen to pair your phone.",
-         "上のQRコードをスマホで読み取って登録します。"),
-    "Conectado ahora": ("Online now", "接続中"),
-    "Visto: %s": ("Seen: %s", "最終: %s"),
-    "Sistema": ("System", "システム"),
-    "¿Crear un PIN nuevo?": ("Create a new PIN?", "新しいPINを作成しますか?"),
-    "Modo solo lectura activado":
-        ("Read-only mode on",
-         "読み取り専用にしました"),
-    "Cambiar": ("Change", "変更"),
-    "Ajustes": ("Settings", "設定"),
-    "Solo lectura": ("Read-only", "読み取り専用"),
-    "Modo solo lectura desactivado":
-        ("Read-only mode off",
-         "読み取り専用を解除しました"),
-    "Proteger carpetas del sistema": ("Protect system folders", "システムフォルダを保護"),
-    "Pide confirmación en Nintendo 3DS, luma…": ("Asks first in Nintendo 3DS, luma…", "Nintendo 3DSやlumaでは確認します"),
-    "PIN nuevo": ("New PIN", "新しいPIN"),
-    "Invalida el QR y el PIN actuales": ("Invalidates the current QR and PIN", "現在のQRとPINを無効にします"),
-    "Idioma": ("Language", "言語"),
-    "Tema": ("Theme", "テーマ"),
-    "Claro": ("Light", "ライト"),
-    "Oscuro": ("Dark", "ダーク"),
-    "Acerca de Cloud3DS": ("About Cloud3DS", "Cloud3DSについて"),
-    "Mira la pantalla de arriba": ("Look at the top screen", "上画面をご覧ください"),
-    "Salir": ("Exit", "終了"),
-    "Los dispositivos solo podrán ver y descargar":
-        ("Devices can only view and download",
-         "閲覧とダウンロードのみ"),
-    "Impide borrar Nintendo 3DS, 3ds, luma…":
-        ("Prevents deleting Nintendo 3DS, 3ds, luma…",
-         "Nintendo 3DS、3ds、lumaなどを削除不可に"),
-    "Vinculado: %s": ("Paired: %s", "登録: %s"),
-    "Eliminado: %s": ("Deleted: %s", "削除: %s"),
-    "¿Salir de Cloud3DS?": ("Exit Cloud3DS?", "Cloud3DSを終了しますか?"),
-    "Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrirla.":
+         '履歴の一覧だけを消去します。ファイルはそのままです。'),
+    '%s tendrá que volver a escanear el QR o escribir el PIN.':
+        ('%s will need to scan the QR code or enter the PIN again.',
+         '%s は再びQRコードの読み取りかPINの入力が必要になります。'),
+    'Aquí verás lo que subas o descargues desde tu móvil o tu PC.':
+        ('Files you upload or download from your phone or PC will appear here.',
+         'スマホやPCからアップロードするとここに表示されます。'),
+    'Escanea el código QR de la pantalla superior para vincular tu móvil.':
+        ('Scan the QR code on the top screen to pair your phone.',
+         '上のQRコードをスマホで読み取って登録します。'),
+    'Sistema':
+        ('System',
+         'システム'),
+    '¿Crear un PIN nuevo?':
+        ('Create a new PIN?',
+         '新しいPINを作成しますか?'),
+    'Modo solo lectura activado':
+        ('Read-only mode on',
+         '読み取り専用にしました'),
+    'Cambiar':
+        ('Change',
+         '変更'),
+    'Ajustes':
+        ('Settings',
+         '設定'),
+    'Solo lectura':
+        ('Read-only',
+         '読み取り専用'),
+    'Modo solo lectura desactivado':
+        ('Read-only mode off',
+         '読み取り専用を解除しました'),
+    'Proteger carpetas del sistema':
+        ('Protect system folders',
+         'システムフォルダを保護'),
+    'Pide confirmación en Nintendo 3DS, luma…':
+        ('Asks first in Nintendo 3DS, luma…',
+         'Nintendo 3DSやlumaでは確認します'),
+    'PIN nuevo':
+        ('New PIN',
+         '新しいPIN'),
+    'Invalida el QR y el PIN actuales':
+        ('Invalidates the current QR and PIN',
+         '現在のQRとPINを無効にします'),
+    'Idioma':
+        ('Language',
+         '言語'),
+    'Tema':
+        ('Theme',
+         'テーマ'),
+    'Claro':
+        ('Light',
+         'ライト'),
+    'Oscuro':
+        ('Dark',
+         'ダーク'),
+    'Acerca de Cloud3DS':
+        ('About Cloud3DS',
+         'Cloud3DSについて'),
+    'Mira la pantalla de arriba':
+        ('Look at the top screen',
+         '上画面をご覧ください'),
+    'Salir':
+        ('Exit',
+         '終了'),
+    'Los dispositivos solo podrán ver y descargar':
+        ('Devices can only view and download',
+         '閲覧とダウンロードのみ'),
+    'Impide borrar Nintendo 3DS, 3ds, luma…':
+        ('Prevents deleting Nintendo 3DS, 3ds, luma…',
+         'Nintendo 3DS、3ds、lumaなどを削除不可に'),
+    'Vinculado: %s':
+        ('Paired: %s',
+         '登録: %s'),
+    'Eliminado: %s':
+        ('Deleted: %s',
+         '削除: %s'),
+    '¿Salir de Cloud3DS?':
+        ('Exit Cloud3DS?',
+         'Cloud3DSを終了しますか?'),
+    'Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrirla.':
         ("Your cloud won't be available on your phone or PC until you open it again.",
-         "もう一度開くまで、スマホやPCからは使えなくなります。"),
-    "recibiendo": ("receiving", "受信中"),
-    "enviando": ("sending", "送信中"),
-    "Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará.":
-        ("1 transfer in progress (%s “%s”, %d%%). It will be canceled if you exit.",
-         "転送中のファイルが1件あります(%s「%s」%d%%)。終了するとキャンセルされます。"),
-    "Hay %d transferencias en curso (%s «%s», %d%%, y %d más). Si sales, se cancelarán.":
-        ("%d transfers in progress (%s “%s”, %d%%, and %d more). They will be canceled if you exit.",
-         "転送中のファイルが%d件あります(%s「%s」%d%%、ほか%d件)。終了するとキャンセルされます。"),
-    "Iniciando la red": ("Starting the network", "ネットワークを準備中"),
-    "Se mantiene hasta que lo cambies":
-        ("Stays the same until you change it",
-         "変更するまで同じです"),
-    "Conectado al Wi-Fi": ("Connected to Wi-Fi", "Wi-Fiに接続済み"),
-    "O pulsa START":
-        ("Or press START",
-         "STARTでも終了"),
-    "Cancelar": ("Cancel", "キャンセル"),
-    "Hoy": ("Today", "今日"),
-    "Ayer": ("Yesterday", "昨日"),
-    "%d s": ("%d s", "%d秒"),
-    "%d min": ("%d min", "%d分"),
-    "%d h %d min": ("%d h %d min", "%d時間%d分"),
-    '%d evento': ('%d event', '%d 件'),
-    '%d eventos': ('%d events', '%d 件'),
-    'Aún no hay actividad': ('No activity yet', 'まだ履歴はありません'),
-    '%d conectados · %d vinculados': ('%d online · %d paired', '接続中 %d · 登録 %d'),
-    'Ninguno vinculado todavía': ('None paired yet', 'まだ登録なし'),
-    'Versión %s · por %s': ('Version %s · by %s', 'バージョン %s · %s'),
-    'Permisos': ('Permissions', 'アクセス権'),
-    'Lectura y escritura': ('Read and write', '読み書き'),
-    'Pueden subir, renombrar y borrar': ('Can upload, rename and delete', 'アップロード・名前変更・削除できます'),
-    'Solo pueden ver y descargar': ('Can only view and download', '閲覧とダウンロードのみ'),
-    'Conectados ahora': ('Online now', '接続中'),
-    'Vinculados': ('Paired', '登録済み'),
-    'Conectado': ('Online', '接続中'),
-    'Ningún dispositivo vinculado': ('No paired devices', '登録されたデバイスはありません'),
-    'Escanea el QR de arriba con tu móvil': ('Scan the QR code above with your phone', '上のQRコードをスマホで読み取ってください'),
-    'Antes': ('Earlier', '以前'),
-    'Sube algo desde tu móvil o tu PC': ('Upload something from your phone or PC', 'スマホやPCからアップロードしてください'),
-    'Borrar el historial': ('Clear history', '履歴を消去'),
-    'Acceso': ('Access', 'アクセス'),
-    'Apariencia': ('Appearance', '外観'),
-    'Información': ('Information', '情報'),
-    'Usa el idioma de la consola': ("Uses the console's language", '本体の言語を使用'),
-    'Creado por VENOMSHiNE · elige uno para ver su QR': ('Made by VENOMSHiNE · pick one to see its QR', '制作: VENOMSHiNE · 選ぶとQRを表示'),
-    'Únete a la comunidad': ('Join the community', 'コミュニティに参加'),
-    'Invítame a un café': ('Buy me a coffee', 'コーヒーをおごる'),
-    'Gracias por usarlo': ('Thanks for using it', 'ご利用ありがとうございます'),
-    "Elige cuatro cifras fáciles de recordar":
-        ("Choose four easy-to-remember digits",
-         "覚えやすい4桁の数字"),
-    "La consola genera uno al azar":
-        ("The console generates one at random",
-         "本体がランダムに作成します"),
-    '¿Borrar el historial?': ('Clear history?', '履歴を消去しますか?'),
-    "El PIN y el código QR actuales dejarán de funcionar. Los dispositivos vinculados seguirán conectados.":
-        ("The current PIN and QR code will stop working. Paired devices will stay connected.",
-         "現在のPINとQRコードは使えなくなります。登録済みのデバイスはそのまま使えます。"),
-    'Borrar': ('Clear', '消去'),
-    'Sin Wi-Fi': ('No Wi-Fi', 'Wi-Fiなし'),
-    'Error': ('Error', 'エラー'),
-    'Preparando…': ('Starting…', '準備中…'),
-    'Recibiendo': ('Receiving', '受信中'),
-    'Enviando': ('Sending', '送信中'),
-    'Lista': ('List', 'リスト'),
-    'Conecta la consola a tu Wi-Fi o al punto de acceso de tu móvil. El código aparecerá solo.': ("Connect the console to your Wi-Fi or your phone's hotspot. The code will appear by itself.", '本体をWi-Fiかスマホのテザリングに接続すると、コードが表示されます。'),
-    'Escanéalo con la cámara del móvil': ("Scan it with your phone's camera", 'スマホのカメラで読み取ってください'),
-    '%d dispositivo conectado': ('%d device online', '%d 台接続中'),
-    '%d dispositivos conectados': ('%d devices online', '%d 台接続中'),
-    'Esperando conexión%.*s': ('Waiting for a device%.*s', '接続を待っています%.*s'),
-    'Conecta tu': ('Connect your', '本体を'),
-    'consola': ('console', '接続しよう'),
-    'Cloud3DS funciona en tu red local: el móvil o el PC tienen que estar en el mismo Wi-Fi.': ('Cloud3DS works on your local network: your phone or PC must be on the same Wi-Fi.', 'Cloud3DSはローカルネットワークで動きます。スマホやPCは同じWi-Fiに接続してください。'),
-    'Abre tu': ('Open your', 'あなたの'),
-    'nube local': ('local cloud', 'ローカルクラウド'),
-    'de %s': ('from %s', '%s から'),
-    'a %s': ('to %s', '%s へ'),
-    'y %d más': ('and %d more', 'ほか %d 件'),
-    'Código, novedades y nuevas versiones de mis proyectos.': ('Code, news and new versions of my projects.', 'プロジェクトのコード、最新情報、新バージョン。'),
-    'Únete a la comunidad: dudas, ideas y avisos de actualizaciones.': ('Join the community: questions, ideas and update news.', 'コミュニティに参加: 質問、アイデア、更新のお知らせ。'),
-    "Al cambiar el PIN también se renueva el código QR. Los dispositivos vinculados seguirán conectados.":
-        ("Changing the PIN also renews the QR code. Paired devices will stay connected.",
-         "変更するとQRコードも新しくなります。登録済みの端末は接続されたままです。"),
-    'Escanéalo con tu teléfono': ('Scan it with your phone', 'スマホで読み取ってください'),
-    'v%s · hecho por %s': ('v%s · made by %s', 'v%s · 制作: %s'),
-    'Toca para expulsarlo: tendrá que volver a escanear el QR o escribir el PIN.': ('Tap to remove it: it will need to scan the QR code or enter the PIN again.', 'タップで解除。再びQRコードかPINが必要になります。'),
-    'Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada.': ("With “Read-only”, devices can view and download, but can't upload, rename or delete anything.", '「読み取り専用」では閲覧とダウンロードのみで、アップロード・名前変更・削除はできません。'),
-    'Antes de borrar o cambiar Nintendo 3DS, luma/payloads, boot.firm y otras carpetas importantes, la web pide confirmación.': ('Before deleting or changing Nintendo 3DS, luma/payloads, boot.firm and other important folders, the web page asks first.', 'Nintendo 3DS、luma/payloads、boot.firmなど重要なフォルダを削除・変更する前に確認します。'),
-    'Crea un PIN y un QR nuevos. Los dispositivos ya vinculados siguen conectados; los nuevos necesitarán el PIN nuevo.': ('Creates a new PIN and QR code. Paired devices stay connected; new ones will need the new PIN.', '新しいPINとQRを作成します。登録済みのデバイスはそのまま、新しいデバイスには新しいPINが必要です。'),
-    'Idioma de la consola. La web usa el idioma de tu móvil o tu PC.': ("Console language. The web page uses your phone's or PC's language.", '本体の表示言語です。Webはスマホ・PCの言語を使います。'),
-    'Tema oscuro o claro para la consola. La web sigue el tema de tu móvil o tu PC.': ("Dark or light theme for the console. The web page follows your phone's or PC's theme.", '本体のダーク/ライトテーマ。Webはスマホ・PCの設定に従います。'),
-    'Versión, créditos y enlaces a la comunidad.': ('Version, credits and community links.', 'バージョン、クレジット、コミュニティへのリンク。'),
-    'Hoy en tu nube': ('Today in your cloud', '今日のクラウド'),
-    'Conectados': ('Online', '接続中'),
-    'Espacio libre': ('Free space', '空き容量'),
-    'Aquí verás lo que suban o descarguen': ('Uploads and downloads will show up here', 'アップロードやダウンロードがここに表示されます'),
-    "Código fuente e informes de errores":
-        ("Source code and bug reports",
-         "コードと不具合の報告"),
-    'No fijar': ('Unpin', '固定を解除'),
-    'Fijar': ('Pin', '固定'),
-    'Renombrar': ('Rename', '名前を変更'),
-    'Eliminar': ('Delete', '削除'),
-    'Aceptar': ('OK', 'OK'),
-    "Nuevo PIN y código QR generados":
-        ("New PIN and QR code generated",
-         "新しいPINとQRができました"),
-    "Código y nuevas versiones": ("Code and new versions", "コードと新バージョン"),
-    "Elige uno para ver su QR arriba": ("Pick one to see its QR code above", "選ぶと上画面にQRを表示"),
-    "Escanea con tu móvil": ("Scan with your phone", "スマホでスキャン"),
-    "Escanéalo con tu móvil": ("Scan it with your phone", "スマホでスキャン"),
-    "Qué es y para qué sirve": ("What it is and what it's for", "このアプリについて"),
-    "Software libre · licencia GPL-3.0": ("Free software · GPL-3.0 license", "フリーソフト · GPL-3.0"),
-    "Acceso bloqueado por intentos fallidos":
-        ("Access locked after failed attempts",
-         "入力ミスが多いためロックしました"),
-    "Tu nube está lista": ("Your cloud is ready", "クラウドの準備ができました"),
-    "Pulsa SELECT para ver el código QR": ("Press SELECT to show the QR code", "SELECTでQRコードを表示"),
-    "Copiado": ("Copied", "コピー"),
-    "Movido": ("Moved", "移動"),
-    "Copiando": ("Copying", "コピー中"),
-    "copiando": ("copying", "コピー中"),
-    "Nombre del dispositivo (vacío: automático)": ("Device name (empty: automatic)", "デバイス名(空欄で自動)"),
-    "Nombre guardado": ("Name saved", "名前を保存しました"),
-    "Sin conexión a Internet. Comprueba el Wi-Fi e inténtalo de nuevo.":
-        ("No Internet connection. Check the Wi-Fi and try again.",
-         "インターネットに接続されていません。Wi-Fiを確認して、もう一度お試しください。"),
-    "No se pudo verificar la conexión segura. Comprueba la fecha y la hora de la consola.":
+         'もう一度開くまで、スマホやPCからは使えなくなります。'),
+    'recibiendo':
+        ('receiving',
+         '受信中'),
+    'enviando':
+        ('sending',
+         '送信中'),
+    'Hay 1 transferencia en curso (%s «%s», %d%%). Si sales, se cancelará.':
+        ('1 transfer in progress (%s “%s”, %d%%). It will be canceled if you exit.',
+         '転送中のファイルが1件あります(%s「%s」%d%%)。終了するとキャンセルされます。'),
+    'Hay %d transferencias en curso (%s «%s», %d%%, y %d más). Si sales, se cancelarán.':
+        ('%d transfers in progress (%s “%s”, %d%%, and %d more). They will be canceled if you exit.',
+         '転送中のファイルが%d件あります(%s「%s」%d%%、ほか%d件)。終了するとキャンセルされます。'),
+    'Iniciando la red':
+        ('Starting the network',
+         'ネットワークを準備中'),
+    'Se mantiene hasta que lo cambies':
+        ('Stays the same until you change it',
+         '変更するまで同じです'),
+    'Conectado al Wi-Fi':
+        ('Connected to Wi-Fi',
+         'Wi-Fiに接続済み'),
+    'Cancelar':
+        ('Cancel',
+         'キャンセル'),
+    'Hoy':
+        ('Today',
+         '今日'),
+    'Ayer':
+        ('Yesterday',
+         '昨日'),
+    '%d s':
+        ('%d s',
+         '%d秒'),
+    '%d min':
+        ('%d min',
+         '%d分'),
+    '%d h %d min':
+        ('%d h %d min',
+         '%d時間%d分'),
+    '%d evento':
+        ('%d event',
+         '%d 件'),
+    '%d eventos':
+        ('%d events',
+         '%d 件'),
+    'Aún no hay actividad':
+        ('No activity yet',
+         'まだ履歴はありません'),
+    '%d conectados · %d vinculados':
+        ('%d online · %d paired',
+         '接続中 %d · 登録 %d'),
+    'Ninguno vinculado todavía':
+        ('None paired yet',
+         'まだ登録なし'),
+    'Versión %s · por %s':
+        ('Version %s · by %s',
+         'バージョン %s · %s'),
+    'Permisos':
+        ('Permissions',
+         'アクセス権'),
+    'Lectura y escritura':
+        ('Read and write',
+         '読み書き'),
+    'Pueden subir, renombrar y borrar':
+        ('Can upload, rename and delete',
+         'アップロード・名前変更・削除できます'),
+    'Solo pueden ver y descargar':
+        ('Can only view and download',
+         '閲覧とダウンロードのみ'),
+    'Conectados ahora':
+        ('Online now',
+         '接続中'),
+    'Vinculados':
+        ('Paired',
+         '登録済み'),
+    'Conectado':
+        ('Connected',
+         '接続中'),
+    'Ningún dispositivo vinculado':
+        ('No paired devices',
+         '登録されたデバイスはありません'),
+    'Escanea el QR de arriba con tu móvil':
+        ('Scan the QR code above with your phone',
+         '上のQRコードをスマホで読み取ってください'),
+    'Antes':
+        ('Earlier',
+         '以前'),
+    'Sube algo desde tu móvil o tu PC':
+        ('Upload something from your phone or PC',
+         'スマホやPCからアップロードしてください'),
+    'Borrar el historial':
+        ('Clear history',
+         '履歴を消去'),
+    'Acceso':
+        ('Access',
+         'アクセス'),
+    'Apariencia':
+        ('Appearance',
+         '外観'),
+    'Información':
+        ('Information',
+         '情報'),
+    'Usa el idioma de la consola':
+        ("Uses the console's language",
+         '本体の言語を使用'),
+    'Creado por VENOMSHiNE · elige uno para ver su QR':
+        ('Made by VENOMSHiNE · pick one to see its QR',
+         '制作: VENOMSHiNE · 選ぶとQRを表示'),
+    'Únete a la comunidad':
+        ('Join the community',
+         'コミュニティに参加'),
+    'Invítame a un café':
+        ('Buy me a coffee',
+         'コーヒーをおごる'),
+    'Gracias por usarlo':
+        ('Thanks for using it',
+         'ご利用ありがとうございます'),
+    'La consola genera uno al azar':
+        ('The console generates one at random',
+         '本体がランダムに作成します'),
+    '¿Borrar el historial?':
+        ('Clear history?',
+         '履歴を消去しますか?'),
+    'El PIN y el código QR actuales dejarán de funcionar. Los dispositivos vinculados seguirán conectados.':
+        ('The current PIN and QR code will stop working. Paired devices will stay connected.',
+         '現在のPINとQRコードは使えなくなります。登録済みのデバイスはそのまま使えます。'),
+    'Borrar':
+        ('Clear',
+         '消去'),
+    'Sin Wi-Fi':
+        ('No Wi-Fi',
+         'Wi-Fiなし'),
+    'Error':
+        ('Error',
+         'エラー'),
+    'Preparando…':
+        ('Starting…',
+         '準備中…'),
+    'Recibiendo':
+        ('Receiving',
+         '受信中'),
+    'Enviando':
+        ('Sending',
+         '送信中'),
+    'Lista':
+        ('List',
+         'リスト'),
+    'Conecta la consola a tu Wi-Fi o al punto de acceso de tu móvil. El código aparecerá solo.':
+        ("Connect the console to your Wi-Fi or your phone's hotspot. The code will appear by itself.",
+         '本体をWi-Fiかスマホのテザリングに接続すると、コードが表示されます。'),
+    'Escanéalo con la cámara del móvil':
+        ("Scan it with your phone's camera",
+         'スマホのカメラで読み取ってください'),
+    '%d dispositivo conectado':
+        ('%d device online',
+         '%d 台接続中'),
+    '%d dispositivos conectados':
+        ('%d devices online',
+         '%d 台接続中'),
+    'Esperando conexión%.*s':
+        ('Waiting for a device%.*s',
+         '接続を待っています%.*s'),
+    'Conecta tu':
+        ('Connect your',
+         '本体を'),
+    'consola':
+        ('console',
+         '接続しよう'),
+    'Cloud3DS funciona en tu red local: el móvil o el PC tienen que estar en el mismo Wi-Fi.':
+        ('Cloud3DS works on your local network: your phone or PC must be on the same Wi-Fi.',
+         'Cloud3DSはローカルネットワークで動きます。スマホやPCは同じWi-Fiに接続してください。'),
+    'Abre tu':
+        ('Open your',
+         'あなたの'),
+    'nube local':
+        ('local cloud',
+         'ローカルクラウド'),
+    'de %s':
+        ('from %s',
+         '%s から'),
+    'a %s':
+        ('to %s',
+         '%s へ'),
+    'y %d más':
+        ('and %d more',
+         'ほか %d 件'),
+    'Código, novedades y nuevas versiones de mis proyectos.':
+        ('Code, news and new versions of my projects.',
+         'プロジェクトのコード、最新情報、新バージョン。'),
+    'Únete a la comunidad: dudas, ideas y avisos de actualizaciones.':
+        ('Join the community: questions, ideas and update news.',
+         'コミュニティに参加: 質問、アイデア、更新のお知らせ。'),
+    'Al cambiar el PIN también se renueva el código QR. Los dispositivos vinculados seguirán conectados.':
+        ('Changing the PIN also renews the QR code. Paired devices will stay connected.',
+         '変更するとQRコードも新しくなります。登録済みの端末は接続されたままです。'),
+    'Escanéalo con tu teléfono':
+        ('Scan it with your phone',
+         'スマホで読み取ってください'),
+    'v%s · hecho por %s':
+        ('v%s · made by %s',
+         'v%s · 制作: %s'),
+    'Toca para expulsarlo: tendrá que volver a escanear el QR o escribir el PIN.':
+        ('Tap to remove it: it will need to scan the QR code or enter the PIN again.',
+         'タップで解除。再びQRコードかPINが必要になります。'),
+    'Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada.':
+        ("With “Read-only”, devices can view and download, but can't upload, rename or delete anything.",
+         '「読み取り専用」では閲覧とダウンロードのみで、アップロード・名前変更・削除はできません。'),
+    'Antes de borrar o cambiar Nintendo 3DS, luma/payloads, boot.firm y otras carpetas importantes, la web pide confirmación.':
+        ('Before deleting or changing Nintendo 3DS, luma/payloads, boot.firm and other important folders, the web page asks first.',
+         'Nintendo 3DS、luma/payloads、boot.firmなど重要なフォルダを削除・変更する前に確認します。'),
+    'Crea un PIN y un QR nuevos. Los dispositivos ya vinculados siguen conectados; los nuevos necesitarán el PIN nuevo.':
+        ('Creates a new PIN and QR code. Paired devices stay connected; new ones will need the new PIN.',
+         '新しいPINとQRを作成します。登録済みのデバイスはそのまま、新しいデバイスには新しいPINが必要です。'),
+    'Idioma de la consola. La web usa el idioma de tu móvil o tu PC.':
+        ("Console language. The web page uses your phone's or PC's language.",
+         '本体の表示言語です。Webはスマホ・PCの言語を使います。'),
+    'Tema oscuro o claro para la consola. La web sigue el tema de tu móvil o tu PC.':
+        ("Dark or light theme for the console. The web page follows your phone's or PC's theme.",
+         '本体のダーク/ライトテーマ。Webはスマホ・PCの設定に従います。'),
+    'Versión, créditos y enlaces a la comunidad.':
+        ('Version, credits and community links.',
+         'バージョン、クレジット、コミュニティへのリンク。'),
+    'Hoy en tu nube':
+        ('Today in your cloud',
+         '今日のクラウド'),
+    'Conectados':
+        ('Online',
+         '接続中'),
+    'Espacio libre':
+        ('Free space',
+         '空き容量'),
+    'Aquí verás lo que suban o descarguen':
+        ('Uploads and downloads will show up here',
+         'アップロードやダウンロードがここに表示されます'),
+    'Código fuente e informes de errores':
+        ('Source code and bug reports',
+         'コードと不具合の報告'),
+    'No fijar':
+        ('Unpin',
+         '固定を解除'),
+    'Fijar':
+        ('Pin',
+         '固定'),
+    'Renombrar':
+        ('Rename',
+         '名前を変更'),
+    'Eliminar':
+        ('Delete',
+         '削除'),
+    'Aceptar':
+        ('OK',
+         'OK'),
+    'Nuevo PIN y código QR generados':
+        ('New PIN and QR code generated',
+         '新しいPINとQRができました'),
+    'Código y nuevas versiones':
+        ('Code and new versions',
+         'コードと新バージョン'),
+    'Elige uno para ver su QR arriba':
+        ('Pick one to see its QR code above',
+         '選ぶと上画面にQRを表示'),
+    'Escanéalo con tu móvil':
+        ('Scan it with your phone',
+         'スマホでスキャン'),
+    'Qué es y para qué sirve':
+        ("What it is and what it's for",
+         'このアプリについて'),
+    'Software libre · licencia GPL-3.0':
+        ('Free software · GPL-3.0 license',
+         'フリーソフト · GPL-3.0'),
+    'Acceso bloqueado por intentos fallidos':
+        ('Access locked after failed attempts',
+         '入力ミスが多いためロックしました'),
+    'Tu nube está lista':
+        ('Your cloud is ready',
+         'クラウドの準備ができました'),
+    'Pulsa SELECT para ver el código QR':
+        ('Press SELECT to show the QR code',
+         'SELECTでQRコードを表示'),
+    'Copiado':
+        ('Copied',
+         'コピー'),
+    'Movido':
+        ('Moved',
+         '移動'),
+    'Copiando':
+        ('Copying',
+         'コピー中'),
+    'copiando':
+        ('copying',
+         'コピー中'),
+    'Nombre guardado':
+        ('Name saved',
+         '名前を保存しました'),
+    'Sin conexión a Internet. Comprueba el Wi-Fi e inténtalo de nuevo.':
+        ('No Internet connection. Check the Wi-Fi and try again.',
+         'インターネットに接続されていません。Wi-Fiを確認して、もう一度お試しください。'),
+    'No se pudo verificar la conexión segura. Comprueba la fecha y la hora de la consola.':
         ("Couldn't verify the secure connection. Check the console's date and time.",
-         "安全な接続を確認できませんでした。本体の日付と時刻を確認してください。"),
-    "GitHub ha limitado las consultas por ahora. Inténtalo de nuevo en unos minutos.":
-        ("GitHub is limiting requests right now. Try again in a few minutes.",
-         "GitHubが一時的にアクセスを制限しています。数分後にもう一度お試しください。"),
-    "Todavía no hay versiones publicadas.":
-        ("No versions have been published yet.",
-         "まだ公開されたバージョンはありません。"),
-    "El archivo descargado no coincide con su SHA-256 y no se ha instalado.":
+         '安全な接続を確認できませんでした。本体の日付と時刻を確認してください。'),
+    'GitHub ha limitado las consultas por ahora. Inténtalo de nuevo en unos minutos.':
+        ('GitHub is limiting requests right now. Try again in a few minutes.',
+         'GitHubが一時的にアクセスを制限しています。数分後にもう一度お試しください。'),
+    'Todavía no hay versiones publicadas.':
+        ('No versions have been published yet.',
+         'まだ公開されたバージョンはありません。'),
+    'El archivo descargado no coincide con su SHA-256 y no se ha instalado.':
         ("The downloaded file doesn't match its SHA-256, so it wasn't installed.",
-         "ダウンロードしたファイルがSHA-256と一致しないため、インストールしませんでした。"),
-    "La consola no pudo instalar la actualización. Prueba de nuevo o instálala con FBI.":
+         'ダウンロードしたファイルがSHA-256と一致しないため、インストールしませんでした。'),
+    'La consola no pudo instalar la actualización. Prueba de nuevo o instálala con FBI.':
         ("The console couldn't install the update. Try again or install it with FBI.",
-         "本体がアップデートをインストールできませんでした。もう一度試すか、FBIでインストールしてください。"),
-    "No se pudo escribir en la tarjeta SD.":
+         '本体がアップデートをインストールできませんでした。もう一度試すか、FBIでインストールしてください。'),
+    'No se pudo escribir en la tarjeta SD.':
         ("Couldn't write to the SD card.",
-         "SDカードに書き込めませんでした。"),
-    "No se pudo completar. Inténtalo de nuevo más tarde.":
+         'SDカードに書き込めませんでした。'),
+    'No se pudo completar. Inténtalo de nuevo más tarde.':
         ("Couldn't finish. Try again later.",
-         "完了できませんでした。後でもう一度お試しください。"),
-    "Buscando actualizaciones…":
-        ("Checking for updates…",
-         "アップデートを確認中…"),
-    "Cloud3DS está al día":
-        ("Cloud3DS is up to date",
-         "Cloud3DSは最新です"),
-    "Hay una versión nueva":
-        ("A new version is available",
-         "新しいバージョンがあります"),
-    "Descargando la actualización":
-        ("Downloading the update",
-         "アップデートをダウンロード中"),
-    "Instalando la actualización":
-        ("Installing the update",
-         "アップデートをインストール中"),
-    "Actualización instalada":
-        ("Update installed",
-         "アップデートをインストールしました"),
-    "No se pudo actualizar":
+         '完了できませんでした。後でもう一度お試しください。'),
+    'Buscando actualizaciones…':
+        ('Checking for updates…',
+         'アップデートを確認中…'),
+    'Cloud3DS está al día':
+        ('Cloud3DS is up to date',
+         'Cloud3DSは最新です'),
+    'Hay una versión nueva':
+        ('A new version is available',
+         '新しいバージョンがあります'),
+    'Descargando la actualización':
+        ('Downloading the update',
+         'アップデートをダウンロード中'),
+    'Instalando la actualización':
+        ('Installing the update',
+         'アップデートをインストール中'),
+    'Actualización instalada':
+        ('Update installed',
+         'アップデートをインストールしました'),
+    'No se pudo actualizar':
         ("Couldn't update",
-         "アップデートできませんでした"),
-    "Actualizaciones":
-        ("Updates",
-         "アップデート"),
-    "Instalada: v%s · Última: v%s":
-        ("Installed: v%s · Latest: v%s",
-         "インストール済み: v%s · 最新: v%s"),
-    "Instalada: v%s":
-        ("Installed: v%s",
-         "インストール済み: v%s"),
-    "No apagues la consola ni cierres Cloud3DS hasta que termine.":
+         'アップデートできませんでした'),
+    'Actualizaciones':
+        ('Updates',
+         'アップデート'),
+    'Instalada: v%s · Última: v%s':
+        ('Installed: v%s · Latest: v%s',
+         'インストール済み: v%s · 最新: v%s'),
+    'Instalada: v%s':
+        ('Installed: v%s',
+         'インストール済み: v%s'),
+    'No apagues la consola ni cierres Cloud3DS hasta que termine.':
         ("Don't turn off the console or close Cloud3DS until it finishes.",
-         "終わるまで本体の電源を切ったり、Cloud3DSを閉じたりしないでください。"),
-    "Cierra Cloud3DS y vuelve a abrirlo para usar la nueva versión.":
-        ("Close Cloud3DS and open it again to use the new version.",
-         "新しいバージョンを使うには、Cloud3DSを閉じてもう一度開いてください。"),
-    "Reinicia Cloud3DS para usar la nueva versión.":
-        ("Restart Cloud3DS to use the new version.",
-         "新しいバージョンを使うには、Cloud3DSを再起動してください。"),
-    "Esta versión no incluye el archivo de comprobación (Cloud3DS.sha256), así que no se puede instalar desde aquí.":
+         '終わるまで本体の電源を切ったり、Cloud3DSを閉じたりしないでください。'),
+    'Cierra Cloud3DS y vuelve a abrirlo para usar la nueva versión.':
+        ('Close Cloud3DS and open it again to use the new version.',
+         '新しいバージョンを使うには、Cloud3DSを閉じてもう一度開いてください。'),
+    'Reinicia Cloud3DS para usar la nueva versión.':
+        ('Restart Cloud3DS to use the new version.',
+         '新しいバージョンを使うには、Cloud3DSを再起動してください。'),
+    'Esta versión no incluye el archivo de comprobación (Cloud3DS.sha256), así que no se puede instalar desde aquí.':
         ("This version doesn't include the checksum file (Cloud3DS.sha256), so it can't be installed from here.",
-         "このバージョンには確認用ファイル(Cloud3DS.sha256)がないため、ここからはインストールできません。"),
-    "Novedades":
+         'このバージョンには確認用ファイル(Cloud3DS.sha256)がないため、ここからはインストールできません。'),
+    'Novedades':
         ("What's new",
-         "新機能"),
-    "Cloud3DS busca versiones nuevas en GitHub. Antes de instalar, comprueba que el archivo descargado es el original (SHA-256).":
-        ("Cloud3DS checks GitHub for new versions. Before installing, it verifies that the downloaded file is the original (SHA-256).",
-         "Cloud3DSはGitHubで新しいバージョンを確認します。インストール前に、ダウンロードしたファイルが本物か(SHA-256)を確認します。"),
-    "Buscar versiones nuevas":
-        ("Check for new versions",
-         "新しいバージョンを確認"),
-    "Buscar al abrir la app":
-        ("Check when the app opens",
-         "起動時に確認"),
-    "Consulta GitHub en segundo plano":
-        ("Checks GitHub in the background",
-         "バックグラウンドでGitHubを確認"),
-    "Actualizar a la versión %s":
-        ("Update to version %s",
-         "バージョン%sにアップデート"),
-    "Se descarga, se comprueba y se instala":
-        ("Downloaded, verified and installed",
-         "ダウンロード、確認、インストール"),
-    "Reiniciar Cloud3DS":
-        ("Restart Cloud3DS",
-         "Cloud3DSを再起動"),
-    "Para usar la nueva versión":
-        ("To use the new version",
-         "新しいバージョンを使うために"),
-    "Buscar actualizaciones":
-        ("Check for updates",
-         "アップデートを確認"),
-    "Versión instalada: v%s":
-        ("Installed version: v%s",
-         "インストール済み: v%s"),
-    "Se descargará la versión %s desde GitHub, se comprobará y se instalará. No apagues la consola mientras tanto.":
+         '新機能'),
+    'Cloud3DS busca versiones nuevas en GitHub. Antes de instalar, comprueba que el archivo descargado es el original (SHA-256).':
+        ('Cloud3DS checks GitHub for new versions. Before installing, it verifies that the downloaded file is the original (SHA-256).',
+         'Cloud3DSはGitHubで新しいバージョンを確認します。インストール前に、ダウンロードしたファイルが本物か(SHA-256)を確認します。'),
+    'Buscar versiones nuevas':
+        ('Check for new versions',
+         '新しいバージョンを確認'),
+    'Buscar al abrir la app':
+        ('Check when the app opens',
+         '起動時に確認'),
+    'Consulta GitHub en segundo plano':
+        ('Checks GitHub in the background',
+         'バックグラウンドでGitHubを確認'),
+    'Actualizar a la versión %s':
+        ('Update to version %s',
+         'バージョン%sにアップデート'),
+    'Se descarga, se comprueba y se instala':
+        ('Downloaded, verified and installed',
+         'ダウンロード、確認、インストール'),
+    'Reiniciar Cloud3DS':
+        ('Restart Cloud3DS',
+         'Cloud3DSを再起動'),
+    'Para usar la nueva versión':
+        ('To use the new version',
+         '新しいバージョンを使うために'),
+    'Buscar actualizaciones':
+        ('Check for updates',
+         'アップデートを確認'),
+    'Versión instalada: v%s':
+        ('Installed version: v%s',
+         'インストール済み: v%s'),
+    'Se descargará la versión %s desde GitHub, se comprobará y se instalará. No apagues la consola mientras tanto.':
         ("Version %s will be downloaded from GitHub, verified and installed. Don't turn off the console in the meantime.",
-         "バージョン%sをGitHubからダウンロードし、確認してインストールします。その間、本体の電源を切らないでください。"),
-    "¿Actualizar Cloud3DS?":
-        ("Update Cloud3DS?",
-         "Cloud3DSをアップデートしますか?"),
-    "Actualizar":
-        ("Update",
-         "アップデート"),
-    "Espera a que termine la actualización":
-        ("Wait for the update to finish",
-         "アップデートが終わるまでお待ちください"),
-    "Nueva versión %s disponible en Ajustes":
-        ("Version %s is available in Settings",
-         "新しいバージョン%sを設定から入手できます"),
-    "Instalado":
-        ("Installed",
-         "インストール済み"),
-    "Es Cloud3DS: actualízala desde Ajustes → Actualizaciones.":
-        ("This is Cloud3DS: update it from Settings → Updates.",
-         "Cloud3DSです。設定 → アップデートから更新してください。"),
-    "Versión %s · no está instalado":
-        ("Version %s · not installed",
-         "バージョン%s · 未インストール"),
-    "Versión %s · ya instalada (se reinstalará)":
-        ("Version %s · already installed (it will be reinstalled)",
-         "バージョン%s · インストール済み(再インストールします)"),
-    "Versión %s · ya tienes una más nueva (%s). La consola no deja bajar de versión.":
+         'バージョン%sをGitHubからダウンロードし、確認してインストールします。その間、本体の電源を切らないでください。'),
+    '¿Actualizar Cloud3DS?':
+        ('Update Cloud3DS?',
+         'Cloud3DSをアップデートしますか?'),
+    'Actualizar':
+        ('Update',
+         'アップデート'),
+    'Espera a que termine la actualización':
+        ('Wait for the update to finish',
+         'アップデートが終わるまでお待ちください'),
+    'Nueva versión %s disponible en Ajustes':
+        ('Version %s is available in Settings',
+         '新しいバージョン%sを設定から入手できます'),
+    'Instalado':
+        ('Installed',
+         'インストール済み'),
+    'Es Cloud3DS: actualízala desde Ajustes → Actualizaciones.':
+        ('This is Cloud3DS: update it from Settings → Updates.',
+         'Cloud3DSです。設定 → アップデートから更新してください。'),
+    'Versión %s · no está instalado':
+        ('Version %s · not installed',
+         'バージョン%s · 未インストール'),
+    'Versión %s · ya instalada (se reinstalará)':
+        ('Version %s · already installed (it will be reinstalled)',
+         'バージョン%s · インストール済み(再インストールします)'),
+    'Versión %s · ya tienes una más nueva (%s). La consola no deja bajar de versión.':
         ("Version %s · you already have a newer one (%s). The console doesn't allow downgrades.",
-         "バージョン%s · より新しい%sがあります。本体はダウングレードできません。"),
-    "Versión %s · actualiza la %s instalada":
-        ("Version %s · updates the installed %s",
-         "バージョン%s · インストール済みの%sを更新"),
-    "Instalar en la consola":
-        ("Install on the console",
-         "本体にインストール"),
-    "Este juego es solo para New 3DS.":
-        ("This game is for New 3DS only.",
-         "このゲームはNew 3DS専用です。"),
-    "ID %016llX · pedido desde %s":
-        ("ID %016llX · requested from %s",
-         "ID %016llX · %sから"),
-    "y %d más esperando":
-        ("and %d more waiting",
-         "ほか%d件が待機中"),
-    "%d CIA para instalar":
-        ("%d CIA to install",
-         "インストールするCIA: %d"),
-    "¿Instalar este CIA?":
-        ("Install this CIA?",
-         "このCIAをインストールしますか?"),
-    "Instalar todos":
-        ("Install all",
-         "すべてインストール"),
-    "Instalar":
-        ("Install",
-         "インストール"),
-    "Solo guardar en la SD":
-        ("Just save it to the SD",
-         "SDに保存するだけ"),
-    "Rechazar":
-        ("Decline",
-         "拒否"),
-    "Instalando…":
-        ("Installing…",
-         "インストール中…"),
-    "Guardado en la SD sin instalar":
-        ("Saved to the SD without installing",
-         "インストールせずにSDに保存しました"),
-    "Instalando":
-        ("Installing",
-         "インストール中"),
-    "instalando":
-        ("installing",
-         "インストール中"),
-    "Espera a que termine la instalación":
-        ("Wait for the install to finish",
-         "インストールが終わるまでお待ちください"),
-    "En curso: %d":
-        ("In progress: %d",
-         "進行中: %d"),
-    "Esperando a que lo confirmes":
-        ("Waiting for your confirmation",
-         "確認待ち"),
-    "En cola para instalar":
-        ("Queued to install",
-         "インストール待ち"),
-    "Inicio":
-        ("Home",
-         "ホーム"),
-    "Capturas":
-        ("Screenshots",
-         "スクショ"),
-    "Fotos":
-        ("Photos",
-         "写真"),
-    "CIAs":
-        ("CIAs",
-         "CIA"),
-    "Homebrew":
-        ("Homebrew",
-         "Homebrew"),
-    "Partidas":
-        ("Saves",
-         "セーブ"),
-    "Aún no hay copias de tus partidas: hazlas con Checkpoint o JKSM":
-        ("No save backups yet: make them with Checkpoint or JKSM",
-         "セーブのバックアップはまだありません。CheckpointかJKSMで作成してください"),
-    "1 elemento":
-        ("1 item",
-         "1件"),
-    "%d elementos":
-        ("%d items",
-         "%d件"),
-    "CARPETAS DEL SISTEMA":
-        ("SYSTEM FOLDERS",
-         "システムフォルダ"),
-    "Carpeta":
-        ("Folder",
-         "フォルダ"),
-    "No se pudo abrir esta carpeta":
+         'バージョン%s · より新しい%sがあります。本体はダウングレードできません。'),
+    'Versión %s · actualiza la %s instalada':
+        ('Version %s · updates the installed %s',
+         'バージョン%s · インストール済みの%sを更新'),
+    'Instalar en la consola':
+        ('Install on the console',
+         '本体にインストール'),
+    'Este juego es solo para New 3DS.':
+        ('This game is for New 3DS only.',
+         'このゲームはNew 3DS専用です。'),
+    'ID %016llX · pedido desde %s':
+        ('ID %016llX · requested from %s',
+         'ID %016llX · %sから'),
+    'y %d más esperando':
+        ('and %d more waiting',
+         'ほか%d件が待機中'),
+    '%d CIA para instalar':
+        ('%d CIA to install',
+         'インストールするCIA: %d'),
+    '¿Instalar este CIA?':
+        ('Install this CIA?',
+         'このCIAをインストールしますか?'),
+    'Instalar todos':
+        ('Install all',
+         'すべてインストール'),
+    'Instalar':
+        ('Install',
+         'インストール'),
+    'Solo guardar en la SD':
+        ('Only save to the SD card',
+         'SDカードに保存のみ'),
+    'Rechazar':
+        ('Decline',
+         '拒否'),
+    'Instalando…':
+        ('Installing…',
+         'インストール中…'),
+    'Guardado en la SD sin instalar':
+        ('Saved to the SD card without installing',
+         'インストールせずにSDカードに保存しました'),
+    'Instalando':
+        ('Installing',
+         'インストール中'),
+    'instalando':
+        ('installing',
+         'インストール中'),
+    'Espera a que termine la instalación':
+        ('Wait for the install to finish',
+         'インストールが終わるまでお待ちください'),
+    'En curso: %d':
+        ('In progress: %d',
+         '進行中: %d'),
+    'En cola para instalar':
+        ('Queued to install',
+         'インストール待ち'),
+    'Inicio':
+        ('Home',
+         'ホーム'),
+    'Capturas':
+        ('Screenshots',
+         'スクショ'),
+    'Fotos':
+        ('Photos',
+         '写真'),
+    'CIAs':
+        ('CIAs',
+         'CIA'),
+    'Homebrew':
+        ('Homebrew',
+         'Homebrew'),
+    'Partidas':
+        ('Saves',
+         'セーブ'),
+    'Aún no hay copias de tus partidas: hazlas con Checkpoint o JKSM':
+        ('No save backups yet: make them with Checkpoint or JKSM',
+         'セーブのバックアップはまだありません。CheckpointかJKSMで作成してください'),
+    '1 elemento':
+        ('1 item',
+         '1件'),
+    '%d elementos':
+        ('%d items',
+         '%d件'),
+    'CARPETAS DEL SISTEMA':
+        ('SYSTEM FOLDERS',
+         'システムフォルダ'),
+    'Carpeta':
+        ('Folder',
+         'フォルダ'),
+    'No se pudo abrir esta carpeta':
         ("Couldn't open this folder",
-         "このフォルダを開けませんでした"),
-    "Carpeta vacía":
-        ("Empty folder",
-         "空のフォルダ"),
-    "Mover a…":
-        ("Move to…",
-         "移動…"),
-    "Copiar a…":
-        ("Copy to…",
-         "コピー…"),
-    "Destacar":
-        ("Highlight",
-         "色分け"),
-    "Por seguridad, no se instalan títulos del sistema":
+         'このフォルダを開けませんでした'),
+    'Carpeta vacía':
+        ('Empty folder',
+         '空のフォルダ'),
+    'Mover a…':
+        ('Move to…',
+         '移動…'),
+    'Copiar a…':
+        ('Copy to…',
+         'コピー…'),
+    'Destacar':
+        ('Highlight',
+         '色分け'),
+    'Por seguridad, no se instalan títulos del sistema':
         ("For safety, system titles aren't installed",
-         "安全のため、システムタイトルはインストールしません"),
-    "Ya está esperando en la consola":
-        ("It's already waiting on the console",
-         "すでに本体で待機中です"),
-    "La consola no reconoce este CIA":
+         '安全のため、システムタイトルはインストールしません'),
+    'La consola no reconoce este CIA':
         ("The console doesn't recognize this CIA",
-         "本体がこのCIAを認識できません"),
-    "Cloud3DS se actualiza desde Ajustes → Actualizaciones":
-        ("Cloud3DS is updated from Settings → Updates",
-         "Cloud3DSは設定 → アップデートから更新します"),
-    "Ya tienes una versión más nueva instalada":
-        ("You already have a newer version installed",
-         "より新しいバージョンがインストールされています"),
-    "Se eliminarán «%s» y todo su contenido. Esta acción no se puede deshacer.":
+         '本体がこのCIAを認識できません'),
+    'Cloud3DS se actualiza desde Ajustes → Actualizaciones':
+        ('Cloud3DS is updated from Settings → Updates',
+         'Cloud3DSは設定 → アップデートから更新します'),
+    'Ya tienes una versión más nueva instalada':
+        ('You already have a newer version installed',
+         'より新しいバージョンがインストールされています'),
+    'Se eliminarán «%s» y todo su contenido. Esta acción no se puede deshacer.':
         ("“%s” and everything in it will be deleted. This can't be undone.",
-         "「%s」とその中身がすべて削除されます。元に戻せません。"),
-    "Se eliminará «%s» de la tarjeta SD. Esta acción no se puede deshacer.":
+         '「%s」とその中身がすべて削除されます。元に戻せません。'),
+    'Se eliminará «%s» de la tarjeta SD. Esta acción no se puede deshacer.':
         ("“%s” will be deleted from the SD card. This can't be undone.",
-         "「%s」をSDカードから削除します。元に戻せません。"),
-    "¿Eliminar?":
-        ("Delete?",
-         "削除しますか?"),
-    "Ve a la carpeta de destino y pulsa X":
-        ("Go to the destination folder and press X",
-         "移動先のフォルダでXを押してください"),
-    "Mover aquí":
-        ("Move here",
-         "ここに移動"),
-    "Copiar aquí":
-        ("Copy here",
-         "ここにコピー"),
-    "No puedes meter una carpeta dentro de sí misma":
-        ("You can't put a folder inside itself",
-         "フォルダをその中に入れることはできません"),
-    "Carpeta protegida: elige otra":
-        ("Protected folder: choose another",
-         "保護されたフォルダです。別のフォルダを選んでください"),
-    "Ya existe «%s» aquí. Se guardará con otro nombre, como «%s (2)».":
-        ("“%s” already exists here. It will be saved with another name, like “%s (2)”.",
-         "「%s」はすでにあります。「%s (2)」のような別の名前で保存します。"),
-    "Ya existe":
-        ("Already exists",
-         "すでにあります"),
-    "Conservar ambos":
-        ("Keep both",
-         "両方残す"),
-    "No se pudo mover":
+         '「%s」をSDカードから削除します。元に戻せません。'),
+    '¿Eliminar?':
+        ('Delete?',
+         '削除しますか?'),
+    'Ve a la carpeta de destino y pulsa X':
+        ('Go to the destination folder and press X',
+         '移動先のフォルダでXを押してください'),
+    'Mover aquí':
+        ('Move here',
+         'ここに移動'),
+    'Copiar aquí':
+        ('Copy here',
+         'ここにコピー'),
+    'Carpeta protegida: elige otra':
+        ('Protected folder: choose another',
+         '保護されたフォルダです。別のフォルダを選んでください'),
+    'Ya existe «%s» aquí. Se guardará con otro nombre, como «%s (2)».':
+        ('“%s” already exists here. It will be saved with another name, like “%s (2)”.',
+         '「%s」はすでにあります。「%s (2)」のような別の名前で保存します。'),
+    'Ya existe':
+        ('Already exists',
+         'すでにあります'),
+    'Conservar ambos':
+        ('Keep both',
+         '両方残す'),
+    'No se pudo mover':
         ("Couldn't move it",
-         "移動できませんでした"),
-    "Copiando…":
-        ("Copying…",
-         "コピー中…"),
-    "Ya hay una copia en curso":
-        ("A copy is already in progress",
-         "すでにコピー中です"),
-    "No hay espacio suficiente en la SD":
-        ("Not enough space on the SD",
-         "SDカードの空き容量が足りません"),
-    "No se pudo copiar":
+         '移動できませんでした'),
+    'Copiando…':
+        ('Copying…',
+         'コピー中…'),
+    'Ya hay una copia en curso':
+        ('A copy is already in progress',
+         'すでにコピー中です'),
+    'No hay espacio suficiente en la SD':
+        ('Not enough space on the SD',
+         'SDカードの空き容量が足りません'),
+    'No se pudo copiar':
         ("Couldn't copy it",
-         "コピーできませんでした"),
-    "Elige un archivo para ver su información":
-        ("Choose a file to see its details",
-         "ファイルを選ぶと情報が表示されます"),
-    "Carpeta del sistema: no la borres ni la cambies si no sabes para qué sirve.":
+         'コピーできませんでした'),
+    'Carpeta del sistema: no la borres ni la cambies si no sabes para qué sirve.':
         ("System folder: don't delete or change it unless you know what it's for.",
-         "システムフォルダです。用途がわからない場合は削除や変更をしないでください。"),
-    "Archivos":
-        ("Files",
-         "ファイル"),
-    "Nuevo nombre":
-        ("New name",
-         "新しい名前"),
-    "Ese nombre no es válido":
-        ("That name isn't valid",
-         "その名前は使えません"),
-    "Ya existe un archivo con ese nombre":
-        ("A file with that name already exists",
-         "同じ名前のファイルがあります"),
-    "No se pudo renombrar":
+         'システムフォルダです。用途がわからない場合は削除や変更をしないでください。'),
+    'Archivos':
+        ('Files',
+         'ファイル'),
+    'Nuevo nombre':
+        ('New name',
+         '新しい名前'),
+    'Ya existe un archivo con ese nombre':
+        ('A file with that name already exists',
+         '同じ名前のファイルがあります'),
+    'No se pudo renombrar':
         ("Couldn't rename it",
-         "名前を変更できませんでした"),
-    'Esta foto es demasiado grande para verla en la consola':
-        ('This photo is too large to view on the console',
-         'この写真は大きすぎて本体では表示できません'),
-    'No se pudo abrir esta foto':
-        ("Couldn't open this photo",
-         'この写真を開けませんでした'),
+         '名前を変更できませんでした'),
     'Anterior':
         ('Previous',
          '前へ'),
@@ -677,15 +931,6 @@ TR = {
     'Última IP':
         ('Last IP',
          '最後のIP'),
-    'Puesto a mano':
-        ('Set by you',
-         '手動で設定'),
-    'Dado por la red':
-        ('From the network',
-         'ネットワークから取得'),
-    'Según el navegador':
-        ('From the browser',
-         'ブラウザから推定'),
     'Nombre':
         ('Name',
          '名前'),
@@ -716,9 +961,6 @@ TR = {
     'Sonido de 3DS (BCWAV)':
         ('3DS sound (BCWAV)',
          '3DSサウンド(BCWAV)'),
-    'Copia de un cartucho de 3DS':
-        ('3DS cartridge dump',
-         '3DSカートリッジのダンプ'),
     'Programa de 3DS (CXI)':
         ('3DS program (CXI)',
          '3DSプログラム(CXI)'),
@@ -728,9 +970,6 @@ TR = {
     'Ticket (TIK)':
         ('Ticket (TIK)',
          'チケット(TIK)'),
-    'Icono de un programa (SMDH)':
-        ('Program icon (SMDH)',
-         'ソフトのアイコン(SMDH)'),
     'Juego de Nintendo DS':
         ('Nintendo DS game',
          'ニンテンドーDSのソフト'),
@@ -803,9 +1042,6 @@ TR = {
     'Salir sin guardar':
         ('Leave without saving',
          '保存せずに閉じる'),
-    'No hay memoria para abrir este archivo':
-        ('Not enough memory to open this file',
-         'メモリが足りないため開けません'),
     'No se pudo abrir este archivo':
         ("Couldn't open this file",
          'このファイルを開けませんでした'),
@@ -818,12 +1054,6 @@ TR = {
     'Solo lectura: el texto no está en UTF-8':
         ("Read-only: the text isn't UTF-8",
          '読み取り専用: UTF-8ではありません'),
-    'Solo lectura: archivo muy grande, se ve el principio':
-        ('Read-only: very large file, showing the beginning',
-         '読み取り専用: 大きすぎるため先頭のみ表示'),
-    'Solo lectura: archivo muy grande':
-        ('Read-only: very large file',
-         '読み取り専用: ファイルが大きすぎます'),
     'Línea %d de %d · Sin guardar':
         ('Line %d of %d · Unsaved',
          '%d / %d 行 · 未保存'),
@@ -848,15 +1078,9 @@ TR = {
     'Línea borrada':
         ('Line deleted',
          '行を削除しました'),
-    'El archivo cambió mientras lo editabas':
-        ('The file changed while you were editing it',
-         '編集中にファイルが変更されました'),
     'Se modificó desde otro dispositivo. Si guardas, esos cambios se perderán.':
         ('It was modified from another device. If you save, those changes will be lost.',
          '別のデバイスで変更されました。保存するとその変更は失われます。'),
-    'Guardar igualmente':
-        ('Save anyway',
-         'それでも保存'),
     'No se pudo guardar':
         ("Couldn't save",
          '保存できませんでした'),
@@ -866,9 +1090,6 @@ TR = {
     'Abrir como texto':
         ('Open as text',
          'テキストで開く'),
-    'Guarda o descarta los cambios primero':
-        ('Save or discard your changes first',
-         '先に変更を保存するか破棄してください'),
     'Vídeo %s':
         ('%s video',
          '%s 動画'),
@@ -899,21 +1120,12 @@ TR = {
     'Instalado: %s':
         ('Installed: %s',
          'インストールしました: %s'),
-    'Solo copiar a la SD':
-        ('Just copy to the SD',
-         'SDにコピーのみ'),
     'Cancelar la copia':
         ('Cancel the copy',
          'コピーを取り消す'),
     'No instalar':
         ("Don't install",
          'インストールしない'),
-    'Copiado a la SD sin instalar':
-        ('Copied to the SD without installing',
-         'インストールせずSDにコピーしました'),
-    'Copia cancelada: se borró de la SD':
-        ('Copy canceled: deleted from the SD',
-         'コピーを取り消しました(SDから削除)'),
     'Documento de texto':
         ('Text document',
          'テキスト文書'),
@@ -1007,12 +1219,6 @@ TR = {
     'Grandes (hasta 1 GB)':
         ('Large (up to 1 GB)',
          '大(1 GBまで)'),
-    'Enormes (más de 1 GB)':
-        ('Huge (over 1 GB)',
-         '特大(1 GB超)'),
-    'Ver y ordenar':
-        ('View and sort',
-         '表示と並べ替え'),
     'Iconos':
         ('Icons',
          'アイコン'),
@@ -1073,36 +1279,18 @@ TR = {
     'Color':
         ('Color',
          '色'),
-    'Sistema aparte':
-        ('System apart',
-         'システムを分ける'),
-    'Destacadas arriba':
-        ('Highlighted first',
-         '色付きを上に'),
     'Accesos rápidos':
         ('Quick access',
          'クイックアクセス'),
     'Instalando %d CIA…':
         ('Installing %d CIA…',
          '%d 個のCIAをインストール中…'),
-    'Hay carpetas protegidas entre lo elegido':
-        ('There are protected folders in the selection',
-         '選択に保護されたフォルダがあります'),
     'Se eliminarán %d elementos de la tarjeta SD. Esta acción no se puede deshacer.':
         ("%d items will be deleted from the SD card. This can't be undone.",
          'SDカードから %d 個の項目を削除します。元に戻せません。'),
-    '1 elegido':
-        ('1 selected',
-         '1 個選択'),
-    '%d elegidos':
-        ('%d selected',
-         '%d 個選択'),
     'Destacar con un color':
         ('Highlight with a color',
          '色で目立たせる'),
-    'Nada':
-        ('None',
-         'なし'),
     'Todo':
         ('All',
          'すべて'),
@@ -1112,9 +1300,6 @@ TR = {
     'Mover':
         ('Move',
          '移動'),
-    'Elegir varios':
-        ('Select several',
-         '複数選択'),
     'Movidos: %d':
         ('Moved: %d',
          '移動しました: %d'),
@@ -1127,12 +1312,6 @@ TR = {
     '%s en total':
         ('%s in total',
          '合計 %s'),
-    'Toca o pulsa A para elegir':
-        ('Tap or press A to select',
-         'タッチかAで選択'),
-    'Elegir':
-        ('Select',
-         '選択'),
     'Acciones':
         ('Actions',
          '操作'),
@@ -1187,33 +1366,18 @@ TR = {
     'La papelera está vacía':
         ('The trash is empty',
          'ゴミ箱は空です'),
-    'Lo que borres se queda aquí %d días':
-        ('What you delete stays here for %d days',
-         '削除したものは%d日間ここに残ります'),
     '«%s» y todo su contenido irán a la papelera. Podrás recuperarlo durante %d días.':
         ('“%s” and everything in it will go to the trash. You can restore it for %d days.',
          '「%s」とその中身がゴミ箱に移動します。%d日間は元に戻せます。'),
     '«%s» irá a la papelera. Podrás recuperarlo durante %d días.':
         ('“%s” will go to the trash. You can restore it for %d days.',
          '「%s」がゴミ箱に移動します。%d日間は元に戻せます。'),
-    'Lo borrado se guarda aquí %d días · ocupa %s':
-        ('Deleted items stay here for %d days · using %s',
-         '削除したものは%d日間保管 · 使用中 %s'),
-    'Estaba en':
-        ('Was in',
-         '元の場所'),
-    'Borrado':
-        ('Deleted',
-         '削除日時'),
     'mañana':
         ('tomorrow',
          '明日'),
     'en %d días':
         ('in %d days',
          '%d日後'),
-    'Se borra':
-        ('Removed',
-         '自動削除'),
     'Programas':
         ('Programs',
          'プログラム'),
@@ -1238,45 +1402,18 @@ TR = {
     '%d resultados':
         ('%d results',
          '%d 件'),
-    'No hay nada que se llame «%s» aquí':
-        ('Nothing called “%s” here',
-         '「%s」という名前のものはありません'),
-    'Se busca en la carpeta donde estabas y en todas las de dentro.':
-        ('It searches the folder you were in and every folder inside it.',
-         '開いていたフォルダとその中のすべてのフォルダを検索します。'),
     'Su carpeta':
         ('Its folder',
          'フォルダへ'),
-    'Buscar aquí y en las carpetas de dentro':
-        ('Search here and in the folders inside',
-         'ここと中のフォルダを検索'),
     'Comparar con un valor':
         ('Compare with a value',
          '値と比較'),
-    'Guardar en un .sha256 al lado':
-        ('Save as a .sha256 next to it',
-         '横に .sha256 として保存'),
-    'Aún se está calculando':
-        ('Still calculating',
-         'まだ計算中です'),
-    'Guardado al lado como .sha256':
-        ('Saved next to it as .sha256',
-         '横に .sha256 として保存しました'),
     'Calculando… %d %%':
         ('Calculating… %d %%',
          '計算中… %d %%'),
-    'Puedes seguir usando la consola: se calcula aparte.':
-        ('You can keep using the console: it runs in the background.',
-         '計算はバックグラウンドで行われるので、そのまま本体を使えます。'),
     'No se pudo leer el archivo':
         ("Couldn't read the file",
          'ファイルを読めませんでした'),
-    'Coincide con el valor que escribiste':
-        ('Matches the value you entered',
-         '入力した値と一致します'),
-    'No coincide con el valor que escribiste':
-        ("Doesn't match the value you entered",
-         '入力した値と一致しません'),
     'Coincide con %s':
         ('Matches %s',
          '%s と一致'),
@@ -1292,9 +1429,6 @@ TR = {
     'Pega o escribe el MD5 o el SHA-256 esperado':
         ('Paste or type the expected MD5 or SHA-256',
          '期待するMD5またはSHA-256を入力'),
-    'Eso no parece un MD5 (32 cifras) ni un SHA-256 (64)':
-        ("That doesn't look like an MD5 (32 digits) or SHA-256 (64)",
-         'MD5（32桁）でもSHA-256（64桁）でもないようです'),
     'Coincide':
         ('It matches',
          '一致します'),
@@ -1313,21 +1447,12 @@ TR = {
     'Descomprimiendo':
         ('Extracting',
          '展開中'),
-    'No es un ZIP o está dañado':
-        ("It isn't a ZIP or it's damaged",
-         'ZIPではないか、壊れています'),
-    'Este ZIP tiene contraseña o un formato que Cloud3DS no sabe abrir':
-        ("This ZIP has a password or a format Cloud3DS can't open",
-         'このZIPはパスワード付きか、開けない形式です'),
     'Se canceló':
         ('Canceled',
          'キャンセルしました'),
     'Un archivo del ZIP está dañado':
         ('A file in the ZIP is damaged',
          'ZIP内のファイルが壊れています'),
-    'Pasa de 4 GB: no cabe en un ZIP':
-        ("Over 4 GB: it doesn't fit in a ZIP",
-         '4 GBを超えるためZIPにできません'),
     'Ya se está comprimiendo o extrayendo algo':
         ('Something is already being compressed or extracted',
          'すでに圧縮か展開をしています'),
@@ -1367,18 +1492,6 @@ TR = {
     'Aviso':
         ('Note',
          '注意'),
-    'Tiene contraseña: no se puede extraer':
-        ("It has a password: it can't be extracted",
-         'パスワード付きのため展開できません'),
-    'Usa un formato que no se puede extraer':
-        ("It uses a format that can't be extracted",
-         '展開できない形式です'),
-    'Cabe: quedan %s':
-        ('Fits: %s free',
-         '入ります（空き %s）'),
-    'No cabe: faltan %s':
-        ("Doesn't fit: %s short",
-         '入りません（%s 不足）'),
     'Espacio':
         ('Space',
          '空き容量'),
@@ -1418,9 +1531,6 @@ TR = {
     'No existe (404)':
         ('Not found (404)',
          '見つかりません（404）'),
-    'El servidor no lo permite':
-        ("The server doesn't allow it",
-         'サーバーが許可していません'),
     'Error del servidor':
         ('Server error',
          'サーバーエラー'),
@@ -1430,9 +1540,6 @@ TR = {
     'No se pudo escribir en la SD':
         ("Couldn't write to the SD",
          'SDに書き込めませんでした'),
-    'Esa release no tiene ningún .cia':
-        ('That release has no .cia',
-         'そのリリースには.ciaがありません'),
     'No se pudo descomprimir':
         ("Couldn't extract it",
          '展開できませんでした'),
@@ -1460,9 +1567,6 @@ TR = {
     'Descargando %d enlaces: los verás en Actividad':
         ("Downloading %d links: you'll see them in Activity",
          '%d 件をダウンロード中：履歴で確認できます'),
-    'Ese enlace no vale':
-        ("That link isn't valid",
-         'そのリンクは使えません'),
     'No se pudo abrir la cámara':
         ("Couldn't open the camera",
          'カメラを起動できませんでした'),
@@ -1502,9 +1606,6 @@ TR = {
     'Se guardará en %s':
         ('It will be saved in %s',
          '保存先：%s'),
-    'Este código no tiene ningún enlace':
-        ('This code has no link',
-         'このコードにはリンクがありません'),
     'Descargar e instalar':
         ('Download and install',
          'ダウンロードしてインストール'),
@@ -1562,9 +1663,6 @@ TR = {
     'No se pudo activar en esta red':
         ("Couldn't turn it on in this network",
          'このネットワークでは有効にできませんでした'),
-    'Entra con %s.local':
-        ('Open it with %s.local',
-         '%s.local で開けます'),
     'Instalación remota (FBI)':
         ('Remote install (FBI)',
          'リモートインストール（FBI）'),
@@ -1577,9 +1675,6 @@ TR = {
     'Cambiar el nombre':
         ('Change the name',
          '名前を変更'),
-    'Para tener varias consolas: 3ds-salon.local':
-        ('For several consoles: living-room-3ds.local',
-         '複数の本体用：3ds-living.local'),
     'Nombre en la red (letras, números y guiones)':
         ('Network name (letters, numbers and hyphens)',
          'ネットワーク名（英数字とハイフン）'),
@@ -1592,36 +1687,15 @@ TR = {
     'Instalados':
         ('Installed',
          'インストール済み'),
-    'Copia de la partida guardada, como en Checkpoint':
-        ('Save backed up, Checkpoint style',
-         'Checkpoint形式でセーブをバックアップしました'),
-    'Este juego aún no tiene partida':
-        ('This game has no save yet',
-         'このゲームにはまだセーブデータがありません'),
-    'No se pudo copiar la partida':
-        ("Couldn't back up the save",
-         'セーブをバックアップできませんでした'),
-    'Hacer copia de la partida':
-        ('Back up the save',
-         'セーブをバックアップ'),
-    'Ver sus copias':
-        ('See its backups',
-         'バックアップを見る'),
     'Desinstalar':
         ('Uninstall',
          'アンインストール'),
-    'Aún no hay copias de este juego':
-        ('No backups of this game yet',
-         'このゲームのバックアップはまだありません'),
     'Se borrarán el juego, su actualización, sus DLC y su partida (%s). Si quieres conservar la partida, haz antes una copia.':
         ('The game, its update, its DLC and its save (%s) will be deleted. To keep the save, back it up first.',
          'ゲーム、更新データ、DLC、セーブデータ（%s）が削除されます。セーブを残すには先にバックアップしてください。'),
     '¿Desinstalar?':
         ('Uninstall?',
          'アンインストールしますか?'),
-    'Elige un juego para ver sus datos':
-        ('Pick a game to see its details',
-         'ゲームを選ぶと詳細が表示されます'),
     '%s · actualización instalada':
         ('%s · update installed',
          '%s · 更新データあり'),
@@ -1670,9 +1744,6 @@ TR = {
     'No se pudo desinstalar':
         ("Couldn't uninstall it",
          'アンインストールできませんでした'),
-    'Capturas al momento':
-        ('Live screenshots',
-         'スクリーンショットを即送信'),
     'Las capturas nuevas aparecen en la web abierta':
         ('New screenshots show up in the open web page',
          '新しいスクリーンショットを開いているWebに表示'),
@@ -1682,30 +1753,15 @@ TR = {
     'Captura enviada a %d dispositivos':
         ('Screenshot sent to %d devices',
          'スクリーンショットを%d台に送りました'),
-    'En vivo: %s':
-        ('Live: %s',
-         'ライブ：%s'),
     'Guarda o cierra el documento abierto para escribir desde el PC':
         ('Save or close the open document to type from the PC',
          'PCから入力するには開いているドキュメントを保存するか閉じてください'),
     'En pausa · %s':
         ('Paused · %s',
          '一時停止中 · %s'),
-    'Sonando · %s':
-        ('Playing · %s',
-         '再生中 · %s'),
-    'Sin audio: falta el firmware DSP':
-        ('No audio: the DSP firmware is missing',
-         '音声なし：DSPファームウェアがありません'),
     'No se pudo reproducir':
         ("Couldn't play it",
          '再生できませんでした'),
-    'Repetir esta':
-        ('Repeat this one',
-         '1曲リピート'),
-    'Repetir la carpeta':
-        ('Repeat the folder',
-         'フォルダをリピート'),
     'Sin repetir':
         ('No repeat',
          'リピートなし'),
@@ -1715,9 +1771,6 @@ TR = {
     'En orden':
         ('In order',
          '順番に'),
-    'Parar':
-        ('Stop',
-         '停止'),
     'Ir a la carpeta':
         ('Go to the folder',
          'フォルダへ'),
@@ -1751,9 +1804,6 @@ TR = {
     'Queda poco espacio':
         ('Running out of space',
          '空き容量が少なくなっています'),
-    'Pedido desde %s':
-        ('Requested from %s',
-         '%s からのリクエスト'),
     'Aquí verás lo que se sube, se descarga o se instala. Para traer algo, usa el botón central.':
         ('Uploads, downloads and installs will appear here. To bring something in, use the center button.',
          'アップロード、ダウンロード、インストールの記録がここに表示されます。何かを取り込むには中央のボタンを使います。'),
@@ -1805,12 +1855,6 @@ TR = {
     'la raíz de la SD':
         ('the root of the SD card',
          'SDカードのルート'),
-    'Dentro de «%s»':
-        ('Inside “%s”',
-         '「%s」の中'),
-    'Un .txt vacío para escribir':
-        ('An empty .txt to write in',
-         '書き込み用の空の .txt'),
     'Las carpetas del sistema (Nintendo 3DS, 3ds, luma, boot.firm…) no se pueden renombrar, mover ni borrar, ni desde la consola ni desde la web.':
         ("System folders (Nintendo 3DS, 3ds, luma, boot.firm…) can't be renamed, moved or deleted, either on the console or from the web.",
          'システムフォルダ（Nintendo 3DS、3ds、luma、boot.firmなど）は、本体からもWebからも名前の変更・移動・削除ができません。'),
@@ -1835,18 +1879,9 @@ TR = {
     'Desactivado':
         ('Off',
          'オフ'),
-    'Solo ver y descargar':
-        ('View and download only',
-         '閲覧とダウンロードのみ'),
     'Nintendo 3DS, luma y otras':
         ('Nintendo 3DS, luma and more',
          'Nintendo 3DS、lumaなど'),
-    'Fijo hasta que lo cambies':
-        ('Stays until you change it',
-         '変更するまで固定'),
-    'Se ven al momento en la web':
-        ('Shown instantly on the web',
-         'Webにすぐ表示'),
     'PIN actual: %s':
         ('Current PIN: %s',
          '現在のPIN: %s'),
@@ -1883,9 +1918,6 @@ TR = {
     'La consola no pudo comprobar que el servidor es quien dice ser. Si sigues, nada garantiza que el archivo no se haya cambiado por el camino. Hazlo solo si confías en el enlace y en tu red.':
         ("The console couldn't verify that the server is who it claims to be. If you continue, nothing guarantees the file wasn't altered on the way. Only do it if you trust the link and your network.",
          '本体はサーバーが本物であることを確認できませんでした。続けると、途中でファイルが書き換えられていない保証はありません。リンクとネットワークを信頼できる場合にのみ行ってください。'),
-    'Instalando mientras baja · %d %%':
-        ('Installing while downloading · %d %%',
-         'ダウンロードしながらインストール中 · %d %%'),
     'Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se instala mientras se descarga.':
         ("Any QR code with a link works, like the ones FBI uses. If it's a .cia, it installs while it downloads.",
          'FBIで使うものなど、リンク入りのQRコードならどれでも使えます。.ciaならダウンロードしながらインストールします。'),
@@ -1904,9 +1936,6 @@ TR = {
     'El archivo ya no está en la SD.':
         ('The file is no longer on the SD card.',
          'ファイルがSDカードにもうありません。'),
-    'Elige el archivo':
-        ('Choose the file',
-         'ファイルを選択'),
     'Se instalará Cloud3DS v%s desde %s. No apagues la consola mientras tanto.':
         ("Cloud3DS v%s will be installed from %s. Don't turn off the console in the meantime.",
          'Cloud3DS v%s を %s からインストールします。その間は本体の電源を切らないでください。'),
@@ -1952,4 +1981,262 @@ TR = {
     '¿Actualizar desde la SD?':
         ('Update from the SD card?',
          'SDカードから更新しますか？'),
+    'El enlace no es válido':
+        ("That link isn't valid",
+         'リンクが無効です'),
+    'Gracias por usar Cloud3DS':
+        ('Thank you for using Cloud3DS',
+         'Cloud3DSをご利用いただきありがとうございます'),
+    'No es un MD5 (32 caracteres) ni un SHA-256 (64 caracteres)':
+        ('Not an MD5 (32 characters) or SHA-256 (64 characters)',
+         'MD5（32文字）でもSHA-256（64文字）でもありません'),
+    'Ninguno':
+        ('None',
+         '選択解除'),
+    'Detener':
+        ('Stop',
+         '停止'),
+    'Definido manualmente':
+        ('Set manually',
+         '手動で設定'),
+    'Obtenido de la red':
+        ('From the network',
+         'ネットワークから取得'),
+    'Detectado por el navegador':
+        ('Detected from the browser',
+         'ブラウザから検出'),
+    'Instalando durante la descarga · %d %%':
+        ('Installing during download · %d %%',
+         'ダウンロードしながらインストール中 · %d %%'),
+    'Aparecen al instante en la web':
+        ('Appear instantly on the web',
+         'Webにすぐ表示'),
+    'Capturas al instante':
+        ('Instant screenshots',
+         'スクリーンショットを即時送信'),
+    'No caduca':
+        ("Doesn't expire",
+         '期限なし'),
+    'Solo consulta y descarga':
+        ('View and download only',
+         '閲覧とダウンロードのみ'),
+    'Copia de seguridad guardada (formato de Checkpoint)':
+        ('Backup saved (Checkpoint format)',
+         'バックアップを保存しました（Checkpoint形式）'),
+    'Crear copia de seguridad':
+        ('Create backup',
+         'バックアップを作成'),
+    'Ver copias de seguridad':
+        ('View backups',
+         'バックアップを表示'),
+    'Este juego no tiene copias de seguridad':
+        ('This game has no backups',
+         'このゲームのバックアップはありません'),
+    'Este juego todavía no tiene datos guardados':
+        ('This game has no save data yet',
+         'このゲームにはまだセーブデータがありません'),
+    'No se pudo crear la copia de seguridad':
+        ("Couldn't create the backup",
+         'バックアップを作成できませんでした'),
+    'Seleccionar varios':
+        ('Select multiple',
+         '複数選択'),
+    'Seleccionar':
+        ('Select',
+         '選択'),
+    '%d seleccionados':
+        ('%d selected',
+         '%d 件選択'),
+    '1 seleccionado':
+        ('1 selected',
+         '1 件選択'),
+    'Toca un elemento o pulsa A para seleccionarlo':
+        ('Tap an item or press A to select it',
+         '項目をタッチするかAで選択'),
+    'Definir un PIN':
+        ('Set a PIN',
+         'PINを設定'),
+    'Cuatro cifras fáciles de recordar':
+        ('Four easy-to-remember digits',
+         '覚えやすい4桁の数字'),
+    'Selecciona el archivo':
+        ('Select the file',
+         'ファイルを選択'),
+    'Selecciona un archivo para ver su información':
+        ('Select a file to see its details',
+         'ファイルを選ぶと詳細が表示されます'),
+    'Selecciona un juego para ver su información':
+        ('Select a game to see its details',
+         'ゲームを選ぶと詳細が表示されます'),
+    'La selección incluye carpetas protegidas':
+        ('The selection includes protected folders',
+         '選択に保護されたフォルダが含まれています'),
+    'Supera los 4 GB, el límite de un ZIP':
+        ('Exceeds 4 GB, the ZIP limit',
+         'ZIPの上限である4 GBを超えています'),
+    'No hay memoria suficiente para abrir este archivo':
+        ('Not enough memory to open this file',
+         'このファイルを開くためのメモリが足りません'),
+    'No se puede mover una carpeta dentro de sí misma':
+        ("A folder can't be moved into itself",
+         'フォルダをそれ自身の中に移動することはできません'),
+    'Guardar de todos modos':
+        ('Save anyway',
+         'このまま保存'),
+    'El código no contiene ningún enlace':
+        ("The code doesn't contain a link",
+         'このコードにはリンクが含まれていません'),
+    'Sin sonido: falta el firmware DSP (dspfirm.cdc)':
+        ('No sound: DSP firmware missing (dspfirm.cdc)',
+         '音が出ません：DSPファームウェア（dspfirm.cdc）がありません'),
+    'Los elementos eliminados se conservan %d días':
+        ('Deleted items are kept for %d days',
+         '削除した項目は%d日間保持されます'),
+    'Se conserva durante %d días · ocupa %s':
+        ('Kept for %d days · uses %s',
+         '%d日間保持 · 使用量 %s'),
+    'Origen':
+        ('Original location',
+         '元の場所'),
+    'Se elimina':
+        ('Deleted',
+         '削除予定'),
+    '¿Necesitas ayuda? Escríbeme por GitHub o Discord.':
+        ('Need help? Contact me on GitHub or Discord.',
+         'お困りの場合は、GitHubまたはDiscordでご連絡ください。'),
+    'También con START':
+        ('Or press START',
+         'STARTでも終了できます'),
+    'El archivo se modificó mientras lo editabas':
+        ('The file changed while you were editing it',
+         '編集中にファイルが変更されました'),
+    'Primero guarda o descarta los cambios':
+        ('Save or discard your changes first',
+         '先に変更を保存または破棄してください'),
+    'Hay espacio (quedan %s)':
+        ('Fits (%s left)',
+         '容量あり（残り %s）'),
+    'Falta espacio: %s':
+        ('Not enough space: %s short',
+         '容量不足：あと %s 必要'),
+    'Protegido con contraseña: no se puede extraer':
+        ("Password-protected: can't be extracted",
+         'パスワード保護のため展開できません'),
+    'Formato de compresión no compatible':
+        ('Unsupported compression format',
+         '対応していない圧縮形式です'),
+    'Este ZIP está protegido con contraseña o usa un formato no compatible':
+        ('This ZIP is password-protected or uses an unsupported format',
+         'このZIPはパスワードで保護されているか、対応していない形式です'),
+    'El archivo no es un ZIP válido o está dañado':
+        ("Not a valid ZIP file, or it's damaged",
+         '有効なZIPファイルではないか、破損しています'),
+    'Esa versión de GitHub no incluye ningún .cia':
+        ('That GitHub release has no .cia',
+         'そのGitHubリリースには.ciaがありません'),
+    'El servidor ha denegado el acceso':
+        ('The server denied access',
+         'サーバーがアクセスを拒否しました'),
+    'El nombre no es válido':
+        ("That name isn't valid",
+         '名前が無効です'),
+    'Nombre del dispositivo (déjalo vacío para usar el automático)':
+        ('Device name (leave empty for automatic)',
+         '端末名（空欄で自動）'),
+    'Útil con varias consolas, p. ej. 3ds-salon.local':
+        ('Useful with several consoles, e.g. 3ds-livingroom.local',
+         '複数の本体がある場合に便利（例: 3ds-living.local）'),
+    'Acceso por %s.local':
+        ('Access via %s.local',
+         '%s.local でアクセス'),
+    'Copia cancelada: el archivo se eliminó de la SD':
+        ('Copy canceled: the file was removed from the SD card',
+         'コピーを中止し、SDカードから削除しました'),
+    'Enviado desde %s':
+        ('Sent from %s',
+         '%s から送信'),
+    'Pendiente de confirmación':
+        ('Awaiting confirmation',
+         '確認待ち'),
+    'Muy grandes (más de 1 GB)':
+        ('Very large (over 1 GB)',
+         '非常に大きい（1 GB超）'),
+    'Volcado de cartucho de 3DS':
+        ('3DS cartridge dump',
+         '3DSカートリッジのダンプ'),
+    'Icono de programa (SMDH)':
+        ('Program icon (SMDH)',
+         'プログラムのアイコン（SMDH）'),
+    'Ya está pendiente en la consola':
+        ('Already pending on the console',
+         'すでに本体で確認待ちです'),
+    'En «%s»':
+        ('In “%s”',
+         '「%s」内'),
+    'Archivo .txt en blanco':
+        ('Blank .txt file',
+         '空の .txt ファイル'),
+    'Edición en directo: %s':
+        ('Live editing: %s',
+         'ライブ編集中: %s'),
+    'Destacados primero':
+        ('Highlighted first',
+         '色付きを先頭に'),
+    'Vista y orden':
+        ('View and sort',
+         '表示と並べ替え'),
+    'Repetir canción':
+        ('Repeat song',
+         '1曲リピート'),
+    'Repetir carpeta':
+        ('Repeat folder',
+         'フォルダをリピート'),
+    'Reproduciendo · %s':
+        ('Playing · %s',
+         '再生中 · %s'),
+    'Buscar en esta carpeta y sus subcarpetas':
+        ('Search this folder and its subfolders',
+         'このフォルダとサブフォルダを検索'),
+    'La búsqueda incluye esta carpeta y todas sus subcarpetas.':
+        ('The search covers this folder and all its subfolders.',
+         'このフォルダとすべてのサブフォルダを検索します。'),
+    'No se encontró nada con «%s»':
+        ('Nothing found for “%s”',
+         '「%s」に一致するものはありません'),
+    'Puedes seguir usando la consola mientras se calcula.':
+        ("You can keep using the console while it's calculated.",
+         '計算中も本体を使い続けられます。'),
+    'Todavía se está calculando':
+        ('Still calculating',
+         'まだ計算中です'),
+    'Guardado junto al archivo como .sha256':
+        ('Saved next to the file as .sha256',
+         'ファイルの隣に .sha256 として保存しました'),
+    'Guardar .sha256 junto al archivo':
+        ('Save .sha256 next to the file',
+         'ファイルの隣に .sha256 を保存'),
+    'Coincide con el valor introducido':
+        ('Matches the value entered',
+         '入力した値と一致します'),
+    'No coincide con el valor introducido':
+        ("Doesn't match the value entered",
+         '入力した値と一致しません'),
+    'Solo lectura: archivo demasiado grande (se muestra el principio)':
+        ('Read-only: file too large (showing the beginning)',
+         '読み取り専用：ファイルが大きすぎます（先頭のみ表示）'),
+    'Solo lectura: archivo demasiado grande':
+        ('Read-only: file too large',
+         '読み取り専用：ファイルが大きすぎます'),
+    'La imagen es demasiado grande para mostrarla en la consola':
+        ('The image is too large to show on the console',
+         '画像が大きすぎて本体で表示できません'),
+    'No se pudo abrir la imagen':
+        ("Couldn't open the image",
+         '画像を開けませんでした'),
+    'Última conexión: %s':
+        ('Last seen: %s',
+         '最終接続: %s'),
+    'Separar sistema':
+        ('Separate system',
+         'システムを分ける'),
 }

@@ -641,7 +641,7 @@ static void install_top(float a)
 		text_draw_clip(_("Este juego es solo para New 3DS."), tx, y, tw, TS_SUB, col_alpha(T.warn, a));
 		y += 15;
 	}
-	snprintf(line, sizeof line, _("Pedido desde %s"), r->device);
+	snprintf(line, sizeof line, _("Enviado desde %s"), r->device);
 	text_draw_clip(line, tx, y0 + h - 10 - text_lineh(TS_SUB), tw, TS_SUB, col_alpha(T.text3, a));
 }
 
@@ -679,7 +679,7 @@ static int ins_buttons(InsBtn *b)
 	const InsReq *f = ins_first_pending();
 	b[n++] = (InsBtn){GLYPH_A, U.ins_pend > 1 ? _("Instalar todos") : f && f->self ? _("Actualizar Cloud3DS") : _("Instalar"), 0xFFFFFFFF, T.ok, can, INS_ACCEPT, KEY_A};
 	if (up) {
-		b[n++] = (InsBtn){GLYPH_X, _("Solo copiar a la SD"), T.text, T.surface2, true, INS_KEEP, KEY_X};
+		b[n++] = (InsBtn){GLYPH_X, _("Solo guardar en la SD"), T.text, T.surface2, true, INS_KEEP, KEY_X};
 		b[n++] = (InsBtn){GLYPH_B, _("Cancelar la copia"), T.danger, col_alpha(T.danger, 0.16f), true, INS_REJECT, KEY_B};
 	} else {
 		b[n++] = (InsBtn){GLYPH_B, _("Cerrar"), T.text, T.surface2, true, INS_REJECT, KEY_B};
@@ -763,9 +763,9 @@ static bool install_input(void)
 	else if (what == INS_ACCEPT)
 		toast_icon(_("Instalando…"), IC_DOWNLOAD, T.ok);
 	else if (what == INS_KEEP)
-		toast_icon(_("Copiado a la SD sin instalar"), IC_FOLDER, T.accent);
+		toast_icon(_("Guardado en la SD sin instalar"), IC_FOLDER, T.accent);
 	else if (up)
-		toast_icon(_("Copia cancelada: se borró de la SD"), IC_TRASH, T.text3);
+		toast_icon(_("Copia cancelada: el archivo se eliminó de la SD"), IC_TRASH, T.text3);
 	return true;
 }
 
@@ -1097,7 +1097,7 @@ static void music_top(float a)
 	float rx = px + PS + 14, rw = X + W - rx, y = py0 + 1;
 	const char *d = strrchr(MU.s.dir, '/');
 	char head[160];
-	snprintf(head, sizeof head, MU.s.st == MU_PAUSE ? _("En pausa · %s") : _("Sonando · %s"), d && d[1] ? d + 1 : "SD");
+	snprintf(head, sizeof head, MU.s.st == MU_PAUSE ? _("En pausa · %s") : _("Reproduciendo · %s"), d && d[1] ? d + 1 : "SD");
 	text_draw_clip(head, rx, y, rw, TS_SUB, col_alpha(MU.s.st == MU_PAUSE ? T.text3 : T.accent, a));
 	y += 15;
 	text_draw_clip(MU.s.title, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
@@ -1217,7 +1217,7 @@ static void mini_body(float a)
 		draw_circle(X + 12, ry + 14, 11, col_alpha(T.surface2, a));
 		draw_icon(IC_GEM, X + 12, ry + 14, 12, col_alpha(T.ok, a));
 		text_draw_clip(wait[i]->title, X + 30, ry + 1, W - 30, TS_BODY, col_alpha(T.text, a));
-		text_draw_clip(wait[i]->st == INS_PENDING ? _("Esperando a que lo confirmes") : _("En cola para instalar"), X + 30, ry + 17, W - 30,
+		text_draw_clip(wait[i]->st == INS_PENDING ? _("Pendiente de confirmación") : _("En cola para instalar"), X + 30, ry + 17, W - 30,
 		               TS_SUB, col_alpha(T.text3, a));
 	}
 	if (nx + nw > shown) {
@@ -1264,9 +1264,9 @@ static void about_top(void)
 		char vb[80];
 		snprintf(vb, sizeof vb, _("v%s · hecho por %s"), APP_VERSION, "VENOMSHiNE");
 		text_draw_center(vb, LX, 178, TS_SUB, T.text2);
-		text_draw(_("Gracias por usar!"), X, 18, TS_TITLE, T.text);
+		text_draw(_("Gracias por usar Cloud3DS"), X, 18, TS_TITLE, T.text);
 		// los dos textos tienen que caber antes de la licencia: si no (japonés), se reduce un poco la letra
-		const char *t1 = _(ABOUT_TEXT), *t2 = _("¿Algún problema? Escríbeme por GitHub o Discord.");
+		const char *t1 = _(ABOUT_TEXT), *t2 = _("¿Necesitas ayuda? Escríbeme por GitHub o Discord.");
 		float sc = 0.42f;
 		while (sc > 0.34f && 46 + (text_wrap_lines(t1, W, sc, 12, 0, 0, 0, false) + text_wrap_lines(t2, W, sc, 4, 0, 0, 0, false)) *
 		                              text_lineh(sc) + 8 > 212)
@@ -1520,8 +1520,8 @@ static const char *dl_err_text(const char *e)
 {
 	static const struct { const char *k, *v; } E[] = {
 		{"offline", N_("Sin conexión a Internet")}, {"tls", N_("No se pudo comprobar el certificado")}, {"net", N_("Error de red")},
-		{"not_found", N_("No existe (404)")}, {"denied", N_("El servidor no lo permite")}, {"http", N_("Error del servidor")},
-		{"no_space", N_("No hay espacio en la SD")}, {"io", N_("No se pudo escribir en la SD")}, {"no_cia", N_("Esa release no tiene ningún .cia")},
+		{"not_found", N_("No existe (404)")}, {"denied", N_("El servidor ha denegado el acceso")}, {"http", N_("Error del servidor")},
+		{"no_space", N_("No hay espacio en la SD")}, {"io", N_("No se pudo escribir en la SD")}, {"no_cia", N_("Esa versión de GitHub no incluye ningún .cia")},
 		{"unzip", N_("No se pudo descomprimir")}};
 	for (size_t i = 0; i < ARRAY_LEN(E); i++)
 		if (!strcmp(e, E[i].k))
@@ -1540,7 +1540,7 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 	case DL_RUN:
 		if (d->installing && d->total) {
 			*col = T.ok;
-			snprintf(out, n, _("Instalando mientras baja · %d %%"), (int)(d->done * 100 / d->total));
+			snprintf(out, n, _("Instalando durante la descarga · %d %%"), (int)(d->done * 100 / d->total));
 		} else if (d->total && d->speed) {
 			util_fmt_speed(sp, sizeof sp, d->speed);
 			snprintf(out, n, "%d %% · %s · %s", (int)(d->done * 100 / d->total), sp, d->host);
@@ -1727,10 +1727,10 @@ static void tab_devices(void)
 		text_draw_clip(d->name, 52, y + 7, tw, TS_BODY, T.text);
 		char sub[128], when[24];
 		if (on)
-			util_strlcpy(sub, _("Conectado ahora"), sizeof sub);
+			util_strlcpy(sub, _("Conectado"), sizeof sub);
 		else {
 			util_fmt_when(when, sizeof when, d->last_seen);
-			snprintf(sub, sizeof sub, _("Visto: %s"), when);
+			snprintf(sub, sizeof sub, _("Última conexión: %s"), when);
 		}
 		text_draw_clip(sub, 52, y + 24, tw, TS_SUB, on ? T.ok : T.text3);
 		if (selected) {
@@ -1839,12 +1839,12 @@ static void zq_set(const char *base, char (*names)[128], int n)
 static const char *zip_err_text(int r)
 {
 	switch (r) {
-	case ZIP_BAD: return _("No es un ZIP o está dañado");
-	case ZIP_UNSUP: return _("Este ZIP tiene contraseña o un formato que Cloud3DS no sabe abrir");
+	case ZIP_BAD: return _("El archivo no es un ZIP válido o está dañado");
+	case ZIP_UNSUP: return _("Este ZIP está protegido con contraseña o usa un formato no compatible");
 	case ZIP_NO_SPACE: return _("No hay espacio suficiente en la SD");
 	case ZIP_CANCELED: return _("Se canceló");
 	case ZIP_CRC: return _("Un archivo del ZIP está dañado");
-	case ZIP_TOO_BIG: return _("Pasa de 4 GB: no cabe en un ZIP");
+	case ZIP_TOO_BIG: return _("Supera los 4 GB, el límite de un ZIP");
 	case ZIP_BUSY: return _("Ya se está comprimiendo o extrayendo algo");
 	case ZIP_EMPTY: return _("No hay nada que comprimir");
 	default: return _("No se pudo leer o escribir en la SD");
@@ -1930,9 +1930,9 @@ static const FType FTYPES[] = {
 	{"opus", FK_AUDIO}, {"mid", FK_AUDIO}, {"midi", FK_AUDIO},
 	{"bcstm", FK_AUDIO, N_("Sonido de 3DS (BCSTM)")}, {"bcwav", FK_AUDIO, N_("Sonido de 3DS (BCWAV)")},
 	{"cia", FK_APP, N_("Programa instalable (CIA)")}, {"3dsx", FK_APP, N_("Homebrew (3DSX)")},
-	{"3ds", FK_APP, N_("Copia de un cartucho de 3DS")}, {"cci", FK_APP, N_("Copia de un cartucho de 3DS")},
+	{"3ds", FK_APP, N_("Volcado de cartucho de 3DS")}, {"cci", FK_APP, N_("Volcado de cartucho de 3DS")},
 	{"cxi", FK_APP, N_("Programa de 3DS (CXI)")}, {"firm", FK_APP, N_("Firmware (FIRM)")},
-	{"tik", FK_APP, N_("Ticket (TIK)")}, {"smdh", FK_APP, N_("Icono de un programa (SMDH)")},
+	{"tik", FK_APP, N_("Ticket (TIK)")}, {"smdh", FK_APP, N_("Icono de programa (SMDH)")},
 	{"nds", FK_ROM, N_("Juego de Nintendo DS")}, {"gba", FK_ROM, N_("Juego de Game Boy Advance")},
 	{"gb", FK_ROM, N_("Juego de Game Boy")}, {"gbc", FK_ROM, N_("Juego de Game Boy Color")},
 	{"nes", FK_ROM, N_("Juego de NES")}, {"sfc", FK_ROM, N_("Juego de Super Nintendo")}, {"smc", FK_ROM, N_("Juego de Super Nintendo")},
@@ -2053,7 +2053,7 @@ static const char *f_grp_name(int g)
 	static const char *const BY_DATE[] = {N_("Hoy"), N_("Ayer"), N_("Esta semana"), N_("Este mes"), N_("Este año"),
 	                                      N_("Hace más de un año"), N_("Sin fecha")};
 	static const char *const BY_SIZE[] = {N_("Carpetas"), N_("Vacíos"), N_("Pequeños (menos de 1 MB)"), N_("Medianos (hasta 100 MB)"),
-	                                      N_("Grandes (hasta 1 GB)"), N_("Enormes (más de 1 GB)")};
+	                                      N_("Grandes (hasta 1 GB)"), N_("Muy grandes (más de 1 GB)")};
 	if (V.f_group == 1 && g < (int)ARRAY_LEN(BY_TYPE))
 		return tr(BY_TYPE[g]);
 	if (V.f_group == 2 && g < (int)ARRAY_LEN(BY_DATE))
@@ -2847,7 +2847,7 @@ static void vw_load(int idx)
 	util_strlcpy(VW.path, full, sizeof VW.path);
 	int r = txt_load(&VW.doc, full);
 	if (r != TXT_OK) {
-		toast_icon(r == TXT_ERR_MEM ? _("No hay memoria para abrir este archivo") : _("No se pudo abrir este archivo"), IC_CLOSE, T.danger);
+		toast_icon(r == TXT_ERR_MEM ? _("No hay memoria suficiente para abrir este archivo") : _("No se pudo abrir este archivo"), IC_CLOSE, T.danger);
 		return;
 	}
 	VW.kind = VW_TXT;
@@ -3048,7 +3048,7 @@ static void vw_top(void)
 		if (VW.res == IMG_OK)
 			draw_texture(&VW.tex, (TOP_W - VW.w) / 2.0f, (SCR_H - VW.h) / 2.0f, VW.w, VW.h, 1);
 		else
-			text_draw_center(VW.res == IMG_TOO_BIG ? _("Esta foto es demasiado grande para verla en la consola") : _("No se pudo abrir esta foto"),
+			text_draw_center(VW.res == IMG_TOO_BIG ? _("La imagen es demasiado grande para mostrarla en la consola") : _("No se pudo abrir la imagen"),
 			                 TOP_W / 2, SCR_H / 2 - 8, TS_BODY, 0xFFAAAAAA);
 		// pie con el nombre, que se desvanece a los 3 s
 		float a = clampf((3.5f - VW.t) / 0.5f, 0, 1);
@@ -3115,11 +3115,11 @@ static void vw_bottom_text(void)
 	else if (VW.doc.ro == TXT_RO_ENC)
 		util_strlcpy(sub, _("Solo lectura: el texto no está en UTF-8"), sizeof sub), sc = T.warn;
 	else if (VW.doc.ro == TXT_RO_BIG)
-		util_strlcpy(sub, VW.doc.cut ? _("Solo lectura: archivo muy grande, se ve el principio") : _("Solo lectura: archivo muy grande"), sizeof sub), sc = T.warn;
+		util_strlcpy(sub, VW.doc.cut ? _("Solo lectura: archivo demasiado grande (se muestra el principio)") : _("Solo lectura: archivo demasiado grande"), sizeof sub), sc = T.warn;
 	else if (live_here(NULL, 0)) { // alguien escribe desde el PC en este mismo documento
 		char who[48];
 		live_here(who, sizeof who);
-		snprintf(sub, sizeof sub, _("En vivo: %s"), who), sc = T.accent;
+		snprintf(sub, sizeof sub, _("Edición en directo: %s"), who), sc = T.accent;
 	} else if (VW.doc.dirty)
 		snprintf(sub, sizeof sub, _("Línea %d de %d"), VW.cur + 1, n), sc = T.warn; // sin guardar: también se enciende «Guardar»
 	else
@@ -3326,8 +3326,8 @@ static void vw_save(bool force)
 	u64 sz = 0;
 	// si alguien lo cambió desde la web mientras se editaba, se avisa antes de pisarlo
 	if (!force && fsx_stat(VW.path, &d, &sz) == 0 && sz != VW.doc.size) {
-		dialog_open(DLG_TXTOVER, _("El archivo cambió mientras lo editabas"),
-		            _("Se modificó desde otro dispositivo. Si guardas, esos cambios se perderán."), _("Guardar igualmente"), true);
+		dialog_open(DLG_TXTOVER, _("El archivo se modificó mientras lo editabas"),
+		            _("Se modificó desde otro dispositivo. Si guardas, esos cambios se perderán."), _("Guardar de todos modos"), true);
 		return;
 	}
 	if (txt_save(&VW.doc, VW.path) != TXT_OK) {
@@ -3381,12 +3381,12 @@ static bool f_open_item(int vi)
 		if (!music_play(F.path, names, n, start)) {
 			MusicState ms;
 			music_get(&ms);
-			toast_icon(!strcmp(ms.err, "no_dsp") ? _("Sin audio: falta el firmware DSP") : _("No se pudo reproducir"), IC_CLOSE, T.danger);
+			toast_icon(!strcmp(ms.err, "no_dsp") ? _("Sin sonido: falta el firmware DSP (dspfirm.cdc)") : _("No se pudo reproducir"), IC_CLOSE, T.danger);
 		}
 	} else if (!strcasecmp(f_ext(e->name), "cia") && strlen(full) < 256) {
 		char err[24] = "";
 		if (ins_request(full, G.console, false, err, sizeof err) < 0)
-			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está esperando en la consola")
+			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está pendiente en la consola")
 			                                                                                                  : _("La consola no reconoce este CIA"),
 			           IC_CLOSE, T.danger);
 		else
@@ -3636,7 +3636,7 @@ static void vs_draw(void)
 	int lr = U.buttons && !fresh ? ((g_krepeat & KEY_RIGHT) ? 1 : (g_krepeat & KEY_LEFT) ? -1 : 0) : 0;
 	bool A = U.buttons && !fresh && (g_kdown & KEY_A);
 	// cabecera: título y, a la derecha, lista o iconos
-	text_draw(_("Ver y ordenar"), X, y + 12, TS_BODY, T.text);
+	text_draw(_("Vista y orden"), X, y + 12, TS_BODY, T.text);
 	const char *VIEW[2] = {_("Lista"), _("Iconos")};
 	int hit = segmented(X + W - 130, y + 8, 130, SH, VIEW, 2, V.f_grid, U.buttons && VS.sel == 0);
 	if (!fresh && (hit >= 0 || (VS.sel == 0 && (lr || A))))
@@ -3657,7 +3657,7 @@ static void vs_draw(void)
 		f_set_view(-1, !V.f_desc, -1, -1);
 	ry += RH;
 	// agrupar por
-	const char *GROUP[5] = {_("No"), _("Tipo"), _("Fecha"), _("Tamaño"), _("Color")};
+	const char *GROUP[5] = {_("Ninguno"), _("Tipo"), _("Fecha"), _("Tamaño"), _("Color")};
 	text_draw(_("Agrupar por"), X, ry, TS_SUB, T.text3);
 	hit = segmented(X, ry + LH, W, SH, GROUP, 5, V.f_group, U.buttons && VS.sel == 2);
 	if (!fresh && (hit >= 0 || (VS.sel == 2 && lr)))
@@ -3668,9 +3668,9 @@ static void vs_draw(void)
 	if (VS.sel == 3 && lr)
 		col = !col;
 	float hw = (W - 6) / 2;
-	if (!fresh && (switch_chip(X, ry, hw, TH, _("Sistema aparte"), V.f_sysapart, U.buttons && VS.sel == 3 && col == 0) || (VS.sel == 3 && col == 0 && A)))
+	if (!fresh && (switch_chip(X, ry, hw, TH, _("Separar sistema"), V.f_sysapart, U.buttons && VS.sel == 3 && col == 0) || (VS.sel == 3 && col == 0 && A)))
 		f_toggle(&G.f_sysapart);
-	if (!fresh && (switch_chip(X + hw + 6, ry, hw, TH, _("Destacadas arriba"), V.f_pin, U.buttons && VS.sel == 3 && col == 1) || (VS.sel == 3 && col == 1 && A)))
+	if (!fresh && (switch_chip(X + hw + 6, ry, hw, TH, _("Destacados primero"), V.f_pin, U.buttons && VS.sel == 3 && col == 1) || (VS.sel == 3 && col == 1 && A)))
 		f_toggle(&G.f_pin);
 	// cerrar
 	float by = y + h - 38;
@@ -3792,7 +3792,7 @@ static void qrs_download(bool install)
 		ok += dl_add(QRS.url[i], QRS.dest, "", install ? DLA_INSTALL | DLA_STREAM : DLA_NONE, G.console, NULL) == 0; // pedido aquí: se instala mientras baja
 	char m[120];
 	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo verás en Actividad") : _("Descargando %d enlaces: los verás en Actividad"), ok);
-	toast_icon(ok ? m : _("Ese enlace no vale"), ok ? IC_GLOBE : IC_CLOSE, ok ? T.accent : T.danger);
+	toast_icon(ok ? m : _("El enlace no es válido"), ok ? IC_GLOBE : IC_CLOSE, ok ? T.accent : T.danger);
 	qrs_close();
 }
 
@@ -3894,7 +3894,7 @@ static void qrs_draw(void)
 		snprintf(d, sizeof d, _("Se guardará en %s"), QRS.dest);
 		text_draw_clip(d, 14, y + 4, BOT_W - 28, TS_SUB, T.text2);
 	} else {
-		text_draw(_("Este código no tiene ningún enlace"), 14, y, TS_SUB, T.text3);
+		text_draw(_("El código no contiene ningún enlace"), 14, y, TS_SUB, T.text3);
 		wrap_center(QRS.text, BOT_W / 2, y + 22, BOT_W - 28, TS_BODY, 4, T.text);
 	}
 	// botones: A descargar (e instalar), X solo descargar, Y otro
@@ -3948,8 +3948,8 @@ static void pm_draw(void)
 	const char *L[N] = {_("Carpeta nueva"), _("Documento de texto")};
 	char where[160];
 	const char *nm = strrchr(F.path, '/');
-	snprintf(where, sizeof where, _("Dentro de «%s»"), nm && nm[1] ? nm + 1 : "SD");
-	const char *S[N] = {where, _("Un .txt vacío para escribir")};
+	snprintf(where, sizeof where, _("En «%s»"), nm && nm[1] ? nm + 1 : "SD");
+	const char *S[N] = {where, _("Archivo .txt en blanco")};
 	const float W = 214, RH = 40, x = BOT_W - 8 - W, y = 34 - (1 - a) * 8, H = N * RH + 12;
 	draw_rrect(x, y + 4, W, H, 14, col_alpha(T.shadow, a));
 	draw_rrect(x, y, W, H, 14, T.surface);
@@ -4125,7 +4125,7 @@ static void ms_ask_delete(void)
 	if (!MS.n)
 		return;
 	if (ms_locked()) {
-		toast_icon(_("Hay carpetas protegidas entre lo elegido"), IC_LOCK, T.warn);
+		toast_icon(_("La selección incluye carpetas protegidas"), IC_LOCK, T.warn);
 		return;
 	}
 	char msg[200];
@@ -4232,7 +4232,7 @@ static void ma_draw(void)
 			acts[n] = FA_INSTALL, ic[n] = IC_DOWNLOAD, lab[n] = _("Instalar"), col[n++] = T.ok;
 	}
 	char t[48];
-	snprintf(t, sizeof t, MS.n == 1 ? _("1 elegido") : _("%d elegidos"), MS.n);
+	snprintf(t, sizeof t, MS.n == 1 ? _("1 seleccionado") : _("%d seleccionados"), MS.n);
 	int r = sheet_list(&MA.open, &MA.just, &MA.anim, &MA.sel, t, ic, lab, col, n);
 	if (r >= 0)
 		ms_do(acts[r]);
@@ -4296,18 +4296,18 @@ static void hs_draw(void)
 {
 	const char *nm = strrchr(HS.path, '/');
 	static const IconId ic[2] = {IC_CHECK, IC_DOWNLOAD};
-	const char *lab[2] = {_("Comparar con un valor"), _("Guardar en un .sha256 al lado")};
+	const char *lab[2] = {_("Comparar con un valor"), _("Guardar .sha256 junto al archivo")};
 	bool done = HJ.st == HASH_DONE && !strcmp(HJ.path, HS.path);
 	const u32 col[2] = {done ? T.accent : T.text3, done ? T.text : T.text3};
 	int r = sheet_list(&HS.open, &HS.just, &HS.anim, &HS.sel, nm ? nm + 1 : HS.path, ic, lab, col, 2);
 	if (r >= 0 && !done) {
-		toast_icon(_("Aún se está calculando"), IC_CLOCK, T.text2);
+		toast_icon(_("Todavía se está calculando"), IC_CLOCK, T.text2);
 		HS.open = true; // la hoja sigue abierta
 	} else if (r == 0) {
 		HS.open = true, HS.want_cmp = true; // el teclado, fuera del dibujo
 	} else if (r == 1) {
 		if (hash_save_sha256(&HJ) == 0) {
-			toast_icon(_("Guardado al lado como .sha256"), IC_CHECK, T.ok);
+			toast_icon(_("Guardado junto al archivo como .sha256"), IC_CHECK, T.ok);
 			F.need_reload = true;
 		} else
 			toast_icon(_("No se pudo guardar"), IC_CLOSE, T.danger);
@@ -4337,7 +4337,7 @@ static void hash_top(float a)
 		text_draw(t, X, y, TS_BODY, col_alpha(T.text2, a));
 		draw_rrect(X, y + 24, W, 6, 3, col_alpha(T.surface2, a));
 		draw_rrect(X, y + 24, fmaxf(6, W * f), 6, 3, col_alpha(T.accent, a));
-		wrap_center(_("Puedes seguir usando la consola: se calcula aparte."), TOP_W / 2, y + 44, W, TS_SUB, 2, col_alpha(T.text3, a));
+		wrap_center(_("Puedes seguir usando la consola mientras se calcula."), TOP_W / 2, y + 44, W, TS_SUB, 2, col_alpha(T.text3, a));
 		return;
 	}
 	if (HJ.st == HASH_ERR) {
@@ -4362,7 +4362,7 @@ static void hash_top(float a)
 	if (chk != HCHK_NONE) {
 		char t[200];
 		if (HS.cmp != HCHK_NONE)
-			util_strlcpy(t, chk == HCHK_OK ? _("Coincide con el valor que escribiste") : _("No coincide con el valor que escribiste"), sizeof t);
+			util_strlcpy(t, chk == HCHK_OK ? _("Coincide con el valor introducido") : _("No coincide con el valor introducido"), sizeof t);
 		else
 			snprintf(t, sizeof t, chk == HCHK_OK ? _("Coincide con %s") : _("No coincide con %s"), HJ.check_file);
 		u32 c = chk == HCHK_OK ? T.ok : T.danger;
@@ -4505,17 +4505,17 @@ static void zip_top(float a)
 	snprintf(v, sizeof v, _("%s (%s al extraer)"), s1, s2);
 	y = info_row(rx, y, rw, _("Tamaño"), v, T.text2, a);
 	if (ZS.z.encrypted || ZS.z.unsupported) {
-		y = info_row(rx, y, rw, _("Aviso"), ZS.z.encrypted ? _("Tiene contraseña: no se puede extraer") : _("Usa un formato que no se puede extraer"), T.danger, a);
+		y = info_row(rx, y, rw, _("Aviso"), ZS.z.encrypted ? _("Protegido con contraseña: no se puede extraer") : _("Formato de compresión no compatible"), T.danger, a);
 	} else {
 		u64 fr = 0, tot = 0;
 		fsx_space(&fr, &tot);
 		util_fmt_size(s1, sizeof s1, fr);
 		bool fits = fr > ZS.z.usize + 1024 * 1024;
 		if (fits)
-			snprintf(v, sizeof v, _("Cabe: quedan %s"), s1);
+			snprintf(v, sizeof v, _("Hay espacio (quedan %s)"), s1);
 		else {
 			util_fmt_size(s2, sizeof s2, ZS.z.usize - fr);
-			snprintf(v, sizeof v, _("No cabe: faltan %s"), s2);
+			snprintf(v, sizeof v, _("Falta espacio: %s"), s2);
 		}
 		y = info_row(rx, y, rw, _("Espacio"), v, fits ? T.ok : T.danger, a);
 	}
@@ -4551,10 +4551,10 @@ static void tt_backup(const TitleInfo *t)
 		state_lock();
 		event_add(EV_CREATE, t->title, G.console, 0);
 		state_unlock();
-		toast_icon(_("Copia de la partida guardada, como en Checkpoint"), IC_CHECK, T.ok);
+		toast_icon(_("Copia de seguridad guardada (formato de Checkpoint)"), IC_CHECK, T.ok);
 		TT.info_tid = 0; // que se vuelvan a contar
 	} else
-		toast_icon(r == -1 ? _("Este juego aún no tiene partida") : _("No se pudo copiar la partida"), IC_CLOSE, r == -1 ? T.warn : T.danger);
+		toast_icon(r == -1 ? _("Este juego todavía no tiene datos guardados") : _("No se pudo crear la copia de seguridad"), IC_CLOSE, r == -1 ? T.warn : T.danger);
 }
 
 static void tt_draw(void)
@@ -4571,9 +4571,9 @@ static void tt_draw(void)
 	const char *lab[3];
 	u32 col[3];
 	int act[3], n = 0;
-	ic[n] = IC_DOWNLOAD, lab[n] = _("Hacer copia de la partida"), col[n] = T.ok, act[n++] = 0;
+	ic[n] = IC_DOWNLOAD, lab[n] = _("Crear copia de seguridad"), col[n] = T.ok, act[n++] = 0;
 	if (t && TT.copies > 0)
-		ic[n] = IC_FOLDER, lab[n] = _("Ver sus copias"), col[n] = T.text, act[n++] = 1;
+		ic[n] = IC_FOLDER, lab[n] = _("Ver copias de seguridad"), col[n] = T.text, act[n++] = 1;
 	if (t && !title_is_self(t->tid))
 		ic[n] = IC_TRASH, lab[n] = _("Desinstalar"), col[n] = T.danger, act[n++] = 2;
 	int r = sheet_list(&TT.open, &TT.just, &TT.anim, &TT.sel, t ? t->title : "", ic, lab, col, n);
@@ -4588,7 +4588,7 @@ static void tt_draw(void)
 		bool d;
 		u64 sz;
 		if (fsx_stat(gd, &d, &sz) < 0)
-			toast_icon(_("Aún no hay copias de este juego"), IC_INFO, T.text2);
+			toast_icon(_("Este juego no tiene copias de seguridad"), IC_INFO, T.text2);
 		else
 			f_load(gd);
 	} else {
@@ -4618,7 +4618,7 @@ static void titles_top(float a)
 	const float X = CARD_X + 14, W = CARD_W - 28;
 	if (!t) {
 		draw_icon(IC_GAMEPAD, TOP_W / 2, y0 + h / 2 - 14, 30, col_alpha(T.text3, a));
-		text_draw_center(_("Elige un juego para ver sus datos"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
+		text_draw_center(_("Selecciona un juego para ver su información"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
 		return;
 	}
 	if (TT.icon_tid != t->tid) {
@@ -4792,7 +4792,7 @@ static void ds_draw(void)
 	case A_INSTALL: {
 		char err[24] = "";
 		if (strlen(d->path) >= 256 || ins_request(d->path, G.console, false, err, sizeof err) < 0)
-			toast_icon(!strcmp(err, "already") ? _("Ya está esperando en la consola") : _("La consola no reconoce este CIA"), IC_CLOSE, T.danger);
+			toast_icon(!strcmp(err, "already") ? _("Ya está pendiente en la consola") : _("La consola no reconoce este CIA"), IC_CLOSE, T.danger);
 		else
 			ins_refresh();
 		break;
@@ -4856,14 +4856,14 @@ static void music_sheet(void)
 	}
 	if (!fresh && U.buttons && (g_kdown & KEY_A))
 		run = MU.sel;
-	const char *mode = MU.s.repeat == MR_ONE ? _("Repetir esta") : MU.s.repeat == MR_ALL ? _("Repetir la carpeta") : _("Sin repetir");
+	const char *mode = MU.s.repeat == MR_ONE ? _("Repetir canción") : MU.s.repeat == MR_ALL ? _("Repetir carpeta") : _("Sin repetir");
 	char line[160];
 	snprintf(line, sizeof line, "%s · %s", MU.s.shuffle ? _("Aleatorio") : _("En orden"), mode);
 	text_draw_center(line, BOT_W / 2, by + 44, TS_SUB, T.text3);
 	// parar y su carpeta
 	float ly = y + h - 34, lw = (BOT_W - 44) / 2;
 	char b1[48], b2[48];
-	snprintf(b1, sizeof b1, "%s %s", GLYPH_X, _("Parar"));
+	snprintf(b1, sizeof b1, "%s %s", GLYPH_X, _("Detener"));
 	snprintf(b2, sizeof b2, "%s %s", GLYPH_Y, _("Ir a la carpeta"));
 	draw_rrect(18, ly, lw, 26, 13, touch_in(18, ly, lw, 26) ? T.surface2 : T.bg);
 	draw_rrect(26 + lw, ly, lw, 26, 13, touch_in(26 + lw, ly, lw, 26) ? T.surface2 : T.bg);
@@ -4944,13 +4944,13 @@ static void tab_files(void)
 	th_poll();
 	if (MS.on) { // selección múltiple: ✕ para salir, cuántos van y «Todo»
 		char t[48];
-		snprintf(t, sizeof t, MS.n == 1 ? _("1 elegido") : _("%d elegidos"), MS.n);
+		snprintf(t, sizeof t, MS.n == 1 ? _("1 seleccionado") : _("%d seleccionados"), MS.n);
 		bool xp = touch_in(0, 0, 150, VIEW_Y);
 		if (xp)
 			draw_rrect(6, 4, text_width(t, TS_TITLE) + 40, 24, 12, T.surface);
 		draw_icon(IC_CLOSE, 20, 16, 12, T.text2);
 		text_draw_clip(t, 34, 7, 180, TS_TITLE, T.text);
-		const char *all = MS.n >= F.n && F.n ? _("Nada") : _("Todo");
+		const char *all = MS.n >= F.n && F.n ? _("Ninguno") : _("Todo");
 		float aw = text_width(all, TS_SUB) + 20, ax = BOT_W - 12 - aw;
 		draw_rrect(ax, 6, aw, 20, 10, touch_in(ax, 4, aw, 24) ? T.surface2 : T.surface);
 		text_draw_center(all, ax + aw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
@@ -5347,16 +5347,16 @@ static void tab_files(void)
 			text_draw_center(_("Buscando…"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 		else {
 			char t[200];
-			snprintf(t, sizeof t, _("No hay nada que se llame «%s» aquí"), SR.q);
+			snprintf(t, sizeof t, _("No se encontró nada con «%s»"), SR.q);
 			wrap_center(t, BOT_W / 2, my + 30, BOT_W - 40, TS_BODY, 2, T.text3);
-			wrap_center(_("Se busca en la carpeta donde estabas y en todas las de dentro."), BOT_W / 2, my + 74, BOT_W - 60, TS_SUB, 2, T.text3);
+			wrap_center(_("La búsqueda incluye esta carpeta y todas sus subcarpetas."), BOT_W / 2, my + 74, BOT_W - 60, TS_SUB, 2, T.text3);
 		}
 	} else if (F.titles && F.n == 0) {
 		text_draw_center(_("No hay juegos ni apps instalados en la SD"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	} else if (F.trash && F.n == 0) {
 		text_draw_center(_("La papelera está vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 		char t[96];
-		snprintf(t, sizeof t, _("Lo que borres se queda aquí %d días"), TRASH_DAYS);
+		snprintf(t, sizeof t, _("Los elementos eliminados se conservan %d días"), TRASH_DAYS);
 		text_draw_center(t, BOT_W / 2, my + 62, TS_SUB, T.text3);
 	} else if (F.err || F.n == 0) {
 		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
@@ -5520,7 +5520,7 @@ static const char *fa_name(int a)
 	case FA_DELETE: return _("Eliminar");
 	case FA_ASTEXT: return _("Abrir como texto");
 	case FA_TYPE: return _("Cambiar tipo");
-	case FA_SELECT: return _("Elegir varios");
+	case FA_SELECT: return _("Seleccionar varios");
 	case FA_HASH: return _("MD5 y SHA-256");
 	case FA_ZIP: return _("Comprimir en ZIP");
 	default: return _("Destacar");
@@ -5689,7 +5689,7 @@ static void fa_run(int a)
 	// renombrar, mover, copiar o borrar lo que se está viendo: primero se cierra el visor
 	if (vw_is_open() && a != FA_INSTALL) {
 		if (vw_dirty()) {
-			toast_icon(_("Guarda o descarta los cambios primero"), IC_INFO, T.warn);
+			toast_icon(_("Primero guarda o descarta los cambios"), IC_INFO, T.warn);
 			return;
 		}
 		vw_close();
@@ -5698,7 +5698,7 @@ static void fa_run(int a)
 		char err[24] = "";
 		int id = strlen(full) < 256 ? ins_request(full, G.console, false, err, sizeof err) : -1;
 		if (id < 0) {
-			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está esperando en la consola")
+			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está pendiente en la consola")
 			                                                                                                  : _("La consola no reconoce este CIA"),
 			           IC_CLOSE, T.danger);
 			return;
@@ -6028,7 +6028,7 @@ static void f_pick_bar(void)
 	char dst[1100];
 	snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", FP.name);
 	if (FP.src_dir && (!strcasecmp(F.path, FP.src) || (!strncasecmp(F.path, FP.src, strlen(FP.src)) && F.path[strlen(FP.src)] == '/'))) {
-		toast_icon(_("No puedes meter una carpeta dentro de sí misma"), IC_CLOSE, T.danger);
+		toast_icon(_("No se puede mover una carpeta dentro de sí misma"), IC_CLOSE, T.danger);
 		return;
 	}
 	if (V.protect_sys && fsx_is_system(F.path) && strcmp(F.path, "/")) {
@@ -6134,7 +6134,7 @@ static void ms_top(float a)
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	const float X = CARD_X + 16, W = CARD_W - 32;
 	char t[64], sz[24], sub[96];
-	snprintf(t, sizeof t, MS.n == 1 ? _("1 elegido") : _("%d elegidos"), MS.n);
+	snprintf(t, sizeof t, MS.n == 1 ? _("1 seleccionado") : _("%d seleccionados"), MS.n);
 	text_draw(t, X, y0 + 10, 0.62f, col_alpha(T.text, a));
 	int nd;
 	util_fmt_size(sz, sizeof sz, ms_size(&nd));
@@ -6169,10 +6169,10 @@ static void ms_top(float a)
 		text_draw(more, x + 4, ty + 16, TS_BODY, col_alpha(T.text3, a));
 	}
 	if (!MS.n)
-		text_draw(_("Toca o pulsa A para elegir"), X, ty + 16, TS_BODY, col_alpha(T.text3, a));
+		text_draw(_("Toca un elemento o pulsa A para seleccionarlo"), X, ty + 16, TS_BODY, col_alpha(T.text3, a));
 	float by = y0 + h - 10 - text_lineh(TS_SUB);
 	char hint[128];
-	snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s   %s %s", GLYPH_A, _("Elegir"), GLYPH_X, _("Todo"), GLYPH_Y, _("Acciones"), GLYPH_B, _("Salir"));
+	snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s   %s %s", GLYPH_A, _("Seleccionar"), GLYPH_X, _("Todo"), GLYPH_Y, _("Acciones"), GLYPH_B, _("Salir"));
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
 }
 
@@ -6192,7 +6192,7 @@ static void trash_top(float a)
 		char sz[24], msg[96];
 		util_fmt_size(sz, sizeof sz, trash_size(&n));
 		draw_icon(IC_TRASH, TOP_W / 2, y0 + h / 2 - 16, 30, col_alpha(T.text3, a));
-		snprintf(msg, sizeof msg, _("Lo borrado se guarda aquí %d días · ocupa %s"), TRASH_DAYS, sz);
+		snprintf(msg, sizeof msg, _("Se conserva durante %d días · ocupa %s"), TRASH_DAYS, sz);
 		text_draw_center(msg, TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
 		return;
 	}
@@ -6214,16 +6214,16 @@ static void trash_top(float a)
 		*sl = 0;
 	else
 		strcpy(v, "/");
-	y = info_row(rx, y, rw, _("Estaba en"), v, T.text2, a);
+	y = info_row(rx, y, rw, _("Origen"), v, T.text2, a);
 	f_fmt_date(b, sizeof b, t.when);
 	snprintf(v, sizeof v, t.device[0] ? "%s · %s" : "%s", b, t.device);
-	y = info_row(rx, y, rw, _("Borrado"), v, T.text2, a);
+	y = info_row(rx, y, rw, _("Eliminado"), v, T.text2, a);
 	u64 now = util_unix_now(), end = t.when + TRASH_DAYS * 86400ull;
 	int days = end > now ? (int)((end - now + 86399) / 86400) : 0;
 	if (days > TRASH_DAYS) // la hora de la consola pudo ir adelantada al borrar
 		days = TRASH_DAYS;
 	snprintf(v, sizeof v, days == 1 ? _("mañana") : _("en %d días"), days);
-	y = info_row(rx, y, rw, _("Se borra"), v, days <= 1 ? T.warn : T.text2, a);
+	y = info_row(rx, y, rw, _("Se elimina"), v, days <= 1 ? T.warn : T.text2, a);
 	util_fmt_size(b, sizeof b, t.size);
 	y = info_row(rx, y, rw, _("Tamaño"), b, T.text2, a);
 	g_info_ymax = 1e9f;
@@ -6267,7 +6267,7 @@ static void files_top(float a)
 	const float X = CARD_X + 14, W = CARD_W - 28;
 	if (!e) {
 		draw_icon(IC_FOLDER, TOP_W / 2, y0 + h / 2 - 14, 30, col_alpha(T.text3, a));
-		text_draw_center(_("Elige un archivo para ver su información"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
+		text_draw_center(_("Selecciona un archivo para ver su información"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
 		return;
 	}
 	IconId ic;
@@ -6383,11 +6383,11 @@ static bool device_top(float a)
 	y += text_lineh(TS_TITLE) + 2;
 	if (!on && d->last_seen) {
 		util_fmt_when(when, sizeof when, d->last_seen);
-		snprintf(v, sizeof v, _("Visto: %s"), when);
+		snprintf(v, sizeof v, _("Última conexión: %s"), when);
 	}
 	if (on)
 		draw_circle(rx + 3, y + text_lineh(TS_SUB) / 2, 3, col_alpha(T.ok, a));
-	text_draw_clip(on ? _("Conectado ahora") : d->last_seen ? v : _("Desconectado"), rx + (on ? 10 : 0), y, rw, TS_SUB,
+	text_draw_clip(on ? _("Conectado") : d->last_seen ? v : _("Desconectado"), rx + (on ? 10 : 0), y, rw, TS_SUB,
 	               col_alpha(on ? T.ok : T.text3, a));
 	y += 18;
 	float by = y0 + h - 10 - text_lineh(TS_SUB);
@@ -6404,7 +6404,7 @@ static bool device_top(float a)
 		f_fmt_date(v, sizeof v, d->created);
 		y = info_row(rx, y, rw, _("Vinculado"), v, T.text2, a);
 	}
-	const char *src = d->named == NAME_CUSTOM ? _("Puesto a mano") : d->named == NAME_FOUND ? _("Dado por la red") : _("Según el navegador");
+	const char *src = d->named == NAME_CUSTOM ? _("Definido manualmente") : d->named == NAME_FOUND ? _("Obtenido de la red") : _("Detectado por el navegador");
 	y = info_row(rx, y, rw, _("Nombre"), src, T.text2, a);
 	g_info_ymax = 1e9f;
 	char hint[96];
@@ -6501,7 +6501,7 @@ static void settings_sub_top(float a)
 		int i = U.list[TAB_COUNT + 2].sel;
 		snprintf(foot, sizeof foot, _("PIN actual: %s"), V.pin);
 		if (i == PIN_CUSTOM)
-			explain_top(a, IC_KEY, T.accent2, _("Elegir mi PIN"), _("Escribe cuatro cifras que te resulten fáciles de recordar. El código QR se renueva con él y los dispositivos ya vinculados siguen conectados."), foot, T.text3);
+			explain_top(a, IC_KEY, T.accent2, _("Definir un PIN"), _("Escribe cuatro cifras que te resulten fáciles de recordar. El código QR se renueva con él y los dispositivos ya vinculados siguen conectados."), foot, T.text3);
 		else
 			explain_top(a, IC_REFRESH, T.accent2, _("PIN aleatorio nuevo"), _("La consola crea un PIN al azar y un código QR nuevo; los anteriores dejan de servir. Los dispositivos ya vinculados siguen conectados."), foot, T.text3);
 		return;
@@ -6534,7 +6534,7 @@ static void settings_top(float a)
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	static const IconId IC[SET_COUNT] = {IC_LOCK, IC_SHIELD, IC_KEY, IC_WIFI, IC_CAMERA, IC_GLOBE, IC_PALETTE, IC_REFRESH, IC_INFO, IC_POWER};
 	const u32 C[SET_COUNT] = {T.warn, T.danger, T.accent2, T.ok, T.accent, T.accent, T.accent2, T.ok, T.text3, T.danger};
-	const char *TT_[SET_COUNT] = {_("Solo lectura"), _("Proteger carpetas del sistema"), _("PIN"), _("Conexión"), _("Capturas al momento"),
+	const char *TT_[SET_COUNT] = {_("Solo lectura"), _("Proteger carpetas del sistema"), _("PIN"), _("Conexión"), _("Capturas al instante"),
 	                              _("Idioma"), _("Tema"), _("Actualizaciones"), _("Acerca de Cloud3DS"), _("Salir")};
 	const char *D[SET_COUNT] = {
 	    _("Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada."),
@@ -6591,14 +6591,14 @@ static void settings_main(void)
 		bool chev = false;
 		switch (i) {
 		case SET_READONLY:
-			title = _("Solo lectura"); sub = _("Solo ver y descargar"); ic = IC_LOCK; col = T.warn;
+			title = _("Solo lectura"); sub = _("Solo consulta y descarga"); ic = IC_LOCK; col = T.warn;
 			break;
 		case SET_PROTECT:
 			title = _("Proteger carpetas del sistema"); sub = _("Nintendo 3DS, luma y otras");
 			ic = IC_SHIELD; col = T.danger;
 			break;
 		case SET_PIN:
-			title = _("PIN"); sub = _("Fijo hasta que lo cambies"); ic = IC_KEY; col = T.accent2; val = V.pin;
+			title = _("PIN"); sub = _("No caduca"); ic = IC_KEY; col = T.accent2; val = V.pin;
 			chev = true;
 			break;
 		case SET_CONN:
@@ -6607,7 +6607,7 @@ static void settings_main(void)
 			sub = V.mdns ? vbuf : _("Nombre en la red y FBI remoto");
 			break;
 		case SET_SHOTS:
-			title = _("Capturas al momento"); sub = _("Se ven al momento en la web"); ic = IC_CAMERA; col = T.accent;
+			title = _("Capturas al instante"); sub = _("Aparecen al instante en la web"); ic = IC_CAMERA; col = T.accent;
 			break;
 		case SET_LANG:
 			title = _("Idioma"); ic = IC_GLOBE; chev = true;
@@ -6632,7 +6632,7 @@ static void settings_main(void)
 			sub = vbuf;
 			break;
 		case SET_EXIT:
-			title = _("Salir"); sub = _("O pulsa START"); ic = IC_POWER; col = T.danger;
+			title = _("Salir"); sub = _("También con START"); ic = IC_POWER; col = T.danger;
 			break;
 		}
 		row_icon(28, y + RH / 2, ic, col);
@@ -6694,7 +6694,7 @@ static void settings_conn(void)
 			if (V.mdns && !(V.remote_ok & 1) && V.running)
 				snprintf(sub, sizeof sub, "%s", _("No se pudo activar en esta red"));
 			else
-				snprintf(sub, sizeof sub, _("Entra con %s.local"), V.net_name);
+				snprintf(sub, sizeof sub, _("Acceso por %s.local"), V.net_name);
 			ic = IC_GLOBE, col = T.ok;
 		} else if (i == 1) {
 			snprintf(title, sizeof title, "%s", _("Instalación remota (FBI)"));
@@ -6705,7 +6705,7 @@ static void settings_conn(void)
 			ic = IC_LAPTOP, col = T.accent;
 		} else {
 			snprintf(title, sizeof title, "%s", _("Cambiar el nombre"));
-			snprintf(sub, sizeof sub, "%s", _("Para tener varias consolas: 3ds-salon.local"));
+			snprintf(sub, sizeof sub, "%s", _("Útil con varias consolas, p. ej. 3ds-salon.local"));
 			ic = IC_PEN, col = T.accent2;
 		}
 		row_icon(28, y + RH / 2, ic, col);
@@ -6774,8 +6774,8 @@ static void settings_pin(void)
 		float y = VIEW_Y + i * RH - l->off;
 		bool t = row(l, i, y, RH);
 		row_icon(28, y + RH / 2, i == PIN_CUSTOM ? IC_KEY : IC_REFRESH, T.accent2);
-		text_draw_clip(i == PIN_CUSTOM ? _("Elegir mi PIN") : _("PIN aleatorio nuevo"), 50, y + 6, 230, TS_BODY, T.text);
-		text_draw_clip(i == PIN_CUSTOM ? _("Elige cuatro cifras fáciles de recordar") : _("La consola genera uno al azar"),
+		text_draw_clip(i == PIN_CUSTOM ? _("Definir un PIN") : _("PIN aleatorio nuevo"), 50, y + 6, 230, TS_BODY, T.text);
+		text_draw_clip(i == PIN_CUSTOM ? _("Cuatro cifras fáciles de recordar") : _("La consola genera uno al azar"),
 		               50, y + 23, 230, TS_SUB, T.text3);
 		if (t || activate(l, i)) {
 			if (i == PIN_CUSTOM)
@@ -6806,7 +6806,7 @@ static void ul_draw(void)
 			snprintf(tx[i], sizeof tx[i], "%s", b ? b + 1 : UL.f[i].path);
 		ic[i] = IC_DOWNLOAD, lab[i] = tx[i], col[i] = T.ok;
 	}
-	int r = sheet_list(&UL.open, &UL.just, &UL.anim, &UL.sel, _("Elige el archivo"), ic, lab, col, UL.n);
+	int r = sheet_list(&UL.open, &UL.just, &UL.anim, &UL.sel, _("Selecciona el archivo"), ic, lab, col, UL.n);
 	if (r >= 0 && r < UL.n) {
 		char msg[400];
 		if (UL.f[r].ver[0])
@@ -6899,7 +6899,7 @@ static void settings_about(void)
 	static const IconId IC[AB_COUNT] = {IC_CLOUD, IC_CODE, IC_CHAT, IC_HEART};
 	const u32 COL[AB_COUNT] = {T.accent, col_hex(0x6E7681), col_hex(0x5865F2), col_hex(0xFF5E5B)};
 	const char *title[AB_COUNT] = {"Cloud3DS " APP_VERSION, "GitHub", "Discord", "Ko-fi"};
-	const char *sub[AB_COUNT] = {_("Gracias por usar!"), _("Código fuente e informes de errores"), _("Comunidad y ayuda"),
+	const char *sub[AB_COUNT] = {_("Gracias por usar Cloud3DS"), _("Código fuente e informes de errores"), _("Comunidad y ayuda"),
 	                             _("Invítame a un café")};
 	for (int i = 0; i < AB_COUNT; i++) {
 		float y = VIEW_Y + i * RH - l->off;
@@ -7427,7 +7427,7 @@ static void update(void)
 			if (l < 4 || strcasecmp(nm + l - 4, ".zip"))
 				strcat(nm, ".zip");
 			if (strpbrk(nm, "\\/:*?\"<>|"))
-				toast_icon(_("Ese nombre no es válido"), IC_CLOSE, T.danger);
+				toast_icon(_("El nombre no es válido"), IC_CLOSE, T.danger);
 			else {
 				int r = zipjob_create(ZQ.base, ZQ.names, ZQ.n, nm, G.console);
 				if (r != ZIP_OK)
@@ -7482,7 +7482,7 @@ static void update(void)
 		if (kb_input(_("Pega o escribe el MD5 o el SHA-256 esperado"), "", v, sizeof v, false, false) && v[0]) {
 			int r = hash_compare(&HJ, v);
 			if (r == HCHK_NONE)
-				toast_icon(_("Eso no parece un MD5 (32 cifras) ni un SHA-256 (64)"), IC_CLOSE, T.warn);
+				toast_icon(_("No es un MD5 (32 caracteres) ni un SHA-256 (64 caracteres)"), IC_CLOSE, T.warn);
 			else {
 				HS.cmp = r;
 				toast_icon(r == HCHK_OK ? _("Coincide") : _("No coincide"), r == HCHK_OK ? IC_CHECK : IC_CLOSE, r == HCHK_OK ? T.ok : T.danger);
@@ -7582,13 +7582,13 @@ static void update(void)
 			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
 				toast_icon(_("Descargando: lo verás en Actividad"), IC_GLOBE, T.accent);
 			else
-				toast_icon(_("Ese enlace no vale"), IC_CLOSE, T.danger);
+				toast_icon(_("El enlace no es válido"), IC_CLOSE, T.danger);
 		}
 	}
 	if (U.want_search) {
 		U.want_search = false;
 		char q[128];
-		if (kb_input(_("Buscar aquí y en las carpetas de dentro"), SR.q, q, sizeof q, false, false) && q[0])
+		if (kb_input(_("Buscar en esta carpeta y sus subcarpetas"), SR.q, q, sizeof q, false, false) && q[0])
 			sr_start(q);
 	}
 	if (U.want_tnew) {
@@ -7604,7 +7604,7 @@ static void update(void)
 			snprintf(sd, sizeof sd, "sdmc:%s", dst);
 			FILE *f = NULL;
 			if (strpbrk(nm, "\\/:*?\"<>|") || nm[strlen(nm) - 1] == '.' || nm[strlen(nm) - 1] == ' ')
-				toast_icon(_("Ese nombre no es válido"), IC_CLOSE, T.danger);
+				toast_icon(_("El nombre no es válido"), IC_CLOSE, T.danger);
 			else if (fsx_stat(dst, &d, &sz) == 0)
 				toast_icon(_("Ya existe un archivo con ese nombre"), IC_CLOSE, T.danger);
 			else if (!(f = fopen(sd, "wb")))
@@ -7632,7 +7632,7 @@ static void update(void)
 			u64 sz;
 			snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
 			if (strpbrk(nm, "\\/:*?\"<>|") || nm[strlen(nm) - 1] == '.' || nm[strlen(nm) - 1] == ' ')
-				toast_icon(_("Ese nombre no es válido"), IC_CLOSE, T.danger);
+				toast_icon(_("El nombre no es válido"), IC_CLOSE, T.danger);
 			else if (fsx_stat(dst, &d, &sz) == 0)
 				toast_icon(_("Ya existe un archivo con ese nombre"), IC_CLOSE, T.danger);
 			else if (fsx_mkdirs(dst) < 0)
@@ -7694,7 +7694,7 @@ static void update(void)
 		if (m == 1) {
 			snprintf(hint, sizeof hint, _("Línea %d"), VW.cur + 1);
 			if (kb_input(hint, ln, buf, 8192, true, false) && !txt_set(&VW.doc, VW.cur, buf))
-				toast_icon(_("No hay memoria para abrir este archivo"), IC_CLOSE, T.danger);
+				toast_icon(_("No hay memoria suficiente para abrir este archivo"), IC_CLOSE, T.danger);
 		} else if (m == 3) {
 			// varias líneas de una vez: desde la elegida, las que quepan en el teclado (hasta 1800 caracteres)
 			int cnt = 0, tot = 0;
@@ -7709,7 +7709,7 @@ static void update(void)
 			char *blk = txt_join(&VW.doc, VW.cur, cnt);
 			snprintf(hint, sizeof hint, _("Líneas %d a %d"), VW.cur + 1, VW.cur + cnt);
 			if (blk && kb_input(hint, blk, buf, 8192, true, false) && strcmp(blk, buf) && !txt_replace(&VW.doc, VW.cur, cnt, buf))
-				toast_icon(_("No hay memoria para abrir este archivo"), IC_CLOSE, T.danger);
+				toast_icon(_("No hay memoria suficiente para abrir este archivo"), IC_CLOSE, T.danger);
 			free(blk);
 		} else if (kb_input(_("Línea nueva"), "", buf, 8192, true, false)) {
 			if (txt_insert(&VW.doc, VW.cur + 1, buf))
@@ -7726,7 +7726,7 @@ static void update(void)
 		f_full(FM.idx, full, sizeof full);
 		if (kb_input(_("Nuevo nombre"), e->name, nm, sizeof nm, false, false) && nm[0] && strcmp(nm, e->name)) {
 			if (strpbrk(nm, "\\/:*?\"<>|") || nm[strlen(nm) - 1] == '.' || nm[strlen(nm) - 1] == ' ') {
-				toast_icon(_("Ese nombre no es válido"), IC_CLOSE, T.danger);
+				toast_icon(_("El nombre no es válido"), IC_CLOSE, T.danger);
 				return;
 			}
 			snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
@@ -7755,7 +7755,7 @@ static void update(void)
 		U.want_rename = -1;
 		char nm[48];
 		// vacío: vuelve al nombre automático (el de la red o el modelo)
-		if (V.dev[i].used && kb_input(_("Nombre del dispositivo (vacío: automático)"), V.dev[i].named == NAME_CUSTOM ? V.dev[i].name : "",
+		if (V.dev[i].used && kb_input(_("Nombre del dispositivo (déjalo vacío para usar el automático)"), V.dev[i].named == NAME_CUSTOM ? V.dev[i].name : "",
 		                              nm, sizeof nm, false, false)) {
 			state_lock();
 			if (G.dev[i].used && !strcmp(G.dev[i].token, V.dev[i].token))
