@@ -763,7 +763,7 @@ function renderTrash(){
  L.innerHTML=`<div class="list">`+r.items.map(it=>{
   const k=kind(it),left=Math.min(r.days,Math.max(1,Math.ceil((it.t+r.days*86400-now)/86400)));
   const sub=[t("trashFrom",parent(it.f)),(it.d?"":fsize(it.s)),fdate(it.t),left===1?t("trashLeft1"):t("trashLeft",left)].filter(Boolean).join(" · ");
-  return `<div class="row" data-tid="${it.id}"><div class="ic ${k}">${kindSvg(k)}</div><div class="meta"><b>${esc(it.n)}</b><span>${esc(sub)}</span></div>`+
+  return `<div class="row" data-tid="${it.id}"><div class="ic ${k}">${kindSvg(k)}</div><div class="meta"><b title="${esc(it.n)}">${esc(it.n)}</b><span>${esc(sub)}</span></div>`+
    (ro?"":`<button class="btn rst" data-ta="rst">${t("restore")}</button><button class="more" data-ta="more">${svg("dots")}</button>`)+`</div>`}).join("")+`</div>`;
 }
 async function trashOp(id,a){
@@ -796,7 +796,7 @@ function renderTitles(){
  L.innerHTML=`<div class="list">`+a.map((it,i)=>{
   const sub=[t("titVer",ver(it.upd?it.uv:it.v)),fsize(it.s+it.us+it.ds),it.upd?t("titUpd"):"",it.dlc?t("titDlc",it.dlc):"",it.copies?t("titCopies",it.copies):""].filter(Boolean).join(" · ");
   const ic=it.icon?`<img src="/api/title_icon?id=${it.id}" alt="" style="width:100%;height:100%;border-radius:8px;image-rendering:auto">`:kindSvg("app");
-  return `<div class="row" data-ti="${i}"><div class="ic app">${ic}</div><div class="meta"><b>${esc(it.n)}</b><span>${esc(sub)}</span></div>`+
+  return `<div class="row" data-ti="${i}"><div class="ic app">${ic}</div><div class="meta"><b title="${esc(it.n)}">${esc(it.n)}</b><span>${esc(sub)}</span></div>`+
    (ro?"":`<button class="btn rst" data-tb="${i}">${t("titBackup")}</button>`)+(it.copies?`<button class="more" data-tc="${i}" title="${t("titSeeCopies")}">${svg("folder")}</button>`:"")+`</div>`}).join("")+`</div>`;
 }
 async function titleBackup(i){
@@ -829,7 +829,7 @@ function renderFind(){
  const a=f.items.filter(it=>!f.kind||kind(it)===f.kind);
  L.innerHTML=chips+`<div class="list">`+a.map(it=>{const k=kind(it),i=f.items.indexOf(it);
   const sub=(it.d?t("folder"):fsize(it.s))+(it.t?" · "+fdate(it.t):"");
-  return `<div class="row${it.c?" mk"+it.c:""}" data-fi="${i}"><div class="ic ${k}">${kindSvg(k)}</div><div class="meta"><b>${esc(it.n)}</b><span><span class="where">${esc(it.p)}</span> · ${sub}</span></div><button class="more" data-more="1">${svg("dots")}</button></div>`}).join("")+`</div>`+
+  return `<div class="row${it.c?" mk"+it.c:""}" data-fi="${i}"><div class="ic ${k}">${kindSvg(k)}</div><div class="meta"><b title="${esc(it.n)}">${esc(it.n)}</b><span><span class="where">${esc(it.p)}</span> · ${sub}</span></div><button class="more" data-more="1">${svg("dots")}</button></div>`}).join("")+`</div>`+
   (f.more?`<div class="empty" style="padding:18px">${t("findMore")}</div>`:"");
 }
 // un resultado: se abre su carpeta y, en ella, el elemento (como si se hubiera tocado ahí)
@@ -919,13 +919,13 @@ function render(){
  const mine=a.filter(it=>!isSys(join(S.path,it.n))),sys=a.filter(it=>isSys(join(S.path,it.n)));
  const tile=it=>{const k=kind(it),p=join(S.path,it.n);
    const th=k==="img"?`<img loading="lazy" src="${fileUrl(p)}" alt="">`:kindSvg(k);
-   return `<div class="tile${S.sel.has(it.n)?" sel":""}${it.c?" mk"+it.c:""}" data-n="${esc(it.n)}"><div class="th ${k}">${th}${isProt(p)?`<span class="lockb">${svg("lock")}</span>`:""}</div><div class="nm">${esc(it.n)}</div></div>`};
+   return `<div class="tile${S.sel.has(it.n)?" sel":""}${it.c?" mk"+it.c:""}" data-n="${esc(it.n)}"><div class="th ${k}">${th}${isProt(p)?`<span class="lockb">${svg("lock")}</span>`:""}</div><div class="nm" title="${esc(it.n)}">${esc(it.n)}</div></div>`};
  const row=it=>{const k=kind(it);
    const sub=it.d?t("folder")+(it.t?" · "+fdate(it.t):""):fsize(it.s)+(it.t?" · "+fdate(it.t):"");
    return `<div class="row${S.sel.has(it.n)?" sel":""}${it.c?" mk"+it.c:""}" data-n="${esc(it.n)}">`+
     (selMode?`<div class="chk">${svg("check")}</div>`:"")+
     `<div class="ic ${k}">${kindSvg(k)}${isProt(join(S.path,it.n))?`<span class="lockb">${svg("lock")}</span>`:""}</div>`+
-    `<div class="meta"><b>${esc(it.n)}</b><span>${sub}</span></div>`+
+    `<div class="meta"><b title="${esc(it.n)}">${esc(it.n)}</b><span>${sub}</span></div>`+
     `<button class="more" data-more="1">${svg("dots")}</button></div>`};
  const block=items=>!items.length?"":S.view==="grid"?`<div class="grid">${items.map(tile).join("")}</div>`:`<div class="list">${items.map(row).join("")}</div>`;
  L.innerHTML=block(mine)+(S.filter?"":(sys.length?`<div class="grp${S.sysOpen?" open":""}" id="sysGrp">${svg("chev")}${t("sysGroup")}<span>${sys.length}</span></div>`+(S.sysOpen?block(sys):""):""))+(S.filter&&sys.length?block(sys):"")+fa;
@@ -1006,7 +1006,7 @@ function openSheet(it){
  const p=join(S.path,it.n),k=kind(it),ro=S.info.readonly;
  const m=modal(`<div class="sheet"><div class="grab"></div>
   <div class="sh"><div class="ic ${k}">${kindSvg(k)}</div>
-  <div class="meta"><b>${esc(it.n)}</b><span>${it.d?t("folder"):fsize(it.s)}${it.t?" · "+fdate(it.t):""}</span></div></div>
+  <div class="meta"><b title="${esc(it.n)}">${esc(it.n)}</b><span>${it.d?t("folder"):fsize(it.s)}${it.t?" · "+fdate(it.t):""}</span></div></div>
   ${it.d?"":(k==="img"||k==="vid"||k==="txt")?`<button class="act" data-a="view">${svg("eye")}${t("view")}</button>`:""}
   ${it.d?`<button class="act" data-a="dlz">${svg("down")}${t("dlZip")}</button>`:`<button class="act" data-a="dl">${svg("down")}${t("download")}</button>`}
   ${!ro&&!it.d&&ext(it.n)==="zip"?`<button class="act" data-a="unz">${svg("box")}${t("unzipA")}</button>`:""}

@@ -397,6 +397,10 @@ void sheet_draw(Sheet *s) {
 }
 
 // ------------------------------------------------------------ aviso (pantalla superior)
+#define TOAST_TS 0.40f
+#define TOAST_MIN 3.0f
+static float s_toast_life = TOAST_MIN; // si no cabe, lo que tarda en leerse entero
+#define TOAST_LIFE s_toast_life
 static char s_toast[160];
 static float s_toast_t = -1;
 static int s_toast_ic = IC_CHECK;
@@ -405,14 +409,13 @@ static u32 s_toast_col;
 void toast_icon(const char *msg, int ic, u32 col) {
     snprintf(s_toast, sizeof(s_toast), "%s", tr(msg));
     s_toast_t = 0;
+    s_toast_life = fmaxf(TOAST_MIN, text_ticker_time(s_toast, TOP_W - 40, TOAST_TS) + 0.6f);
     s_toast_ic = ic;
     s_toast_col = col;
 }
 
 void toast(const char *msg) { toast_icon(msg, IC_CHECK, T.accent); }
 
-#define TOAST_TS 0.40f
-#define TOAST_LIFE 3.0f
 
 static float toast_alpha(void) {
     float in = clampf(s_toast_t / 0.2f, 0, 1), out = clampf((TOAST_LIFE - s_toast_t) / 0.35f, 0, 1);
@@ -432,7 +435,7 @@ void toast_draw_top(void) {
     float a = toast_alpha(), left = 1 - s_toast_t / TOAST_LIFE;
     float h = 22, y = (1 - a) * -6;
     draw_icon((IconId)s_toast_ic, 16, y + h / 2, 11, col_alpha(s_toast_col, a));
-    text_draw_clip(s_toast, 28, y + (h - text_lineh(TOAST_TS)) / 2, TOP_W - 40, TOAST_TS, col_alpha(T.text, a));
+    text_draw_ticker(s_toast, 28, y + (h - text_lineh(TOAST_TS)) / 2, TOP_W - 40, TOAST_TS, col_alpha(T.text, a), s_toast_t);
     draw_rect(0, h - 1, TOP_W * left, 1.5f, col_alpha(s_toast_col, a * 0.9f));
 }
 

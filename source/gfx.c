@@ -516,8 +516,62 @@ void text_draw_right(const char *s, float rx, float y, float scale, u32 c) {
     text_draw(s, rx - text_width(s, scale), y, scale, c);
 }
 
+bool g_clip_ell;
+
+/* lo que cabe en maxw empezando en s (sin «…»), cortando en un carácter entero */
+static void draw_fit(const char *s, float x, float y, float maxw, float scale, u32 c) {
+    float w = 0;
+    const char *p = s;
+    while (*p) {
+        const char *q = p;
+        u32 cp = utf8_next(&q);
+        if (cp == '\n') break;
+        float gw = glyph_w(cp, scale);
+        if (w + gw > maxw + 0.5f) break;
+        w += gw; p = q;
+    }
+    text_draw_n(s, (int)(p - s), x, y, scale, c);
+}
+
+#define TICK_HOLD 1.4f   /* parado al principio y al final */
+#define TICK_STEP 0.11f  /* por carácter */
+
+/* cuántos caracteres hay que saltar para que se vea el final */
+static int tick_steps(const char *s, float maxw, float scale) {
+    int k = 0;
+    const char *p = s;
+    while (*p && text_width(p, scale) > maxw) {
+        utf8_next(&p);
+        k++;
+    }
+    return k;
+}
+
+float text_ticker_time(const char *s, float maxw, float scale) {
+    int k = text_width(s, scale) > maxw ? tick_steps(s, maxw, scale) : 0;
+    return k ? 2 * TICK_HOLD + k * TICK_STEP : 0;
+}
+
+/* un texto que no cabe se desplaza solo para poder leerlo entero: parado, avanza
+ * carácter a carácter hasta el final, parado otra vez y vuelve a empezar (t: segundos) */
+void text_draw_ticker(const char *s, float x, float y, float maxw, float scale, u32 c, float t) {
+    if (text_width(s, scale) <= maxw) { text_draw(s, x, y, scale, c); return; }
+    int k = tick_steps(s, maxw, scale);
+    float cycle = 2 * TICK_HOLD + k * TICK_STEP, ph = fmodf(t, cycle);
+    int at = ph < TICK_HOLD ? 0 : (int)((ph - TICK_HOLD) / TICK_STEP);
+    if (at > k) at = k;
+    const char *p = s;
+    for (int i = 0; i < at && *p; i++)
+        utf8_next(&p);
+    draw_fit(p, x, y, maxw, scale, c);
+}
+
 void text_draw_clip(const char *s, float x, float y, float maxw, float scale, u32 c) {
     if (text_width(s, scale) <= maxw) { text_draw(s, x, y, scale, c); return; }
+    if (!g_clip_ell) { // se lee entero desplazándose (salvo en las filas no marcadas de una lista)
+        text_draw_ticker(s, x, y, maxw, scale, c, (float)(osGetTime() % 3600000) / 1000.0f);
+        return;
+    }
     float ell = glyph_w('.', scale) * 3;
     float w = 0;
     const char *p = s, *last = s;

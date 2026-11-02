@@ -75,6 +75,10 @@ void  text_draw_n(const char *s, int n, float x, float y, float scale, u32 c);
 void  text_draw_center(const char *s, float cx, float y, float scale, u32 c);
 void  text_draw_right(const char *s, float rx, float y, float scale, u32 c);
 void  text_draw_clip(const char *s, float x, float y, float maxw, float scale, u32 c);
+/* si no cabe: g_clip_ell = «…» (filas no marcadas de una lista); si no, se desplaza para leerlo entero */
+extern bool g_clip_ell;
+void  text_draw_ticker(const char *s, float x, float y, float maxw, float scale, u32 c, float t);
+float text_ticker_time(const char *s, float maxw, float scale); /* segundos de una pasada (0 si cabe) */
 void  text_draw_grad(const char *s, float x, float y, float scale, float phase, float alpha);
 int   text_wrap_lines(const char *s, float maxw, float scale, int maxlines, float x, float y, u32 c, bool draw);
 

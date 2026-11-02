@@ -1470,6 +1470,7 @@ static void tab_activity(void)
 		float y = VIEW_Y + i * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
+		g_clip_ell = l->sel != i; // solo la marcada se desplaza si no cabe
 		if (i < nd) {
 			const DlItem *d = &DS.it[nd - 1 - i];
 			bool t = row(l, i, y, RH);
@@ -1504,6 +1505,7 @@ static void tab_activity(void)
 		text_draw_clip(sub, 50, y + 22, BOT_W - 64, TS_SUB, T.text3);
 	}
 	gfx_clip_off();
+	g_clip_ell = false;
 }
 
 static void ask_revoke(int d)
@@ -1539,6 +1541,7 @@ static void tab_devices(void)
 			continue;
 		const Device *d = &V.dev[idx[i]];
 		bool on = dev_online(d);
+		g_clip_ell = !(l->sel == i || !strcmp(U.dev_tok, d->token)); // solo la marcada se desplaza si no cabe
 		// a la derecha, Renombrar (lápiz) y Desvincular; se comprueban antes que la fila
 		float bw = 74, bh = 26, bx = BOT_W - 14 - bw, by = y + (RH - bh) / 2;
 		float ex = bx - 8 - bh;
@@ -1586,6 +1589,7 @@ static void tab_devices(void)
 			util_strlcpy(U.dev_tok, d->token, sizeof U.dev_tok);
 	}
 	gfx_clip_off();
+	g_clip_ell = false;
 }
 
 // ------------------------------------------------------------ explorador (pestaña Archivos)
@@ -4958,6 +4962,7 @@ static void tab_files(void)
 		IconId ic;
 		u32 col;
 		f_kind(e, &ic, &col);
+		g_clip_ell = !selected; // solo el marcado se desplaza si no cabe
 		const Texture *thumb = th_get(v->idx);
 		if (grid) { // casilla: icono o miniatura grande y el nombre debajo
 			bool tp = inview && touch_in(v->x, y, v->w, v->h);
@@ -5067,6 +5072,7 @@ static void tab_files(void)
 			open = i;
 	}
 	gfx_clip_off();
+	g_clip_ell = false;
 	float my = VIEW_Y + (f_chips_shown() ? 44 : 0) - F.off;
 	if (F.missing) {
 		// acceso rápido a una carpeta que aún no existe: se ofrece crearla, como en la web
@@ -6489,6 +6495,7 @@ static void draw_tabbar(void)
 static void draw_bottom(void)
 {
 	gfx_target(g_bot, T.bg);
+	g_clip_ell = false;
 	if (U.splash >= 0) {
 		splash_bot(1);
 		return;
