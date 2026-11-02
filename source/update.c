@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <strings.h>
 
 #ifndef UPDATE_URL
 #define UPDATE_URL "https://api.github.com/repos/venomshine/Cloud3DS/releases/latest"
@@ -28,7 +30,8 @@
 #define MAX_JSON  (512 * 1024)
 #define MAX_FILE  (32 * 1024 * 1024)
 
-enum { CMD_NONE, CMD_CHECK, CMD_INSTALL, CMD_QUIT };
+enum { CMD_NONE, CMD_CHECK, CMD_INSTALL, CMD_FILE, CMD_QUIT };
+#define SELF_TID 0x000400000C13D500ull
 
 static struct {
 	LightLock lock;
@@ -39,6 +42,7 @@ static struct {
 	UpdInfo i;
 	char url_file[512], url_sha[512], asset[32];
 	char self[256]; /* ruta del .3dsx abierto, si lo es */
+	char file[300]; /* actualizar desde este archivo de la SD (CMD_FILE) */
 } U;
 
 static void set_state(int st, const char *err)
@@ -337,6 +341,179 @@ static void do_install(void)
 		set_state(UPD_DONE, NULL);
 }
 
+/* ---------- desde un archivo de la SD ----------
+ * El mismo CIA (o .3dsx) de Cloud3DS que se publica: pasado al PC a la SD, o subido desde la
+ * web. Del CIA manda su ID de título, no el nombre del archivo, y se instala a trozos desde la SD. */
+static const char *install_cia_file(const char *path)
+{
+	Handle in;
+	char sp[320];
+	snprintf(sp, sizeof sp, "%s", path);
+	FS_Path fp = fsMakePath(PATH_ASCII, sp);
+	FS_Archive sd;
+	if (R_FAILED(FSUSER_OpenArchive(&sd, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""))))
+		return "io";
+	Result r = FSUSER_OpenFile(&in, sd, fp, FS_OPEN_READ, 0);
+	FSUSER_CloseArchive(sd);
+	if (R_FAILED(r))
+		return "not_found";
+	u64 size = 0;
+	FSFILE_GetSize(in, &size);
+	const char *e = NULL;
+	if (R_FAILED(amInit())) {
+		FSFILE_Close(in);
+		return "am";
+	}
+	AM_TitleEntry te;
+	if (R_FAILED(AM_GetCiaFileInfo(MEDIATYPE_SD, &te, in)))
+		e = "bad_cia";
+	else if (te.titleID != SELF_TID)
+		e = "not_self";
+	Handle h = 0;
+	if (!e && R_FAILED(r = AM_StartCiaInstall(MEDIATYPE_SD, &h))) {
+		util_log("update: AM_StartCiaInstall 0x%08lX", (unsigned long)r);
+		e = "am";
+		h = 0;
+	}
+	u8 *buf = e ? NULL : malloc(256 * 1024);
+	if (!e && !buf)
+		e = "memory";
+	LightLock_Lock(&U.lock);
+	U.i.total = size, U.i.done = 0;
+	LightLock_Unlock(&U.lock);
+	for (u64 off = 0; !e && off < size;) {
+		u32 got = 0, w = 0, want = size - off > 256 * 1024 ? 256 * 1024 : (u32)(size - off);
+		if (R_FAILED(FSFILE_Read(in, &got, off, buf, want)) || !got) {
+			e = "io";
+			break;
+		}
+		if (R_FAILED(r = FSFILE_Write(h, &w, off, buf, got, 0)) || w != got) {
+			util_log("update: escribir 0x%08lX", (unsigned long)r);
+			e = "am";
+			break;
+		}
+		off += got;
+		LightLock_Lock(&U.lock);
+		U.i.done = off;
+		U.i.rev++;
+		LightLock_Unlock(&U.lock);
+	}
+	free(buf);
+	FSFILE_Close(in);
+	if (e && h)
+		AM_CancelCIAInstall(h);
+	else if (!e && R_FAILED(r = AM_FinishCiaInstall(h))) {
+		util_log("update: AM_FinishCiaInstall 0x%08lX", (unsigned long)r);
+		e = R_DESCRIPTION(r) == 39 ? "older" : "am";
+	}
+	amExit();
+	return e;
+}
+
+static void do_install_file(void)
+{
+	char path[300];
+	LightLock_Lock(&U.lock);
+	util_strlcpy(path, U.file, sizeof path);
+	LightLock_Unlock(&U.lock);
+	set_state(UPD_INSTALLING, NULL);
+	const char *e;
+	if (envIsHomebrew()) { // abierto como .3dsx: se cambia el .3dsx por el elegido
+		char sp[320];
+		snprintf(sp, sizeof sp, "sdmc:%s", path);
+		FILE *f = fopen(sp, "rb");
+		u8 *d = NULL;
+		long n = 0;
+		if (f && !fseek(f, 0, SEEK_END) && (n = ftell(f)) > 0 && n < MAX_FILE && !fseek(f, 0, SEEK_SET) && (d = malloc(n)) &&
+		    fread(d, 1, n, f) == (size_t)n && n > 4 && !memcmp(d, "3DSX", 4))
+			e = install_3dsx(d, n);
+		else
+			e = "bad_file";
+		if (f)
+			fclose(f);
+		free(d);
+	} else
+		e = install_cia_file(path);
+	util_log("update: desde %s -> %s", path, e ? e : "ok");
+	if (e)
+		set_state(UPD_ERROR, e);
+	else
+		set_state(UPD_DONE, NULL);
+}
+
+static int scan_dir(const char *dir, UpdLocal *out, int n, int max, bool cia)
+{
+	char sp[320];
+	snprintf(sp, sizeof sp, "sdmc:%s", dir);
+	DIR *d = opendir(sp);
+	if (!d)
+		return n;
+	struct dirent *de;
+	while (n < max && (de = readdir(d))) {
+		size_t l = strlen(de->d_name);
+		const char *ext = cia ? ".cia" : ".3dsx";
+		size_t el = strlen(ext);
+		if (l <= el || strcasecmp(de->d_name + l - el, ext))
+			continue;
+		UpdLocal *u = &out[n];
+		memset(u, 0, sizeof *u);
+		snprintf(u->path, sizeof u->path, "%s%s%s", dir, strcmp(dir, "/") ? "/" : "", de->d_name);
+		if (cia) { // del CIA manda su ID de título
+			Handle fh;
+			FS_Archive sd;
+			bool ok = false;
+			if (R_SUCCEEDED(FSUSER_OpenArchive(&sd, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, "")))) {
+				if (R_SUCCEEDED(FSUSER_OpenFile(&fh, sd, fsMakePath(PATH_ASCII, u->path), FS_OPEN_READ, 0))) {
+					AM_TitleEntry te;
+					if (R_SUCCEEDED(AM_GetCiaFileInfo(MEDIATYPE_SD, &te, fh)) && te.titleID == SELF_TID) {
+						snprintf(u->ver, sizeof u->ver, "%u.%u.%u", te.version >> 10, (te.version >> 4) & 0x3F, te.version & 0xF);
+						ok = true;
+					}
+					FSFILE_Close(fh);
+				}
+				FSUSER_CloseArchive(sd);
+			}
+			if (!ok)
+				continue;
+		} else if (strncasecmp(de->d_name, "Cloud3DS", 8)) // un .3dsx: por el nombre
+			continue;
+		n++;
+	}
+	closedir(d);
+	return n;
+}
+
+int upd_find_local(UpdLocal *out, int max)
+{
+	static const char *const DIRS[] = {"/", "/cias", "/CIAs", "/Descargas", "/Downloads", "/3ds", "/3ds/Cloud3DS"};
+	bool cia = !envIsHomebrew();
+	int n = 0;
+	if (cia && R_FAILED(amInit()))
+		return 0;
+	for (size_t i = 0; i < sizeof DIRS / sizeof DIRS[0] && n < max; i++) {
+		bool dup = false; // /cias y /CIAs pueden ser la misma
+		for (size_t k = 0; k < i; k++)
+			dup |= !strcasecmp(DIRS[k], DIRS[i]);
+		if (!dup)
+			n = scan_dir(DIRS[i], out, n, max, cia);
+	}
+	if (cia)
+		amExit();
+	return n;
+}
+
+void upd_install_file(const char *path)
+{
+	if (upd_busy())
+		return;
+	LightLock_Lock(&U.lock);
+	util_strlcpy(U.file, path, sizeof U.file);
+	U.i.done = U.i.total = 0;
+	LightLock_Unlock(&U.lock);
+	U.cmd = CMD_FILE;
+	LightEvent_Signal(&U.ev);
+}
+
 /* ---------- hilo ---------- */
 
 static void upd_thread(void *arg)
@@ -352,6 +529,8 @@ static void upd_thread(void *arg)
 			do_check();
 		else if (c == CMD_INSTALL)
 			do_install();
+		else if (c == CMD_FILE)
+			do_install_file();
 	}
 }
 

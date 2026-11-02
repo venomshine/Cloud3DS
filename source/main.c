@@ -77,6 +77,14 @@ static struct {
 
 enum { QA_CONNECT, QA_SCAN, QA_LINK, QA_N };
 static void qa_top(float a);
+
+// actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
+static struct {
+	bool open, just;
+	float anim;
+	int sel, n;
+	UpdLocal f[6];
+} UL;
 static void settings_top(float a);
 static void settings_sub_top(float a);
 
@@ -87,7 +95,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART };
 
 typedef struct {
 	float off, target;
@@ -433,6 +441,14 @@ static const char *upd_err_text(const char *e)
 		return _("La consola no pudo instalar la actualización. Prueba de nuevo o instálala con FBI.");
 	if (!strcmp(e, "io"))
 		return _("No se pudo escribir en la tarjeta SD.");
+	if (!strcmp(e, "not_self"))
+		return _("Ese CIA no es de Cloud3DS.");
+	if (!strcmp(e, "older"))
+		return _("Ese archivo es de una versión anterior a la instalada: la consola no deja bajar de versión.");
+	if (!strcmp(e, "bad_cia") || !strcmp(e, "bad_file"))
+		return _("El archivo está dañado o no es válido.");
+	if (!strcmp(e, "not_found"))
+		return _("El archivo ya no está en la SD.");
 	return _("No se pudo completar. Inténtalo de nuevo más tarde.");
 }
 
@@ -527,7 +543,7 @@ static void text_draw_center_clip(const char *t, float cx, float y, float maxw, 
 // se puede instalar: ni Cloud3DS (va por Actualizaciones) ni bajar de versión (AM no deja)
 static bool ins_can(const InsReq *r)
 {
-	return !r->self && !(r->inst_ver >= 0 && r->inst_ver > r->ver);
+	return !(r->inst_ver >= 0 && r->inst_ver > r->ver);
 }
 
 static const InsReq *ins_first_pending(void)
@@ -545,8 +561,8 @@ static void ins_version_line(const InsReq *r, char *out, size_t n, u32 *col)
 	ins_ver_text(r->ver, a, sizeof a);
 	*col = T.text3;
 	if (r->self) {
-		util_strlcpy(out, _("Es Cloud3DS: actualízala desde Ajustes → Actualizaciones."), n);
-		*col = T.warn;
+		snprintf(out, n, _("Es Cloud3DS %s: se instalará como actualización y luego se reinicia."), a);
+		*col = T.ok;
 	} else if (r->inst_ver < 0) {
 		snprintf(out, n, _("Versión %s · no está instalado"), a);
 	} else if (r->inst_ver == r->ver) {
@@ -660,7 +676,8 @@ static int ins_buttons(InsBtn *b)
 			up |= U.ins[i].uploaded;
 		}
 	int n = 0;
-	b[n++] = (InsBtn){GLYPH_A, U.ins_pend > 1 ? _("Instalar todos") : _("Instalar"), 0xFFFFFFFF, T.ok, can, INS_ACCEPT, KEY_A};
+	const InsReq *f = ins_first_pending();
+	b[n++] = (InsBtn){GLYPH_A, U.ins_pend > 1 ? _("Instalar todos") : f && f->self ? _("Actualizar Cloud3DS") : _("Instalar"), 0xFFFFFFFF, T.ok, can, INS_ACCEPT, KEY_A};
 	if (up) {
 		b[n++] = (InsBtn){GLYPH_X, _("Solo copiar a la SD"), T.text, T.surface2, true, INS_KEEP, KEY_X};
 		b[n++] = (InsBtn){GLYPH_B, _("Cancelar la copia"), T.danger, col_alpha(T.danger, 0.16f), true, INS_REJECT, KEY_B};
@@ -728,12 +745,22 @@ static bool install_input(void)
 	bool up = false;
 	for (int i = 0; i < U.ins_n; i++)
 		up |= U.ins[i].st == INS_PENDING && U.ins[i].uploaded;
+	// Cloud3DS no se instala por la cola: va al actualizador (y luego se ofrece reiniciar)
+	bool self_upd = false;
+	for (int i = 0; i < U.ins_n; i++)
+		if (U.ins[i].st == INS_PENDING && U.ins[i].self && what == INS_ACCEPT && ins_can(&U.ins[i]) && !upd_busy()) {
+			upd_install_file(U.ins[i].path);
+			ins_decide(U.ins[i].id, INS_KEEP);
+			self_upd = true;
+		}
 	ins_decide(-1, what);
 	ins_refresh();
 	// el toque que decidió no sigue a lo de debajo (el botón del QR está justo bajo el último)
 	g_kdown &= ~(KEY_A | KEY_B | KEY_X);
 	g_touch.up = false;
-	if (what == INS_ACCEPT)
+	if (self_upd)
+		toast_icon(_("Actualizando Cloud3DS…"), IC_DOWNLOAD, T.ok);
+	else if (what == INS_ACCEPT)
 		toast_icon(_("Instalando…"), IC_DOWNLOAD, T.ok);
 	else if (what == INS_KEEP)
 		toast_icon(_("Copiado a la SD sin instalar"), IC_FOLDER, T.accent);
@@ -5679,9 +5706,20 @@ static void fa_run(int a)
 		// elegido aquí mismo: no hace falta la tarjeta de confirmación, salvo que no se pueda
 		InsReq r;
 		ins_peek(full, &r);
-		if (r.self || (r.inst_ver >= 0 && r.inst_ver > r.ver)) {
+		if (r.self && !(r.inst_ver >= 0 && r.inst_ver > r.ver)) { // Cloud3DS: con el actualizador
 			ins_decide(id, INS_KEEP);
-			toast_icon(r.self ? _("Cloud3DS se actualiza desde Ajustes → Actualizaciones") : _("Ya tienes una versión más nueva instalada"), IC_INFO, T.warn);
+			UL.n = 1;
+			util_strlcpy(UL.f[0].path, full, sizeof UL.f[0].path);
+			ins_ver_text(r.ver, UL.f[0].ver, sizeof UL.f[0].ver);
+			char msg[400];
+			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS v%s desde %s. No apagues la consola mientras tanto."), UL.f[0].ver, full);
+			U.dlg_arg = 0;
+			dialog_open(DLG_UPDFILE, _("¿Actualizar desde la SD?"), msg, _("Actualizar"), false);
+			return;
+		}
+		if (r.inst_ver >= 0 && r.inst_ver > r.ver) {
+			ins_decide(id, INS_KEEP);
+			toast_icon(_("Ya tienes una versión más nueva instalada"), IC_INFO, T.warn);
 			return;
 		}
 		ins_decide(id, INS_ACCEPT);
@@ -6753,26 +6791,58 @@ static void settings_pin(void)
 	                BOT_W - 40, TS_SUB, 3, 20, y, T.text3, true);
 }
 
+
+static void ul_draw(void)
+{
+	IconId ic[6];
+	const char *lab[6];
+	char tx[6][96];
+	u32 col[6];
+	for (int i = 0; i < UL.n; i++) {
+		const char *b = strrchr(UL.f[i].path, '/');
+		if (UL.f[i].ver[0])
+			snprintf(tx[i], sizeof tx[i], "v%s · %s", UL.f[i].ver, b ? b + 1 : UL.f[i].path);
+		else
+			snprintf(tx[i], sizeof tx[i], "%s", b ? b + 1 : UL.f[i].path);
+		ic[i] = IC_DOWNLOAD, lab[i] = tx[i], col[i] = T.ok;
+	}
+	int r = sheet_list(&UL.open, &UL.just, &UL.anim, &UL.sel, _("Elige el archivo"), ic, lab, col, UL.n);
+	if (r >= 0 && r < UL.n) {
+		char msg[400];
+		if (UL.f[r].ver[0])
+			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS v%s desde %s. No apagues la consola mientras tanto."), UL.f[r].ver, UL.f[r].path);
+		else
+			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS desde %s. No apagues la consola mientras tanto."), UL.f[r].path);
+		U.dlg_arg = r;
+		dialog_open(DLG_UPDFILE, _("¿Actualizar desde la SD?"), msg, _("Actualizar"), false);
+	}
+}
+
 static void settings_update(void)
 {
 	List *l = cur_list();
 	tab_header(_("Actualizaciones"), true);
 	const float RH = 44;
-	list_update(l, 2, RH);
+	enum { R_MAIN, R_FILE, R_AUTO, R_N };
+	list_update(l, R_N, RH);
 	U.t_upd = approach(U.t_upd, V.upd_auto ? 1 : 0, 14);
 	bool busy = U.upd.st == UPD_DOWNLOADING || U.upd.st == UPD_INSTALLING || U.upd.st == UPD_CHECKING;
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < R_N; i++) {
 		float y = VIEW_Y + i * RH - l->off;
 		bool t = row(l, i, y, RH);
 		const char *title, *sub;
 		char tb[64];
 		IconId ic;
 		u32 col;
-		if (i == 1) {
+		if (i == R_AUTO) {
 			title = _("Buscar al abrir la app");
 			sub = _("Consulta GitHub en segundo plano");
 			ic = IC_CLOCK, col = T.accent2;
 			toggle(BOT_W - 52, y + RH / 2 - 10, U.t_upd);
+		} else if (i == R_FILE) {
+			title = _("Instalar desde un archivo");
+			sub = envIsHomebrew() ? _("Un Cloud3DS .3dsx que hayas pasado a la SD") : _("El CIA de Cloud3DS que hayas pasado a la SD");
+			ic = IC_FOLDER, col = busy ? T.text3 : T.warn;
 		} else if (U.upd.st == UPD_AVAILABLE && U.upd.has_file) {
 			snprintf(tb, sizeof tb, _("Actualizar a la versión %s"), U.upd.latest);
 			title = tb, sub = _("Se descarga, se comprueba y se instala");
@@ -6786,14 +6856,24 @@ static void settings_update(void)
 			sub = tb, ic = IC_REFRESH, col = busy ? T.text3 : T.accent;
 		}
 		row_icon(28, y + RH / 2, ic, col);
-		text_draw_clip(title, 50, y + 6, i == 1 ? BOT_W - 120 : BOT_W - 66, TS_BODY, busy && i == 0 ? T.text3 : T.text);
-		text_draw_clip(sub, 50, y + 23, i == 1 ? BOT_W - 120 : BOT_W - 66, TS_SUB, T.text3);
+		float tw = i == R_AUTO ? BOT_W - 120 : BOT_W - 66;
+		text_draw_clip(title, 50, y + 6, tw, TS_BODY, busy && i != R_AUTO ? T.text3 : T.text);
+		text_draw_clip(sub, 50, y + 23, tw, TS_SUB, T.text3);
+		if (i == R_FILE)
+			draw_icon(IC_CHEV_RIGHT, BOT_W - 20, y + RH / 2, 12, T.text3);
 		if (!(t || activate(l, i)))
 			continue;
-		if (i == 1) {
+		if (i == R_AUTO) {
 			set_flag(&G.upd_auto);
 		} else if (busy) {
 			continue;
+		} else if (i == R_FILE) {
+			UL.n = upd_find_local(UL.f, 6);
+			if (!UL.n)
+				toast_icon(envIsHomebrew() ? _("No hay ningún Cloud3DS .3dsx en la SD") : _("No hay ningún CIA de Cloud3DS en /cias, /Descargas ni en la raíz"),
+				           IC_INFO, T.warn);
+			else
+				UL.open = UL.just = true, UL.sel = 0;
 		} else if (U.upd.st == UPD_AVAILABLE && U.upd.has_file) {
 			char msg[200];
 			snprintf(msg, sizeof msg, _("Se descargará la versión %s desde GitHub, se comprobará y se instalará. No apagues la consola mientras tanto."),
@@ -7032,7 +7112,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	bool overlay = QA.open || DVS.open || FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
+	bool overlay = QA.open || DVS.open || UL.open || FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
 	if (overlay) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
@@ -7087,6 +7167,8 @@ static void draw_bottom(void)
 	ds_draw();
 	if (U.tab == TAB_DEVICES)
 		dvs_draw();
+	if (U.tab == TAB_SETTINGS)
+		ul_draw();
 	music_sheet();
 	qa_draw();
 	qrs_draw();
@@ -7134,6 +7216,12 @@ static void handle_dialog(int ctx, bool ok)
 				event_add(EV_DELETE, F.e[i].name, G.console, 0);
 			}
 		}
+	} else if (ctx == DLG_UPDRESTART) {
+		aptSetChainloaderToSelf(); // vuelve a abrir Cloud3DS, ya con la versión nueva
+		U.quit = true;
+	} else if (ctx == DLG_UPDFILE) {
+		if (U.dlg_arg >= 0 && U.dlg_arg < UL.n)
+			upd_install_file(UL.f[U.dlg_arg].path);
 	} else if (ctx == DLG_DLINSECURE) {
 		dl_op((u32)U.dlg_arg, DL_INSECURE);
 	} else if (ctx == DLG_UNINSTALL && U.dlg_arg >= 0 && U.dlg_arg < TI_n) {
@@ -7798,7 +7886,12 @@ int main(int argc, char **argv)
 
 		watch_events();
 		s_events_seen = true;
+		int upd_was = U.upd.st;
 		upd_get(&U.upd);
+		// actualizada desde un archivo o desde GitHub: se ofrece reiniciar ya (si se abrió como CIA)
+		if (U.upd.st == UPD_DONE && upd_was != UPD_DONE && !envIsHomebrew() && !g_dialog.open)
+			dialog_open(DLG_UPDRESTART, _("Cloud3DS se ha actualizado"), _("Se usará la nueva versión al volver a abrirla. ¿Reiniciar Cloud3DS ahora?"),
+			            _("Reiniciar"), false);
 		static int ins_tick;
 		if (U.ins_pend || ins_busy() || ++ins_tick % 20 == 0) { // la cola solo se copia entera cuando hace falta
 			int before = U.ins_pend;

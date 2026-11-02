@@ -30,3 +30,11 @@ void upd_get(UpdInfo *out);
 bool upd_busy(void);
 bool upd_newer(const char *a, const char *b); /* a > b */
 void upd_exit(void);
+
+/* actualizar desde un archivo de la SD: el CIA de Cloud3DS (por su ID) o, abierto como .3dsx, un Cloud3DS*.3dsx */
+typedef struct {
+	char path[300];
+	char ver[16]; /* del CIA; vacío en un .3dsx */
+} UpdLocal;
+int  upd_find_local(UpdLocal *out, int max); /* busca en /, /cias, /Descargas, /3ds… */
+void upd_install_file(const char *path);

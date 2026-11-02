@@ -1892,4 +1892,64 @@ TR = {
     'Los .cia se instalan mientras se descargan, como en FBI. El resto se guarda en %s.':
         ('.cia files install while they download, like in FBI. Everything else is saved to %s.',
          '.ciaはFBIと同じくダウンロードしながらインストールされます。それ以外は %s に保存されます。'),
+    'Ese CIA no es de Cloud3DS.':
+        ("That CIA isn't Cloud3DS.",
+         'そのCIAはCloud3DSではありません。'),
+    'Ese archivo es de una versión anterior a la instalada: la consola no deja bajar de versión.':
+        ("That file is an older version than the one installed: the console doesn't allow downgrading.",
+         'そのファイルはインストール済みより古いバージョンです。本体はダウングレードできません。'),
+    'El archivo está dañado o no es válido.':
+        ('The file is damaged or invalid.',
+         'ファイルが破損しているか、無効です。'),
+    'El archivo ya no está en la SD.':
+        ('The file is no longer on the SD card.',
+         'ファイルがSDカードにもうありません。'),
+    'Elige el archivo':
+        ('Choose the file',
+         'ファイルを選択'),
+    'Se instalará Cloud3DS v%s desde %s. No apagues la consola mientras tanto.':
+        ("Cloud3DS v%s will be installed from %s. Don't turn off the console in the meantime.",
+         'Cloud3DS v%s を %s からインストールします。その間は本体の電源を切らないでください。'),
+    'Se instalará Cloud3DS desde %s. No apagues la consola mientras tanto.':
+        ("Cloud3DS will be installed from %s. Don't turn off the console in the meantime.",
+         '%s からCloud3DSをインストールします。その間は本体の電源を切らないでください。'),
+    '¿Actualizar Cloud3DS desde la SD?':
+        ('Update Cloud3DS from the SD card?',
+         'SDカードからCloud3DSを更新しますか？'),
+    'Instalar desde un archivo':
+        ('Install from a file',
+         'ファイルからインストール'),
+    'Un Cloud3DS .3dsx que hayas pasado a la SD':
+        ('A Cloud3DS .3dsx you copied to the SD card',
+         'SDカードにコピーしたCloud3DSの.3dsx'),
+    'El CIA de Cloud3DS que hayas pasado a la SD':
+        ('The Cloud3DS CIA you copied to the SD card',
+         'SDカードにコピーしたCloud3DSのCIA'),
+    'No hay ningún Cloud3DS .3dsx en la SD':
+        ("There's no Cloud3DS .3dsx on the SD card",
+         'SDカードにCloud3DSの.3dsxがありません'),
+    'No hay ningún CIA de Cloud3DS en /cias, /Descargas ni en la raíz':
+        ("There's no Cloud3DS CIA in /cias, /Descargas or the root",
+         '/cias、/Descargas、ルートにCloud3DSのCIAがありません'),
+    'Es Cloud3DS %s: se instalará como actualización y luego se reinicia.':
+        ('This is Cloud3DS %s: it will be installed as an update, then restarted.',
+         'これはCloud3DS %sです。アップデートとしてインストールし、その後再起動します。'),
+    'Actualizar Cloud3DS':
+        ('Update Cloud3DS',
+         'Cloud3DSを更新'),
+    'Actualizando Cloud3DS…':
+        ('Updating Cloud3DS…',
+         'Cloud3DSを更新中…'),
+    'Cloud3DS se ha actualizado':
+        ('Cloud3DS has been updated',
+         'Cloud3DSを更新しました'),
+    'Se usará la nueva versión al volver a abrirla. ¿Reiniciar Cloud3DS ahora?':
+        ('The new version will be used when you open it again. Restart Cloud3DS now?',
+         '次に開いたときに新しいバージョンが使われます。今すぐCloud3DSを再起動しますか？'),
+    'Reiniciar':
+        ('Restart',
+         '再起動'),
+    '¿Actualizar desde la SD?':
+        ('Update from the SD card?',
+         'SDカードから更新しますか？'),
 }
