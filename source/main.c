@@ -98,6 +98,7 @@ static struct {
 	bool want_search;            // buscar desde la carpeta abierta (teclado)
 	bool want_dlurl;             // descargar un enlace escrito en la consola (teclado)
 	bool want_netname;           // cambiar el nombre en la red (teclado)
+	bool nav_eat;                // se cambió de carpeta en este frame: lo pulsado ya se usó
 	float t_mdns, t_fbi, t_shots; // animación de sus interruptores
 	int want_txt;                // editor de texto: 1 editar la línea, 2 añadir una debajo
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
@@ -2230,6 +2231,12 @@ static void sr_close(void)
 
 static void f_load(const char *path)
 {
+	// la pulsación (A o el dedo) que lleva a otra carpeta se queda aquí: si siguiera, abriría lo que quede debajo en la nueva
+	if (strcmp(F.path, path)) {
+		g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y);
+		g_touch.up = false;
+		U.nav_eat = true;
+	}
 	if (!F.e)
 		F.e = malloc(sizeof(FEnt) * F_MAX);
 	if (!F.e)
