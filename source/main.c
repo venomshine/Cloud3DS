@@ -4103,7 +4103,8 @@ static struct {
 	bool open;
 	float anim;
 	int idx;     // elemento de F.e
-	int acts[8], n, sel, color;
+	int acts[12], n, sel, color;
+	char name[128]; // de qué es: si la lista se vuelve a leer con el menú abierto, se busca otra vez por el nombre
 	bool just;   // se acaba de abrir: el toque o el botón que lo abrió no cuenta
 } FM;
 
@@ -4113,6 +4114,7 @@ static void f_menu_open(void)
 	if (!e)
 		return;
 	FM.idx = F.v[F.sel].idx;
+	util_strlcpy(FM.name, e->name, sizeof FM.name);
 	FM.n = 0;
 	bool locked = e->sys && V.protect_sys;
 	if (!e->dir && !strcasecmp(f_ext(e->name), "cia"))
@@ -4371,6 +4373,16 @@ static void f_menu(void)
 	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
 	if (!FM.open)
 		return;
+	if (FM.idx >= F.n || strcmp(F.e[FM.idx].name, FM.name)) { // la carpeta cambió (web, copia…): el mismo de antes
+		int k;
+		for (k = 0; k < F.n && strcmp(F.e[k].name, FM.name); k++)
+			;
+		if (k == F.n) { // ya no está
+			FM.open = false;
+			return;
+		}
+		FM.idx = k;
+	}
 	const FEnt *e = &F.e[FM.idx];
 	static const u32 MK[7] = {0, 0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
 	int run = -1, close = 0;
