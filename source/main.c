@@ -68,6 +68,16 @@
 #define BODY_B   (SCR_H - 8 - SDB_H - 6)
 static float g_info_ymax = 1e9f; // info_row: las filas que no caben (las menos importantes van al final) no se dibujan
 
+// hoja del botón central (ver qa_draw)
+static struct {
+	bool open, just;
+	float anim;
+	int sel;
+} QA = {.sel = 1};
+
+enum { QA_CONNECT, QA_SCAN, QA_LINK, QA_N };
+static void qa_top(float a);
+
 #define ABOUT_TEXT "Tu nube local para Nintendo 3DS. Gestiona la tarjeta SD desde el móvil o el PC con solo escanear un código QR: sin apps, sin cables y sin configuración. Tus archivos no salen de tu red local; solo se consulta GitHub para buscar actualizaciones."
 
 enum { TAB_FILES, TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
@@ -1344,6 +1354,8 @@ static void draw_top(void)
 			sd_bar(mini);
 		if (mini > 0.01f && U.ins_pend)
 			install_top(mini);
+		else if (mini > 0.01f && QA.anim > 0.01f)
+			qa_top(mini);
 		else if (mini > 0.01f && MU.open)
 			music_top(mini);
 		else if (U.tab == TAB_FILES && mini > 0.01f)
@@ -1549,34 +1561,19 @@ static void tab_activity(void)
 	const float RH = 40;
 	ds_refresh();
 	int nd = DS.n; // las descargas, arriba (la más reciente primero)
-	enum { NA = 2 }; // primero, a la vista: descargar de un enlace y escanear un QR
+	enum { NA = 0 }; // descargar y escanear van en el botón central
 	int rows = NA + n + nd;
 	list_update(l, rows, RH);
+	if (!rows) {
+		empty_state(IC_CLOUD, _("Todo listo"), _("Aquí verás lo que se sube, se descarga o se instala. Para traer algo, usa el botón central."));
+		return;
+	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
 	for (int r = 0; r < rows; r++) {
 		float y = VIEW_Y + r * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
 		g_clip_ell = l->sel != r; // solo la marcada se desplaza si no cabe
-		if (r < NA) {
-			bool t = row(l, r, y, RH);
-			static const IconId aic[NA] = {IC_GLOBE, IC_QR};
-			const char *at[NA] = {_("Descargar de un enlace"), _("Escanear un QR")};
-			const char *as[NA] = {_("Un archivo o la última versión de un proyecto de GitHub"), _("Con la cámara, como en FBI")};
-			draw_circle(28, y + RH / 2, 13, col_alpha(T.accent, 0.16f));
-			draw_icon(aic[r], 28, y + RH / 2, 15, T.accent);
-			text_draw_clip(at[r], 50, y + 5, BOT_W - 64, TS_BODY, T.accent);
-			text_draw_clip(as[r], 50, y + 22, BOT_W - 64, TS_SUB, T.text3);
-			if (r == NA - 1)
-				draw_rect(14, y + RH - 0.5f, BOT_W - 28, 1, T.divider);
-			if (!g_dialog.open && (t || activate(l, r))) {
-				if (r == 0)
-					U.want_dlurl = true;
-				else
-					qrs_open();
-			}
-			continue;
-		}
 		int i = r - NA;
 		if (i < nd) {
 			const DlItem *d = &DS.it[nd - 1 - i];
@@ -1613,11 +1610,6 @@ static void tab_activity(void)
 	}
 	gfx_clip_off();
 	g_clip_ell = false;
-	if (!n && !nd) { // nada más: lo que se verá aquí
-		float cy = VIEW_Y + NA * RH - l->off + 34;
-		draw_icon(IC_CLOUD, BOT_W / 2, cy, 22, T.text3);
-		wrap_center(_("Aquí verás lo que subas o descargues desde tu móvil o tu PC."), BOT_W / 2, cy + 20, 260, TS_SUB, 3, T.text3);
-	}
 }
 
 static void ask_revoke(int d)
@@ -6639,6 +6631,126 @@ static void qr_toggle(void)
 	state_unlock();
 }
 
+// botón central: «Traer a la consola», con las tres formas de traer algo (conectar un
+// dispositivo, escanear un QR o descargar un enlace) en tarjetas grandes
+
+static void qa_run(int i)
+{
+	QA.open = false;
+	if (i == QA_CONNECT)
+		qr_toggle();
+	else if (i == QA_SCAN)
+		qrs_open();
+	else
+		U.want_dlurl = true;
+}
+
+#define QA_H 138.0f
+static void qa_draw(void)
+{
+	QA.anim = approach(QA.anim, QA.open ? 1 : 0, 16);
+	if (QA.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(QA.anim);
+	float bottom = SCR_H - TABBAR_H;
+	draw_rect(0, 0, BOT_W, bottom, col_alpha(T.dim, a * 0.75f));
+	float x = 8, w = BOT_W - 16, y = bottom - 8 - QA_H + (1 - a) * 20;
+	draw_rrect(x, y + 4, w, QA_H, 18, col_alpha(T.shadow, a));
+	draw_rrect(x, y, w, QA_H, 18, T.surface);
+	text_draw(_("Traer a la consola"), x + 14, y + 12, TS_TITLE, T.text);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
+	float cw = text_width(cl, TS_SUB) + 18, cx = x + w - 10 - cw;
+	draw_rrect(cx, y + 10, cw, 20, 10, touch_in(cx, y + 6, cw, 28) ? T.divider : T.surface2);
+	text_draw_center(cl, cx + cw / 2, y + 20 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK};
+	const u32 col[QA_N] = {T.accent, T.ok, T.warn};
+	const char *lab[QA_N] = {V.qr_min ? _("Conectar") : _("Ocultar QR"), _("Escanear QR"), _("Descargar")};
+	// dos líneas, separadas por «\n»
+	const char *sub[QA_N] = {V.qr_min ? _("Móvil o PC\ncon QR y PIN") : _("Volver a la\ninformación"), _("Con la cámara,\ncomo en FBI"), _("Escribir\nun enlace")};
+	const float G = 8, TW = (w - 20 - 2 * G) / QA_N, TH = 96, ty = y + 36;
+	int run = -1;
+	for (int i = 0; i < QA_N; i++) {
+		float tx = x + 10 + i * (TW + G);
+		if (touch_in(tx, ty, TW, TH) && g_touch.down) // la de arriba explica la que se toca
+			QA.sel = i;
+		bool hot = QA.sel == i;
+		draw_rrect(tx, ty, TW, TH, 14, hot ? col_lerp(T.surface2, T.accent, 0.12f) : T.surface2);
+		if (hot)
+			draw_rrect_outline(tx, ty, TW, TH, 14, 1.5f, col_alpha(T.accent, 0.8f));
+		float icx = tx + TW / 2, icy = ty + 26;
+		draw_circle(icx, icy, 18, col_alpha(col[i], 0.16f));
+		draw_icon(ic[i], icx, icy, 18, col[i]);
+		text_draw_center_clip(lab[i], icx, ty + 50, TW - 8, TS_BODY, T.text);
+		char l1[64];
+		const char *nl = strchr(sub[i], '\n');
+		snprintf(l1, sizeof l1, "%.*s", nl ? (int)(nl - sub[i]) : (int)strlen(sub[i]), sub[i]);
+		text_draw_center_clip(l1, icx, ty + 66, TW - 8, 0.34f, T.text3);
+		if (nl)
+			text_draw_center_clip(nl + 1, icx, ty + 66 + text_lineh(0.34f), TW - 8, 0.34f, T.text3);
+		if (!QA.just && tap(tx, ty, TW, TH))
+			run = i;
+	}
+	if (!QA.open)
+		return;
+	bool fresh = QA.just;
+	QA.just = false;
+	if (fresh) {
+		g_kdown = 0;
+		g_touch.up = false;
+		return;
+	}
+	if (g_krepeat & KEY_RIGHT)
+		QA.sel = (QA.sel + 1) % QA_N;
+	if (g_krepeat & KEY_LEFT)
+		QA.sel = (QA.sel + QA_N - 1) % QA_N;
+	if (g_kdown & KEY_A)
+		run = QA.sel;
+	// el botón central (que ahora es una X) también la cierra
+	float fx = BOT_W / 2, fy = bottom + 8;
+	bool fab = tap(fx - 25, fy - 25, 50, SCR_H - (fy - 25));
+	if (run >= 0)
+		qa_run(run);
+	else if ((g_kdown & KEY_B) || fab || tap(cx, y + 6, cw, 28) ||
+	         (g_touch.up && !g_touch.drag && (g_touch.sy < y || (g_touch.sy >= bottom && !fab))))
+		QA.open = false;
+	g_kdown &= ~(KEY_A | KEY_B);
+	g_krepeat &= ~(KEY_LEFT | KEY_RIGHT);
+	g_touch.up = false;
+}
+
+// pantalla de arriba con la hoja abierta: qué hace la tarjeta marcada y dónde se guarda
+static const char *dl_dest_dir(const char *url);
+static void qa_top(float a)
+{
+	float y0 = BODY_Y, h = BODY_B - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	int i = QA.sel;
+	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK};
+	const u32 col[QA_N] = {T.accent, T.ok, T.warn};
+	const float X = CARD_X + 16, W = CARD_W - 32;
+	float cx = X + 26, cy = y0 + 16 + 26;
+	draw_circle(cx, cy, 26, col_alpha(col[i], 0.16f * a));
+	draw_icon(ic[i], cx, cy, 24, col_alpha(col[i], a));
+	float rx = X + 66, rw = X + W - rx, y = y0 + 14;
+	const char *t[QA_N] = {_("Conectar un dispositivo"), _("Escanear un código QR"), _("Descargar un enlace")};
+	const char *d[QA_N] = {_("Muestra arriba el código QR y el PIN. Escanéalo con el móvil o escribe la dirección en el navegador del PC: tienen que estar en la misma red Wi-Fi."),
+	                       _("Apunta la cámara de la consola a un código QR con un enlace, como los de las webs de homebrew o los de FBI."),
+	                       _("Escribe la dirección de un archivo o de un proyecto de GitHub; de GitHub se descarga su última versión.")};
+	text_draw_clip(t[i], rx, y, rw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 4;
+	y += text_wrap_lines(d[i], rw, TS_SUB, 3, rx, y, col_alpha(T.text2, a), true) * text_lineh(TS_SUB) + 4;
+	char note[200];
+	if (i == QA_CONNECT)
+		util_strlcpy(note, _("SELECT también lo muestra y lo oculta."), sizeof note);
+	else {
+		const char *dir = dl_dest_dir("");
+		snprintf(note, sizeof note, _("Los .cia se guardan en /cias y se pueden instalar al terminar. El resto, en %s."), !strcmp(dir, "/") ? _("la raíz de la SD") : dir);
+	}
+	text_wrap_lines(note, rw, TS_SUB, 2, rx, y, col_alpha(T.text3, a), true);
+}
+
 // barra de abajo: dos pestañas a cada lado y, en el centro, el botón del QR (como SELECT)
 #define QR_FAB 52.0f
 static float tab_x(int i)
@@ -6683,11 +6795,18 @@ static void draw_tabbar(void)
 		draw_circle(cx, cy, r, p ? T.surface2 : T.surface);
 		draw_arc(cx, cy, r, 1.5f, 0, 6.2832f, T.divider);
 	}
-	draw_icon(IC_QR, cx, cy, 20, open ? 0xFFFFFFFF : T.text2);
+	if (QA.anim > 0.01f) { // con la hoja abierta: una X para cerrarla
+		draw_circle(cx, cy, r, col_alpha(T.accent, QA.anim));
+		draw_icon(IC_CLOSE, cx, cy, 16, col_alpha(0xFFFFFFFF, QA.anim));
+	}
+	if (QA.anim < 0.99f)
+		draw_icon(IC_QR, cx, cy, 20, col_alpha(open ? 0xFFFFFFFF : T.text2, 1 - QA.anim));
 	if (p && g_touch.down)
 		draw_circle(cx, cy, r, col_alpha(0xFFFFFFFF, 0.15f));
-	if (!g_dialog.open && tap(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4)))
-		qr_toggle();
+	if (!g_dialog.open && !QA.open && tap(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4))) {
+		QA.open = QA.just = true;
+		QA.sel = V.qr_min ? 1 : 0;
+	}
 }
 
 static void draw_bottom(void)
@@ -6702,7 +6821,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	bool overlay = FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
+	bool overlay = QA.open || FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
 	if (overlay) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
@@ -6756,6 +6875,7 @@ static void draw_bottom(void)
 	}
 	ds_draw();
 	music_sheet();
+	qa_draw();
 	qrs_draw();
 	install_card();
 	dialog_draw();

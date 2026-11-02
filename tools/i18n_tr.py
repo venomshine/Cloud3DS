@@ -1754,4 +1754,55 @@ TR = {
     'Pedido desde %s':
         ('Requested from %s',
          '%s からのリクエスト'),
+    'Aquí verás lo que se sube, se descarga o se instala. Para traer algo, usa el botón central.':
+        ('Uploads, downloads and installs will appear here. To bring something in, use the center button.',
+         'アップロード、ダウンロード、インストールの記録がここに表示されます。何かを取り込むには中央のボタンを使います。'),
+    'Traer a la consola':
+        ('Bring to the console',
+         '本体に取り込む'),
+    'Conectar':
+        ('Connect',
+         '接続'),
+    'Ocultar QR':
+        ('Hide QR',
+         'QRを隠す'),
+    'Móvil o PC\ncon QR y PIN':
+        ('Phone or PC\nwith QR and PIN',
+         'スマホやPCと\nQRとPINで接続'),
+    'Volver a la\ninformación':
+        ('Back to the\ninfo view',
+         '情報表示に\n戻る'),
+    'Con la cámara,\ncomo en FBI':
+        ('With the camera,\nlike in FBI',
+         'カメラで読み取り\nFBIと同じ'),
+    'Escribir\nun enlace':
+        ('Type\na link',
+         'リンクを\n入力'),
+    'Conectar un dispositivo':
+        ('Connect a device',
+         '端末を接続'),
+    'Escanear un código QR':
+        ('Scan a QR code',
+         'QRコードを読み取る'),
+    'Descargar un enlace':
+        ('Download a link',
+         'リンクからダウンロード'),
+    'Muestra arriba el código QR y el PIN. Escanéalo con el móvil o escribe la dirección en el navegador del PC: tienen que estar en la misma red Wi-Fi.':
+        ('Shows the QR code and PIN on the top screen. Scan it with your phone or type the address in your PC browser; both must be on the same Wi-Fi network.',
+         '上画面にQRコードとPINを表示します。スマホで読み取るか、PCのブラウザにアドレスを入力してください。同じWi-Fiに接続している必要があります。'),
+    'Apunta la cámara de la consola a un código QR con un enlace, como los de las webs de homebrew o los de FBI.':
+        ('Point the console camera at a QR code with a link, such as those on homebrew sites or the ones FBI uses.',
+         '本体のカメラを、リンク入りのQRコード（自作ソフトのサイトやFBIで使うものなど）に向けてください。'),
+    'Escribe la dirección de un archivo o de un proyecto de GitHub; de GitHub se descarga su última versión.':
+        ('Type the address of a file or a GitHub project; for GitHub, the latest release is downloaded.',
+         'ファイルまたはGitHubプロジェクトのアドレスを入力します。GitHubの場合は最新リリースをダウンロードします。'),
+    'SELECT también lo muestra y lo oculta.':
+        ('SELECT also shows and hides it.',
+         'SELECTでも表示・非表示を切り替えられます。'),
+    'Los .cia se guardan en /cias y se pueden instalar al terminar. El resto, en %s.':
+        ('.cia files are saved to /cias and can be installed when finished. Everything else goes to %s.',
+         '.ciaは/ciasに保存され、完了後にインストールできます。それ以外は %s に保存されます。'),
+    'la raíz de la SD':
+        ('the root of the SD card',
+         'SDカードのルート'),
 }
