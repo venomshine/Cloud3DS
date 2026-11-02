@@ -206,7 +206,7 @@ static bool by_router(const char *ip, char *out, size_t n)
 	return rn > 0 && ptr_answer(r, rn, out, n);
 }
 
-/* «Marios-iPhone.local» → «Marios-iPhone»; «DESKTOP-AB12.lan» → «DESKTOP-AB12» */
+/* «Mi-iPhone.local» → «Mi-iPhone»; «DESKTOP-AB12.lan» → «DESKTOP-AB12» */
 static void tidy(char *s)
 {
 	char *dot = strchr(s, '.');

@@ -87,7 +87,7 @@ typedef struct {
 	bool upd_auto;    /* buscar actualizaciones al abrir */
 
 	/* servidor */
-	char console[48]; /* «3DS de Mario» */
+	char console[48]; /* «Mi 3DS» */
 	u32  ip;
 	int  port;
 	bool running;

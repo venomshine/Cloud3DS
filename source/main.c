@@ -965,7 +965,7 @@ static void tab_devices(void)
 			draw_circle(38, y + RH / 2 + 9, 3, T.ok);
 		}
 		text_draw_clip(d->name, 50, y + 7, bx - 58, TS_BODY, T.text);
-		// debajo, el estado y el modelo si el nombre ya no lo dice («iPhone de Mario» · iPhone · Safari)
+		// debajo, el estado y el modelo si el nombre ya no lo dice («Mi iPhone» · iPhone · Safari)
 		char sub[128], st[64], when[24];
 		if (on)
 			util_strlcpy(st, _("Conectado ahora"), sizeof st);
