@@ -1620,6 +1620,31 @@ static void ask_revoke(int d)
 	dialog_open(DLG_REVOKE, _("¿Desvincular este dispositivo?"), msg, _("Desvincular"), true);
 }
 
+static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char *title, const IconId *ic, const char *const *lab,
+                      const u32 *col, int n);
+
+// opciones de un dispositivo: renombrarlo o desvincularlo
+static struct {
+	bool open, just;
+	float anim;
+	int sel, dev;
+} DVS;
+
+static void dvs_draw(void)
+{
+	const Device *d = DVS.dev >= 0 && DVS.dev < MAX_DEVICES && V.dev[DVS.dev].used ? &V.dev[DVS.dev] : NULL;
+	if (!d && DVS.open)
+		DVS.open = false;
+	static const IconId ic[2] = {IC_PEN, IC_LOGOUT};
+	const char *lab[2] = {_("Cambiar el nombre"), _("Desvincular")};
+	const u32 col[2] = {T.text, T.danger};
+	int r = sheet_list(&DVS.open, &DVS.just, &DVS.anim, &DVS.sel, d ? d->name : "", ic, lab, col, 2);
+	if (r == 0)
+		U.want_rename = DVS.dev;
+	else if (r == 1)
+		ask_revoke(DVS.dev);
+}
+
 static void tab_devices(void)
 {
 	List *l = cur_list();
@@ -1646,49 +1671,40 @@ static void tab_devices(void)
 		const Device *d = &V.dev[idx[i]];
 		bool on = dev_online(d);
 		g_clip_ell = !(l->sel == i || !strcmp(U.dev_tok, d->token)); // solo la marcada se desplaza si no cabe
-		// a la derecha, Renombrar (lápiz) y Desvincular; se comprueban antes que la fila
-		float bw = 74, bh = 26, bx = BOT_W - 14 - bw, by = y + (RH - bh) / 2;
-		float ex = bx - 8 - bh;
+		// el marcado lleva ⋮ (sus opciones); tocar otro lo marca y tocar el marcado abre sus opciones
+		bool selected = !strcmp(U.dev_tok, d->token);
+		float mx = BOT_W - 30;
 		bool vis = g_touch.sy >= VIEW_Y && !g_dialog.open;
-		bool bt = vis && tap(bx, by, bw, bh);
-		bool et = vis && tap(ex, by, bh, bh);
-		bool rt = false;
-		if (!bt && !et)
-			rt = row(l, i, y, RH);
-		if (!U.buttons && !strcmp(U.dev_tok, d->token))
+		bool mt = selected && vis && tap(mx - 4, y, 34, RH);
+		bool rt = !mt && row(l, i, y, RH);
+		if (!U.buttons && selected)
 			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
-		draw_circle(28, y + RH / 2, 13, T.surface2);
+		draw_circle(28, y + RH / 2, 14, on ? col_alpha(T.ok, 0.16f) : T.surface2);
 		draw_icon(dev_icon(d), 28, y + RH / 2, 16, on ? T.ok : T.text3);
 		if (on) {
-			draw_circle(38, y + RH / 2 + 9, 4.5f, T.bg);
-			draw_circle(38, y + RH / 2 + 9, 3, T.ok);
+			draw_circle(39, y + RH / 2 + 10, 4.5f, T.bg);
+			draw_circle(39, y + RH / 2 + 10, 3, T.ok);
 		}
-		text_draw_clip(d->name, 50, y + 7, ex - 58, TS_BODY, T.text);
-		// debajo, el estado y el modelo si el nombre ya no lo dice («Mi iPhone» · iPhone · Safari)
-		char sub[128], st[64], when[24];
+		float tw = (selected ? mx - 14 : BOT_W - 14) - 52;
+		text_draw_clip(d->name, 52, y + 7, tw, TS_BODY, T.text);
+		char sub[128], when[24];
 		if (on)
-			util_strlcpy(st, _("Conectado ahora"), sizeof st);
+			util_strlcpy(sub, _("Conectado ahora"), sizeof sub);
 		else {
 			util_fmt_when(when, sizeof when, d->last_seen);
-			snprintf(st, sizeof st, _("Visto: %s"), when);
+			snprintf(sub, sizeof sub, _("Visto: %s"), when);
 		}
-		if (strcmp(d->name, d->model) && d->model[0])
-			snprintf(sub, sizeof sub, "%s · %s", st, d->model);
-		else
-			snprintf(sub, sizeof sub, "%s · %s", st, d->ip);
-		text_draw_clip(sub, 50, y + 24, ex - 58, TS_SUB, on ? T.ok : T.text3);
-		bool ep = touch_in(ex, by, bh, bh);
-		draw_circle(ex + bh / 2, by + bh / 2, bh / 2, ep ? T.divider : T.surface2);
-		draw_icon(IC_PEN, ex + bh / 2, by + bh / 2, 13, T.text2);
-		bool bp = touch_in(bx, by, bw, bh);
-		draw_rrect(bx, by, bw, bh, bh / 2, col_alpha(T.danger, bp ? 0.35f : 0.16f));
-		text_draw_center(_("Desvincular"), bx + bw / 2, by + (bh - text_lineh(TS_SUB)) / 2, TS_SUB, T.danger);
-		// con botones, el elegido es el resaltado; Y renombra y X desvincula
+		text_draw_clip(sub, 52, y + 24, tw, TS_SUB, on ? T.ok : T.text3);
+		if (selected) {
+			draw_circle(mx + 12, y + RH / 2, 11, touch_in(mx - 4, y, 34, RH) ? T.surface2 : col_alpha(T.accent, 0.3f));
+			draw_icon(IC_DOTS, mx + 12, y + RH / 2, 14, T.accent);
+		}
 		bool mine = U.buttons && !g_dialog.open && l->sel == i;
-		if (bt || (mine && (g_kdown & KEY_X)))
+		if (mt || (rt && selected) || (mine && (g_kdown & KEY_Y))) {
+			DVS.dev = idx[i];
+			DVS.open = DVS.just = true, DVS.sel = 0;
+		} else if (mine && (g_kdown & KEY_X))
 			ask_revoke(idx[i]);
-		else if (et || (mine && (g_kdown & KEY_Y)))
-			U.want_rename = idx[i];
 		if (rt || mine)
 			util_strlcpy(U.dev_tok, d->token, sizeof U.dev_tok);
 	}
@@ -6332,7 +6348,7 @@ static bool device_top(float a)
 	y = info_row(rx, y, rw, _("Nombre"), src, T.text2, a);
 	g_info_ymax = 1e9f;
 	char hint[96];
-	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_Y, _("Renombrar"), GLYPH_X, _("Desvincular"));
+	snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_Y, _("Opciones"), GLYPH_X, _("Desvincular"));
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
 	return true;
 }
@@ -6900,7 +6916,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	bool overlay = QA.open || FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
+	bool overlay = QA.open || DVS.open || FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
 	if (overlay) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
@@ -6953,6 +6969,8 @@ static void draw_bottom(void)
 		tt_draw();
 	}
 	ds_draw();
+	if (U.tab == TAB_DEVICES)
+		dvs_draw();
 	music_sheet();
 	qa_draw();
 	qrs_draw();
