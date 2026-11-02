@@ -193,7 +193,9 @@ int dl_op(u32 id, int op)
 		part_path(it->id, it->dir, part, sizeof part);
 		switch (op) {
 		case DL_PAUSE:
-			if (it->st == DL_RUN && D.cur == id)
+			if (it->installing) // AM no puede seguir donde se quedó
+				r = -3;
+			else if (it->st == DL_RUN && D.cur == id)
 				D.pause = true;
 			else if (it->st == DL_QUEUED)
 				it->st = DL_PAUSED;
@@ -537,7 +539,18 @@ typedef struct {
 	int xid;
 	u64 t_last, d_last, speed;
 	bool no_space;
+	/* instalar mientras baja: primero se juntan los primeros KB para saber qué CIA es */
+	int smode;         /* SM_* */
+	u8 *hb;
+	size_t hn;
+	InsStream *is;
+	char serr[24];
+	u64 sdone;         /* lo que ya recibió AM */
+	bool blocked;      /* un título del sistema: ni se instala ni se guarda */
 } Job;
+
+enum { SM_FILE, SM_PROBE, SM_STREAM };
+#define SM_HEAD_MAX (128 * 1024)
 
 static void cd_filename(const char *v, char *out, size_t n)
 {
@@ -589,10 +602,56 @@ static size_t head_cb(char *d, size_t s, size_t m, void *u)
 	return k;
 }
 
+static size_t file_write(Job *j, const char *d, size_t k);
+static void dl_mark(u32 id, bool installing);
+
 static size_t body_cb(char *d, size_t s, size_t m, void *u)
 {
 	Job *j = u;
 	size_t k = s * m;
+	if (j->smode == SM_STREAM) {
+		if (!ins_stream_write(j->is, d, k, j->serr, sizeof j->serr))
+			return 0;
+		j->sdone += k;
+		return k;
+	}
+	if (j->smode == SM_PROBE) {
+		u8 *nb = realloc(j->hb, j->hn + k);
+		if (!nb)
+			return 0;
+		memcpy(nb + j->hn, d, k);
+		j->hb = nb, j->hn += k;
+		int need = ins_stream_need(j->hb, j->hn);
+		if (need >= 0 && need <= SM_HEAD_MAX && (size_t)need > j->hn)
+			return k; // aún no se sabe: se sigue juntando
+		if (need >= 0 && need <= SM_HEAD_MAX)
+			j->is = ins_stream_begin(j->hb, j->hn, j->serr, sizeof j->serr);
+		if (j->is) {
+			j->smode = SM_STREAM;
+			dl_mark(j->snap->id, true);
+			bool ok = ins_stream_write(j->is, j->hb, j->hn, j->serr, sizeof j->serr);
+			j->sdone = j->hn;
+			free(j->hb), j->hb = NULL, j->hn = 0;
+			return ok ? k : 0;
+		}
+		if (!strcmp(j->serr, "system_title")) {
+			j->blocked = true;
+			return 0;
+		}
+		// no es un CIA o ahora no se puede (otra instalación, Cloud3DS…): se guarda y se ofrece al terminar
+		j->smode = SM_FILE;
+		size_t hn = j->hn;
+		u8 *hb = j->hb;
+		j->hb = NULL, j->hn = 0;
+		size_t w = file_write(j, (const char *)hb, hn);
+		free(hb);
+		return w == hn ? k : 0;
+	}
+	return file_write(j, d, k);
+}
+
+static size_t file_write(Job *j, const char *d, size_t k)
+{
 	if (!j->f) { // primeros datos: 206 sigue donde se quedó; 200 empieza de cero
 		char sp[720];
 		snprintf(sp, sizeof sp, "sdmc:%s", j->part);
@@ -702,6 +761,17 @@ static int hc_body(Job *j, const char *url0, bool verify, long *code_out, char *
 	return out;
 }
 
+static void dl_mark(u32 id, bool installing)
+{
+	lock();
+	DlItem *it = find(id);
+	if (it) {
+		it->installing = installing;
+		D.rev++;
+	}
+	unlock();
+}
+
 /* comprueba el MD5 o SHA-256 del archivo; 1 coincide, 0 no */
 static int check_hash(const char *path, const char *want)
 {
@@ -756,6 +826,57 @@ static void set_state(u32 id, int st, const char *err, const DlItem *snap)
 	unlock();
 }
 
+/* final de una descarga que se instalaba mientras bajaba (o de un título del sistema, que se corta) */
+static void stream_done(DlItem *s, Job *j, CURLcode r, long code, const char *gname, const char *url)
+{
+	bool ok = !j->blocked && r == CURLE_OK && (!code || (code >= 200 && code < 300)) && !D.cancel && !D.quit && !j->no_space;
+	const char *ie = j->is ? ins_stream_end(j->is, ok) : NULL;
+	j->is = NULL;
+	s->resumable = false;
+	s->installing = false;
+	s->done = j->sdone;
+	util_log("dl: %s -> instalando al bajar: %s (%llu bytes)", url, j->blocked ? "sistema" : ok ? (ie ? ie : "ok") : "cortado",
+	         (unsigned long long)j->sdone);
+	int xs = XS_FAILED;
+	if (j->blocked)
+		set_state(s->id, DL_FAIL, "system_title", s);
+	else if (D.cancel) {
+		set_state(s->id, DL_CANCELED, NULL, s);
+		xs = XS_CANCELED;
+	} else if (!ok)
+		set_state(s->id, DL_FAIL, j->no_space ? "no_space" : j->serr[0] ? j->serr : (curl_err(r == CURLE_HTTP_RETURNED_ERROR ? CURLE_OK : r, code) ?: "net"), s);
+	else if (ie)
+		set_state(s->id, DL_FAIL, ie, s);
+	else {
+		char nm[256];
+		util_strlcpy(nm, gname[0] ? gname : j->cd_name[0] ? j->cd_name : s->name[0] ? s->name : "descarga", sizeof nm);
+		if (!j->cd_name[0] && !gname[0] && !s->name[0])
+			name_from_url(url, nm, sizeof nm);
+		util_strlcpy(s->name, nm, sizeof s->name);
+		s->total = j->sdone;
+		s->installed = true;
+		s->after_done = true;
+		s->path[0] = 0;
+		xs = XS_DONE;
+		state_lock();
+		event_add(EV_FETCH, nm, s->host, j->sdone);
+		event_add(EV_INSTALL, nm, s->device[0] ? s->device : s->host, j->sdone);
+		state_unlock();
+		set_state(s->id, DL_DONE, NULL, s);
+	}
+	lock();
+	DlItem *it = find(s->id);
+	if (it) {
+		it->installing = false;
+		it->installed = s->installed;
+	}
+	unlock();
+	state_lock();
+	xfer_progress(j->xid, j->sdone);
+	xfer_end(j->xid, xs);
+	state_unlock();
+}
+
 static void run(DlItem *s)
 {
 	Job j = {0};
@@ -780,6 +901,9 @@ static void run(DlItem *s)
 	u64 have = 0;
 	if (s->resumable && fsx_stat(j.part, &d, &have) == 0 && !d)
 		j.base = have;
+	// pedido desde la consola, sin suma que comprobar y desde el principio: un .cia se instala mientras baja
+	if ((s->after & DLA_STREAM) && (s->after & DLA_INSTALL) && !s->hash[0] && !j.base)
+		j.smode = SM_PROBE;
 	state_lock();
 	j.xid = xfer_begin(XF_FETCH, s->name[0] ? s->name : s->host, s->host, s->total);
 	state_unlock();
@@ -833,6 +957,17 @@ static void run(DlItem *s)
 	}
 	if (!j.cd_name[0] && eff[0] && !gname[0]) // el nombre del enlace final (tras las redirecciones)
 		name_from_url(eff, j.cd_name, sizeof j.cd_name);
+	if (j.smode == SM_PROBE && j.hn) { // tan pequeño que no llegó a saberse qué era: a la SD
+		j.smode = SM_FILE;
+		if (file_write(&j, (const char *)j.hb, j.hn) != j.hn)
+			r = CURLE_WRITE_ERROR;
+	}
+	free(j.hb);
+	j.hb = NULL;
+	if (j.smode == SM_STREAM || j.blocked) {
+		stream_done(s, &j, r, code, gname, url);
+		return;
+	}
 	bool wrote_ok = true;
 	if (j.f)
 		wrote_ok = fclose(j.f) == 0;

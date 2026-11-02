@@ -33,6 +33,7 @@ static struct {
 	volatile bool quit;
 	InsReq q[MAX_INS];
 	int next_id;
+	volatile bool streaming; /* se está instalando un CIA mientras se descarga (ins_stream_*) */
 } I;
 
 /* ---------- leer el CIA ---------- */
@@ -511,6 +512,121 @@ static const char *install_one(const InsReq *r, int xid)
 	return e;
 }
 
+/* ---------- instalar mientras se descarga ----------
+ * Como FBI: los bytes van a AM según llegan, sin guardar el .cia en la SD. Antes de empezar se
+ * leen la cabecera y el TMD (los primeros KB) para hacer las mismas comprobaciones que al
+ * instalar desde la SD: solo títulos que van a la SD, y Cloud3DS no se instala así. */
+struct InsStream {
+	Handle h;
+	u64 tid, off;
+	u16 ver;
+};
+
+int ins_stream_need(const u8 *h, size_t n)
+{
+	if (n < 0x20)
+		return 0x20;
+	u32 hs = rd32le(h), cs = rd32le(h + 8), tk = rd32le(h + 0xC), tmd = rd32le(h + 0x10);
+	if (hs != 0x2020 || tmd < 0x200 || cs > 0x10000 || tk > 0x10000)
+		return -1;
+	return (int)(al64(hs) + al64(cs) + al64(tk) + 0x300);
+}
+
+InsStream *ins_stream_begin(const u8 *h, size_t n, char *err, size_t en)
+{
+	int need = ins_stream_need(h, n);
+	if (need < 0 || (size_t)need > n) {
+		util_strlcpy(err, "bad_cia", en);
+		return NULL;
+	}
+	u64 to = al64(rd32le(h)) + al64(rd32le(h + 8)) + al64(rd32le(h + 0xC));
+	const u8 *t = h + to;
+	u32 st = (u32)t[0] << 24 | t[1] << 16 | t[2] << 8 | t[3];
+	int sig = st == 0x10003 ? 0x23C : st == 0x10004 ? 0x13C : st == 0x10005 ? 0x7C : -1;
+	if (sig < 0) {
+		util_strlcpy(err, "bad_cia", en);
+		return NULL;
+	}
+	const u8 *hd = t + 4 + sig;
+	u64 tid = rd64be(hd + 0x4C);
+	if (goes_to_nand(tid)) {
+		util_log("instalar (descarga): %016llX es del sistema o DSiWare: rechazado", (unsigned long long)tid);
+		util_strlcpy(err, "system_title", en);
+		return NULL;
+	}
+	if (tid == SELF_TID) { // Cloud3DS se actualiza desde Ajustes, no así
+		util_strlcpy(err, "self", en);
+		return NULL;
+	}
+	LightLock_Lock(&I.lock);
+	bool busy = I.streaming;
+	for (int i = 0; i < MAX_INS; i++)
+		busy |= I.q[i].st == INS_RUNNING;
+	if (!busy)
+		I.streaming = true;
+	LightLock_Unlock(&I.lock);
+	if (busy) {
+		util_strlcpy(err, "am_busy", en);
+		return NULL;
+	}
+	InsStream *s = calloc(1, sizeof *s);
+	if (!s || R_FAILED(amInit())) {
+		free(s);
+		I.streaming = false;
+		util_strlcpy(err, "am", en);
+		return NULL;
+	}
+	bool avail = true;
+	if (R_SUCCEEDED(AM_QueryAvailableExternalTitleDatabase(&avail)) && !avail)
+		AM_InitializeExternalTitleDatabase(false);
+	Result r = AM_StartCiaInstall(MEDIATYPE_SD, &s->h);
+	if (R_FAILED(r)) {
+		util_log("instalar (descarga): AM_StartCiaInstall 0x%08lX", (unsigned long)r);
+		util_strlcpy(err, am_error(r), en);
+		amExit();
+		free(s);
+		I.streaming = false;
+		return NULL;
+	}
+	s->tid = tid;
+	s->ver = (u16)(hd[0x9C] << 8 | hd[0x9D]);
+	util_log("instalar (descarga): %016llX v%u", (unsigned long long)tid, s->ver);
+	return s;
+}
+
+bool ins_stream_write(InsStream *s, const void *d, size_t n, char *err, size_t en)
+{
+	u32 w = 0;
+	Result r = FSFILE_Write(s->h, &w, s->off, d, n, 0);
+	if (R_FAILED(r) || w != n) {
+		util_log("instalar (descarga): escribir 0x%08lX en %llu", (unsigned long)r, (unsigned long long)s->off);
+		util_strlcpy(err, am_error(r), en);
+		return false;
+	}
+	s->off += n;
+	return true;
+}
+
+const char *ins_stream_end(InsStream *s, bool ok)
+{
+	const char *e = NULL;
+	if (!ok)
+		AM_CancelCIAInstall(s->h);
+	else {
+		Result r = AM_FinishCiaInstall(s->h);
+		if (R_FAILED(r)) {
+			util_log("instalar (descarga): AM_FinishCiaInstall 0x%08lX", (unsigned long)r);
+			e = am_error(r);
+		}
+	}
+	amExit();
+	if (ok && !e)
+		install_seed(s->tid);
+	free(s);
+	I.streaming = false;
+	return ok ? e : "canceled";
+}
+
 static void ins_thread(void *arg)
 {
 	(void)arg;
@@ -529,6 +645,8 @@ static void ins_thread(void *arg)
 			LightLock_Unlock(&I.lock);
 			if (!got || I.quit)
 				break;
+			while (I.streaming && !I.quit) // AM, de uno en uno
+				svcSleepThread(200 * 1000000ll);
 			state_lock();
 			int xid = xfer_begin(XF_INSTALL, r.title, r.device, r.size);
 			state_unlock();

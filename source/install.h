@@ -53,3 +53,10 @@ bool ins_busy(void);
 bool ins_peek(const char *path, InsReq *out); /* solo leer el CIA (nombre, icono, versión) */
 bool ins_icon(const char *path, u16 *px);     /* solo el icono 48×48 (RGB565), sin tocar AM */
 const char *ins_ver_text(u16 v, char *buf, size_t n); /* «1.2.3» */
+
+/* instalar mientras se descarga (los bytes van a AM según llegan, sin guardar el .cia) */
+typedef struct InsStream InsStream;
+int  ins_stream_need(const u8 *h, size_t n);  /* bytes del principio que hacen falta; -1 no es un CIA */
+InsStream *ins_stream_begin(const u8 *h, size_t n, char *err, size_t en); /* NULL: no se puede (err) */
+bool ins_stream_write(InsStream *s, const void *d, size_t n, char *err, size_t en);
+const char *ins_stream_end(InsStream *s, bool ok); /* NULL instalado; si no, el error */

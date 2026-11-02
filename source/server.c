@@ -1133,6 +1133,7 @@ static void h_dls(Conn *c)
 		buf_json_str(&b, x->dir);
 		buf_puts(&b, ",\"path\":");
 		buf_json_str(&b, x->path);
+		buf_printf(&b, ",\"installing\":%s,\"installed\":%s", x->installing ? "true" : "false", x->installed ? "true" : "false");
 		buf_printf(&b, ",\"done\":%llu,\"total\":%llu,\"speed\":%llu,\"resumable\":%s,\"hash\":%s,\"hashOk\":%d,\"after\":\"%s\",\"err\":\"%s\"}",
 		           (unsigned long long)x->done, (unsigned long long)x->total, (unsigned long long)x->speed, x->resumable ? "true" : "false",
 		           x->hash[0] ? "true" : "false", x->hash_ok, x->after == (DLA_INSTALL | DLA_UNZIP) ? "install,unzip" : x->after == DLA_INSTALL ? "install" : x->after == DLA_UNZIP ? "unzip" : "", x->err);

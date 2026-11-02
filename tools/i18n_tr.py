@@ -1883,4 +1883,13 @@ TR = {
     'La consola no pudo comprobar que el servidor es quien dice ser. Si sigues, nada garantiza que el archivo no se haya cambiado por el camino. Hazlo solo si confías en el enlace y en tu red.':
         ("The console couldn't verify that the server is who it claims to be. If you continue, nothing guarantees the file wasn't altered on the way. Only do it if you trust the link and your network.",
          '本体はサーバーが本物であることを確認できませんでした。続けると、途中でファイルが書き換えられていない保証はありません。リンクとネットワークを信頼できる場合にのみ行ってください。'),
+    'Instalando mientras baja · %d %%':
+        ('Installing while downloading · %d %%',
+         'ダウンロードしながらインストール中 · %d %%'),
+    'Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se instala mientras se descarga.':
+        ("Any QR code with a link works, like the ones FBI uses. If it's a .cia, it installs while it downloads.",
+         'FBIで使うものなど、リンク入りのQRコードならどれでも使えます。.ciaならダウンロードしながらインストールします。'),
+    'Los .cia se instalan mientras se descargan, como en FBI. El resto se guarda en %s.':
+        ('.cia files install while they download, like in FBI. Everything else is saved to %s.',
+         '.ciaはFBIと同じくダウンロードしながらインストールされます。それ以外は %s に保存されます。'),
 }

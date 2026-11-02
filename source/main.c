@@ -1511,7 +1511,10 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 	util_fmt_size(b, sizeof b, d->total);
 	switch (d->st) {
 	case DL_RUN:
-		if (d->total && d->speed) {
+		if (d->installing && d->total) {
+			*col = T.ok;
+			snprintf(out, n, _("Instalando mientras baja · %d %%"), (int)(d->done * 100 / d->total));
+		} else if (d->total && d->speed) {
 			util_fmt_speed(sp, sizeof sp, d->speed);
 			snprintf(out, n, "%d %% · %s · %s", (int)(d->done * 100 / d->total), sp, d->host);
 		} else
@@ -1526,7 +1529,9 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 		break;
 	default:
 		*col = T.ok;
-		if (d->hash[0] && d->hash_ok == 0)
+		if (d->installed)
+			snprintf(out, n, "%s · %s", _("Instalado"), b);
+		else if (d->hash[0] && d->hash_ok == 0)
 			*col = T.danger, snprintf(out, n, "%s · %s", b, _("la suma no coincide"));
 		else
 			snprintf(out, n, d->hash_ok == 1 ? "%s · %s · %s" : "%s · %s", b, d->hash_ok == 1 ? _("suma comprobada") : d->host, d->host);
@@ -3757,7 +3762,7 @@ static void qrs_download(bool install)
 {
 	int ok = 0;
 	for (int i = 0; i < QRS.nurl; i++)
-		ok += dl_add(QRS.url[i], QRS.dest, "", install ? DLA_INSTALL : DLA_NONE, G.console, NULL) == 0;
+		ok += dl_add(QRS.url[i], QRS.dest, "", install ? DLA_INSTALL | DLA_STREAM : DLA_NONE, G.console, NULL) == 0; // pedido aquí: se instala mientras baja
 	char m[120];
 	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo verás en Actividad") : _("Descargando %d enlaces: los verás en Actividad"), ok);
 	toast_icon(ok ? m : _("Ese enlace no vale"), ok ? IC_GLOBE : IC_CLOSE, ok ? T.accent : T.danger);
@@ -3830,7 +3835,7 @@ static void qrs_draw(void)
 			wrap_center(e, BOT_W / 2, y + 80, BOT_W - 40, TS_SUB, 4, T.text3);
 		} else {
 			text_draw_center(_("Buscando un código QR…"), BOT_W / 2, y + 78, TS_BODY, T.text);
-			wrap_center(_("Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se puede instalar al terminar."),
+			wrap_center(_("Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se instala mientras se descarga."),
 			            BOT_W / 2, y + 100, BOT_W - 40, TS_SUB, 3, T.text3);
 		}
 		char sw[64];
@@ -6952,7 +6957,7 @@ static void qa_top(float a)
 		util_strlcpy(note, _("SELECT también lo muestra y lo oculta."), sizeof note);
 	else {
 		const char *dir = dl_dest_dir("");
-		snprintf(note, sizeof note, _("Los .cia se guardan en /cias y se pueden instalar al terminar. El resto, en %s."), !strcmp(dir, "/") ? _("la raíz de la SD") : dir);
+		snprintf(note, sizeof note, _("Los .cia se instalan mientras se descargan, como en FBI. El resto se guarda en %s."), !strcmp(dir, "/") ? _("la raíz de la SD") : dir);
 	}
 	text_wrap_lines(note, rw, TS_SUB, 2, rx, y, col_alpha(T.text3, a), true);
 }
@@ -7486,7 +7491,7 @@ static void update(void)
 		U.want_dlurl = false;
 		char url[1024];
 		if (kb_input(_("Enlace para descargar (https://…)"), "https://", url, sizeof url, false, false) && url[0]) {
-			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL, G.console, NULL) == 0)
+			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
 				toast_icon(_("Descargando: lo verás en Actividad"), IC_GLOBE, T.accent);
 			else
 				toast_icon(_("Ese enlace no vale"), IC_CLOSE, T.danger);

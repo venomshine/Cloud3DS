@@ -18,7 +18,8 @@
 #define DL_MAX 16
 
 enum { DL_QUEUED, DL_RUN, DL_PAUSED, DL_DONE, DL_FAIL, DL_CANCELED };
-enum { DLA_NONE = 0, DLA_INSTALL = 1, DLA_UNZIP = 2 }; /* se pueden juntar: lo que toque según sea .cia o .zip */
+enum { DLA_NONE = 0, DLA_INSTALL = 1, DLA_UNZIP = 2, DLA_STREAM = 4 }; /* se pueden juntar: lo que toque según sea .cia o .zip.
+ * DLA_STREAM (solo pedido desde la propia consola): un .cia se instala mientras baja, sin guardarlo */
 enum { DL_PAUSE, DL_RESUME, DL_CANCEL, DL_REMOVE, DL_INSECURE };
 
 typedef struct {
@@ -38,6 +39,8 @@ typedef struct {
 	u64  done, total, speed;
 	bool resumable;
 	bool insecure;     /* el usuario pidió bajarla sin comprobar el certificado (tras un error «tls») */
+	bool installing;   /* se está instalando mientras baja (no se puede pausar) */
+	bool installed;    /* se instaló mientras bajaba: no hay archivo en la SD */
 } DlItem;
 
 void dl_init(void);
