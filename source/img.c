@@ -31,6 +31,8 @@ bool img_size(const char *path, int *w, int *h)
 	return stbi_info(full, w, h, &c) != 0;
 }
 
+static ImgResult fit(u8 *src, int iw, int ih, int maxw, int maxh, u8 **rgba, int *w, int *h);
+
 ImgResult img_load_fit(const char *path, int maxw, int maxh, u8 **rgba, int *w, int *h, int *ow, int *oh)
 {
 	char full[700];
@@ -45,6 +47,26 @@ ImgResult img_load_fit(const char *path, int maxw, int maxh, u8 **rgba, int *w, 
 	u8 *src = stbi_load(full, &iw, &ih, &c, 4);
 	if (!src)
 		return IMG_BAD;
+	return fit(src, iw, ih, maxw, maxh, rgba, w, h);
+}
+
+ImgResult img_mem_fit(const u8 *data, size_t n, int maxw, int maxh, u8 **rgba, int *w, int *h)
+{
+	int iw, ih, c;
+	*rgba = NULL;
+	if (!stbi_info_from_memory(data, (int)n, &iw, &ih, &c))
+		return IMG_BAD;
+	if ((long long)iw * ih > MAX_PIXELS)
+		return IMG_TOO_BIG;
+	u8 *src = stbi_load_from_memory(data, (int)n, &iw, &ih, &c, 4);
+	if (!src)
+		return IMG_BAD;
+	return fit(src, iw, ih, maxw, maxh, rgba, w, h);
+}
+
+/* reduce src (de stb) a maxw × maxh como mucho; src pasa a ser suyo */
+static ImgResult fit(u8 *src, int iw, int ih, int maxw, int maxh, u8 **rgba, int *w, int *h)
+{
 	float k = 1;
 	if (iw > maxw || ih > maxh)
 		k = iw * maxh > ih * maxw ? (float)maxw / iw : (float)maxh / ih;

@@ -17,3 +17,4 @@ typedef enum { IMG_OK, IMG_BAD, IMG_TOO_BIG } ImgResult;
 /* *rgba se libera con free(). ow/oh: tamaño original. */
 ImgResult img_load_fit(const char *path, int maxw, int maxh, u8 **rgba, int *w, int *h, int *ow, int *oh);
 bool img_size(const char *path, int *w, int *h);
+ImgResult img_mem_fit(const u8 *data, size_t n, int maxw, int maxh, u8 **rgba, int *w, int *h); /* una imagen en memoria (carátulas) */

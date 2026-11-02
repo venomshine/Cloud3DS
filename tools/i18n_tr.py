@@ -1688,4 +1688,37 @@ TR = {
     'Guarda o cierra el documento abierto para escribir desde el PC':
         ('Save or close the open document to type from the PC',
          'PCから入力するには開いているドキュメントを保存するか閉じてください'),
+    'En pausa · %s':
+        ('Paused · %s',
+         '一時停止中 · %s'),
+    'Sonando · %s':
+        ('Playing · %s',
+         '再生中 · %s'),
+    'Sin audio: falta el firmware DSP':
+        ('No audio: the DSP firmware is missing',
+         '音声なし：DSPファームウェアがありません'),
+    'No se pudo reproducir':
+        ("Couldn't play it",
+         '再生できませんでした'),
+    'Repetir esta':
+        ('Repeat this one',
+         '1曲リピート'),
+    'Repetir la carpeta':
+        ('Repeat the folder',
+         'フォルダをリピート'),
+    'Sin repetir':
+        ('No repeat',
+         'リピートなし'),
+    'Aleatorio':
+        ('Shuffle',
+         'シャッフル'),
+    'En orden':
+        ('In order',
+         '順番に'),
+    'Parar':
+        ('Stop',
+         '停止'),
+    'Ir a la carpeta':
+        ('Go to the folder',
+         'フォルダへ'),
 }

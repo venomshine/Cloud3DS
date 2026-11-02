@@ -34,6 +34,8 @@ Las siguientes partes conservan sus propias licencias:
 
 - `lib/cJSON.*` — [cJSON](https://github.com/DaveGamble/cJSON), licencia MIT.
 - `lib/qrcodegen.*` — [QR Code generator](https://github.com/nayuki/QR-Code-generator) de Project Nayuki, licencia MIT.
+- `romfs/dsp/opendsp.cdc` — [OpenDSP](https://github.com/Cellenseres) de Cellenseres (firmware DSP libre, para tener audio sin el de Nintendo), licencia BSD-2-Clause (`romfs/dsp/OPENDSP-LICENSE.txt`).
+- [libmpg123](https://www.mpg123.de/) (enlazada al compilar, MP3), licencia LGPL-2.1; [Tremor y libogg](https://xiph.org/) (enlazadas, OGG Vorbis), licencia BSD.
 - `lib/quirc*` — [quirc](https://github.com/dlbeer/quirc) 1.2 de Daniel Beer (lectura de códigos QR), licencia ISC.
 - `source/qrcam.c` sigue la secuencia de la cámara de [FBI](https://github.com/Steveice10/FBI) de Steveice10, licencia MIT.
 - `lib/stb_image.h` — [stb_image](https://github.com/nothings/stb) de Sean Barrett, dominio público o licencia MIT (a elegir).

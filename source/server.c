@@ -15,6 +15,7 @@
 #include "util.h"
 #include "dl.h"
 #include "hash.h"
+#include "music.h"
 #include "live.h"
 #include "titles.h"
 #include "remote.h"
@@ -1187,6 +1188,84 @@ static void h_live(Conn *c)
 	free(b.p);
 }
 
+/* ---------- música: la web como mando (GET: qué suena; POST op=toggle|next|prev|stop|shuffle|repeat|play&p=) ---------- */
+typedef struct {
+	char (*n)[256];
+	int count, max;
+} AudioList;
+
+static bool audio_cb(const FsxEntry *e, void *u)
+{
+	AudioList *l = u;
+	if (!e->dir && music_is_audio(e->name) && l->count < l->max)
+		util_strlcpy(l->n[l->count++], e->name, 256);
+	return true;
+}
+
+static int cmp_name(const void *a, const void *b)
+{
+	return strcasecmp((const char *)a, (const char *)b);
+}
+
+static void h_music(Conn *c, bool post)
+{
+	if (post) {
+		char op[16] = "";
+		qget(c->query, "op", op, sizeof op);
+		if (!strcmp(op, "play")) { // esa canción, con su carpeta como lista (por nombre)
+			char p[700], dir[700];
+			if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p) || !music_is_audio(p)) {
+				resp_err(c, 400, "bad_path");
+				return;
+			}
+			parent_of(dir, sizeof dir, p);
+			static char names[500][256];
+			AudioList l = {names, 0, 500};
+			fsx_list(dir, false, audio_cb, &l);
+			qsort(names, l.count, sizeof names[0], cmp_name);
+			int start = 0;
+			for (int i = 0; i < l.count; i++)
+				if (!strcmp(names[i], basename_of(p)))
+					start = i;
+			if (!l.count || !music_play(dir, names, l.count, start)) {
+				MusicState ms;
+				music_get(&ms);
+				resp_err(c, 500, !strcmp(ms.err, "no_dsp") ? "no_dsp" : "io");
+				return;
+			}
+		} else if (!strcmp(op, "toggle"))
+			music_toggle();
+		else if (!strcmp(op, "next"))
+			music_next();
+		else if (!strcmp(op, "prev"))
+			music_prev();
+		else if (!strcmp(op, "stop"))
+			music_stop();
+		else if (!strcmp(op, "shuffle"))
+			music_shuffle();
+		else if (!strcmp(op, "repeat"))
+			music_repeat();
+		else {
+			resp_err(c, 400, "bad_op");
+			return;
+		}
+	}
+	MusicState m;
+	music_get(&m);
+	static const char *const ST[] = {"off", "play", "pause", "error"};
+	Buf b = {0};
+	buf_printf(&b, "{\"ok\":true,\"st\":\"%s\",\"title\":", ST[m.st]);
+	buf_json_str(&b, m.title);
+	buf_puts(&b, ",\"artist\":");
+	buf_json_str(&b, m.artist);
+	buf_puts(&b, ",\"dir\":");
+	buf_json_str(&b, m.dir);
+	buf_printf(&b, ",\"i\":%d,\"n\":%d,\"pos\":%lu,\"dur\":%lu,\"shuffle\":%s,\"repeat\":%d}", m.idx, m.n, (unsigned long)m.pos_ms,
+	           (unsigned long)m.dur_ms, m.shuffle ? "true" : "false", m.repeat);
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
 /* MD5 y SHA-256: POST empieza (p = archivo), GET dice cómo va (el mismo trabajo que en la consola) */
 static void h_hash(Conn *c, bool post)
 {
@@ -1987,7 +2066,9 @@ static void route(Conn *c, const char *body)
 	} else if (strcmp(p, "live_close") == 0 && post) {
 		live_close();
 		resp_ok(c);
-	} else if (strcmp(p, "shot") == 0 && get)
+	} else if (strcmp(p, "music") == 0)
+		h_music(c, post);
+	else if (strcmp(p, "shot") == 0 && get)
 		h_shot(c);
 	else if (strcmp(p, "titles") == 0 && get)
 		h_titles(c);

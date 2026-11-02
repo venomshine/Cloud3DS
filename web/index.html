@@ -216,6 +216,14 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 #insq{z-index:46}
 #dlq{z-index:44;right:auto;left:20px}
 #shotc{z-index:47;width:380px}
+.mup{position:fixed;left:50%;bottom:20px;transform:translate(-50%,160%);transition:transform .3s cubic-bezier(.2,.9,.3,1.1);z-index:43;display:flex;align-items:center;gap:6px;padding:8px 10px 8px 14px;border-radius:999px;background:var(--card);box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:calc(100vw - 24px)}
+.mup.show{transform:translate(-50%,0)}
+.mup .mt{display:flex;flex-direction:column;min-width:0;max-width:240px;margin-right:4px}
+.mup .mt b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mup .mt span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mup button{width:34px;height:34px;border-radius:17px;display:grid;place-items:center;color:var(--text)}
+.mup button svg{width:18px;height:18px}
+.mup button.pp{background:var(--a);color:#fff}
 #shotc .shimg{display:block;width:100%;background:#000}
 #shotc .shimg canvas,#shotc .shimg img{display:block;width:100%;height:auto}
 #shotc .sha{display:flex;gap:8px;align-items:center;padding:10px 12px}
@@ -319,6 +327,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
   .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
   .queue{right:12px;left:12px;bottom:12px;width:auto;max-width:none}
   #dlq{right:12px;left:12px}
+  .mup{bottom:84px}
   .selbar span.n{display:none}
 }
 </style>
@@ -372,6 +381,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 <div class="queue" id="insq"></div>
 <div class="queue" id="dlq"></div>
 <div class="queue" id="shotc"></div>
+<div class="mup" id="mup"></div>
 <div class="drop" id="drop"></div>
 <div class="toast" id="toast"></div>
 <div class="offline" id="offline"></div>
@@ -412,6 +422,7 @@ es:{
  err_exists:"Ya existe un archivo con ese nombre.", err_not_found:"El elemento ya no existe. Es posible que se haya movido o eliminado.", err_io:"Error de escritura en la tarjeta SD.",
  err_net:"Se perdió la conexión con la consola.", err_is_dir:"Ya hay una carpeta con ese nombre.", err:"Se produjo un error (%1).",
  offline:"Se perdió la conexión con la consola. Reintentando…", logout:"Desvincular este dispositivo", logoutD:"Para volver a entrar tendrás que escanear el código QR o introducir el PIN.",
+ musPlay:"Reproducir en la consola", musStarted:"Sonando en la consola", musNoDsp:"La consola no tiene audio: falta el firmware DSP.", musOnConsole:"En la consola", musPrev:"Anterior", musNext:"Siguiente", musStop:"Parar",
  liveGo:"Escribir en la consola", liveStop:"Desconectar", liveOn:"En vivo en la consola", liveD:"Lo que escribas aparece al momento en el editor de la consola", liveQ:"¿Escribir en la consola?", liveQD:"La consola abrirá el archivo tal como está guardado: los cambios de aquí sin guardar se pierden.", liveNo:"La consola no abrió el archivo. ¿Sigue Cloud3DS abierto?", liveNoEdit:"La consola no puede editar este archivo (o hay otro sin guardar abierto allí).", liveStarted:"En vivo: lo que escribas aparece en la consola", liveLong:"Esa línea es demasiado larga para mandarla en vivo.", liveGone:"Se cortó la conexión en vivo con la consola.", liveClosed:"Se cerró el documento en la consola.", liveSaved:"Guardado en la consola", liveLeft:"Lo que no guardaste sigue abierto en la consola.",
  shotNew:"Nueva captura", shotNow:"Ahora mismo, desde la consola", shotJoin:"Juntar las dos pantallas", shotShare:"Compartir", shotSave:"Guardar", shotNoShare:"Este navegador no puede compartir imágenes: usa Guardar.",
  titles:"Instalados", titNoneT:"No hay juegos ni apps en la SD", titNoneD:"Lo que instales en la consola aparecerá aquí.", titVer:"v%1", titUpd:"con actualización", titDlc:"%1 DLC", titCopies:"%1 copias", titBackup:"Copia de la partida", titSeeCopies:"Ver sus copias", titBackedUp:"Copia guardada en %1", titNoSave:"Este juego aún no tiene partida.",
@@ -454,6 +465,7 @@ en:{
  err_exists:"A file with that name already exists.", err_not_found:"The item no longer exists. It may have been moved or deleted.", err_io:"Write error on the SD card.",
  err_net:"Lost connection to the console.", err_is_dir:"There's already a folder with that name.", err:"An error occurred (%1).",
  offline:"Lost connection to the console. Retrying…", logout:"Unpair this device", logoutD:"To sign in again, you'll need to scan the QR code or enter the PIN.",
+ musPlay:"Play on the console", musStarted:"Playing on the console", musNoDsp:"The console has no audio: the DSP firmware is missing.", musOnConsole:"On the console", musPrev:"Previous", musNext:"Next", musStop:"Stop",
  liveGo:"Type on the console", liveStop:"Disconnect", liveOn:"Live on the console", liveD:"What you type shows up right away in the console editor", liveQ:"Type on the console?", liveQD:"The console will open the file as saved: unsaved changes here will be lost.", liveNo:"The console didn't open the file. Is Cloud3DS still open?", liveNoEdit:"The console can't edit this file (or another unsaved one is open there).", liveStarted:"Live: what you type shows up on the console", liveLong:"That line is too long to send live.", liveGone:"The live connection with the console was lost.", liveClosed:"The document was closed on the console.", liveSaved:"Saved on the console", liveLeft:"What you didn't save is still open on the console.",
  shotNew:"New screenshot", shotNow:"Just now, from the console", shotJoin:"Join both screens", shotShare:"Share", shotSave:"Save", shotNoShare:"This browser can't share images: use Save.",
  titles:"Installed", titNoneT:"No games or apps on the SD", titNoneD:"What you install on the console will show up here.", titVer:"v%1", titUpd:"updated", titDlc:"%1 DLC", titCopies:"%1 backups", titBackup:"Back up save", titSeeCopies:"See its backups", titBackedUp:"Backup saved in %1", titNoSave:"This game has no save yet.",
@@ -496,6 +508,7 @@ ja:{
  err_exists:"同じ名前のファイルがあります。", err_not_found:"この項目はもうありません。移動または削除された可能性があります。", err_io:"SDカードへの書き込みエラーです。",
  err_net:"本体との接続が切れました。", err_is_dir:"同じ名前のフォルダがあります。", err:"エラーが発生しました(%1)。",
  offline:"本体との接続が切れました。再試行中…", logout:"このデバイスの登録を解除", logoutD:"もう一度入るには、QRコードを読み取るかPINを入力する必要があります。",
+ musPlay:"本体で再生", musStarted:"本体で再生中", musNoDsp:"本体の音声が使えません（DSPファームウェアがありません）。", musOnConsole:"本体で再生中", musPrev:"前へ", musNext:"次へ", musStop:"停止",
  liveGo:"本体で入力", liveStop:"切断", liveOn:"本体とライブ接続中", liveD:"入力した内容がすぐに本体のエディタに表示されます", liveQ:"本体で入力しますか?", liveQD:"本体は保存済みの内容でファイルを開きます。ここでの未保存の変更は失われます。", liveNo:"本体がファイルを開きませんでした。Cloud3DSは開いていますか?", liveNoEdit:"本体ではこのファイルを編集できません（または未保存の別のファイルが開いています）。", liveStarted:"ライブ：入力した内容が本体に表示されます", liveLong:"その行は長すぎてライブで送れません。", liveGone:"本体とのライブ接続が切れました。", liveClosed:"本体でドキュメントが閉じられました。", liveSaved:"本体で保存しました", liveLeft:"保存していない内容は本体で開いたままです。",
  shotNew:"新しいスクリーンショット", shotNow:"たった今、本体から", shotJoin:"上下の画面をまとめる", shotShare:"共有", shotSave:"保存", shotNoShare:"このブラウザは画像を共有できません。保存を使ってください。",
  titles:"インストール済み", titNoneT:"SDにゲームやアプリはありません", titNoneD:"本体でインストールしたものがここに表示されます。", titVer:"v%1", titUpd:"更新データあり", titDlc:"DLC %1件", titCopies:"バックアップ %1件", titBackup:"セーブをバックアップ", titSeeCopies:"バックアップを見る", titBackedUp:"%1 に保存しました", titNoSave:"このゲームにはまだセーブデータがありません。",
@@ -669,7 +682,8 @@ const SAVE_DIRS=["/3ds/Checkpoint/saves","/JKSV/Saves","/JKSV"];
 const inSaves=p=>S.nosaves||SAVE_DIRS.some(d=>p===d||p.startsWith(d+"/"));
 
 function startApp(){
- setTimeout(pollDl,800); // descargas que ya estaban en marcha (desde aquí o desde otro dispositivo)
+ setTimeout(pollDl,800);
+ setTimeout(pollMusic,1200); // si ya suena algo en la consola, sale el mando // descargas que ya estaban en marcha (desde aquí o desde otro dispositivo)
  $("#login").classList.add("hide");$("#app").classList.remove("hide");$("#fab").classList.remove("hide");
  const p=decodeURIComponent((location.hash.match(/^#p=(.*)$/)||[])[1]||"");
  go(p&&(p.startsWith("/")||p==="@trash"||p==="@titles")?p:"/",true);
@@ -998,6 +1012,7 @@ function openSheet(it){
   ${!ro&&!it.d&&ext(it.n)==="zip"?`<button class="act" data-a="unz">${svg("box")}${t("unzipA")}</button>`:""}
   ${ro?"":isProt(p)?`<div class="act off">${svg("lock")}<span><b>${t("protT")}</b><small>${t("protD")}</small></span></div>`:`<button class="act" data-a="ren">${svg("pen")}${t("rename")}</button><button class="act" data-a="mv">${svg("mv")}${t("moveTo")}</button><button class="act" data-a="cp">${svg("copy")}${t("copyTo")}</button><button class="act danger" data-a="del">${svg("trash")}${t("del")}</button>`}
   ${!ro&&!it.d&&ext(it.n)==="cia"?`<button class="act" data-a="ins">${svg("app")}${t("insConsole")}</button>`:""}
+  ${!it.d&&["mp3","ogg","wav"].includes(ext(it.n))?`<button class="act" data-a="mus">${svg("play")}${t("musPlay")}</button>`:""}
   <button class="act" data-a="sel">${svg("selall")}${t("select")}</button>
   ${it.d?"":`<button class="act" data-a="hash">${svg("shield")}${t("hashA")}</button>`}
   <div class="marks">${svg("tag")}<b>${t("highlight")}</b>${[0,1,2,3,4,5,6].map(c=>`<button class="swt mk${c}${(it.c||0)===c?" on":""}" data-mk="${c}" title="${t("mk"+c)}"></button>`).join("")}</div>
@@ -1006,7 +1021,7 @@ function openSheet(it){
   const mk=e.target.closest("[data-mk]");
   if(mk){const c=+mk.dataset.mk;m.close();try{await api("POST","mark",{p,c});it.c=c||undefined;render()}catch(err){toast(errText(err))}return}
   const a=(e.target.closest("[data-a]")||{}).dataset?.a;if(!a)return;m.close();
-  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n);if(a==="mv")transfer("move",[it]);if(a==="cp")transfer("copy",[it]);if(a==="ins")requestInstall([p]);if(a==="hash")hashDlg(p);if(a==="dlz")zipDownload(S.path,[it.n]);if(a==="unz")unzipAsk([p])});
+  if(a==="view")openViewer(it);if(a==="dl")download(p);if(a==="ren")renameDlg(it);if(a==="del")confirmDelete([it]);if(a==="sel")toggleSel(it.n);if(a==="mv")transfer("move",[it]);if(a==="cp")transfer("copy",[it]);if(a==="ins")requestInstall([p]);if(a==="hash")hashDlg(p);if(a==="mus")musicOp("play",p);if(a==="dlz")zipDownload(S.path,[it.n]);if(a==="unz")unzipAsk([p])});
 }
 // varias opciones en columna; devuelve la clave de la elegida o null
 function choose({title,text,opts}){
@@ -1160,6 +1175,26 @@ $("#shotc").addEventListener("click",async e=>{
   try{if(navigator.canShare&&!navigator.canShare({files:[f]}))throw 0;await navigator.share({files:[f]})}catch(err){if(err&&err.name==="AbortError")return;toast(t("shotNoShare"))}}
  else{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=SH.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
 });
+/* ---------- música: la web hace de mando del reproductor de la consola ---------- */
+const MUS={st:"off",timer:0};
+async function musicOp(op,p){
+ try{const r=await api("POST","music",p?{op,p}:{op});MUS.st=r.st;renderMusic(r);if(op==="play")toast(t("musStarted"))}
+ catch(e){toast(e.code==="no_dsp"?t("musNoDsp"):errText(e))}
+}
+async function pollMusic(){
+ clearTimeout(MUS.timer);
+ if(!document.hidden&&!$("#app").classList.contains("hide")){try{const r=await api("GET","music");renderMusic(r)}catch(e){}}
+ MUS.timer=setTimeout(pollMusic,MUS.st==="off"?6000:2000);
+}
+function renderMusic(r){
+ MUS.st=r.st;const el=$("#mup"),on=r.st==="play"||r.st==="pause";
+ el.classList.toggle("show",on);if(!on)return;
+ const pp=r.st==="play"?svg("pause"):svg("play");
+ el.innerHTML=`<div class="mt"><b>${esc(r.title)}</b><span>${esc(r.artist||t("musOnConsole"))}</span></div>
+  <button data-mo="prev" title="${t("musPrev")}">${svg("left")}</button><button class="pp" data-mo="toggle">${pp}</button>
+  <button data-mo="next" title="${t("musNext")}">${svg("right")}</button><button data-mo="stop" title="${t("musStop")}">${svg("x")}</button>`;
+}
+$("#mup").addEventListener("click",e=>{const b=e.target.closest("[data-mo]");if(b)musicOp(b.dataset.mo)});
 /* ---------- ZIP ---------- */
 // varios elementos (o una carpeta) en un ZIP que la consola arma mientras lo manda
 async function zipDownload(dir,names){

@@ -17,6 +17,7 @@
 #include "hl.h"
 #include "dl.h"
 #include "hash.h"
+#include "music.h"
 #include "live.h"
 #include "titles.h"
 #include "remote.h"
@@ -914,6 +915,125 @@ static void mini_strip(float a)
 
 // debajo de la tira: las transferencias a lo ancho o una pista para volver a abrir el QR
 // debajo de la tira, con el QR cerrado: toda la cola (transferencias, copias e instalaciones)
+// ---- reproductor de música: lo que suena (copia por frame), su carátula y su hoja
+static struct {
+	MusicState s;
+	bool open, just;
+	float anim;
+	int sel;          // botón elegido con la cruceta en la hoja
+	Texture cover;
+	u32 cover_track;
+	float bars[24];   // la onda de arriba
+} MU = {.cover_track = 0xFFFFFFFF};
+
+// ▶ o ❚❚ dibujados (sin depender de la fuente)
+static void mu_icon(float cx, float cy, float s, bool playing, u32 c)
+{
+	if (playing) {
+		draw_rect(cx - s * 0.32f, cy - s * 0.4f, s * 0.22f, s * 0.8f, c);
+		draw_rect(cx + s * 0.1f, cy - s * 0.4f, s * 0.22f, s * 0.8f, c);
+	} else
+		draw_tri(cx - s * 0.28f, cy - s * 0.42f, cx - s * 0.28f, cy + s * 0.42f, cx + s * 0.42f, cy, c);
+}
+
+static bool mu_on(void)
+{
+	return MU.s.st == MU_PLAY || MU.s.st == MU_PAUSE;
+}
+
+static void mu_fmt(u32 ms, char *out, size_t n)
+{
+	snprintf(out, n, "%lu:%02lu", (unsigned long)(ms / 60000), (unsigned long)(ms / 1000 % 60));
+}
+
+// arriba: la carátula (o una nota), lo que suena, la onda y el tiempo
+static void music_top(float a)
+{
+	if (MU.cover_track != MU.s.track) {
+		MU.cover_track = MU.s.track;
+		u8 *rgba;
+		int w, h;
+		u32 tr;
+		if (music_cover(&rgba, &w, &h, &tr)) {
+			tex_from_rgba(&MU.cover, rgba, w, h);
+			free(rgba);
+		} else
+			tex_free(&MU.cover);
+	}
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28, PS = 96;
+	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
+	if (MU.cover.ok) {
+		float k = fminf(PS / MU.cover.w, PS / MU.cover.h), cw = MU.cover.w * k, ch = MU.cover.h * k;
+		draw_texture(&MU.cover, X + (PS - cw) / 2, y0 + 12 + (PS - ch) / 2, cw, ch, a);
+	} else
+		draw_icon(IC_SPEAKER, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(T.accent2, a));
+	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 12;
+	const char *d = strrchr(MU.s.dir, '/');
+	char head[160];
+	snprintf(head, sizeof head, MU.s.st == MU_PAUSE ? _("En pausa · %s") : _("Sonando · %s"), d && d[1] ? d + 1 : "SD");
+	text_draw_clip(head, rx, y, rw, TS_SUB, col_alpha(MU.s.st == MU_PAUSE ? T.text3 : T.accent, a));
+	y += 16;
+	text_wrap_lines(MU.s.title, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
+	y += 2 * text_lineh(TS_TITLE) + 2;
+	if (MU.s.artist[0])
+		text_draw_clip(MU.s.artist, rx, y, rw, TS_BODY, col_alpha(T.text2, a));
+	// la onda: barras que siguen lo fuerte que suena
+	float wy = y0 + 12 + PS + 14, wh = 34;
+	for (int i = 0; i < 24; i++) {
+		float target = MU.s.st == MU_PLAY ? MU.s.level * (0.35f + 0.65f * fabsf(sinf(g_time * (2.1f + i * 0.37f) + i))) : 0.04f;
+		MU.bars[i] = approach(MU.bars[i], target, 10);
+		float bw = W / 24.0f, bh = fmaxf(2, MU.bars[i] * wh);
+		draw_rrect(X + i * bw + 1, wy + (wh - bh) / 2, bw - 2, bh, 1.5f, col_alpha(T.accent2, a * 0.85f));
+	}
+	// tiempo
+	float py = y0 + h - 30, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	char t1[16], t2[16];
+	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
+	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
+	text_draw(t1, X, py + 8, TS_SUB, col_alpha(T.text3, a));
+	if (MU.s.dur_ms)
+		text_draw_right(t2, X + W, py + 8, TS_SUB, col_alpha(T.text3, a));
+	draw_rrect(X, py, W, 4, 2, col_alpha(T.surface2, a));
+	draw_rrect(X, py, fmaxf(4, W * f), 4, 2, col_alpha(T.accent, a));
+}
+
+// abajo, sobre las pestañas mientras suena: play/pausa, lo que suena y siguiente; tocarla abre el reproductor
+#define MU_BAR_H 30
+static bool vw_is_open(void);
+static bool mu_bar_shown(void)
+{
+	return mu_on() && !MU.open && !(U.tab == TAB_FILES && vw_is_open()) && !U.ins_pend;
+}
+
+static void music_bar(void)
+{
+	if (!mu_bar_shown())
+		return;
+	float y = SCR_H - TABBAR_H - MU_BAR_H - 4, x = 8, w = BOT_W - 16;
+	draw_rrect(x, y + 2, w, MU_BAR_H, 12, T.shadow);
+	draw_rrect(x, y, w, MU_BAR_H, 12, T.surface2);
+	float f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	draw_rect(x + 10, y + MU_BAR_H - 3, (w - 20) * f, 2, T.accent);
+	float bx = x + 18, nx = x + w - 18;
+	draw_circle(bx, y + MU_BAR_H / 2, 10, touch_in(bx - 14, y, 28, MU_BAR_H) ? T.accent2 : T.accent);
+	mu_icon(bx, y + MU_BAR_H / 2, 11, MU.s.st == MU_PLAY, 0xFFFFFFFF);
+	draw_icon(IC_CHEV_RIGHT, nx, y + MU_BAR_H / 2, 12, T.text2);
+	char t[300];
+	snprintf(t, sizeof t, MU.s.artist[0] ? "%s · %s" : "%s", MU.s.title, MU.s.artist);
+	text_draw_clip(t, bx + 18, y + MU_BAR_H / 2 - text_lineh(TS_SUB) / 2, nx - bx - 36, TS_SUB, T.text);
+	if (tap(bx - 14, y, 28, MU_BAR_H))
+		music_toggle(), g_touch.up = false;
+	else if (tap(nx - 16, y, 32, MU_BAR_H))
+		music_next(), g_touch.up = false;
+	else if (tap(x, y, w, MU_BAR_H)) {
+		MU.open = MU.just = true, MU.sel = 2;
+		g_touch.up = false;
+	}
+}
+
 static void mini_body(float a)
 {
 	if (a <= 0.01f)
@@ -926,6 +1046,10 @@ static void mini_body(float a)
 	for (int i = 0; i < U.ins_n; i++)
 		if (U.ins[i].st == INS_PENDING || U.ins[i].st == INS_QUEUED)
 			wait[nw++] = &U.ins[i];
+	if (!nx && !nw && mu_on()) { // sin transferencias: lo que suena
+		music_top(a);
+		return;
+	}
 	if (!nx && !nw) {
 		draw_halo(TOP_W / 2, y + 44, 70, 0.25f * a);
 		draw_cloud(TOP_W / 2, y + 44, 22, a);
@@ -1132,6 +1256,8 @@ static void draw_top(void)
 		gfx_clip_off();
 		if (mini > 0.01f && U.ins_pend)
 			install_top(mini);
+		else if (mini > 0.01f && MU.open)
+			music_top(mini);
 		else if (U.tab == TAB_FILES && mini > 0.01f)
 			files_top(mini);
 		else if (!(U.tab == TAB_DEVICES && mini > 0.01f && device_top(mini)))
@@ -3042,6 +3168,20 @@ static bool f_open_item(int vi)
 		vw_load(F.v[vi].idx);
 	} else if (!strcasecmp(f_ext(e->name), "zip")) {
 		zs_open(full);
+	} else if (music_is_audio(e->name) && !F.search) { // la carpeta es la lista, en el orden en que se ve
+		static char names[500][256];
+		int n = 0, start = 0;
+		for (int i = 0; i < F.nv && n < 500; i++)
+			if (F.v[i].kind == FV_ITEM && !F.e[F.v[i].idx].dir && music_is_audio(F.e[F.v[i].idx].name)) {
+				if (i == vi)
+					start = n;
+				util_strlcpy(names[n++], F.e[F.v[i].idx].name, sizeof names[0]);
+			}
+		if (!music_play(F.path, names, n, start)) {
+			MusicState ms;
+			music_get(&ms);
+			toast_icon(!strcmp(ms.err, "no_dsp") ? _("Sin audio: falta el firmware DSP") : _("No se pudo reproducir"), IC_CLOSE, T.danger);
+		}
 	} else if (!strcasecmp(f_ext(e->name), "cia") && strlen(full) < 256) {
 		char err[24] = "";
 		if (ins_request(full, G.console, false, err, sizeof err) < 0)
@@ -4417,6 +4557,98 @@ static void ds_draw(void)
 	}
 }
 
+// la hoja del reproductor: aleatorio, anterior, play/pausa, siguiente, repetir; parar e ir a la carpeta
+static void music_sheet(void)
+{
+	MU.anim = approach(MU.anim, MU.open ? 1 : 0, 16);
+	if (MU.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(MU.anim), h = 150, y = SCR_H - h - 6 + (1 - a) * 40;
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	draw_rrect(10, y + 3, BOT_W - 20, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
+	if (!MU.open)
+		return;
+	bool fresh = MU.just;
+	MU.just = false;
+	if (!mu_on()) {
+		MU.open = false;
+		return;
+	}
+	text_draw_center_clip(MU.s.title, BOT_W / 2, y + 10, BOT_W - 50, TS_BODY, T.text);
+	char sub[200], t1[16], t2[16];
+	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
+	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
+	snprintf(sub, sizeof sub, "%d / %d · %s / %s", MU.s.idx + 1, MU.s.n, t1, MU.s.dur_ms ? t2 : "--:--");
+	text_draw_center(sub, BOT_W / 2, y + 28, TS_SUB, T.text3);
+	// los cinco botones
+	static const IconId IC5[5] = {IC_SPARK, IC_CHEV_LEFT, IC_STOP, IC_CHEV_RIGHT, IC_REFRESH};
+	float bw = 52, gx = (BOT_W - 5 * bw) / 2, by = y + 48;
+	int run = -1;
+	if (!fresh && U.buttons) {
+		if (g_krepeat & KEY_LEFT) MU.sel = (MU.sel + 4) % 5;
+		if (g_krepeat & KEY_RIGHT) MU.sel = (MU.sel + 1) % 5;
+	}
+	for (int i = 0; i < 5; i++) {
+		float cx = gx + i * bw + bw / 2, cy = by + 20;
+		bool on = (i == 0 && MU.s.shuffle) || (i == 4 && MU.s.repeat != MR_OFF);
+		bool hl = touch_in(cx - 22, by, 44, 40) || (U.buttons && MU.sel == i);
+		draw_circle(cx, cy, i == 2 ? 19 : 15, i == 2 ? T.accent : hl ? T.surface2 : T.bg);
+		if (U.buttons && MU.sel == i)
+			draw_ring(cx, cy, i == 2 ? 20 : 16, 1.5f, T.accent);
+		if (i == 2)
+			mu_icon(cx, cy, 17, MU.s.st == MU_PLAY, 0xFFFFFFFF);
+		else
+			draw_icon(IC5[i], cx, cy, 13, on ? T.accent : T.text2);
+		if (i == 4 && MU.s.repeat == MR_ONE)
+			text_draw_center("1", cx + 9, cy + 2, 0.34f, T.accent);
+		if (!fresh && tap(cx - 22, by, 44, 40))
+			run = i;
+	}
+	if (!fresh && U.buttons && (g_kdown & KEY_A))
+		run = MU.sel;
+	const char *mode = MU.s.repeat == MR_ONE ? _("Repetir esta") : MU.s.repeat == MR_ALL ? _("Repetir la carpeta") : _("Sin repetir");
+	char line[160];
+	snprintf(line, sizeof line, "%s · %s", MU.s.shuffle ? _("Aleatorio") : _("En orden"), mode);
+	text_draw_center(line, BOT_W / 2, by + 44, TS_SUB, T.text3);
+	// parar y su carpeta
+	float ly = y + h - 34, lw = (BOT_W - 44) / 2;
+	char b1[48], b2[48];
+	snprintf(b1, sizeof b1, "%s %s", GLYPH_X, _("Parar"));
+	snprintf(b2, sizeof b2, "%s %s", GLYPH_Y, _("Ir a la carpeta"));
+	draw_rrect(18, ly, lw, 26, 13, touch_in(18, ly, lw, 26) ? T.surface2 : T.bg);
+	draw_rrect(26 + lw, ly, lw, 26, 13, touch_in(26 + lw, ly, lw, 26) ? T.surface2 : T.bg);
+	text_draw_center_clip(b1, 18 + lw / 2, ly + 13 - text_lineh(TS_SUB) / 2, lw - 8, TS_SUB, T.danger);
+	text_draw_center_clip(b2, 26 + lw * 1.5f, ly + 13 - text_lineh(TS_SUB) / 2, lw - 8, TS_SUB, T.text2);
+	if (!fresh && (tap(18, ly, lw, 26) || (g_kdown & KEY_X))) {
+		music_stop();
+		MU.open = false;
+	} else if (!fresh && (tap(26 + lw, ly, lw, 26) || (g_kdown & KEY_Y))) {
+		MU.open = false;
+		U.tab = TAB_FILES;
+		char dir[512], nm[256];
+		util_strlcpy(dir, MU.s.dir, sizeof dir);
+		util_strlcpy(nm, MU.s.name, sizeof nm);
+		f_load(dir);
+		for (int i = 0; i < F.nv; i++)
+			if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm))
+				F.sel = i;
+	} else if (run == 0)
+		music_shuffle();
+	else if (run == 1)
+		music_prev();
+	else if (run == 2)
+		music_toggle();
+	else if (run == 3)
+		music_next();
+	else if (run == 4)
+		music_repeat();
+	if (!fresh && ((g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y)))
+		MU.open = false;
+	g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y);
+	g_touch.up = false;
+}
+
 // copias en cola: una por frame como mucho, cuando la anterior terminó
 static void cq_tick(void)
 {
@@ -5663,6 +5895,11 @@ static void trash_top(float a)
 
 static void files_top(float a)
 {
+	const FEnt *se = f_selected();
+	if (mu_on() && se && !F.search && !strcmp(F.path, MU.s.dir) && !strcmp(se->name, MU.s.name) && !ZS.open && !HS.open) {
+		music_top(a); // la que suena: su carátula y su tiempo
+		return;
+	}
 	if (F.titles && !ZS.open && !HS.open) {
 		titles_top(a);
 		return;
@@ -6261,10 +6498,12 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || U.ins_pend || viewer) {
+	bool overlay = FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
+	if (overlay) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
-	}
+	} else if (mu_bar_shown() && tc.sy >= SCR_H - TABBAR_H - MU_BAR_H - 4 && tc.sy < SCR_H - TABBAR_H) // la barrita de la música: lo de debajo no se toca
+		memset(&g_touch, 0, sizeof g_touch);
 	if (viewer) {
 		if (!FM.open && !TY.open && !U.ins_pend && !g_dialog.open)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
@@ -6292,6 +6531,8 @@ static void draw_bottom(void)
 		draw_tabbar();
 	bool lf = g_touch.long_fired; // una pulsación larga ya usada no vuelve a contar al soltar
 	g_kdown = kd, g_krepeat = kr, g_touch = tc, g_touch.long_fired |= lf;
+	if (!overlay && !g_dialog.open)
+		music_bar(); // con la entrada de verdad (lo de debajo no la recibió)
 	if (U.tab == TAB_FILES) {
 		f_menu();
 		pm_draw();
@@ -6305,6 +6546,7 @@ static void draw_bottom(void)
 		tt_draw();
 	}
 	ds_draw();
+	music_sheet();
 	qrs_draw();
 	install_card();
 	dialog_draw();
@@ -6452,7 +6694,7 @@ static void watch_events(void)
 
 static void lid_and_sleep(void)
 {
-	bool busy = xfer_active() > 0 || upd_busy() || ins_busy();
+	bool busy = xfer_active() > 0 || upd_busy() || ins_busy() || music_playing(); // con música, como Radio Neon: sigue con la tapa cerrada
 	aptSetSleepAllowed(!busy);
 	// tapa cerrada transfiriendo: apaga la luz y sigue
 	u8 open = 1;
@@ -6681,6 +6923,7 @@ static void update(void)
 		} else
 			sig_n = -1;
 	}
+	music_get(&MU.s);
 	if (U.want_netname) {
 		U.want_netname = false;
 		char nm[48];
@@ -7043,6 +7286,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	music_exit();
 	dl_exit();
 	ops_exit();
 	th_exit();
