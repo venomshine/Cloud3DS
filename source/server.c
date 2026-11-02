@@ -491,6 +491,116 @@ static void h_login(Conn *c, const char *body)
 	free(b.p);
 }
 
+/* ---------- la misma sesión por la IP y por el nombre .local ----------
+ * Para el navegador son dos webs distintas, cada una con su cookie. Si entra por una en la
+ * que aún no tiene sesión, la web va a la otra (/api/handoff): allí, si ya estaba vinculado,
+ * la consola crea un código de un solo uso (1 minuto) y vuelve con él; la primera lo canjea
+ * por la cookie del mismo dispositivo. Así no hace falta volver a vincularlo. */
+#define HANDOFF_N 4
+static struct {
+	char code[33], tok[33];
+	u64 exp;
+} handoff[HANDOFF_N];
+
+/* «back» solo puede ser esta consola: su IP o su nombre .local (con el puerto, si no es el 80) */
+static bool handoff_back_ok(const char *back)
+{
+	char a[96], b[112], ip[24];
+	util_strlcpy(ip, G.ip ? inet_ntoa((struct in_addr){G.ip}) : "-", sizeof ip);
+	const char *hosts[2] = {ip, G.net_name};
+	for (int i = 0; i < 2; i++) {
+		snprintf(a, sizeof a, "http://%s%s", hosts[i], i ? ".local" : "");
+		snprintf(b, sizeof b, "%s:%d", a, G.port);
+		if (!strcasecmp(back, a) || !strcasecmp(back, b))
+			return true;
+	}
+	return false;
+}
+
+/* la página que hace de puente: pide el código con la cookie de este sitio y vuelve */
+static void h_handoff_page(Conn *c)
+{
+	static const char html[] =
+	    "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\">"
+	    "<title>Cloud3DS</title><body style=\"background:#0d121c\"><script>"
+	    "var b=new URLSearchParams(location.search).get('back')||'';"
+	    "fetch('/api/handoff_mint',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+	    "body:'back='+encodeURIComponent(b)}).then(function(r){return r.json()})"
+	    ".then(function(j){location.replace(j.url||b+'/#ho=-')})"
+	    ".catch(function(){if(/^http:\\/\\/[^\\/]+$/.test(b))location.replace(b+'/#ho=-')})"
+	    "</script>";
+	resp(c, 200, "text/html; charset=utf-8", html, sizeof html - 1, "Cache-Control: no-store\r\n");
+}
+
+static void h_handoff_mint(Conn *c, const char *body)
+{
+	char back[96] = "";
+	qget(body, "back", back, sizeof back);
+	state_lock();
+	bool ok = handoff_back_ok(back);
+	char code[33] = "-";
+	if (ok && c->dev >= 0) {
+		int slot = 0;
+		for (int i = 1; i < HANDOFF_N; i++)
+			if (handoff[i].exp < handoff[slot].exp)
+				slot = i;
+		util_rand_hex(handoff[slot].code, 32);
+		util_strlcpy(handoff[slot].tok, G.dev[c->dev].token, sizeof handoff[slot].tok);
+		handoff[slot].exp = util_ms() + 60000;
+		util_strlcpy(code, handoff[slot].code, sizeof code);
+	}
+	state_unlock();
+	if (!ok) {
+		resp_err(c, 400, "back");
+		return;
+	}
+	Buf b = {0};
+	char url[160];
+	snprintf(url, sizeof url, "%s/#ho=%s", back, code);
+	buf_puts(&b, "{\"ok\":true,\"url\":");
+	buf_json_str(&b, url);
+	buf_puts(&b, "}");
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
+static void h_handoff_claim(Conn *c, const char *body)
+{
+	char code[40] = "", tok[33] = "", name[48] = "";
+	qget(body, "k", code, sizeof code);
+	u64 now = util_ms();
+	state_lock();
+	for (int i = 0; i < HANDOFF_N; i++)
+		if (handoff[i].exp > now && strlen(code) == 32 && !strcmp(handoff[i].code, code)) {
+			util_strlcpy(tok, handoff[i].tok, sizeof tok);
+			memset(&handoff[i], 0, sizeof handoff[i]); /* un solo uso */
+		}
+	int d = tok[0] ? find_dev(tok) : -1;
+	if (d >= 0)
+		util_strlcpy(name, G.dev[d].name, sizeof name);
+	state_unlock();
+	if (d < 0) {
+		resp_err(c, 403, "expired");
+		return;
+	}
+	char hdr[160];
+	snprintf(hdr, sizeof hdr, "Set-Cookie: c3d=%s; Max-Age=31536000; Path=/; HttpOnly; SameSite=Strict\r\n", tok);
+	Buf b = {0};
+	buf_puts(&b, "{\"ok\":true,\"device\":");
+	buf_json_str(&b, name);
+	buf_puts(&b, "}");
+	resp(c, 200, "application/json; charset=utf-8", b.p, b.len, hdr);
+	free(b.p);
+}
+
+/* 1×1 transparente: la web la pide al otro nombre para saber si este navegador llega a él */
+static void h_ping_gif(Conn *c)
+{
+	static const unsigned char gif[] = {0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0, 1, 0, 0x80, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0x21, 0xf9, 4, 1, 0, 0, 0, 0,
+	                                    0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0, 0x3b};
+	resp(c, 200, "image/gif", gif, sizeof gif, "Cache-Control: no-store\r\n");
+}
+
 /* ---------- manejadores ---------- */
 
 static void h_index(Conn *c)
@@ -523,7 +633,16 @@ static void h_hello(Conn *c)
 	state_lock();
 	buf_puts(&b, "{\"app\":\"Cloud3DS\",\"version\":\"" APP_VERSION "\",\"console\":");
 	buf_json_str(&b, G.console);
-	buf_printf(&b, ",\"authed\":%s,\"revoked\":%s}", c->dev >= 0 ? "true" : "false", revoked ? "true" : "false");
+	buf_printf(&b, ",\"authed\":%s,\"revoked\":%s", c->dev >= 0 ? "true" : "false", revoked ? "true" : "false");
+	/* las dos formas de entrar: para pasar la sesión de una a otra (h_handoff) */
+	buf_printf(&b, ",\"ip\":\"%s\",\"local\":", G.ip ? inet_ntoa((struct in_addr){G.ip}) : "");
+	if (G.mdns && (G.remote_ok & 1)) {
+		char ln[80];
+		snprintf(ln, sizeof ln, "%s.local", G.net_name);
+		buf_json_str(&b, ln);
+	} else
+		buf_puts(&b, "\"\"");
+	buf_puts(&b, "}");
 	state_unlock();
 	resp_json(c, 200, &b);
 	free(b.p);
@@ -2018,6 +2137,22 @@ static void route(Conn *c, const char *body)
 
 	if (strcmp(p, "hello") == 0) {
 		h_hello(c);
+		return;
+	}
+	if (strcmp(p, "handoff") == 0 && get) {
+		h_handoff_page(c);
+		return;
+	}
+	if (strcmp(p, "handoff_mint") == 0 && post) {
+		h_handoff_mint(c, body);
+		return;
+	}
+	if (strcmp(p, "handoff_claim") == 0 && post) {
+		h_handoff_claim(c, body);
+		return;
+	}
+	if (strcmp(p, "ping.gif") == 0 && get) {
+		h_ping_gif(c);
 		return;
 	}
 	if (strcmp(p, "login") == 0) {

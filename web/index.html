@@ -621,9 +621,15 @@ function setOffline(on){const o=$("#offline");o.textContent=t("offline");o.class
 let hello={};
 async function boot(){
  try{hello=await (await fetch("/api/hello")).json()}catch(e){hello={}}
- const k=(location.hash.match(/k=([0-9a-f]+)/)||[])[1];
- if(k)history.replaceState(null,"",location.pathname);
+ const ho=(location.hash.match(/ho=([0-9a-f]+|-)/)||[])[1];
+ const k=ho?null:(location.hash.match(/k=([0-9a-f]+)/)||[])[1];
+ if(k||ho)history.replaceState(null,"",location.pathname);
  if(hello.authed){startApp();return}
+ // vinculado ya por la otra dirección (la IP o el nombre .local): se trae esa sesión
+ if(ho&&ho!=="-"){
+  try{await api("POST","handoff_claim",{}, "k="+ho);startApp();return}catch(e){}
+ }
+ if(!ho&&!k&&!hello.revoked&&await handoffTry())return;
  if(hello.revoked&&!k){showLogin(false,true);return}
  if(k){
   showLogin(true);
@@ -631,6 +637,23 @@ async function boot(){
   catch(e){showLogin();msg(e.code==="net"?t("noConsole"):e.code==="locked"?t("locked"):t("qrOld"),true);return}
  }
  showLogin();
+}
+// sin sesión aquí: se mira si la hay en la otra dirección de la misma consola. A la IP se va
+// siempre; al nombre .local, solo si este navegador llega a él (si no, se quedaría colgado)
+async function handoffTry(){
+ try{if(sessionStorage.getItem("c3d_ho"))return false;sessionStorage.setItem("c3d_ho","1")}catch(e){return false}
+ const port=location.port?":"+location.port:"",here=location.hostname;
+ let other="";
+ if(hello.ip&&here!==hello.ip)other=hello.ip;
+ else if(hello.local&&here!==hello.local){
+  const ok=await new Promise(r=>{const i=new Image(),t=setTimeout(()=>r(false),1500);
+   i.onload=()=>{clearTimeout(t);r(true)};i.onerror=()=>{clearTimeout(t);r(false)};
+   i.src="http://"+hello.local+port+"/api/ping.gif?"+Date.now()});
+  if(ok)other=hello.local;
+ }
+ if(!other)return false;
+ location.replace("http://"+other+port+"/api/handoff?back="+encodeURIComponent(location.origin));
+ return true;
 }
 function msg(s,err){const m=$("#lmsg");m.innerHTML=s;m.classList.toggle("err",!!err)}
 // el PIN nunca se queda escrito: ni al entrar, ni al salir, ni al volver a esta pantalla
