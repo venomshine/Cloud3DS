@@ -13,6 +13,7 @@
 #include "cJSON.h"
 #include "state.h"
 #include "util.h"
+#include "dl.h"
 
 #include <curl/curl.h>
 #include <mbedtls/sha256.h>
@@ -123,9 +124,39 @@ static int xfer_cb(void *u, curl_off_t dt, curl_off_t dn, curl_off_t ut, curl_of
 	return U.cmd == CMD_QUIT; /* salir corta la descarga */
 }
 
-/* error de curl o HTTP a un texto corto (la interfaz lo traduce) */
+static void total_cb(void *u, u64 total)
+{
+	Mem *m = u;
+	if (m->progress) {
+		LightLock_Lock(&U.lock);
+		U.i.total = total;
+		LightLock_Unlock(&U.lock);
+	}
+}
+
+static const char *http_code_err(long code)
+{
+	if (code == 404)
+		return "no_release";
+	if (code == 403 || code == 429)
+		return "rate";
+	if (code != 200)
+		return "http";
+	return NULL;
+}
+
+/* error de curl o HTTP a un texto corto (la interfaz lo traduce). Primero con httpc (el servicio
+ * del sistema, más rápido); si no conecta, con libcurl y las raíces de Mozilla */
 static const char *http_get(const char *url, Mem *m, bool json)
 {
+	long hcode = 0;
+	int hr = dl_fetch(url, json ? "application/vnd.github+json" : NULL, write_cb, total_cb, m, &hcode);
+	util_log("update: GET %s -> httpc %d, HTTP %ld, %u bytes", url, hr, hcode, (unsigned)m->n);
+	if (hr == DLF_OK)
+		return http_code_err(hcode);
+	if (hr == DLF_FAIL)
+		return m->n + 1 >= m->max ? "too_big" : "net";
+	m->n = 0;
 	CURL *c = curl_easy_init();
 	if (!c)
 		return "net";
@@ -166,13 +197,7 @@ static const char *http_get(const char *url, Mem *m, bool json)
 		return "too_big";
 	if (r != CURLE_OK)
 		return "net";
-	if (code == 404)
-		return "no_release";
-	if (code == 403 || code == 429)
-		return "rate";
-	if (code != 200)
-		return "http";
-	return NULL;
+	return http_code_err(code);
 }
 
 /* ---------- buscar ---------- */

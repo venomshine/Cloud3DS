@@ -52,3 +52,8 @@ int  dl_op(u32 id, int op);
 u32  dl_rev(void);                  /* cambia con cada novedad */
 int  dl_active(void);               /* en cola o bajando */
 bool dl_url_ok(const char *url);
+
+/* GET con el servicio HTTP del sistema (comprobando el certificado), para el actualizador.
+ * DLF_NOCONN: no conectó (se puede probar con libcurl); con DLF_OK, *code es el estado HTTP */
+enum { DLF_OK, DLF_NOCONN, DLF_FAIL };
+int dl_fetch(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void (*tot)(void *, u64), void *u, long *code);

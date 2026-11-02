@@ -361,6 +361,48 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 	return HC_HTTP;
 }
 
+/* para otros módulos (el actualizador): una petición GET con httpc, comprobando el certificado */
+int dl_fetch(const char *url0, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void (*tot)(void *, u64), void *u, long *code_out)
+{
+	if (!hc_ready)
+		return DLF_NOCONN;
+	char url[1024];
+	util_strlcpy(url, url0, sizeof url);
+	httpcContext ctx;
+	u32 code = 0;
+	int e = hc_open(&ctx, url, sizeof url, true, 0, accept, &code);
+	if (e != HC_OK)
+		return e == HC_NOCONN ? DLF_NOCONN : DLF_FAIL;
+	*code_out = code;
+	if (code >= 400) {
+		httpcCloseContext(&ctx);
+		return DLF_OK;
+	}
+	u8 *buf = malloc(64 * 1024);
+	Result r = -1;
+	u32 dl = 0, total = 0, before;
+	int out = buf ? DLF_OK : DLF_FAIL;
+	while (buf) {
+		before = dl;
+		r = httpcReceiveDataTimeout(&ctx, buf, 64 * 1024, 30ull * 1000000000ull);
+		httpcGetDownloadSizeState(&ctx, &dl, &total);
+		if (tot && total)
+			tot(u, total);
+		if (dl > before && wr((char *)buf, 1, dl - before, u) != dl - before) {
+			out = DLF_FAIL;
+			break;
+		}
+		if (r != (Result)HTTPC_RESULTCODE_DOWNLOADPENDING) {
+			if (R_FAILED(r))
+				out = DLF_FAIL;
+			break;
+		}
+	}
+	free(buf);
+	httpcCloseContext(&ctx);
+	return out;
+}
+
 /* una respuesta pequeña entera en memoria (la API de GitHub) */
 static int hc_get_mem(const char *url0, const char *accept, Mem *m, long *code_out)
 {
