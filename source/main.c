@@ -17,6 +17,7 @@
 #include "hl.h"
 #include "dl.h"
 #include "hash.h"
+#include "titles.h"
 #include "remote.h"
 #include "qrcam.h"
 #include "zipjob.h"
@@ -68,7 +69,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2 };
 
 typedef struct {
 	float off, target;
@@ -1479,8 +1480,8 @@ typedef struct {
 	float x, w;  // en la vista de iconos, cada casilla de la fila
 	short n;     // cabecera de grupo: cuántos tiene
 } FView;
-enum { CH_HOME, CH_SHOTS, CH_PHOTOS, CH_CIAS, CH_HB, CH_SAVES, CH_COUNT };
-static const char *const CHIP_PATH[CH_COUNT] = {"/", "/luma/screenshots", "/DCIM", "/cias", "/3ds", "@saves"};
+enum { CH_HOME, CH_SHOTS, CH_PHOTOS, CH_CIAS, CH_HB, CH_TITLES, CH_SAVES, CH_COUNT };
+static const char *const CHIP_PATH[CH_COUNT] = {"/", "/luma/screenshots", "/DCIM", "/cias", "/3ds", "@titles", "@saves"};
 static const char *const SAVE_DIRS[3] = {"/3ds/Checkpoint/saves", "/JKSV/Saves", "/JKSV"};
 
 static struct {
@@ -1493,6 +1494,7 @@ static struct {
 	bool chips_on;     // accesos rápidos a la vista fuera de la raíz (se sacan tirando hacia abajo)
 	bool trash;        // se está viendo la papelera (F.path = "@trash")
 	bool search;       // se ven los resultados de una búsqueda (F.path = "@search")
+	bool titles;       // los títulos instalados (F.path = "@titles"); FEnt.tid es su posición en TI
 	float pull;        // cuánto se está tirando hacia abajo estando arriba del todo
 	int nv;
 	float off, target, total;
@@ -1518,6 +1520,10 @@ static struct {
 	int n;
 	char (*nm)[128];
 } MS;
+
+// títulos instalados: los de la última lectura
+static TitleInfo *TI;
+static int TI_n;
 
 // comprimir en ZIP: lo elegido espera aquí a que se escriba el nombre (teclado, fuera del dibujo)
 static struct {
@@ -1589,18 +1595,23 @@ static const char *chip_name(int i)
 	case CH_PHOTOS: return _("Fotos");
 	case CH_CIAS: return _("CIAs");
 	case CH_HB: return _("Homebrew");
+	case CH_TITLES: return _("Instalados");
 	default: return _("Partidas");
 	}
 }
 
 static IconId chip_icon(int i)
 {
-	static const IconId IC[CH_COUNT] = {IC_CLOUD, IC_CAMERA, IC_IMAGE, IC_GEM, IC_CODE, IC_STAR};
+	static const IconId IC[CH_COUNT] = {IC_CLOUD, IC_CAMERA, IC_IMAGE, IC_GEM, IC_CODE, IC_GAMEPAD, IC_STAR};
 	return IC[i];
 }
 
 static void f_full(int i, char *out, size_t n)
 {
+	if (F.titles) { // un título no es un archivo: su «ruta» es su ID (las miniaturas la usan para el icono)
+		snprintf(out, n, "@t%016llX", F.e[i].tid < (u32)TI_n ? (unsigned long long)TI[F.e[i].tid].tid : 0ull);
+		return;
+	}
 	const char *dir = F.search ? SR.dirs[F.e[i].sdir] : F.path;
 	snprintf(out, n, "%s%s%s", dir, strcmp(dir, "/") ? "/" : "", F.e[i].name);
 }
@@ -1673,6 +1684,11 @@ static int f_group(const FEnt *e)
 static void f_kind(const FEnt *e, IconId *ic, u32 *col)
 {
 	static const u32 MK[7] = {0, 0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
+	if (F.titles) {
+		*ic = IC_GAMEPAD;
+		*col = T.ok;
+		return;
+	}
 	if (e->dir) {
 		*ic = IC_FOLDER;
 		*col = e->color ? MK[e->color] : T.warn;
@@ -1837,7 +1853,7 @@ static void f_build_view(void)
 			nsys++;
 			continue;
 		}
-		if (V.f_group && e->grp != last) {
+		if (V.f_group && !F.titles && e->grp != last) {
 			f_endrow(&y, &col);
 			last = e->grp;
 			short cnt = 0;
@@ -1846,7 +1862,7 @@ static void f_build_view(void)
 			F.v[F.nv++] = (FView){FV_GROUP, (short)last, y, 26, 0, BOT_W, cnt};
 			y += 26;
 		}
-		if (!V.f_group || !(F.gclosed & (1u << e->grp)))
+		if (!V.f_group || F.titles || !(F.gclosed & (1u << e->grp)))
 			f_put(i, &y, &col);
 	}
 	f_endrow(&y, &col);
@@ -2094,6 +2110,34 @@ static void f_load(const char *path)
 	F.nosaves = false;
 	F.need_reload = false;
 	F.trash = !strcmp(path, "@trash");
+	F.titles = !strcmp(path, "@titles");
+	if (F.titles) { // juegos y apps de la SD, por nombre
+		if (!same || !TI) {
+			free(TI);
+			TI = NULL;
+			TI_n = titles_list(&TI);
+			if (TI_n < 0)
+				TI_n = 0;
+		}
+		for (int i = 0; i < TI_n && F.n < F_MAX; i++) {
+			FEnt *e = &F.e[F.n++];
+			memset(e, 0, sizeof *e);
+			util_strlcpy(e->name, TI[i].title, sizeof e->name);
+			e->size = TI[i].size + TI[i].upd_size + TI[i].dlc_size;
+			e->tid = (u32)i;
+		}
+		F.err = F.missing = false;
+		f_build_view();
+		if (!same) {
+			ms_end();
+			F.sel = 0;
+			F.off = F.target = 0;
+		}
+		if (F.sel >= F.nv)
+			F.sel = F.nv - 1;
+		F.info_for = -1;
+		return;
+	}
 	F.search = !strcmp(path, "@search");
 	if (F.search) { // resultados de la búsqueda, en el orden en que se encuentran
 		sr_fill();
@@ -2178,6 +2222,10 @@ static void f_reload_keep(void)
 static void f_open_chip(int c)
 {
 	const char *p = CHIP_PATH[c];
+	if (c == CH_TITLES) {
+		f_load("@titles");
+		return;
+	}
 	if (c == CH_SAVES) {
 		p = NULL;
 		for (int i = 0; i < 3 && !p; i++) {
@@ -2989,7 +3037,7 @@ static bool f_open_item(int vi)
 // Se leen en otro hilo, de una en una, para que desplazarse no se trabe; la textura se crea aquí
 #define TH_N 48  // cuántas se guardan (las menos usadas se van)
 #define TH_S 56  // tamaño máximo
-enum { TK_NONE, TK_IMG, TK_CIA, TK_3DSX };
+enum { TK_NONE, TK_IMG, TK_CIA, TK_3DSX, TK_TITLE };
 static struct {
 	char name[128];
 	u64 mtime;
@@ -3029,6 +3077,8 @@ static void th_thread(void *arg)
 			TJ.ok = img_load_fit(TJ.path, TH_S, TH_S, &TJ.rgba, &TJ.w, &TJ.h, &ow, &oh) == IMG_OK;
 		} else if (TJ.kind == TK_CIA) {
 			TJ.ok = ins_icon(TJ.path, TJ.px);
+		} else if (TJ.kind == TK_TITLE) {
+			TJ.ok = title_icon(strtoull(TJ.path + 2, NULL, 16), TJ.px);
 		} else {
 			char t[64], p[64];
 			TJ.ok = smdh_3dsx(TJ.path, t, sizeof t, p, sizeof p, TJ.px);
@@ -3053,6 +3103,8 @@ static void th_exit(void)
 
 static int th_kind(const FEnt *e)
 {
+	if (F.titles)
+		return TK_TITLE;
 	if (e->dir)
 		return TK_NONE;
 	const char *x = f_ext(e->name);
@@ -4087,6 +4139,147 @@ static void zip_top(float a)
 	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
 }
 
+// un título instalado: hacer copia de la partida, ver sus copias o desinstalarlo
+static struct {
+	bool open, just;
+	float anim;
+	int sel;
+	u64 icon_tid;   // de qué título es el icono de arriba
+	Texture icon;
+	int copies;     // copias de su partida (se cuentan al elegirlo)
+	u64 last;
+	u64 info_tid;
+} TT;
+
+static const TitleInfo *tt_selected(void)
+{
+	const FEnt *e = f_selected();
+	return F.titles && e && e->tid < (u32)TI_n ? &TI[e->tid] : NULL;
+}
+
+static void tt_backup(const TitleInfo *t)
+{
+	char out[600];
+	int r = save_backup(t, out, sizeof out);
+	if (r == 0) {
+		state_lock();
+		event_add(EV_CREATE, t->title, G.console, 0);
+		state_unlock();
+		toast_icon(_("Copia de la partida guardada, como en Checkpoint"), IC_CHECK, T.ok);
+		TT.info_tid = 0; // que se vuelvan a contar
+	} else
+		toast_icon(r == -1 ? _("Este juego aún no tiene partida") : _("No se pudo copiar la partida"), IC_CLOSE, r == -1 ? T.warn : T.danger);
+}
+
+static void tt_draw(void)
+{
+	const TitleInfo *t = tt_selected();
+	if (!t && TT.open)
+		TT.open = false;
+	static const IconId ic[3] = {IC_DOWNLOAD, IC_FOLDER, IC_TRASH};
+	const char *lab[3] = {_("Hacer copia de la partida"), _("Ver sus copias"), _("Desinstalar")};
+	const u32 col[3] = {T.ok, T.text, T.danger};
+	int n = t && title_is_self(t->tid) ? 2 : 3; // Cloud3DS no se desinstala a sí mismo
+	int r = sheet_list(&TT.open, &TT.just, &TT.anim, &TT.sel, t ? t->title : "", ic, lab, col, n);
+	if (r < 0 || !t)
+		return;
+	if (r == 0)
+		tt_backup(t);
+	else if (r == 1) {
+		char gd[512];
+		save_dir(t, gd, sizeof gd);
+		bool d;
+		u64 sz;
+		if (fsx_stat(gd, &d, &sz) < 0)
+			toast_icon(_("Aún no hay copias de este juego"), IC_INFO, T.text2);
+		else
+			f_load(gd);
+	} else {
+		char msg[300], sz[24];
+		util_fmt_size(sz, sizeof sz, t->size + t->upd_size + t->dlc_size);
+		snprintf(msg, sizeof msg, _("Se borrarán el juego, su actualización, sus DLC y su partida (%s). Si quieres conservar la partida, haz antes una copia."), sz);
+		U.dlg_arg = (int)(t - TI);
+		dialog_open(DLG_UNINSTALL, _("¿Desinstalar?"), msg, _("Desinstalar"), true);
+	}
+}
+
+static float info_row(float x, float y, float w, const char *k, const char *v, u32 vc, float a);
+static void f_fmt_date(char *out, size_t n, u64 t);
+
+static void ver_text(u16 v, char *out, size_t n)
+{
+	snprintf(out, n, "%u.%u.%u", v >> 10, (v >> 4) & 0x3F, v & 0xF);
+}
+
+// pantalla de arriba con un título elegido: icono, nombre, versión, tamaño, DLC, copias e ID
+static void titles_top(float a)
+{
+	const TitleInfo *t = tt_selected();
+	float y0 = CARD_Y + MINI_H + 8, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 14, W = CARD_W - 28, PS = 96;
+	if (!t) {
+		draw_icon(IC_GAMEPAD, TOP_W / 2, y0 + h / 2 - 14, 30, col_alpha(T.text3, a));
+		text_draw_center(_("Elige un juego para ver sus datos"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
+		return;
+	}
+	if (TT.icon_tid != t->tid) {
+		TT.icon_tid = t->tid;
+		u16 *px = malloc(48 * 48 * 2);
+		if (px && title_icon(t->tid, px))
+			tex_from_rgb565(&TT.icon, px, 48, 48);
+		else
+			tex_free(&TT.icon);
+		free(px);
+	}
+	if (TT.info_tid != t->tid) {
+		TT.info_tid = t->tid;
+		TT.copies = save_backups_count(t, &TT.last);
+	}
+	draw_rrect(X, y0 + 12, PS, PS, 14, col_alpha(T.surface2, a));
+	if (TT.icon.ok)
+		draw_texture(&TT.icon, X + 12, y0 + 24, 72, 72, a);
+	else
+		draw_icon(IC_GAMEPAD, X + PS / 2, y0 + 12 + PS / 2, 40, col_alpha(T.ok, a));
+	float rx = X + PS + 14, rw = X + W - rx, y = y0 + 10;
+	text_wrap_lines(t->title, rw, TS_TITLE, 2, rx, y, col_alpha(T.text, a), true);
+	y += 2 * text_lineh(TS_TITLE) + 2;
+	char v[160], b1[24], b2[24];
+	ver_text(t->has_upd ? t->upd_version : t->version, b1, sizeof b1);
+	if (t->has_upd)
+		snprintf(v, sizeof v, _("%s · actualización instalada"), b1);
+	else
+		util_strlcpy(v, b1, sizeof v);
+	y = info_row(rx, y, rw, _("Versión"), v, T.text2, a);
+	util_fmt_size(b1, sizeof b1, t->size + t->upd_size + t->dlc_size);
+	if (t->upd_size || t->dlc_size) {
+		util_fmt_size(b2, sizeof b2, t->size);
+		snprintf(v, sizeof v, _("%s (juego %s)"), b1, b2);
+	} else
+		util_strlcpy(v, b1, sizeof v);
+	y = info_row(rx, y, rw, _("Tamaño"), v, T.text2, a);
+	if (t->dlc) {
+		util_fmt_size(b1, sizeof b1, t->dlc_size);
+		snprintf(v, sizeof v, t->dlc == 1 ? _("1 contenido · %s") : _("%d contenidos · %s"), t->dlc, b1);
+		y = info_row(rx, y, rw, _("DLC"), v, T.text2, a);
+	}
+	if (TT.copies) {
+		f_fmt_date(b1, sizeof b1, TT.last);
+		snprintf(v, sizeof v, TT.copies == 1 ? _("1 · %s") : _("%d · la última %s"), TT.copies, b1);
+	} else
+		util_strlcpy(v, _("Ninguna todavía"), sizeof v);
+	y = info_row(rx, y, rw, _("Copias"), v, TT.copies ? T.text2 : T.text3, a);
+	float by = y0 + h - 22;
+	draw_rect(X, by - 6, W, 1, col_alpha(T.divider, a));
+	snprintf(v, sizeof v, "%016llX%s%s", (unsigned long long)t->tid, t->pub[0] ? " · " : "", t->pub);
+	char hint[64];
+	snprintf(hint, sizeof hint, "%s %s", GLYPH_A, _("Opciones"));
+	float hw = text_width(hint, TS_SUB);
+	text_draw_right(hint, X + W, by, TS_SUB, col_alpha(T.text2, a));
+	text_draw_clip(v, X, by, W - hw - 12, TS_SUB, col_alpha(T.text3, a));
+}
+
 // papelera: recuperar o borrar del todo el elemento elegido
 static struct {
 	bool open, just;
@@ -4229,7 +4422,7 @@ static void tab_files(void)
 		f_reload_keep();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = !strcmp(F.path, "/");
-	const char *nm = F.trash ? _("Papelera") : F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
+	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Instalados") : F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
 	char sq[160];
 	if (F.search) {
 		snprintf(sq, sizeof sq, "«%s»", SR.q);
@@ -4279,6 +4472,20 @@ static void tab_files(void)
 			g_kdown &= ~KEY_B;
 			return;
 		}
+	} else if (F.titles) { // instalados: atrás a la raíz y, a la derecha, cuántos y cuánto ocupan
+		tab_header_w(nm, true, 130);
+		u64 tot = 0;
+		for (int i = 0; i < TI_n; i++)
+			tot += TI[i].size + TI[i].upd_size + TI[i].dlc_size;
+		char c[64], sz[24];
+		util_fmt_size(sz, sizeof sz, tot);
+		snprintf(c, sizeof c, TI_n == 1 ? _("1 título · %s") : _("%d títulos · %s"), TI_n, sz);
+		text_draw_right(c, BOT_W - 14, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
+		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
+			f_load("/");
+			g_kdown &= ~KEY_B;
+			return;
+		}
 	} else if (F.trash) { // papelera: atrás a la raíz y «Vaciar»
 		tab_header(nm, true);
 		if (F.n) {
@@ -4301,7 +4508,7 @@ static void tab_files(void)
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
 	// a la derecha: buscar, ordenar y agrupar, lista o iconos, y «+»
 	float gx = nx - 32, sx = nx - 64, lx = nx - 96;
-	if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search) {
+	if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search && !F.titles) {
 		draw_circle(lx, ny, 12, touch_in(lx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(IC_SEARCH, lx, ny, 14, T.text2);
 		if (!g_dialog.open && tap(lx - 14, ny - 14, 28, 28)) {
@@ -4329,7 +4536,7 @@ static void tab_files(void)
 			return;
 		}
 	}
-	if ((!root || F.nosaves) && !MS.on && !F.trash && !F.search && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
+	if ((!root || F.nosaves) && !MS.on && !F.trash && !F.search && !F.titles && !g_dialog.open && tap(0, 0, 170, VIEW_Y)) {
 		if (F.nosaves)
 			f_reload_keep();
 		else if (!f_back_to_results())
@@ -4635,6 +4842,8 @@ static void tab_files(void)
 			wrap_center(t, BOT_W / 2, my + 30, BOT_W - 40, TS_BODY, 2, T.text3);
 			wrap_center(_("Se busca en la carpeta donde estabas y en todas las de dentro."), BOT_W / 2, my + 74, BOT_W - 60, TS_SUB, 2, T.text3);
 		}
+	} else if (F.titles && F.n == 0) {
+		text_draw_center(_("No hay juegos ni apps instalados en la SD"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	} else if (F.trash && F.n == 0) {
 		text_draw_center(_("La papelera está vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 		char t[96];
@@ -4674,6 +4883,14 @@ static void tab_files(void)
 				f_menu_open();
 			else if (open >= 0 && f_selected())
 				f_open_item(F.v[F.sel].idx);
+		}
+		return;
+	}
+	if (F.titles) { // un título: sus opciones (copia de la partida, sus copias, desinstalar)
+		int i = menu >= 0 ? menu : open >= 0 ? open : msel;
+		if (i >= 0) {
+			F.sel = i;
+			TT.open = TT.just = true, TT.sel = 0;
 		}
 		return;
 	}
@@ -5423,6 +5640,10 @@ static void trash_top(float a)
 
 static void files_top(float a)
 {
+	if (F.titles && !ZS.open && !HS.open) {
+		titles_top(a);
+		return;
+	}
 	if (ZS.open) {
 		zip_top(a);
 		return;
@@ -6010,7 +6231,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || U.ins_pend || viewer) {
+	if (FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || U.ins_pend || viewer) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
@@ -6051,6 +6272,7 @@ static void draw_bottom(void)
 		ts_draw();
 		hs_draw();
 		zs_draw();
+		tt_draw();
 	}
 	ds_draw();
 	qrs_draw();
@@ -6098,6 +6320,31 @@ static void handle_dialog(int ctx, bool ok)
 				event_add(EV_DELETE, F.e[i].name, G.console, 0);
 			}
 		}
+	} else if (ctx == DLG_UNINSTALL && U.dlg_arg >= 0 && U.dlg_arg < TI_n) {
+		const TitleInfo *t = &TI[U.dlg_arg];
+		if (t->size + t->upd_size + t->dlc_size >= (1ull << 30)) { // lo grande se confirma dos veces
+			char msg[200];
+			snprintf(msg, sizeof msg, _("«%s» ocupa más de 1 GB y habría que volver a descargarlo o instalarlo. Esto no se puede deshacer."), t->title);
+			dialog_open(DLG_UNINSTALL2, _("¿Seguro?"), msg, _("Desinstalar"), true);
+		} else
+			ctx = DLG_UNINSTALL2;
+	}
+	if (ctx == DLG_UNINSTALL2 && U.dlg_arg >= 0 && U.dlg_arg < TI_n) {
+		char nm[64];
+		util_strlcpy(nm, TI[U.dlg_arg].title, sizeof nm);
+		if (title_uninstall(TI[U.dlg_arg].tid) == 0) {
+			char m[120];
+			snprintf(m, sizeof m, _("Desinstalado: %s"), nm);
+			toast_icon(m, IC_TRASH, T.ok);
+			state_lock();
+			event_add(EV_DELETE, nm, G.console, 0);
+			state_unlock();
+		} else
+			toast_icon(_("No se pudo desinstalar"), IC_CLOSE, T.danger);
+		free(TI);
+		TI = NULL;
+		F.path[0] = 0; // que vuelva a leer la lista
+		f_load("@titles");
 	} else if (ctx == DLG_TRASHEMPTY) {
 		trash_empty();
 		G.fsrev++;

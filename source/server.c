@@ -15,6 +15,7 @@
 #include "util.h"
 #include "dl.h"
 #include "hash.h"
+#include "titles.h"
 #include "remote.h"
 #include "zipjob.h"
 #include "search.h"
@@ -929,6 +930,96 @@ static void h_dl_op(Conn *c)
 	resp_ok(c);
 }
 
+/* ---------- títulos instalados (solo verlos y copiar su partida; desinstalar, en la consola) ---------- */
+static void h_titles(Conn *c)
+{
+	TitleInfo *t = NULL;
+	int n = titles_list(&t);
+	Buf b = {0};
+	buf_puts(&b, "{\"ok\":true,\"items\":[");
+	for (int i = 0; i < n; i++) {
+		u64 last = 0;
+		int copies = save_backups_count(&t[i], &last);
+		char dir[512];
+		save_dir(&t[i], dir, sizeof dir);
+		buf_printf(&b, "%s{\"id\":\"%016llX\",\"n\":", i ? "," : "", (unsigned long long)t[i].tid);
+		buf_json_str(&b, t[i].title);
+		buf_puts(&b, ",\"pub\":");
+		buf_json_str(&b, t[i].pub);
+		buf_puts(&b, ",\"saves\":");
+		buf_json_str(&b, dir);
+		buf_printf(&b, ",\"v\":%u,\"uv\":%u,\"upd\":%s,\"s\":%llu,\"us\":%llu,\"dlc\":%d,\"ds\":%llu,\"copies\":%d,\"last\":%llu,\"icon\":%s}",
+		           t[i].version, t[i].upd_version, t[i].has_upd ? "true" : "false", (unsigned long long)t[i].size,
+		           (unsigned long long)t[i].upd_size, t[i].dlc, (unsigned long long)t[i].dlc_size, copies, (unsigned long long)last,
+		           t[i].smdh ? "true" : "false");
+	}
+	buf_puts(&b, "]}");
+	free(t);
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
+/* el icono de un título, 48×48, como BMP (sin dependencias) */
+static void h_title_icon(Conn *c)
+{
+	char ids[24];
+	u16 *px = malloc(48 * 48 * 2);
+	if (!qget(c->query, "id", ids, sizeof ids) || !px || !title_icon(strtoull(ids, NULL, 16), px)) {
+		free(px);
+		resp_err(c, 404, "not_found");
+		return;
+	}
+	static u8 bmp[54 + 48 * 48 * 3];
+	memset(bmp, 0, 54);
+	u32 sz = sizeof bmp;
+	bmp[0] = 'B', bmp[1] = 'M';
+	memcpy(bmp + 2, &sz, 4);
+	bmp[10] = 54, bmp[14] = 40, bmp[18] = 48, bmp[22] = 48, bmp[26] = 1, bmp[28] = 24;
+	for (int y = 0; y < 48; y++) // BMP va de abajo arriba, en BGR
+		for (int x = 0; x < 48; x++) {
+			u16 p = px[(47 - y) * 48 + x];
+			u8 *o = bmp + 54 + (y * 48 + x) * 3;
+			o[0] = (u8)((p & 31) << 3 | (p & 31) >> 2);
+			o[1] = (u8)(((p >> 5) & 63) << 2 | ((p >> 5) & 63) >> 4);
+			o[2] = (u8)((p >> 11) << 3 | (p >> 11) >> 2);
+		}
+	free(px);
+	resp(c, 200, "image/bmp", bmp, sizeof bmp, "Cache-Control: max-age=86400\r\n");
+}
+
+static void h_save_backup(Conn *c)
+{
+	char ids[24];
+	if (!qget(c->query, "id", ids, sizeof ids)) {
+		resp_err(c, 400, "bad_id");
+		return;
+	}
+	u64 tid = strtoull(ids, NULL, 16);
+	TitleInfo *t = NULL;
+	int n = titles_list(&t), r = -3;
+	char out[600] = "";
+	for (int i = 0; i < n; i++)
+		if (t[i].tid == tid) {
+			r = save_backup(&t[i], out, sizeof out);
+			if (r == 0) {
+				state_lock();
+				event_add(EV_CREATE, t[i].title, G.dev[c->dev].name, 0);
+				state_unlock();
+			}
+		}
+	free(t);
+	if (r < 0) {
+		resp_err(c, r == -1 ? 404 : r == -3 ? 400 : 500, r == -1 ? "no_save" : r == -3 ? "bad_id" : "io");
+		return;
+	}
+	Buf b = {0};
+	buf_puts(&b, "{\"ok\":true,\"path\":");
+	buf_json_str(&b, out);
+	buf_puts(&b, "}");
+	resp_json(c, 200, &b);
+	free(b.p);
+}
+
 /* MD5 y SHA-256: POST empieza (p = archivo), GET dice cómo va (el mismo trabajo que en la consola) */
 static void h_hash(Conn *c, bool post)
 {
@@ -1717,6 +1808,12 @@ static void route(Conn *c, const char *body)
 		h_info(c);
 	else if (strcmp(p, "hash") == 0)
 		h_hash(c, post);
+	else if (strcmp(p, "titles") == 0 && get)
+		h_titles(c);
+	else if (strcmp(p, "title_icon") == 0 && get)
+		h_title_icon(c);
+	else if (strcmp(p, "save_backup") == 0 && post)
+		h_save_backup(c);
 	else if (strcmp(p, "dl") == 0 && post)
 		h_dl(c, body);
 	else if (strcmp(p, "dls") == 0 && get)

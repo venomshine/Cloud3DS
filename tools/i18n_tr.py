@@ -1589,4 +1589,85 @@ TR = {
     'Ahora es %s.local':
         ("It's now %s.local",
          '%s.local になりました'),
+    'Instalados':
+        ('Installed',
+         'インストール済み'),
+    'Copia de la partida guardada, como en Checkpoint':
+        ('Save backed up, Checkpoint style',
+         'Checkpoint形式でセーブをバックアップしました'),
+    'Este juego aún no tiene partida':
+        ('This game has no save yet',
+         'このゲームにはまだセーブデータがありません'),
+    'No se pudo copiar la partida':
+        ("Couldn't back up the save",
+         'セーブをバックアップできませんでした'),
+    'Hacer copia de la partida':
+        ('Back up the save',
+         'セーブをバックアップ'),
+    'Ver sus copias':
+        ('See its backups',
+         'バックアップを見る'),
+    'Desinstalar':
+        ('Uninstall',
+         'アンインストール'),
+    'Aún no hay copias de este juego':
+        ('No backups of this game yet',
+         'このゲームのバックアップはまだありません'),
+    'Se borrarán el juego, su actualización, sus DLC y su partida (%s). Si quieres conservar la partida, haz antes una copia.':
+        ('The game, its update, its DLC and its save (%s) will be deleted. To keep the save, back it up first.',
+         'ゲーム、更新データ、DLC、セーブデータ（%s）が削除されます。セーブを残すには先にバックアップしてください。'),
+    '¿Desinstalar?':
+        ('Uninstall?',
+         'アンインストールしますか?'),
+    'Elige un juego para ver sus datos':
+        ('Pick a game to see its details',
+         'ゲームを選ぶと詳細が表示されます'),
+    '%s · actualización instalada':
+        ('%s · update installed',
+         '%s · 更新データあり'),
+    '%s (juego %s)':
+        ('%s (game %s)',
+         '%s（ゲーム %s）'),
+    '1 contenido · %s':
+        ('1 item · %s',
+         '1 件 · %s'),
+    '%d contenidos · %s':
+        ('%d items · %s',
+         '%d 件 · %s'),
+    'DLC':
+        ('DLC',
+         'DLC'),
+    '1 · %s':
+        ('1 · %s',
+         '1 件 · %s'),
+    '%d · la última %s':
+        ('%d · latest %s',
+         '%d 件 · 最新 %s'),
+    'Ninguna todavía':
+        ('None yet',
+         'まだありません'),
+    'Copias':
+        ('Backups',
+         'バックアップ'),
+    '1 título · %s':
+        ('1 title · %s',
+         '1 タイトル · %s'),
+    '%d títulos · %s':
+        ('%d titles · %s',
+         '%d タイトル · %s'),
+    'No hay juegos ni apps instalados en la SD':
+        ('No games or apps installed on the SD',
+         'SDにインストールされたゲームやアプリはありません'),
+    '«%s» ocupa más de 1 GB y habría que volver a descargarlo o instalarlo. Esto no se puede deshacer.':
+        ("“%s” takes more than 1 GB and you'd have to download or install it again. This can't be undone.",
+         '「%s」は1 GB以上あり、再ダウンロードか再インストールが必要になります。元に戻せません。'),
+    '¿Seguro?':
+        ('Are you sure?',
+         '本当によろしいですか?'),
+    'Desinstalado: %s':
+        ('Uninstalled: %s',
+         'アンインストールしました：%s'),
+    'No se pudo desinstalar':
+        ("Couldn't uninstall it",
+         'アンインストールできませんでした'),
 }

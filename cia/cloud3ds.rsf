@@ -25,6 +25,9 @@ AccessControlInfo:
   UseExtSaveData                : false
   FileSystemAccess:
    - DirectSdmc
+   # leer el icono y la partida de otros juegos (Instalados, copias de partidas); nada de la NAND
+   - CategorySystemApplication
+   - CategoryFileSystemTool
    # añadir la seed de un juego después de instalarlo, como FBI
    - SeedDB
   IoAccessControl:
