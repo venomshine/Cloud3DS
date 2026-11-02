@@ -25,7 +25,7 @@ void state_init(void)
 	LightLock_Init(&lock);
 	memset(&G, 0, sizeof G);
 	G.protect_sys = true;
-	G.mdns = G.fbi_remote = true;
+	G.mdns = G.fbi_remote = G.shots_live = true;
 	util_strlcpy(G.net_name, "cloud3ds", sizeof G.net_name);
 	G.wifi = -1;
 	G.upd_auto = true;
@@ -324,6 +324,7 @@ void config_load(void)
 	G.protect_sys = jbool(r, "protect_sys", true);
 	G.mdns = jbool(r, "mdns", true);
 	G.fbi_remote = jbool(r, "fbi_remote", true);
+	G.shots_live = jbool(r, "shots_live", true);
 	if (jstr(r, "net_name")[0] && remote_name_ok(jstr(r, "net_name")))
 		util_strlcpy(G.net_name, jstr(r, "net_name"), sizeof G.net_name);
 	G.qr_min = jbool(r, "qr_min", false);
@@ -393,6 +394,7 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "protect_sys", G.protect_sys);
 	cJSON_AddBoolToObject(r, "mdns", G.mdns);
 	cJSON_AddBoolToObject(r, "fbi_remote", G.fbi_remote);
+	cJSON_AddBoolToObject(r, "shots_live", G.shots_live);
 	cJSON_AddStringToObject(r, "net_name", G.net_name);
 	cJSON_AddBoolToObject(r, "qr_min", G.qr_min);
 	cJSON_AddBoolToObject(r, "upd_auto", G.upd_auto);

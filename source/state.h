@@ -95,6 +95,10 @@ typedef struct {
 	char net_name[41];
 	u32  remote_rev;  /* cambia al tocar lo anterior: el servidor lo vuelve a abrir */
 	int  remote_ok;   /* 1 mDNS en marcha, 2 FBI remoto escuchando */
+	bool shots_live;  /* mandar las capturas nuevas (Rosalina) a la web abierta */
+	u32  shot_rev;    /* cambia con cada captura nueva */
+	char shot_top[128], shot_bot[128]; /* sus nombres en /luma/screenshots */
+	int  shot_seen;   /* a cuántos dispositivos llegó la última */
 	bool qr_min;      /* tarjeta del QR minimizada */
 	u8   f_sort;      /* explorador de la consola: 0 nombre, 1 fecha, 2 tamaño, 3 tipo */
 	bool f_desc;      /* orden al revés */

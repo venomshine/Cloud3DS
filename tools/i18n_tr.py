@@ -1670,4 +1670,16 @@ TR = {
     'No se pudo desinstalar':
         ("Couldn't uninstall it",
          'アンインストールできませんでした'),
+    'Capturas al momento':
+        ('Live screenshots',
+         'スクリーンショットを即送信'),
+    'Las capturas nuevas aparecen en la web abierta':
+        ('New screenshots show up in the open web page',
+         '新しいスクリーンショットを開いているWebに表示'),
+    'Captura enviada a 1 dispositivo':
+        ('Screenshot sent to 1 device',
+         'スクリーンショットを1台に送りました'),
+    'Captura enviada a %d dispositivos':
+        ('Screenshot sent to %d devices',
+         'スクリーンショットを%d台に送りました'),
 }

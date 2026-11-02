@@ -528,13 +528,117 @@ static void h_hello(Conn *c)
 }
 
 /* la web lo pregunta cada poco: si cambia, vuelve a leer la carpeta abierta */
+/* ---------- capturas al momento: lo nuevo en /luma/screenshots (Rosalina) ---------- */
+#define SHOTS_DIR "/luma/screenshots"
+static u64 web_seen_ms; /* la última vez que una web preguntó: sin web abierta no se mira la carpeta */
+
+/* lo que identifica una captura: el nombre sin «_top», «_bot» ni la extensión
+ * («2026-10-27_21-10-05.123» o, en Luma antiguo, «0007» de «top_0007.bmp») */
+static bool shot_key(const char *n, char *key, size_t kn, int *which)
+{
+	size_t l = strlen(n);
+	if (l < 5 || strcasecmp(n + l - 4, ".bmp"))
+		return false;
+	char b[128];
+	snprintf(b, sizeof b, "%.*s", (int)(l - 4), n);
+	char *p;
+	if ((p = strstr(b, "_top_right")))
+		return false; // el ojo derecho del 3D: se queda la de arriba normal
+	if ((p = strstr(b, "_top")) && !p[4])
+		*p = 0, *which = 0;
+	else if ((p = strstr(b, "_bot")) && !p[4])
+		*p = 0, *which = 1;
+	else if (!strncmp(b, "top_", 4))
+		memmove(b, b + 4, strlen(b + 4) + 1), *which = 0;
+	else if (!strncmp(b, "bot_", 4))
+		memmove(b, b + 4, strlen(b + 4) + 1), *which = 1;
+	else
+		return false;
+	snprintf(key, kn, "%s", b);
+	return true;
+}
+
+typedef struct {
+	char key[128], top[128], bot[128];
+} ShotScan;
+
+static bool shot_cb(const FsxEntry *e, void *u)
+{
+	ShotScan *s = u;
+	char k[128];
+	int w;
+	if (e->dir || !shot_key(e->name, k, sizeof k, &w))
+		return true;
+	int c = strcmp(k, s->key);
+	if (c > 0) { // una más nueva
+		snprintf(s->key, sizeof s->key, "%s", k);
+		s->top[0] = s->bot[0] = 0;
+	}
+	if (c >= 0)
+		snprintf(w ? s->bot : s->top, sizeof s->top, "%s", e->name);
+	return true;
+}
+
+static void shots_tick(void)
+{
+	static u64 last, pend_t;
+	static char newest[128], sent[128];
+	static bool primed;
+	u64 now = util_ms();
+	if (now - last < 1000 || !G.shots_live || now - web_seen_ms > 15000)
+		return;
+	last = now;
+	ShotScan s = {{0}};
+	snprintf(s.key, sizeof s.key, "%s", newest);
+	fsx_list(SHOTS_DIR, false, shot_cb, &s);
+	if (strcmp(s.key, newest) > 0)
+		pend_t = now; // una nueva: se espera a tener las dos pantallas (Rosalina escribe una y luego otra)
+	snprintf(newest, sizeof newest, "%s", s.key);
+	if (!primed) { // las que ya estaban no se mandan
+		primed = true;
+		snprintf(sent, sizeof sent, "%s", newest);
+		return;
+	}
+	if (!strcmp(newest, sent) || (!s.top[0] && !s.bot[0]) || ((!s.top[0] || !s.bot[0]) && now - pend_t < 4000))
+		return;
+	snprintf(sent, sizeof sent, "%s", newest);
+	state_lock();
+	util_strlcpy(G.shot_top, s.top, sizeof G.shot_top);
+	util_strlcpy(G.shot_bot, s.bot, sizeof G.shot_bot);
+	G.shot_seen = 0;
+	G.shot_rev++;
+	G.rev++;
+	state_unlock();
+	util_log("captura nueva: %s %s", s.top, s.bot);
+}
+
 static void h_rev(Conn *c)
 {
-	char b[48];
+	char b[96];
+	web_seen_ms = util_ms();
 	state_lock();
-	int n = snprintf(b, sizeof b, "{\"fs\":%lu}", (unsigned long)G.fsrev);
+	int n = snprintf(b, sizeof b, "{\"fs\":%lu,\"shot\":%lu}", (unsigned long)G.fsrev, (unsigned long)(G.shots_live ? G.shot_rev : 0));
 	state_unlock();
 	resp(c, 200, "application/json", b, n, NULL);
+}
+
+/* la última captura: la web la pide al ver que cambió «shot» (y así se cuenta a cuántos llegó) */
+static void h_shot(Conn *c)
+{
+	Buf b = {0};
+	state_lock();
+	if (G.shot_rev && (G.shot_top[0] || G.shot_bot[0])) {
+		G.shot_seen++;
+		G.rev++; // para que la consola vea el número
+	}
+	buf_printf(&b, "{\"ok\":true,\"rev\":%lu,\"dir\":\"" SHOTS_DIR "\",\"top\":", (unsigned long)G.shot_rev);
+	buf_json_str(&b, G.shot_top);
+	buf_puts(&b, ",\"bot\":");
+	buf_json_str(&b, G.shot_bot);
+	buf_puts(&b, "}");
+	state_unlock();
+	resp_json(c, 200, &b);
+	free(b.p);
 }
 
 static void h_info(Conn *c)
@@ -1808,6 +1912,8 @@ static void route(Conn *c, const char *body)
 		h_info(c);
 	else if (strcmp(p, "hash") == 0)
 		h_hash(c, post);
+	else if (strcmp(p, "shot") == 0 && get)
+		h_shot(c);
 	else if (strcmp(p, "titles") == 0 && get)
 		h_titles(c);
 	else if (strcmp(p, "title_icon") == 0 && get)
@@ -2279,6 +2385,7 @@ static void serve_loop(void)
 		if (r > 0)
 			remote_events(pf + n, nr);
 		remote_tick();
+		shots_tick();
 		if (r > 0) {
 			for (int k = 0; k < n; k++) {
 				if (!pf[k].revents)

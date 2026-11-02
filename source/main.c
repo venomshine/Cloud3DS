@@ -67,7 +67,7 @@
 enum { TAB_FILES, TAB_ACTIVITY, TAB_DEVICES, TAB_SETTINGS, TAB_COUNT };
 enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
-enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
+enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
 enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2 };
 
@@ -96,7 +96,7 @@ static struct {
 	bool want_search;            // buscar desde la carpeta abierta (teclado)
 	bool want_dlurl;             // descargar un enlace escrito en la consola (teclado)
 	bool want_netname;           // cambiar el nombre en la red (teclado)
-	float t_mdns, t_fbi;         // animación de sus interruptores
+	float t_mdns, t_fbi, t_shots; // animación de sus interruptores
 	int want_txt;                // editor de texto: 1 editar la línea, 2 añadir una debajo
 	float qr_anim;               // 1 = tarjeta del QR abierta, 0 = minimizada
 	float t_upd;                 // interruptor «Buscar al abrir»
@@ -5835,6 +5835,9 @@ static void settings_action(int i)
 		U.list[TAB_COUNT + 4].sel = 0;
 		U.list[TAB_COUNT + 4].off = U.list[TAB_COUNT + 4].target = 0;
 		break;
+	case SET_SHOTS:
+		set_flag(&G.shots_live);
+		break;
 	case SET_LANG:
 		U.page = PAGE_LANG;
 		U.list[TAB_COUNT].sel = V.lang;
@@ -5870,6 +5873,7 @@ static void settings_main(void)
 	list_update(l, SET_COUNT, RH);
 	U.t_ro = approach(U.t_ro, V.readonly ? 1 : 0, 14);
 	U.t_prot = approach(U.t_prot, V.protect_sys ? 1 : 0, 14);
+	U.t_shots = approach(U.t_shots, V.shots_live ? 1 : 0, 14);
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
 	for (int i = 0; i < SET_COUNT; i++) {
 		float y = VIEW_Y + i * RH - l->off;
@@ -5897,6 +5901,9 @@ static void settings_main(void)
 			title = _("Conexión"); ic = IC_WIFI; col = T.ok; chev = true;
 			snprintf(vbuf, sizeof vbuf, "%s.local", V.net_name);
 			sub = V.mdns ? vbuf : _("Nombre en la red y FBI remoto");
+			break;
+		case SET_SHOTS:
+			title = _("Capturas al momento"); sub = _("Las capturas nuevas aparecen en la web abierta"); ic = IC_CAMERA; col = T.accent;
 			break;
 		case SET_LANG:
 			title = _("Idioma"); ic = IC_GLOBE; chev = true;
@@ -5926,8 +5933,8 @@ static void settings_main(void)
 		}
 		row_icon(28, y + RH / 2, ic, col);
 		float right = BOT_W - 16;
-		if (i == SET_READONLY || i == SET_PROTECT) {
-			toggle(right - 36, y + RH / 2 - 10, i == SET_READONLY ? U.t_ro : U.t_prot);
+		if (i == SET_READONLY || i == SET_PROTECT || i == SET_SHOTS) {
+			toggle(right - 36, y + RH / 2 - 10, i == SET_READONLY ? U.t_ro : i == SET_PROTECT ? U.t_prot : U.t_shots);
 			right -= 46;
 		} else {
 			if (chev) {
@@ -6548,6 +6555,22 @@ static void update(void)
 				snprintf(msg, sizeof msg, zj.create ? _("ZIP creado: %s") : _("Extraído en %s"), zj.create && nm ? nm + 1 : zj.result);
 			toast_icon(zj.st == ZJ_DONE ? msg : zip_err_text(zj.err), zj.st == ZJ_DONE ? IC_CHECK : IC_CLOSE, zj.st == ZJ_DONE ? T.ok : T.danger);
 			F.need_reload = true;
+		}
+	}
+	{ // una captura nueva llegó a la web: a los pocos segundos, a cuántos dispositivos
+		static u32 seen_rev;
+		static u64 at;
+		if (V.shot_rev != seen_rev) {
+			seen_rev = V.shot_rev;
+			at = osGetTime() + 3500;
+		}
+		if (at && osGetTime() >= at) {
+			at = 0;
+			if (V.shot_seen > 0) {
+				char m[80];
+				snprintf(m, sizeof m, V.shot_seen == 1 ? _("Captura enviada a 1 dispositivo") : _("Captura enviada a %d dispositivos"), V.shot_seen);
+				toast_icon(m, IC_CAMERA, T.accent);
+			}
 		}
 	}
 	hash_get(&HJ);

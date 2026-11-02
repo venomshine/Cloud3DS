@@ -215,6 +215,11 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 .queue.min .qlist{display:none}
 #insq{z-index:46}
 #dlq{z-index:44;right:auto;left:20px}
+#shotc{z-index:47;width:380px}
+#shotc .shimg{display:block;width:100%;background:#000}
+#shotc .shimg canvas,#shotc .shimg img{display:block;width:100%;height:auto}
+#shotc .sha{display:flex;gap:8px;align-items:center;padding:10px 12px}
+#shotc .sha label{flex:1;display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
 .dlf label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
 .dlf textarea.field{min-height:74px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
 .dlf .chk2{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px}
@@ -362,6 +367,7 @@ header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 8
 <div class="queue" id="queue"></div>
 <div class="queue" id="insq"></div>
 <div class="queue" id="dlq"></div>
+<div class="queue" id="shotc"></div>
 <div class="drop" id="drop"></div>
 <div class="toast" id="toast"></div>
 <div class="offline" id="offline"></div>
@@ -402,6 +408,7 @@ es:{
  err_exists:"Ya existe un archivo con ese nombre.", err_not_found:"El elemento ya no existe. Es posible que se haya movido o eliminado.", err_io:"Error de escritura en la tarjeta SD.",
  err_net:"Se perdió la conexión con la consola.", err_is_dir:"Ya hay una carpeta con ese nombre.", err:"Se produjo un error (%1).",
  offline:"Se perdió la conexión con la consola. Reintentando…", logout:"Desvincular este dispositivo", logoutD:"Para volver a entrar tendrás que escanear el código QR o introducir el PIN.",
+ shotNew:"Nueva captura", shotNow:"Ahora mismo, desde la consola", shotJoin:"Juntar las dos pantallas", shotShare:"Compartir", shotSave:"Guardar", shotNoShare:"Este navegador no puede compartir imágenes: usa Guardar.",
  titles:"Instalados", titNoneT:"No hay juegos ni apps en la SD", titNoneD:"Lo que instales en la consola aparecerá aquí.", titVer:"v%1", titUpd:"con actualización", titDlc:"%1 DLC", titCopies:"%1 copias", titBackup:"Copia de la partida", titSeeCopies:"Ver sus copias", titBackedUp:"Copia guardada en %1", titNoSave:"Este juego aún no tiene partida.",
  dlNet:"De Internet", dlT:"Descargar de Internet en la consola", dlD:"Pega uno o varios enlaces y la consola los baja directamente a la SD. Puedes cerrar esta página: sigue sola.", dlUrls:"Enlaces (uno por línea)", dlTo:"Guardar en", dlHash:"MD5 o SHA-256 para comprobarlo", optional:"Opcional", dlInstall:"Al terminar, ofrecer instalar los .cia en la consola", dlUnzip:"Al terminar, descomprimir los .zip", dlGo:"Descargar en la consola", dlBad:"Revisa los enlaces: deben empezar por http:// o https://", dlSent:"Enviado a la consola: %1", dlHead:"Descargando en la consola · %1", dlHeadDone:"Descargas en la consola", dlPaused:"En pausa", dlPause:"Pausar", dlResume:"Reanudar", dlForget:"Quitar de la lista", dlHashOk:"suma comprobada", dlHashBad:"la suma no coincide", dlToInstall:"confírmalo en la consola", dlToUnzip:"descomprimido", dlerr_offline:"Sin conexión a Internet", dlerr_tls:"Conexión no segura (certificado)", dlerr_net:"Error de red", dlerr_not_found:"No existe (404)", dlerr_denied:"El servidor no lo permite", dlerr_http:"Error del servidor", dlerr_no_space:"No hay espacio en la SD", dlerr_io:"No se pudo escribir en la SD", dlerr_no_cia:"Esa release no tiene ningún .cia", err_bad_url:"Ese enlace no vale.", err_bad_hash:"El MD5 o SHA-256 no es válido.", err_dl_full:"La cola de descargas está llena.",
  dlZip:"Descargar como ZIP", zipDl:"Preparando el ZIP: la descarga empieza enseguida", zipMany:"Son demasiados para un ZIP: descarga la carpeta entera", unzipA:"Descomprimir en la consola", unzipT:"¿Descomprimir «%1»?", unzipD:"La consola lo extrae en la tarjeta SD. Nunca sustituye nada: si algo ya existe, se guarda con otro nombre.", unzipHere:"Aquí", unzipNew:"En una carpeta nueva «%1»", unzipKeep:"Dejar el ZIP así", unzipRun:"Descomprimiendo «%1» en la consola…", unzipDone:"Extraído en %1", err_bad_zip:"No es un ZIP o está dañado.", err_zip_unsupported:"Este ZIP tiene contraseña o un formato que Cloud3DS no sabe abrir.", err_zip_damaged:"Un archivo del ZIP está dañado.", err_busy:"La consola ya está comprimiendo o extrayendo algo.", err_zip_too_big:"Pasa de 4 GB: no cabe en un ZIP.",
@@ -442,6 +449,7 @@ en:{
  err_exists:"A file with that name already exists.", err_not_found:"The item no longer exists. It may have been moved or deleted.", err_io:"Write error on the SD card.",
  err_net:"Lost connection to the console.", err_is_dir:"There's already a folder with that name.", err:"An error occurred (%1).",
  offline:"Lost connection to the console. Retrying…", logout:"Unpair this device", logoutD:"To sign in again, you'll need to scan the QR code or enter the PIN.",
+ shotNew:"New screenshot", shotNow:"Just now, from the console", shotJoin:"Join both screens", shotShare:"Share", shotSave:"Save", shotNoShare:"This browser can't share images: use Save.",
  titles:"Installed", titNoneT:"No games or apps on the SD", titNoneD:"What you install on the console will show up here.", titVer:"v%1", titUpd:"updated", titDlc:"%1 DLC", titCopies:"%1 backups", titBackup:"Back up save", titSeeCopies:"See its backups", titBackedUp:"Backup saved in %1", titNoSave:"This game has no save yet.",
  dlNet:"From the Internet", dlT:"Download from the Internet on the console", dlD:"Paste one or more links and the console downloads them straight to the SD card. You can close this page: it keeps going.", dlUrls:"Links (one per line)", dlTo:"Save to", dlHash:"MD5 or SHA-256 to check it", optional:"Optional", dlInstall:"When done, offer to install .cia files on the console", dlUnzip:"When done, extract .zip files", dlGo:"Download on the console", dlBad:"Check the links: they must start with http:// or https://", dlSent:"Sent to the console: %1", dlHead:"Downloading on the console · %1", dlHeadDone:"Downloads on the console", dlPaused:"Paused", dlPause:"Pause", dlResume:"Resume", dlForget:"Remove from the list", dlHashOk:"checksum OK", dlHashBad:"checksum doesn't match", dlToInstall:"confirm it on the console", dlToUnzip:"extracted", dlerr_offline:"No Internet connection", dlerr_tls:"Insecure connection (certificate)", dlerr_net:"Network error", dlerr_not_found:"Not found (404)", dlerr_denied:"The server doesn't allow it", dlerr_http:"Server error", dlerr_no_space:"Not enough space on the SD", dlerr_io:"Couldn't write to the SD", dlerr_no_cia:"That release has no .cia", err_bad_url:"That link isn't valid.", err_bad_hash:"The MD5 or SHA-256 isn't valid.", err_dl_full:"The download queue is full.",
  dlZip:"Download as ZIP", zipDl:"Preparing the ZIP: the download starts in a moment", zipMany:"Too many for one ZIP: download the whole folder", unzipA:"Extract on the console", unzipT:"Extract “%1”?", unzipD:"The console extracts it on the SD card. Nothing is replaced: if something already exists, it gets another name.", unzipHere:"Here", unzipNew:"In a new folder “%1”", unzipKeep:"Leave the ZIP as is", unzipRun:"Extracting “%1” on the console…", unzipDone:"Extracted to %1", err_bad_zip:"It isn't a ZIP or it's damaged.", err_zip_unsupported:"This ZIP has a password or a format Cloud3DS can't open.", err_zip_damaged:"A file in the ZIP is damaged.", err_busy:"The console is already compressing or extracting something.", err_zip_too_big:"Over 4 GB: it doesn't fit in a ZIP.",
@@ -482,6 +490,7 @@ ja:{
  err_exists:"同じ名前のファイルがあります。", err_not_found:"この項目はもうありません。移動または削除された可能性があります。", err_io:"SDカードへの書き込みエラーです。",
  err_net:"本体との接続が切れました。", err_is_dir:"同じ名前のフォルダがあります。", err:"エラーが発生しました(%1)。",
  offline:"本体との接続が切れました。再試行中…", logout:"このデバイスの登録を解除", logoutD:"もう一度入るには、QRコードを読み取るかPINを入力する必要があります。",
+ shotNew:"新しいスクリーンショット", shotNow:"たった今、本体から", shotJoin:"上下の画面をまとめる", shotShare:"共有", shotSave:"保存", shotNoShare:"このブラウザは画像を共有できません。保存を使ってください。",
  titles:"インストール済み", titNoneT:"SDにゲームやアプリはありません", titNoneD:"本体でインストールしたものがここに表示されます。", titVer:"v%1", titUpd:"更新データあり", titDlc:"DLC %1件", titCopies:"バックアップ %1件", titBackup:"セーブをバックアップ", titSeeCopies:"バックアップを見る", titBackedUp:"%1 に保存しました", titNoSave:"このゲームにはまだセーブデータがありません。",
  dlNet:"インターネットから", dlT:"本体でインターネットからダウンロード", dlD:"リンクを貼り付けると、本体がSDカードに直接ダウンロードします。このページを閉じても続きます。", dlUrls:"リンク（1行に1つ）", dlTo:"保存先", dlHash:"確認用のMD5またはSHA-256", optional:"任意", dlInstall:"完了後、.ciaのインストールを本体で確認する", dlUnzip:"完了後、.zipを展開する", dlGo:"本体でダウンロード", dlBad:"リンクを確認してください。http:// か https:// で始まる必要があります", dlSent:"本体に送りました：%1", dlHead:"本体でダウンロード中 · %1", dlHeadDone:"本体のダウンロード", dlPaused:"一時停止中", dlPause:"一時停止", dlResume:"再開", dlForget:"一覧から削除", dlHashOk:"チェックサム一致", dlHashBad:"チェックサム不一致", dlToInstall:"本体で確認してください", dlToUnzip:"展開済み", dlerr_offline:"インターネットに接続していません", dlerr_tls:"安全でない接続（証明書）", dlerr_net:"ネットワークエラー", dlerr_not_found:"見つかりません（404）", dlerr_denied:"サーバーが許可していません", dlerr_http:"サーバーエラー", dlerr_no_space:"SDの空き容量が足りません", dlerr_io:"SDに書き込めませんでした", dlerr_no_cia:"そのリリースには.ciaがありません", err_bad_url:"そのリンクは使えません。", err_bad_hash:"MD5またはSHA-256が正しくありません。", err_dl_full:"ダウンロードの待ち行列がいっぱいです。",
  dlZip:"ZIPでダウンロード", zipDl:"ZIPを準備中です。まもなくダウンロードが始まります", zipMany:"1つのZIPには多すぎます。フォルダごとダウンロードしてください", unzipA:"本体で展開", unzipT:"「%1」を展開しますか?", unzipD:"本体がSDカードに展開します。上書きはしません。同じ名前があれば別の名前で保存します。", unzipHere:"ここに", unzipNew:"新しいフォルダ「%1」に", unzipKeep:"ZIPのままにする", unzipRun:"本体で「%1」を展開中…", unzipDone:"%1 に展開しました", err_bad_zip:"ZIPではないか、壊れています。", err_zip_unsupported:"このZIPはパスワード付きか、Cloud3DSが開けない形式です。", err_zip_damaged:"ZIP内のファイルが壊れています。", err_busy:"本体はすでに圧縮か展開をしています。", err_zip_too_big:"4 GBを超えるためZIPにできません。",
@@ -662,10 +671,12 @@ function startApp(){
  clearInterval(window._rev);window._rev=setInterval(pollRev,2000);
 }
 // cambios hechos desde la consola u otro dispositivo: la carpeta abierta se actualiza sola
-let fsRev=null;
+let fsRev=null,shotRev=null;
 async function pollRev(){
  if(document.hidden||$("#app").classList.contains("hide"))return;
  let r;try{r=await api("GET","rev")}catch(e){return}
+ if(shotRev!==null&&r.shot&&r.shot!==shotRev)showShot();
+ shotRev=r.shot;
  if(fsRev!==null&&r.fs!==fsRev&&!await softReload())return; // ocupado (un menú abierto…): se intenta luego
  fsRev=r.fs;
 }
@@ -1109,6 +1120,38 @@ $("#dlq").addEventListener("click",async e=>{
  const b=e.target.closest("[data-dop]");
  if(b){e.stopPropagation();try{await api("POST","dl_op",{id:b.dataset.id,op:b.dataset.dop})}catch(err){toast(errText(err))}pollDl();return}
  if(e.target.closest("#dlh")){DL.min=!DL.min;renderDl()}
+});
+/* ---------- capturas al momento: la de Rosalina aparece aquí, para compartirla ---------- */
+const SH={cv:null};
+const loadImg=src=>new Promise((ok,ko)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=ko;i.src=src});
+async function showShot(){
+ let r;try{r=await api("GET","shot")}catch(e){return}
+ const el=$("#shotc");
+ let join=true;try{join=localStorage.getItem("c3d_join")!=="0"}catch(e){}
+ const top=r.top?await loadImg(fileUrl(r.dir+"/"+r.top)).catch(()=>null):null,bot=r.bot?await loadImg(fileUrl(r.dir+"/"+r.bot)).catch(()=>null):null;
+ if(!top&&!bot)return;
+ const draw=()=>{ // las dos pantallas en una imagen (arriba la grande, abajo la pequeña centrada) o solo la de arriba
+  const both=join&&top&&bot,a=top||bot,cv=document.createElement("canvas");
+  cv.width=both?Math.max(top.width,bot.width):a.width;cv.height=both?top.height+bot.height:a.height;
+  const g=cv.getContext("2d");g.fillStyle="#000";g.fillRect(0,0,cv.width,cv.height);
+  if(both){g.drawImage(top,(cv.width-top.width)/2,0);g.drawImage(bot,(cv.width-bot.width)/2,top.height)}else g.drawImage(a,0,0);
+  SH.cv=cv;el.querySelector(".shimg").replaceChildren(cv);
+ };
+ el.innerHTML=`<div class="qh"><div class="ic">${svg("cam")}</div><div class="meta"><b>${t("shotNew")}</b><span class="muted">${t("shotNow")}</span></div><button class="more" data-shx="1">${svg("x")}</button></div>
+  <div class="shimg"></div>
+  <div class="sha">${top&&bot?`<label><input type="checkbox" id="shJ"${join?" checked":""}>${t("shotJoin")}</label>`:"<span style=\"flex:1\"></span>"}
+  ${navigator.share?`<button class="btn" data-sh="share">${t("shotShare")}</button>`:""}<button class="btn pri" data-sh="save">${t("shotSave")}</button></div>`;
+ draw();el.classList.add("show");
+ const j=el.querySelector("#shJ");if(j)j.addEventListener("change",()=>{join=j.checked;try{localStorage.setItem("c3d_join",join?"1":"0")}catch(e){}draw()});
+ SH.name=(r.top||r.bot).replace(/(_top|_bot)?\.bmp$/i,"").replace(/^(top|bot)_/,"captura_")+".png";
+}
+$("#shotc").addEventListener("click",async e=>{
+ if(e.target.closest("[data-shx]")){$("#shotc").classList.remove("show");return}
+ const b=e.target.closest("[data-sh]");if(!b||!SH.cv)return;
+ const blob=await new Promise(ok=>SH.cv.toBlob(ok,"image/png"));
+ if(b.dataset.sh==="share"){const f=new File([blob],SH.name,{type:"image/png"});
+  try{if(navigator.canShare&&!navigator.canShare({files:[f]}))throw 0;await navigator.share({files:[f]})}catch(err){if(err&&err.name==="AbortError")return;toast(t("shotNoShare"))}}
+ else{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=SH.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
 });
 /* ---------- ZIP ---------- */
 // varios elementos (o una carpeta) en un ZIP que la consola arma mientras lo manda
