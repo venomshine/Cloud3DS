@@ -40,6 +40,7 @@ Las siguientes partes conservan sus propias licencias:
 - `source/qrcam.c` sigue la secuencia de la cámara de [FBI](https://github.com/Steveice10/FBI) de Steveice10, licencia MIT.
 - `lib/stb_image.h` — [stb_image](https://github.com/nothings/stb) de Sean Barrett, dominio público o licencia MIT (a elegir).
 - `lib/nanosvg.h`, `lib/nanosvgrast.h` — [NanoSVG](https://github.com/memononen/nanosvg) de Mikko Mononen (leer y pintar imágenes SVG en el navegador), licencia zlib (`lib/nanosvg-LICENSE.txt`).
+- `qjs/` — [QuickJS-ng](https://github.com/quickjs-ng/quickjs) de Fabrice Bellard, Charlie Gordon y colaboradores (JavaScript del navegador), licencia MIT (`qjs/LICENSE`).
 - `nsweb/` — librerías de [NetSurf](https://www.netsurf-browser.org/) (libhubbub, libdom, libcss, libparserutils, libwapcaplet) para el navegador, licencia MIT (ver `nsweb/README.md` y el COPYING de cada una).
 - [libctru, citro2d y citro3d](https://github.com/devkitPro) (enlazadas al compilar), licencia zlib.
 - [libcurl](https://curl.se/) (enlazada al compilar), licencia curl (tipo MIT).

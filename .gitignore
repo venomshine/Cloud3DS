@@ -11,3 +11,5 @@ romfs/gfx/
 Cloud3DS.sha256
 nsweb/build/
 nsweb/lib/
+qjs/build/
+qjs/lib/
