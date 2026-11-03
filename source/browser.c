@@ -121,6 +121,9 @@ static struct {
 	volatile int st;
 	char url[1024], err[128], title[160];
 	char hist[HIST][1024];
+	float hist_sy[HIST];   /* dónde se estaba en cada página (para volver ahí) */
+	float back_sy;         /* al volver atrás: a dónde llevar la vista al colocar la página */
+	char anchor[128];      /* la #ancla de la dirección, para ir ahí al colocar la página */
 	int nhist;
 	Thread thr;
 	dom_document *doc;   /* del hilo al principal */
@@ -534,6 +537,14 @@ static void resolve(const char *base, const char *href, char *out, size_t n)
 {
 	while (*href == ' ' || *href == '\n' || *href == '\t')
 		href++;
+	if (href[0] == '#') { // la misma página, otra parte
+		snprintf(out, n, "%.*s%s", (int)strcspn(base, "#"), base, href);
+		return;
+	}
+	if (href[0] == '?') { // la misma página con otra consulta
+		snprintf(out, n, "%.*s%s", (int)strcspn(base, "?#"), base, href);
+		return;
+	}
 	if (!strncasecmp(href, "http://", 7) || !strncasecmp(href, "https://", 8)) {
 		util_strlcpy(out, href, n);
 		return;
@@ -1932,8 +1943,8 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		word("·", strlen("·"), &ss);
 		L_space = true;
 	}
-	if (!strcmp(tag, "a") && attr(node, "href", a, sizeof a) && a[0] && a[0] != '#' && strncasecmp(a, "javascript:", 11))
-		st.link = link_add(a);
+	if (!strcmp(tag, "a") && attr(node, "href", a, sizeof a) && a[0] && strncasecmp(a, "javascript:", 11))
+		st.link = link_add(a); // también #ancla: lleva a esa parte de la página
 	float bx0 = B.bg_x0, bx1 = B.bg_x1;
 	float il = 0, ir = 0; // en línea: márgenes y rellenos a los lados (menús hechos con enlaces seguidos)
 	uint8_t fd = css_computed_flex_direction(cs);
@@ -2365,8 +2376,19 @@ static bool is_file_url(const char *url)
 	return false;
 }
 
+static void scroll_to_anchor(const char *id);
+
 static void go(const char *url, bool push)
 {
+	const char *hash = strchr(url, '#');
+	size_t base_n = hash ? (size_t)(hash - url) : strlen(url);
+	size_t cur_n = strcspn(B.url, "#");
+	if (hash && B.st == ST_READY && base_n == cur_n && !strncmp(url, B.url, base_n)) { // en esta misma página
+		scroll_to_anchor(hash + 1);
+		return;
+	}
+	if (hash)
+		snprintf(B.anchor, sizeof B.anchor, "%s", hash + 1);
 	if (is_file_url(url)) {
 		size_t l = strcspn(url, "?#");
 		bool cia = l > 4 && !strncasecmp(url + l - 4, ".cia", 4);
@@ -2381,6 +2403,7 @@ static void go(const char *url, bool push)
 			memmove(B.hist[0], B.hist[1], sizeof B.hist[0] * (HIST - 1));
 			B.nhist--;
 		}
+		B.hist_sy[B.nhist] = B.sy;
 		util_strlcpy(B.hist[B.nhist++], B.url, sizeof B.hist[0]);
 	}
 	start_load(url);
@@ -2435,8 +2458,12 @@ void br_exit(void)
 
 static void back(void)
 {
-	if (B.nhist)
-		start_load(B.hist[--B.nhist]);
+	if (B.nhist) {
+		--B.nhist;
+		float sy = B.hist_sy[B.nhist];
+		start_load(B.hist[B.nhist]);
+		B.back_sy = sy;
+	}
 	else
 		close_br();
 }
@@ -2452,6 +2479,51 @@ static void text_draw_center_clip(const char *t, float cx, float y, float maxw, 
 
 static float view_w(void) { return TOP_W / B.zoom; }
 static float view_h(void) { return SCR_H / B.zoom; }
+
+static void clamp_view(void);
+
+// lleva la vista al elemento con ese id (o <a name>): su primer trozo colocado
+void scroll_to_anchor(const char *id)
+{
+	if (!id[0] || !strcasecmp(id, "top")) { // «#» o «#top»: arriba del todo
+		B.sy = 0, B.vy = 0;
+		return;
+	}
+	if (!B.doc)
+		return;
+	char dec[128];
+	size_t k = 0;
+	for (size_t i = 0; id[i] && k < sizeof dec - 1; i++) { // %20 y demás
+		if (id[i] == '%' && isxdigit((unsigned char)id[i + 1]) && isxdigit((unsigned char)id[i + 2])) {
+			char hx[3] = {id[i + 1], id[i + 2], 0};
+			dec[k++] = (char)strtol(hx, NULL, 16);
+			i += 2;
+		} else
+			dec[k++] = id[i];
+	}
+	dec[k] = 0;
+	dom_string *ds = NULL;
+	dom_element *el = NULL;
+	if (dom_string_create((const uint8_t *)dec, k, &ds) != DOM_NO_ERR)
+		return;
+	dom_document_get_element_by_id(B.doc, ds, &el);
+	dom_string_unref(ds);
+	if (!el)
+		return;
+	float best = -1;
+	for (int i = 0; i < B.nf && best < 0; i++)
+		for (dom_node_internal *n = (dom_node_internal *)B.f[i].node; n; n = n->parent)
+			if ((dom_node *)n == (dom_node *)el) {
+				best = B.l[B.f[i].line].y;
+				break;
+			}
+	dom_node_unref(el);
+	if (best >= 0) {
+		B.sy = best - 8;
+		B.vy = 0;
+		clamp_view();
+	}
+}
 
 static void clamp_view(void)
 {
@@ -2874,6 +2946,13 @@ static void layout_thread(void *arg)
 	(void)arg;
 	layout();
 	B.hover = -1;
+	if (B.back_sy > 0) { // se vuelve atrás: donde se estaba
+		B.sy = B.back_sy;
+		B.back_sy = 0;
+		clamp_view();
+	} else if (B.anchor[0]) // dirección con #ancla
+		scroll_to_anchor(B.anchor);
+	B.anchor[0] = 0;
 	B.idle_left = B.jsp ? 30000 : 0;
 	B.idle_next = util_ms() + 600;
 	B.st = ST_READY;
