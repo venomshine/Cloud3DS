@@ -1,4 +1,4 @@
-# Librerías de NetSurf (MIT): leer HTML (hubbub) y montar el DOM (libdom), con sus utilidades
+# Librerías de NetSurf (MIT): leer HTML (hubbub), montar el DOM (libdom) y el CSS (libcss), con sus utilidades
 # (libparserutils, libwapcaplet). Se compilan tal cual en lib/libnsweb.a. Ver README.md.
 include $(DEVKITARM)/3ds_rules
 ARCH   := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
@@ -7,7 +7,8 @@ SRC_wapcaplet := $(wildcard libwapcaplet/src/*.c)
 SRC_parserutils := $(shell find libparserutils/src -name '*.c')
 SRC_hubbub := $(shell find libhubbub/src -name '*.c')
 SRC_dom := $(shell find libdom/src -name '*.c') libdom/bindings/hubbub/parser.c
-OBJS := $(patsubst %.c,build/%.o,$(SRC_wapcaplet) $(SRC_parserutils) $(SRC_hubbub) $(SRC_dom))
+SRC_css := $(shell find libcss/src -name '*.c')
+OBJS := $(patsubst %.c,build/%.o,$(SRC_wapcaplet) $(SRC_parserutils) $(SRC_hubbub) $(SRC_dom) $(SRC_css))
 
 lib/libnsweb.a: $(OBJS)
 	@mkdir -p lib
@@ -22,6 +23,9 @@ build/libparserutils/%.o: libparserutils/%.c
 build/libhubbub/%.o: libhubbub/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BASE) -Ilibhubbub/src -c $< -o $@
+build/libcss/%.o: libcss/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BASE) -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Ilibcss/src -c $< -o $@
 build/libdom/%.o: libdom/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BASE) -Ilibdom/src -Ilibdom/bindings -c $< -o $@
