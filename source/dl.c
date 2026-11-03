@@ -576,10 +576,41 @@ static int quit_cb(void *u, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t
 /* más búfer de recepción en el socket: con el de serie, la consola pide los datos a sorbos */
 static int sockopt_cb(void *u, curl_socket_t fd, curlsocktype purpose)
 {
-	(void)u, (void)purpose;
+	(void)purpose;
+	if (!u) // solo las descargas grandes: el búfer de soc:U (1 MB) es para todos los sockets, y con
+		return CURL_SOCKOPT_OK; // varios a la vez (el navegador baja la página, su CSS e imágenes) se agotaba
 	int sz = 256 * 1024;
 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof sz);
 	return CURL_SOCKOPT_OK;
+}
+
+/* conexiones y sesiones TLS compartidas entre peticiones (y hilos) del navegador: la segunda
+ * petición al mismo servidor reutiliza la conexión o al menos la sesión TLS, sin volver a hacer el
+ * saludo entero (en la CPU de la 3DS, segundos por petición) */
+static CURLSH *SH;
+static LightLock SH_LOCK[CURL_LOCK_DATA_LAST];
+static void sh_lock(CURL *h, curl_lock_data d, curl_lock_access a, void *u)
+{
+	(void)h, (void)a, (void)u;
+	LightLock_Lock(&SH_LOCK[d]);
+}
+static void sh_unlock(CURL *h, curl_lock_data d, void *u)
+{
+	(void)h, (void)u;
+	LightLock_Unlock(&SH_LOCK[d]);
+}
+static void sh_init(void)
+{
+	for (int i = 0; i < CURL_LOCK_DATA_LAST; i++)
+		LightLock_Init(&SH_LOCK[i]);
+	SH = curl_share_init();
+	if (!SH)
+		return;
+	curl_share_setopt(SH, CURLSHOPT_LOCKFUNC, sh_lock);
+	curl_share_setopt(SH, CURLSHOPT_UNLOCKFUNC, sh_unlock);
+	curl_share_setopt(SH, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+	curl_share_setopt(SH, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+	curl_share_setopt(SH, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
 }
 
 static void common_opts(CURL *c, char *eb)
@@ -627,6 +658,8 @@ int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size
 	common_opts(c, eb);
 	if (t_ua)
 		curl_easy_setopt(c, CURLOPT_USERAGENT, t_ua);
+	if (SH)
+		curl_easy_setopt(c, CURLOPT_SHARE, SH);
 	curl_easy_setopt(c, CURLOPT_URL, url);
 	char ck[2048];
 	if (t_ck_get && t_ck_get(url, ck, sizeof ck))
@@ -1159,6 +1192,7 @@ static void run(DlItem *s)
 		CURL *c = curl_easy_init();
 		if (c) {
 			common_opts(c, eb);
+			curl_easy_setopt(c, CURLOPT_SOCKOPTDATA, (void *)1); // descarga grande: búfer de socket grande
 			if (s->insecure) { // lo pidió el usuario para esta descarga
 				curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
 				curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -1315,6 +1349,7 @@ static void dl_thread(void *arg)
 void dl_init(void)
 {
 	hc_init();
+	sh_init();
 	LightLock_Init(&D.lock);
 	LightEvent_Init(&D.ev, RESET_ONESHOT);
 	D.ready = true;

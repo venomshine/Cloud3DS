@@ -259,6 +259,65 @@ static bool utf8_ok(const char *p, size_t n)
 static void resolve(const char *base, const char *href, char *out, size_t n);
 static bool attr(dom_node *el, const char *name, char *out, size_t n);
 
+/* el núcleo de los hilos del navegador: en New 3DS, el 2 (libre: la interfaz no les quita la CPU en
+ * cada fotograma); en la 3DS antigua, el de la app */
+static int br_core(void)
+{
+	static int core = -3;
+	if (core == -3) {
+		bool n3ds = false;
+		APT_CheckNew3DS(&n3ds);
+		core = n3ds ? 2 : -2;
+	}
+	return core;
+}
+
+/* servidores con los que httpc no puede (TLS moderno, o lo rechazan): directos a libcurl, sin
+ * perder el intento con httpc en cada hoja, script o imagen */
+#define NOHC_N 32
+static char NOHC[NOHC_N][96];
+static int NOHC_I;
+static LightLock NOHC_LOCK;
+static bool NOHC_INIT;
+
+static void nohc_host(const char *url, char *h, size_t n)
+{
+	const char *p = strstr(url, "://");
+	p = p ? p + 3 : url;
+	size_t l = strcspn(p, "/?#");
+	snprintf(h, n, "%.*s", (int)(l < n - 1 ? l : n - 1), p);
+}
+
+static void nohc_init(void) // desde el hilo principal, al abrir el navegador
+{
+	if (!NOHC_INIT) {
+		LightLock_Init(&NOHC_LOCK);
+		NOHC_INIT = true;
+	}
+}
+
+static bool nohc_has(const char *url)
+{
+	char h[96];
+	nohc_host(url, h, sizeof h);
+	bool r = false;
+	LightLock_Lock(&NOHC_LOCK);
+	for (int i = 0; i < NOHC_N && !r; i++)
+		r = NOHC[i][0] && !strcmp(NOHC[i], h);
+	LightLock_Unlock(&NOHC_LOCK);
+	return r;
+}
+
+static void nohc_add(const char *url)
+{
+	if (nohc_has(url))
+		return;
+	LightLock_Lock(&NOHC_LOCK);
+	nohc_host(url, NOHC[NOHC_I], sizeof NOHC[0]);
+	NOHC_I = (NOHC_I + 1) % NOHC_N;
+	LightLock_Unlock(&NOHC_LOCK);
+}
+
 // un archivo de la SD (ruta que empieza por / o sdmc:) o de Internet, entero en b
 static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 {
@@ -277,12 +336,17 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 		*code = 200;
 		return DLF_OK;
 	}
-	int r = dl_fetch(url, accept, buf_cb, NULL, b, code);
+	bool skip = nohc_has(url);
+	int r = skip ? DLF_NOCONN : dl_fetch(url, accept, buf_cb, NULL, b, code);
 	// algunas webs rechazan el TLS antiguo de httpc (403, 429…) o no conecta: otra vez con libcurl
 	if (r != DLF_OK || *code == 403 || *code == 429 || *code == 503) {
+		if (!skip)
+			util_log("web: httpc no pudo con %.100s (%d, HTTP %ld): libcurl", url, r, *code);
 		free(b->p);
 		b->p = NULL, b->n = b->cap = 0;
 		r = dl_fetch_curl(url, accept, buf_cb, b, code);
+		if (r == DLF_OK && *code < 400 && !skip)
+			nohc_add(url);
 	}
 	return r;
 }
@@ -750,7 +814,7 @@ static void start_load(const char *url)
 	B.t_load = 0;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.thr = threadCreate(load_thread, NULL, 512 * 1024, prio + 1, -2, false); // hubbub y libdom anidan mucho en páginas grandes
+	B.thr = threadCreate(load_thread, NULL, 512 * 1024, prio + 1, br_core(), false); // hubbub y libdom anidan mucho en páginas grandes
 	if (!B.thr) {
 		snprintf(B.err, sizeof B.err, "No se pudo empezar a cargar");
 		B.st = ST_ERROR;
@@ -1250,7 +1314,7 @@ static void img_start(void)
 		return;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.img_thr = threadCreate(img_thread, NULL, 64 * 1024, prio + 2, -2, false);
+	B.img_thr = threadCreate(img_thread, NULL, 64 * 1024, prio + 2, br_core(), false);
 }
 
 /* ------------------------------------------------------------ con CSS */
@@ -2716,6 +2780,7 @@ static void go(const char *url, bool push)
 
 void br_open_url(const char *url)
 {
+	nohc_init();
 	B.js = true;
 	B.open = true;
 	B.home = false;
@@ -3420,7 +3485,7 @@ static void start_action(dom_node *el, int link)
 	B.st = ST_ACT;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.thr = threadCreate(act_thread, NULL, 1024 * 1024, prio + 1, -2, false);
+	B.thr = threadCreate(act_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
 	if (!B.thr) { // sin hilo: el clic sigue como un enlace normal
 		B.st = ST_READY;
 		B.click_link = link;
@@ -3629,6 +3694,7 @@ static void home_enter(void)
 
 void br_open_home(void)
 {
+	nohc_init();
 	B.js = true;
 	B.open = true;
 	B.force = 0;
@@ -4111,7 +4177,7 @@ void br_bottom(void)
 		B.st = ST_LAYOUT;
 		s32 prio = 0x30;
 		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-		B.thr = threadCreate(layout_thread, NULL, 1024 * 1024, prio + 1, -2, false);
+		B.thr = threadCreate(layout_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
 		if (!B.thr) {
 			snprintf(B.err, sizeof B.err, "Sin memoria para colocar la página");
 			B.st = ST_ERROR;
@@ -4134,7 +4200,7 @@ void br_bottom(void)
 		B.st = ST_ACT;
 		s32 prio = 0x30;
 		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-		B.thr = threadCreate(idle_thread, NULL, 1024 * 1024, prio + 1, -2, false);
+		B.thr = threadCreate(idle_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
 		if (!B.thr)
 			B.st = ST_READY, B.idle_left = 0;
 	}
