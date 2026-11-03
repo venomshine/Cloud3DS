@@ -26,7 +26,7 @@
 
 /* el ID de la app registrada en Microsoft Entra (no es secreto). Vacío: la nube no está configurada */
 #ifndef OD_CLIENT_ID
-#define OD_CLIENT_ID ""
+#define OD_CLIENT_ID "5ec2cd40-16af-46b5-a564-8eeedc770d6a"
 #endif
 #ifndef OD_LOGIN
 #define OD_LOGIN "https://login.microsoftonline.com/common/oauth2/v2.0"
