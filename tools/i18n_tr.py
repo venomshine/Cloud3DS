@@ -2266,19 +2266,22 @@ TR = {
     'Contenido descargable':
         ('Downloadable content',
          '追加コンテンツ'),
-    'Desinstalando':
-        ('Uninstalling',
-         'アンインストール中'),
-    'Liberando %s de la SD':
-        ('Freeing %s on the SD',
-         'SDの%sを解放中'),
-    'Tiempo: %s':
-        ('Time: %s',
-         '経過時間: %s'),
-    'No apagues la consola ni saques la SD hasta que termine. Con juegos grandes puede tardar unos minutos.':
-        ("Don't turn off the console or remove the SD until it finishes. Big games can take a few minutes.",
-         '終わるまで電源を切ったりSDを抜いたりしないでください。大きなゲームは数分かかることがあります。'),
-    'Desinstalando…':
-        ('Uninstalling…',
-         'アンインストール中…'),
+    'Desinstalando «%s»':
+        ('Uninstalling "%s"',
+         '「%s」をアンインストール中'),
+    'Borrando: %s (%s) · paso %d de %d · %s':
+        ('Deleting: %s (%s) · step %d of %d · %s',
+         '削除中: %s (%s) · %d/%d · %s'),
+    'Borrando: %s (%s) · %s':
+        ('Deleting: %s (%s) · %s',
+         '削除中: %s (%s) · %s'),
+    'NO TOQUES NADA':
+        ("DON'T TOUCH ANYTHING",
+         '何も触らないで'),
+    'No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada.':
+        ("Don't turn off the console, don't remove the SD and don't press HOME. If it's cut off halfway, the console's game list can get damaged.",
+         '電源を切ったり、SDを抜いたり、HOMEを押したりしないでください。途中で止まると、本体のソフト一覧が壊れることがあります。'),
+    'Cuando termine, Cloud3DS sigue sola.':
+        ("When it's done, Cloud3DS carries on by itself.",
+         '終わるとCloud3DSは自動で戻ります。'),
 }
