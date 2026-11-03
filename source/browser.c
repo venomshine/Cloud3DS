@@ -13,6 +13,7 @@
  *  3. Se dibujan solo las líneas que se ven; tocar un trozo con enlace abre esa página. */
 #include "browser.h"
 #include "brcss.h"
+#include "core/node.h" /* libdom por dentro: hijos y hermanos sin referencias */
 #include "dl.h"
 #include "gfx.h"
 #include "icons.h"
@@ -84,8 +85,7 @@ typedef struct {
 } Line;
 
 typedef struct {   /* fondo de color de un bloque (background-color) */
-	int l0, l1;    /* sus líneas */
-	float x0, x1;
+	float y0, y1, x0, x1;
 	u32 col;
 } BgBox;
 
@@ -111,6 +111,7 @@ static struct {
 	int nlinks, clinks;
 	BgBox *bg;
 	int nbg, cbg;
+	int *ord;            /* los trozos ordenados por altura */
 	float bg_x0, bg_x1;
 	BrCss *css;          /* las hojas de la página (las monta el hilo de carga) */
 	int ncss;            /* cuántas hojas se usaron */
@@ -488,6 +489,7 @@ static float L_gap;        /* hueco antes de la próxima línea */
 static float L_indent;
 static float L_right = 1e9; /* borde derecho de la línea (con CSS: márgenes, anchos) */
 static u8 L_align;
+static float L_pb;          /* donde acaba lo de antes de la línea en curso (su y = L_pb + su hueco) */
 static bool L_marker;      /* en la línea solo está la viñeta de un <li> */
 #define RIGHT (L_right < PAGE_W ? L_right : PAGE_W)
 
@@ -500,10 +502,26 @@ static Line *line_new(void)
 			return NULL;
 		B.l = nl, B.cl = nc;
 	}
+	if (B.nl) {
+		Line *c = &B.l[B.nl - 1];
+		if (!c->used && !c->hr) { // la en curso está vacía: se aprovecha (su hueco, el mayor)
+			c->gap = fmaxf(c->gap, L_gap);
+			c->y = L_pb + c->gap;
+			c->align = L_align, c->left = L_indent, c->right = RIGHT;
+			L_gap = 0;
+			L_x = L_indent;
+			L_has = false;
+			L_space = false;
+			L_marker = false;
+			return c;
+		}
+		L_pb = c->y + c->h; // se cierra la en curso
+	}
 	Line *l = &B.l[B.nl++];
 	memset(l, 0, sizeof *l);
 	l->h = text_lineh(SC_TEXT);
 	l->gap = L_gap;
+	l->y = L_pb + L_gap;
 	l->align = L_align;
 	l->left = L_indent;
 	l->right = RIGHT;
@@ -521,9 +539,11 @@ static void block(float gap)
 		return;
 	if (L_has)
 		line_new();
-	if (B.nl && !L_has) { // la línea actual está vacía: el hueco va delante de ella
-		if (gap > B.l[B.nl - 1].gap)
+	if (B.nl && !L_has && !B.l[B.nl - 1].hr) { // la línea actual está vacía: el hueco va delante de ella
+		if (gap > B.l[B.nl - 1].gap) {
 			B.l[B.nl - 1].gap = gap;
+			B.l[B.nl - 1].y = L_pb + gap;
+		}
 	} else if (gap > L_gap)
 		L_gap = gap;
 }
@@ -892,12 +912,257 @@ static void bg_add(int l0, int l1, float x0, float x1, u32 col)
 			return;
 		B.bg = nb, B.cbg = nc;
 	}
-	B.bg[B.nbg++] = (BgBox){l0, l1, x0, x1, col};
+	B.bg[B.nbg++] = (BgBox){B.l[l0].y - 4, B.l[l1].y + B.l[l1].h + 4, x0, x1, col};
 }
 
 static void children(dom_node *node, const St *st);
 static int link_add(const char *href);
 static bool attr(dom_node *el, const char *name, char *out, size_t n);
+
+static void walk_css(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t d);
+static bool css_invisible(const css_computed_style *cs);
+static bool is(const char *t, const char *const *list);
+#define NI(n) ((dom_node_internal *)(n))
+static const char *const NEVER_TAGS[] = {"script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "canvas", "video", "audio", "head", NULL};
+
+static void tag_of(dom_node *n, char *tag, size_t sz)
+{
+	tag[0] = 0;
+	dom_string *nm = NULL;
+	if (dom_node_get_node_name(n, &nm) != DOM_NO_ERR || !nm)
+		return;
+	size_t l = dom_string_byte_length(nm), i = 0;
+	for (; i < l && i < sz - 1; i++)
+		tag[i] = (char)tolower((unsigned char)dom_string_data(nm)[i]);
+	tag[i] = 0;
+	dom_string_unref(nm);
+}
+
+/* lo que mide el contenido sin partir líneas (aproximado, sin CSS: para repartir el ancho de una fila) */
+static float measure(dom_node *n, float sc, float cap, int depth)
+{
+	static const char *const BLK[] = {"div", "p", "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6", "table", "tr", "section", "article", "header",
+	                                  "footer", "nav", "aside", "main", "form", "dl", "dd", "dt", "figure", "blockquote", "pre", "br", NULL};
+	if (depth > 30)
+		return 0;
+	float sum = 0, mx = 0;
+	for (dom_node_internal *c = NI(n)->first_child; c && sum < cap && mx < cap; c = c->next) {
+		if (c->type == DOM_TEXT_NODE) {
+			dom_string *d = NULL;
+			if (dom_characterdata_get_data((dom_characterdata *)c, &d) == DOM_NO_ERR && d) {
+				const char *t = dom_string_data(d);
+				size_t l = dom_string_byte_length(d), k = 0;
+				char buf[256];
+				bool sp = false;
+				for (size_t i = 0; i < l && k < sizeof buf - 1; i++) { // espacios juntos, uno
+					char ch = t[i];
+					bool w = ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r';
+					if (w) {
+						if (!sp && k)
+							buf[k++] = ' ';
+						sp = true;
+					} else
+						buf[k++] = ch, sp = false;
+				}
+				if (k)
+					sum += text_width_n(buf, (int)k, sc) * (l > sizeof buf ? (float)l / sizeof buf : 1);
+				dom_string_unref(d);
+			}
+		} else if (c->type == DOM_ELEMENT_NODE) {
+			char tag[16];
+			tag_of((dom_node *)c, tag, sizeof tag);
+			if (is(tag, NEVER_TAGS))
+				continue;
+			if (!strcmp(tag, "img")) { // su ancho; si no se va a ver (SVG), lo que ocupa su texto alternativo
+				char v[160];
+				float w = attr((dom_node *)c, "width", v, sizeof v) ? (float)atof(v) : 0;
+				if (attr((dom_node *)c, "src", v, sizeof v) && strstr(v, ".svg"))
+					w = 0;
+				if (w <= 0 && attr((dom_node *)c, "alt", v, sizeof v) && v[0])
+					w = text_width(v, sc) + text_width("[]", sc);
+				sum += w > 0 ? w : 40;
+				continue;
+			}
+			float m = measure((dom_node *)c, sc, cap, depth + 1);
+			if (is(tag, BLK)) {
+				mx = fmaxf(mx, fmaxf(sum, m));
+				sum = 0;
+			} else
+				sum += m + 4;
+		}
+	}
+	return fminf(cap, fmaxf(mx, sum));
+}
+
+// dónde acaba lo colocado hasta ahora
+static float cur_bottom(void)
+{
+	if (!B.nl)
+		return L_pb;
+	const Line *l = &B.l[B.nl - 1];
+	return (l->used || l->hr) ? fmaxf(L_pb, l->y + l->h) : L_pb;
+}
+
+// que la línea en curso sea una vacía que empieza en y
+static void line_at(float y)
+{
+	if (!B.nl || L_has || B.l[B.nl - 1].hr)
+		line_new();
+	Line *l = &B.l[B.nl - 1];
+	L_pb = y;
+	l->gap = 0;
+	l->y = y;
+	l->align = L_align, l->left = L_indent, l->right = RIGHT;
+	L_x = L_indent;
+	L_gap = 0;
+}
+
+/* hijos uno al lado de otro: flex en fila, celdas de una fila de tabla, rejilla. El ancho de cada uno
+ * sale de su CSS (width, flex-basis) o de lo que mide; lo que sobra se reparte con flex-grow y, si
+ * no cabe, se encoge (o pasa a otra fila si la página deja partir) */
+#define MAX_COLS 48
+static void row_children(dom_node *node, St st, bool wrap, float gapx)
+{
+	struct {
+		dom_node *n;
+		css_computed_style *cs;
+		char tag[16];
+		uint8_t d;
+		float w, grow;
+		bool fixed;
+	} c[MAX_COLS];
+	int n = 0;
+	float avail = st.right - st.indent;
+	dom_node_internal *rest = NULL; // lo que no cabe en MAX_COLS sigue debajo, normal
+	for (dom_node_internal *ch = NI(node)->first_child; ch; ch = ch->next) {
+		if (n == MAX_COLS) {
+			rest = ch;
+			break;
+		}
+		if (ch->type == DOM_TEXT_NODE) {
+			float m = measure((dom_node *)NI(node), st.sc, avail, 30); // texto suelto: se mide aparte
+			dom_string *d = NULL;
+			bool blank = true;
+			if (dom_characterdata_get_data((dom_characterdata *)ch, &d) == DOM_NO_ERR && d) {
+				for (size_t i = 0; i < dom_string_byte_length(d) && blank; i++)
+					blank = isspace((unsigned char)dom_string_data(d)[i]);
+				if (!blank) {
+					c[n] = (typeof(c[0])){.n = (dom_node *)ch, .cs = NULL, .w = 0, .grow = 0};
+					c[n].tag[0] = 0;
+					c[n].w = fminf(avail, text_width_n(dom_string_data(d), (int)fminf(dom_string_byte_length(d), 200), st.sc) + 4);
+					n++;
+				}
+				dom_string_unref(d);
+			}
+			(void)m;
+			continue;
+		}
+		if (ch->type != DOM_ELEMENT_NODE)
+			continue;
+		char tag[16];
+		tag_of((dom_node *)ch, tag, sizeof tag);
+		if (is(tag, NEVER_TAGS))
+			continue;
+		css_computed_style *cs = brcss_style(B.css, (dom_node *)ch, st.cs, B.vw);
+		if (!cs)
+			continue;
+		uint8_t d = css_computed_display(cs, false);
+		if (d == CSS_DISPLAY_NONE || css_computed_position(cs) == CSS_POSITION_FIXED || css_invisible(cs)) {
+			css_computed_style_destroy(cs);
+			continue;
+		}
+		css_fixed v;
+		css_unit u;
+		float w = 0;
+		bool fixed = false;
+		if (css_computed_width(cs, &v, &u) == CSS_WIDTH_SET) {
+			w = len_px(cs, v, u, avail);
+			fixed = true;
+		} else if (css_computed_flex_basis(cs, &v, &u) == CSS_FLEX_BASIS_SET) {
+			w = len_px(cs, v, u, avail); // flex: 1 es base 0: todo el ancho sale de flex-grow
+			fixed = true;
+		}
+		css_fixed fl;
+		css_computed_font_size(cs, &v, &u);
+		float sc = clampf(SC16 * brcss_px(cs, v, u, B.vw) / 16, 0.15f, 2.4f);
+		if (!fixed) {
+			float ex = 0;
+			if (css_computed_padding_left(cs, &v, &u) == CSS_PADDING_SET)
+				ex += len_px(cs, v, u, avail);
+			if (css_computed_padding_right(cs, &v, &u) == CSS_PADDING_SET)
+				ex += len_px(cs, v, u, avail);
+			if (css_computed_margin_left(cs, &v, &u) == CSS_MARGIN_SET)
+				ex += len_px(cs, v, u, avail);
+			if (css_computed_margin_right(cs, &v, &u) == CSS_MARGIN_SET)
+				ex += len_px(cs, v, u, avail);
+			w = measure((dom_node *)ch, sc, avail, 0) + clampf(ex, 0, 80) + 2;
+		}
+		c[n].n = (dom_node *)ch, c[n].cs = cs, c[n].d = d;
+		util_strlcpy(c[n].tag, tag, sizeof c[n].tag);
+		c[n].w = clampf(w, 0, avail);
+		c[n].grow = css_computed_flex_grow(cs, &fl) == CSS_FLEX_GROW_SET ? FIXTOFLT(fl) : 0;
+		c[n].fixed = fixed;
+		n++;
+	}
+	// a filas (si se puede partir) y en cada una: repartir lo que sobra o encoger
+	float top = (L_has || !B.nl) ? cur_bottom() : B.l[B.nl - 1].y;
+	int i0 = 0;
+	float o_ind = L_indent, o_right = L_right;
+	while (i0 < n) {
+		int i1 = i0;
+		float tot = 0, grow = 0;
+		while (i1 < n && (i1 == i0 || !wrap || tot + gapx + c[i1].w <= avail)) {
+			tot += (i1 > i0 ? gapx : 0) + c[i1].w;
+			grow += c[i1].grow;
+			i1++;
+		}
+		float extra = avail - tot;
+		if (extra > 0 && grow > 0)
+			for (int i = i0; i < i1; i++)
+				c[i].w += extra * c[i].grow / grow;
+		else if (extra < 0) { // no cabe: se encoge lo que no tiene ancho fijo (y si no, todo)
+			float flex = 0;
+			for (int i = i0; i < i1; i++)
+				flex += c[i].fixed ? 0 : c[i].w;
+			float need = -extra;
+			for (int i = i0; i < i1; i++) {
+				float share = flex > 0 ? (c[i].fixed ? 0 : c[i].w / flex) : c[i].w / tot;
+				c[i].w = fmaxf(24, c[i].w - need * share);
+			}
+		}
+		for (int i = i0; i < i1; i++)
+			c[i].w = fmaxf(c[i].w, 16);
+		float x = st.indent, maxb = top;
+		int nbg0 = B.nbg;
+		for (int i = i0; i < i1; i++) {
+			L_indent = x;
+			L_right = x + c[i].w;
+			L_align = st.align;
+			line_at(top);
+			St cs = st;
+			cs.indent = x, cs.right = x + c[i].w, cs.cells = NULL;
+			if (c[i].cs)
+				walk_css(c[i].n, c[i].tag, cs, c[i].cs, c[i].d);
+			else
+				walk(c[i].n, cs);
+			maxb = fmaxf(maxb, cur_bottom());
+			x += c[i].w + gapx;
+		}
+		// align-items: stretch: los fondos de las columnas llegan hasta la más alta
+		for (int k = nbg0; k < B.nbg; k++)
+			if (B.bg[k].y0 <= top + 8)
+				B.bg[k].y1 = fmaxf(B.bg[k].y1, maxb + 4);
+		L_indent = o_ind, L_right = o_right;
+		line_at(maxb);
+		top = maxb;
+		i0 = i1;
+	}
+	for (int i = 0; i < n; i++)
+		if (c[i].cs)
+			css_computed_style_destroy(c[i].cs);
+	for (dom_node_internal *ch = rest; ch; ch = ch->next) // lo que no cupo en la fila
+		walk((dom_node *)ch, st);
+}
 
 /* un elemento con su estilo calculado: la página decide qué se ve, colores, tamaños, márgenes */
 static void walk_css(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t d)
@@ -1097,6 +1362,18 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		st.link = link_add(a);
 	float bx0 = B.bg_x0, bx1 = B.bg_x1;
 	float il = 0, ir = 0; // en línea: márgenes y rellenos a los lados (menús hechos con enlaces seguidos)
+	uint8_t fd = css_computed_flex_direction(cs);
+	bool row = blk && ((d == CSS_DISPLAY_FLEX && (fd == CSS_FLEX_DIRECTION_ROW || fd == CSS_FLEX_DIRECTION_ROW_REVERSE || fd == CSS_FLEX_DIRECTION_INHERIT)) ||
+	                   d == CSS_DISPLAY_TABLE_ROW || d == CSS_DISPLAY_GRID);
+	float gapx = 0;
+	if (row) {
+		css_fixed v;
+		css_unit vu;
+		if (css_computed_column_gap(cs, &v, &vu) == CSS_COLUMN_GAP_SET)
+			gapx = clampf(len_px(cs, v, vu, st.right - st.indent), 0, 60);
+		if (d == CSS_DISPLAY_TABLE_ROW)
+			gapx = fmaxf(gapx, 6);
+	}
 	if (!blk) {
 		css_fixed v;
 		css_unit vu;
@@ -1112,7 +1389,10 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		if (il > 0 && L_has)
 			L_x += il;
 	}
-	children(node, &st);
+	if (row)
+		row_children(node, st, d == CSS_DISPLAY_GRID || css_computed_flex_wrap(cs) == CSS_FLEX_WRAP_WRAP, gapx);
+	else
+		children(node, &st);
 	if (!blk && ir > 0 && L_has)
 		L_x += ir;
 	if (li_frag >= 0 && B.nf == li_frag + 1) { // el <li> no tenía nada visible: fuera su viñeta
@@ -1385,9 +1665,19 @@ static void layout_free(void)
 	free(B.l), B.l = NULL, B.nl = B.cl = 0;
 	free(B.text), B.text = NULL, B.nt = B.ct = 0;
 	free(B.bg), B.bg = NULL, B.nbg = B.cbg = 0;
+	free(B.ord), B.ord = NULL;
 	for (int i = 0; i < B.nlinks; i++)
 		free(B.links[i]);
 	free(B.links), B.links = NULL, B.nlinks = B.clinks = 0;
+}
+
+static int ord_cmp(const void *a, const void *b)
+{
+	const Frag *fa = &B.f[*(const int *)a], *fb = &B.f[*(const int *)b];
+	float ya = B.l[fa->line].y, yb = B.l[fb->line].y;
+	if (ya != yb)
+		return ya < yb ? -1 : 1;
+	return *(const int *)a - *(const int *)b;
 }
 
 static void layout(void)
@@ -1401,6 +1691,7 @@ static void layout(void)
 	L_x = L_indent = L_gap = 0;
 	L_right = 1e9;
 	L_align = 0;
+	L_pb = 6;
 	L_has = L_space = false;
 	SC16 = SC_TEXT * 19.2f / text_lineh(SC_TEXT); // 16 px de letra = 19,2 px de línea
 	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1, .right = PAGE_W};
@@ -1440,19 +1731,21 @@ static void layout(void)
 			for (int k = f0; k < f; k++)
 				B.f[k].x += dx;
 	}
-	float y = 6;
+	float y = 6; // las y ya se pusieron al crear cada línea; el alto total es lo más bajo
 	for (int i = 0; i < B.nl; i++) {
-		if (!B.l[i].used && !B.l[i].hr) { // vacía: solo cuenta su hueco (el mayor de los seguidos)
+		if (!B.l[i].used && !B.l[i].hr)
 			B.l[i].h = 0;
-			if (i + 1 < B.nl && B.l[i + 1].gap < B.l[i].gap)
-				B.l[i + 1].gap = B.l[i].gap;
-			B.l[i].gap = 0;
-		}
-		y += B.l[i].gap;
-		B.l[i].y = y;
-		y += B.l[i].h;
+		y = fmaxf(y, B.l[i].y + B.l[i].h);
 	}
 	B.total = y + 20;
+	// orden para pintar y tocar: por altura (con columnas, el orden del documento ya no lo es)
+	free(B.ord);
+	B.ord = malloc(sizeof *B.ord * (B.nf ? B.nf : 1));
+	if (B.ord) {
+		for (int i = 0; i < B.nf; i++)
+			B.ord[i] = i;
+		qsort(B.ord, B.nf, sizeof *B.ord, ord_cmp);
+	}
 	for (int i = 0; i < B.nf; i++) // dónde está cada imagen (las de cerca se bajan antes)
 		if (B.f[i].img >= 0 && B.f[i].img < B.nimg)
 			B.img[B.f[i].img].y = B.l[B.f[i].line].y;
@@ -1571,14 +1864,17 @@ static void frag_rect(const Frag *f, float *x, float *y, float *w, float *h)
 	*x = PAD_X + f->x, *y = l->y + (l->h - *h), *w = f->w;
 }
 
-// el primer trozo cuya línea acaba por debajo de y (búsqueda binaria: los trozos van en orden)
+// la posición en B.ord del primer trozo que puede verse desde y (B.ord va por altura de línea;
+// se empieza un poco antes por si hay líneas muy altas, como imágenes grandes)
 static int first_frag(float y)
 {
+	if (!B.ord)
+		return B.nf;
+	y -= 400;
 	int lo = 0, hi = B.nf;
 	while (lo < hi) {
 		int m = (lo + hi) / 2;
-		const Line *l = &B.l[B.f[m].line];
-		if (l->y + l->h < y)
+		if (B.l[B.f[B.ord[m]].line].y < y)
 			lo = m + 1;
 		else
 			hi = m;
@@ -1590,11 +1886,11 @@ static int first_frag(float y)
 static int link_at_pointer(void)
 {
 	float qx = B.sx + B.px / B.zoom, qy = B.sy + B.py / B.zoom, pad = 3 / B.zoom;
-	for (int i = first_frag(qy - 60); i < B.nf; i++) {
-		const Frag *f = &B.f[i];
+	for (int k = first_frag(qy - 60); k < B.nf; k++) {
+		const Frag *f = &B.f[B.ord[k]];
 		float x, y, w, h;
 		frag_rect(f, &x, &y, &w, &h);
-		if (y > qy + pad)
+		if (B.l[f->line].y > qy + pad)
 			break;
 		if (f->link >= 0 && qx >= x - pad && qx <= x + w + pad && qy >= y - pad && qy <= y + h + pad)
 			return f->link;
@@ -1607,7 +1903,8 @@ static void focus_step(int dir)
 {
 	int i = B.focus;
 	if (i < 0) { // el primero que se vea
-		i = first_frag(B.sy);
+		int k = first_frag(B.sy + 400);
+		i = k < B.nf ? B.ord[k] : B.nf;
 		if (dir < 0)
 			i--;
 	} else
@@ -1699,10 +1996,7 @@ void br_top(void)
 	// fondos de color de los bloques
 	for (int i = 0; i < B.nbg; i++) {
 		const BgBox *bb = &B.bg[i];
-		if (bb->l0 >= B.nl || bb->l1 >= B.nl)
-			continue;
-		float y0 = B.l[bb->l0].y - 4, y1 = B.l[bb->l1].y + B.l[bb->l1].h + 4;
-		float Y0 = (y0 - B.sy) * z, Y1 = (y1 - B.sy) * z;
+		float Y0 = (bb->y0 - B.sy) * z, Y1 = (bb->y1 - B.sy) * z;
 		if (Y1 < 0 || Y0 > SCR_H)
 			continue;
 		draw_rect((PAD_X + bb->x0 - B.sx) * z, Y0, (bb->x1 - bb->x0) * z, Y1 - Y0, bb->col);
@@ -1718,12 +2012,13 @@ void br_top(void)
 		}
 	int hov = link_at_pointer();
 	B.hover = hov;
-	for (int i = first_frag(B.sy); i < B.nf; i++) {
+	for (int k = first_frag(B.sy); k < B.nf; k++) {
+		int i = B.ord[k];
 		const Frag *f = &B.f[i];
 		float x, y, w, h;
 		frag_rect(f, &x, &y, &w, &h);
 		float X = (x - B.sx) * z, Y = (y - B.sy) * z, Wd = w * z, H = h * z;
-		if (Y > SCR_H)
+		if ((B.l[f->line].y - B.sy) * z > SCR_H)
 			break;
 		if (X > TOP_W || X + Wd < 0 || Y + H < 0)
 			continue;
