@@ -2127,8 +2127,39 @@ static void layout(void)
 }
 
 /* ------------------------------------------------------------ uso */
+// un enlace a un archivo (no a una página): se descarga, como en cualquier navegador
+static bool is_file_url(const char *url)
+{
+	static const char *const EXT[] = {"cia", "3dsx", "zip", "7z", "rar", "tar", "gz", "bin", "firm", "nds", "gba", "gb", "gbc", "smc", "sfc", "nes",
+	                                  "iso", "cxi", "cci", "3ds", "apk", "exe", "mp3", "ogg", "wav", "mp4", "pdf", "txt", "json", NULL};
+	if (!strstr(url, "://"))
+		return false;
+	size_t l = strcspn(url, "?#");
+	const char *dot = NULL;
+	for (size_t i = l; i > 0 && url[i - 1] != '/'; i--)
+		if (url[i - 1] == '.') {
+			dot = url + i;
+			break;
+		}
+	if (!dot)
+		return false;
+	for (int k = 0; EXT[k]; k++)
+		if ((size_t)(url + l - dot) == strlen(EXT[k]) && !strncasecmp(dot, EXT[k], strlen(EXT[k])))
+			return true;
+	return false;
+}
+
 static void go(const char *url, bool push)
 {
+	if (is_file_url(url)) {
+		size_t l = strcspn(url, "?#");
+		bool cia = l > 4 && !strncasecmp(url + l - 4, ".cia", 4);
+		if (dl_add(url, cia ? "/cias" : "/Descargas", "", cia ? DLA_INSTALL | DLA_STREAM : DLA_NONE, "Navegador", NULL) == 0)
+			toast_icon(cia ? "Descargando e instalando: lo verás en Actividad" : "Descargando en /Descargas: lo verás en Actividad", IC_DOWNLOAD, T.accent);
+		else
+			toast_icon("No se pudo descargar ese enlace", IC_CLOSE, T.danger);
+		return;
+	}
 	if (push && B.url[0] && B.st != ST_IDLE) {
 		if (B.nhist == HIST) {
 			memmove(B.hist[0], B.hist[1], sizeof B.hist[0] * (HIST - 1));
