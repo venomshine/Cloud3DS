@@ -30,9 +30,22 @@
 #define MAX_PAGE  (6 * 1024 * 1024)
 #define HIST      16
 #define HDR_H     30.0f
-#define PAD_X     8.0f
-#define PAGE_W    (BOT_W - 2 * PAD_X)
 #define SC_TEXT   0.46f
+#define VW_PC     980.0f   /* ancho de la página «de PC» (como un portátil) */
+#define VW_MOB    400.0f   /* ancho «de móvil» (las webs que lo piden con <meta viewport>) */
+#define ZOOM_MAX  2.0f
+/* el ancho de la página y su margen (cambian con PC / móvil) */
+static float PW = VW_PC - 32, PADP = 16;
+#define PAGE_W PW
+#define PAD_X  PADP
+/* colores de la página: como una web, fondo claro */
+#define PG_BG    col_hex(0xFFFFFF)
+#define PG_TEXT  col_hex(0x202122)
+#define PG_HEAD  col_hex(0x000000)
+#define PG_MUTED col_hex(0x72777D)
+#define PG_LINK  col_hex(0x3366CC)
+#define PG_CODE  col_hex(0x8B2252)
+#define PG_RULE  col_hex(0xC8CCD1)
 
 typedef struct {
 	int line;
@@ -72,8 +85,15 @@ static struct {
 	char **links;
 	int nlinks, clinks;
 	float total, off, vel;
-	int hover;           /* enlace bajo el dedo */
+	int hover;           /* enlace bajo el puntero */
 	float t_load;
+	/* vista: la página a ancho de PC (o de móvil) arriba, con zoom y puntero */
+	bool page_mobile;    /* la página pide ancho de móvil (<meta name=viewport … device-width>) */
+	int force;           /* 0 lo que pida la página, 1 PC, 2 móvil */
+	float vw, zoom, sx, sy, vy; /* ancho, zoom (px de pantalla por px de página), desplazamiento e inercia */
+	float px, py;        /* puntero, en la pantalla de arriba */
+	int focus;           /* trozo con enlace marcado con la cruceta (-1 ninguno) */
+	float tip;           /* tiempo enseñando el % de zoom */
 } B;
 
 /* ------------------------------------------------------------ cargar (en un hilo) */
@@ -154,6 +174,18 @@ static void load_thread(void *arg)
 		}
 	}
 	B.bytes = b.n;
+	// ¿pide ancho de móvil? (<meta name="viewport" content="width=device-width…">), en los primeros 64 KB
+	B.page_mobile = false;
+	if (b.p) {
+		size_t lim = b.n < 65536 ? b.n : 65536;
+		for (size_t i = 0; i + 8 < lim && !B.page_mobile; i++)
+			if (!strncasecmp(b.p + i, "viewport", 8))
+				for (size_t k = i; k < lim && k < i + 300; k++)
+					if (!strncasecmp(b.p + k, "device-width", 12)) {
+						B.page_mobile = true;
+						break;
+					}
+	}
 	// muchas páginas (Wikipedia) dicen «UTF-8» demasiado abajo para que hubbub lo vea: si el texto es
 	// UTF-8 válido, se le dice; si no, que lo detecte él
 	dom_hubbub_parser_params params = {.enc = utf8_ok(b.p, b.n) ? "UTF-8" : NULL, .fix_enc = true, .enable_script = false};
@@ -547,18 +579,18 @@ static void walk(dom_node *node, St st)
 	if (tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6' && !tag[2]) {
 		static const float HS[6] = {0.74f, 0.64f, 0.56f, 0.52f, 0.50f, 0.48f};
 		st.sc = HS[tag[1] - '1'];
-		st.col = T.text;
+		st.col = PG_HEAD;
 		gap = 10;
 	} else if (!strcmp(tag, "p"))
 		gap = 7;
 	else if (!strcmp(tag, "blockquote")) {
 		gap = 6;
 		st.indent += 12;
-		st.col = T.text2;
+		st.col = PG_TEXT;
 	} else if (!strcmp(tag, "pre")) {
 		gap = 6;
 		st.pre = true;
-		st.col = T.code_text;
+		st.col = PG_CODE;
 		st.sc = 0.40f;
 	} else if (!strcmp(tag, "ul") || !strcmp(tag, "ol")) {
 		gap = 4;
@@ -602,7 +634,7 @@ static void walk(dom_node *node, St st)
 	if (!strcmp(tag, "li")) { // la viñeta o el número, colgando a la izquierda
 		char mk[16];
 		St ms = st;
-		ms.col = T.text3;
+		ms.col = PG_MUTED;
 		ms.link = -1, ms.under = false;
 		if (st.olnum)
 			snprintf(mk, sizeof mk, "%d.", ++*st.olnum);
@@ -624,20 +656,20 @@ static void walk(dom_node *node, St st)
 	if ((!strcmp(tag, "td") || !strcmp(tag, "th")) && st.cells) {
 		if ((*st.cells)++) { // separador entre celdas
 			St ss = st;
-			ss.col = T.text3, ss.link = -1, ss.under = false;
+			ss.col = PG_MUTED, ss.link = -1, ss.under = false;
 			L_space = true;
 			word("·", strlen("·"), &ss);
 			L_space = true;
 		}
 		if (!strcmp(tag, "th"))
-			st.col = T.text;
+			st.col = PG_HEAD;
 	}
 	if (!strcmp(tag, "a") && attr(node, "href", a, sizeof a) && a[0] && a[0] != '#' && strncasecmp(a, "javascript:", 11)) {
 		st.link = link_add(a);
-		st.col = T.accent;
+		st.col = PG_LINK;
 		st.under = true;
 	} else if (!strcmp(tag, "code") || !strcmp(tag, "kbd") || !strcmp(tag, "samp"))
-		st.col = T.code_text;
+		st.col = PG_CODE;
 	else if (!strcmp(tag, "small") || !strcmp(tag, "sup") || !strcmp(tag, "sub"))
 		st.sc = st.sc * 0.82f;
 	else if (!strcmp(tag, "img")) {
@@ -647,7 +679,7 @@ static void walk(dom_node *node, St st)
 		snprintf(tx, sizeof tx, "[%s]", alt[0] ? alt : "imagen");
 		St is = st;
 		if (is.link < 0)
-			is.col = T.text3;
+			is.col = PG_MUTED;
 		L_space = true;
 		text_run(tx, strlen(tx), &is);
 		L_space = true;
@@ -715,9 +747,13 @@ static void layout_free(void)
 static void layout(void)
 {
 	layout_free();
+	bool mob = B.force ? B.force == 2 : B.page_mobile;
+	B.vw = mob ? VW_MOB : VW_PC;
+	PADP = mob ? 8 : 16;
+	PW = B.vw - 2 * PADP;
 	L_x = L_indent = L_gap = 0;
 	L_has = L_space = false;
-	St st = {.sc = SC_TEXT, .col = T.text2, .link = -1};
+	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1};
 	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
 	dom_node *content = find_tag((dom_node *)B.doc, "main", 0);
 	if (!content)
@@ -748,6 +784,11 @@ static void layout(void)
 	}
 	B.total = y + 20;
 	B.off = B.vel = 0;
+	B.zoom = TOP_W / B.vw; // entera a lo ancho; para leer, zoom
+	B.sx = B.sy = B.vy = 0;
+	B.px = TOP_W / 2, B.py = SCR_H / 2;
+	B.focus = -1;
+	B.tip = 2.5f;
 	util_log("web: %s -> %u bytes, %d líneas, %d trozos, %d enlaces", B.url, (unsigned)B.bytes, B.nl, B.nf, B.nlinks);
 }
 
@@ -768,6 +809,7 @@ void br_open_url(const char *url)
 {
 	B.open = true;
 	B.nhist = 0;
+	B.force = 0;
 	B.st = ST_IDLE;
 	go(url, false);
 }
@@ -811,123 +853,245 @@ static void back(void)
 		close_br();
 }
 
+/* ------------------------------------------------------------ vista */
+#define TS_TITLE 0.58f
+#define TS_SUB   0.40f
+static void text_draw_center_clip(const char *t, float cx, float y, float maxw, float sc, u32 c)
+{
+	float w = fminf(text_width(t, sc), maxw);
+	text_draw_clip(t, cx - w / 2, y, maxw, sc, c);
+}
+
+static float view_w(void) { return TOP_W / B.zoom; }
+static float view_h(void) { return SCR_H / B.zoom; }
+
+static void clamp_view(void)
+{
+	B.sx = clampf(B.sx, 0, fmaxf(0, B.vw - view_w()));
+	B.sy = clampf(B.sy, 0, fmaxf(0, B.total - view_h()));
+}
+
+// zoom manteniendo quieto lo que hay bajo el puntero
+static void zoom_by(float k)
+{
+	float min = TOP_W / B.vw;
+	float nz = clampf(B.zoom * k, min, ZOOM_MAX);
+	if (fabsf(nz - B.zoom) < 0.001f)
+		return;
+	float qx = B.sx + B.px / B.zoom, qy = B.sy + B.py / B.zoom;
+	B.zoom = nz;
+	B.sx = qx - B.px / B.zoom;
+	B.sy = qy - B.py / B.zoom;
+	clamp_view();
+	B.tip = 1.5f;
+}
+
+// el rectángulo de un trozo, en px de página
+static void frag_rect(const Frag *f, float *x, float *y, float *w, float *h)
+{
+	const Line *l = &B.l[f->line];
+	*h = text_lineh(f->sc);
+	*x = PAD_X + f->x, *y = l->y + (l->h - *h), *w = f->w;
+}
+
+// el primer trozo cuya línea acaba por debajo de y (búsqueda binaria: los trozos van en orden)
+static int first_frag(float y)
+{
+	int lo = 0, hi = B.nf;
+	while (lo < hi) {
+		int m = (lo + hi) / 2;
+		const Line *l = &B.l[B.f[m].line];
+		if (l->y + l->h < y)
+			lo = m + 1;
+		else
+			hi = m;
+	}
+	return lo;
+}
+
+// el enlace bajo el puntero (o -1)
+static int link_at_pointer(void)
+{
+	float qx = B.sx + B.px / B.zoom, qy = B.sy + B.py / B.zoom, pad = 3 / B.zoom;
+	for (int i = first_frag(qy - 60); i < B.nf; i++) {
+		const Frag *f = &B.f[i];
+		float x, y, w, h;
+		frag_rect(f, &x, &y, &w, &h);
+		if (y > qy + pad)
+			break;
+		if (f->link >= 0 && qx >= x - pad && qx <= x + w + pad && qy >= y - pad && qy <= y + h + pad)
+			return f->link;
+	}
+	return -1;
+}
+
+// cruceta ◀ ▶: al enlace anterior o siguiente; el puntero se pone encima y la vista lo sigue
+static void focus_step(int dir)
+{
+	int i = B.focus;
+	if (i < 0) { // el primero que se vea
+		i = first_frag(B.sy);
+		if (dir < 0)
+			i--;
+	} else
+		i += dir;
+	int cur = B.focus >= 0 ? B.f[B.focus].link : -2;
+	for (; i >= 0 && i < B.nf; i += dir)
+		if (B.f[i].link >= 0 && B.f[i].link != cur)
+			break;
+	if (i < 0 || i >= B.nf)
+		return;
+	if (dir < 0) // al principio de ese enlace, no a su última palabra
+		while (i > 0 && B.f[i - 1].link == B.f[i].link)
+			i--;
+	B.focus = i;
+	float x, y, w, h;
+	frag_rect(&B.f[i], &x, &y, &w, &h);
+	if (y < B.sy || y + h > B.sy + view_h())
+		B.sy = y - view_h() / 3;
+	if (x < B.sx || x + w > B.sx + view_w())
+		B.sx = x - 20 / B.zoom;
+	clamp_view();
+	B.px = (x + fminf(w, 40) / 2 - B.sx) * B.zoom;
+	B.py = (y + h / 2 - B.sy) * B.zoom;
+}
+
+static void draw_pointer(float x, float y, bool on_link)
+{
+	if (on_link) { // una mano: un círculo con borde
+		draw_circle(x, y, 7, col_alpha(PG_LINK, 0.25f));
+		draw_ring(x, y, 7, 1.5f, PG_LINK);
+		draw_circle(x, y, 2, PG_LINK);
+		return;
+	}
+	// flecha
+	draw_tri(x + 1, y + 1, x + 1, y + 17, x + 12, y + 12, col_alpha(0xFF000000, 0.35f));
+	draw_tri(x, y, x, y + 16, x + 11, y + 11, 0xFF000000);
+	draw_tri(x + 1.5f, y + 3.5f, x + 1.5f, y + 13, x + 8, y + 10, 0xFFFFFFFF);
+}
+
+static const char *host_of(const char *u, char *out, size_t n)
+{
+	const char *h = strstr(u, "://");
+	if (!h) { // un archivo de la SD: su nombre
+		const char *sl = strrchr(u, '/');
+		snprintf(out, n, "%s", sl ? sl + 1 : u);
+		return out;
+	}
+	h += 3;
+	size_t l = strcspn(h, "/?#");
+	snprintf(out, n, "%.*s", (int)(l < n - 1 ? l : n - 1), h);
+	return out;
+}
+
 void br_top(void)
 {
-	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
-	const float X = 16, W = TOP_W - 32;
-	draw_icon(IC_GLOBE, X + 10, 22, 16, T.accent);
-	text_draw_clip(B.title[0] ? B.title : "Navegador", X + 26, 14, W - 26, 0.62f, T.text);
-	text_draw_clip(B.url, X, 42, W, 0.40f, T.text3);
-	draw_rect(X, 62, W, 1, T.divider);
-	float y = 74;
-	if (B.st == ST_LOADING || B.st == ST_PARSED) {
-		B.t_load += 1.0f / 60;
-		draw_arc(X + 10, y + 10, 9, 2.5f, B.t_load * 6, B.t_load * 6 + 4.2f, T.accent);
-		text_draw("Cargando…", X + 28, y + 2, 0.48f, T.text2);
-	} else if (B.st == ST_ERROR) {
-		text_wrap_lines(B.err, W, 0.48f, 3, X, y, T.danger, true);
-	} else if (B.st == ST_READY) {
-		char s[96], kb[24];
-		util_fmt_size(kb, sizeof kb, B.bytes);
-		snprintf(s, sizeof s, "%s · %d enlaces", kb, B.nlinks);
-		text_draw(s, X, y, 0.44f, T.text2);
-		if (B.hover >= 0 && B.hover < B.nlinks) {
-			text_draw("Enlace:", X, y + 24, 0.40f, T.text3);
-			text_wrap_lines(B.links[B.hover], W, 0.40f, 3, X, y + 40, T.accent, true);
+	if (B.st != ST_READY) {
+		draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+		const float X = 24, W = TOP_W - 48;
+		char host[128];
+		host_of(B.url, host, sizeof host);
+		draw_icon(IC_GLOBE, TOP_W / 2, 70, 30, B.st == ST_ERROR ? T.danger : T.accent);
+		text_draw_center_clip(host, TOP_W / 2, 98, W, TS_TITLE, T.text);
+		if (B.st == ST_ERROR) {
+			text_draw_center(B.err, TOP_W / 2, 126, TS_SUB, T.danger);
+		} else {
+			B.t_load += 1.0f / 60;
+			draw_arc(TOP_W / 2, 140, 10, 2.5f, B.t_load * 6, B.t_load * 6 + 4.2f, T.accent);
+			text_draw_center("Cargando…", TOP_W / 2, 158, TS_SUB, T.text3);
 		}
-		float f = B.total > SCR_H - HDR_H ? B.off / (B.total - (SCR_H - HDR_H)) : 0;
-		draw_rrect(X, SCR_H - 50, W, 4, 2, T.surface2);
-		draw_rrect(X, SCR_H - 50, fmaxf(8, W * clampf(f, 0, 1)), 4, 2, T.accent);
+		(void)X;
+		return;
 	}
-	text_draw("B Atrás   X Dirección   ↑↓ Desplazar   L R Página   START Cerrar", X, SCR_H - 30, 0.38f, T.text3);
-	text_draw("Prototipo · HTML con hubbub y libdom (NetSurf) · sin JavaScript", X, SCR_H - 16, 0.34f, T.text3);
+	draw_rect(0, 0, TOP_W, SCR_H, PG_BG);
+	const float z = B.zoom;
+	// reglas <hr>
+	for (int i = 0; i < B.nl; i++) {
+		const Line *l = &B.l[i];
+		if (!l->hr)
+			continue;
+		float y = (l->y + l->h / 2 - B.sy) * z;
+		if (y >= 0 && y < SCR_H)
+			draw_rect((PAD_X - B.sx) * z, y, PAGE_W * z, fmaxf(1, z), PG_RULE);
+	}
+	int hov = link_at_pointer();
+	B.hover = hov;
+	for (int i = first_frag(B.sy); i < B.nf; i++) {
+		const Frag *f = &B.f[i];
+		float x, y, w, h;
+		frag_rect(f, &x, &y, &w, &h);
+		float X = (x - B.sx) * z, Y = (y - B.sy) * z, Wd = w * z, H = h * z;
+		if (Y > SCR_H)
+			break;
+		if (X > TOP_W || X + Wd < 0 || Y + H < 0)
+			continue;
+		if (f->link >= 0 && (f->link == hov || i == B.focus))
+			draw_rect(X - 1, Y, Wd + 2, H, col_alpha(PG_LINK, 0.18f));
+		float sc = f->sc * z;
+		if (sc < 0.17f) // tan pequeño que no se leería: una raya del color del texto (como una vista previa)
+			draw_rect(X, Y + H * 0.35f, Wd, fmaxf(1, H * 0.35f), col_alpha(f->col, 0.55f));
+		else {
+			text_draw_n(B.text + f->off, f->n, X, Y, sc, f->col);
+			if (f->under)
+				draw_rect(X, Y + H - fmaxf(1, z * 0.8f), Wd, fmaxf(1, z * 0.6f), col_alpha(f->col, 0.5f));
+		}
+	}
+	// barra de desplazamiento fina a la derecha
+	if (B.total > view_h()) {
+		float bh = fmaxf(16, SCR_H * view_h() / B.total), by = (SCR_H - bh) * (B.sy / (B.total - view_h()));
+		draw_rrect(TOP_W - 5, by, 3, bh, 1.5f, col_alpha(0xFF000000, 0.3f));
+	}
+	// arriba: la web, PC / móvil y el zoom (un momento, al cambiar)
+	char host[96], chip[160];
+	host_of(B.url, host, sizeof host);
+	snprintf(chip, sizeof chip, "%s   %s · %d %%", host, B.vw == VW_MOB ? "Móvil" : "PC", (int)(z * 100 + 0.5f));
+	float cw = fminf(TOP_W - 16, text_width(chip, 0.40f) + 20);
+	B.tip = fmaxf(0, B.tip - 1.0f / 60);
+	float ca = clampf(B.tip / 0.4f, 0, 1); // se ve al abrir y al hacer zoom, y se va sola para no tapar la página
+	if (ca > 0.01f) {
+		draw_rrect(8, 6, cw, 18, 9, col_alpha(0xFF1A1F2A, 0.85f * ca));
+		text_draw_clip(chip, 18, 6 + 9 - text_lineh(0.40f) / 2, cw - 20, 0.40f, col_alpha(0xFFFFFFFF, ca));
+	}
+	draw_pointer(B.px, B.py, hov >= 0);
 }
+
+static void go_link(int k)
+{
+	if (k < 0 || k >= B.nlinks)
+		return;
+	char url[1024];
+	util_strlcpy(url, B.links[k], sizeof url);
+	go(url, true);
+}
+
+// botón redondo de la barra de herramientas; true si se tocó
+static bool tool_btn(float x, float y, float w, const char *label, bool on)
+{
+	bool p = touch_in(x, y, w, 24);
+	draw_rrect(x, y, w, 24, 12, on ? T.accent : p ? T.surface2 : T.surface);
+	text_draw_center(label, x + w / 2, y + 12 - text_lineh(TS_SUB) / 2, TS_SUB, on ? 0xFFFFFFFF : T.text);
+	return tap(x, y, w, 24);
+}
+
+#define TP_Y   62.0f   /* touchpad */
+#define TP_B   (SCR_H - 34.0f)
+#define STRIP  30.0f   /* franja de desplazamiento, a la derecha */
 
 void br_bottom(void)
 {
-	if (B.st == ST_PARSED) { // el árbol está listo: se maqueta aquí (usa la fuente)
+	if (B.st == ST_PARSED) { // el árbol está listo: se maqueta aquí (usa la fuente); se guarda para cambiar PC / móvil
 		if (B.thr) {
 			threadJoin(B.thr, U64_MAX);
 			threadFree(B.thr);
 			B.thr = NULL;
 		}
 		layout();
-		dom_node_unref(B.doc);
-		B.doc = NULL;
 		B.st = ST_READY;
 		B.hover = -1;
 	}
 	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
-	float view = SCR_H - HDR_H;
-	// desplazar: cruceta, L/R, palanca y arrastrando
-	if (B.st == ST_READY) {
-		if (g_krepeat & KEY_DOWN)
-			B.vel = 0, B.off += 28;
-		if (g_krepeat & KEY_UP)
-			B.vel = 0, B.off -= 28;
-		if (g_kdown & KEY_R)
-			B.off += view - 20;
-		if (g_kdown & KEY_L)
-			B.off -= view - 20;
-		circlePosition cp;
-		hidCircleRead(&cp);
-		if (abs(cp.dy) > 20)
-			B.off -= cp.dy / 12.0f;
-		if (g_touch.held && g_touch.sy > HDR_H) {
-			float d = (float)(g_touch.y - g_touch.py);
-			B.off -= d;
-			B.vel = -d;
-		} else {
-			B.off += B.vel;
-			B.vel *= 0.92f;
-			if (fabsf(B.vel) < 0.2f)
-				B.vel = 0;
-		}
-		B.off = clampf(B.off, 0, fmaxf(0, B.total - view));
-	}
-	// la página
-	gfx_clip(0, HDR_H, BOT_W, view);
-	int hit = -1;
-	bool tapped = g_touch.up && !g_touch.drag && g_touch.sy > HDR_H;
-	if (B.st == ST_READY) {
-		float base = HDR_H - B.off;
-		for (int i = 0; i < B.nl; i++) {
-			const Line *l = &B.l[i];
-			if (l->hr && base + l->y < SCR_H && base + l->y + l->h > HDR_H)
-				draw_rect(PAD_X, base + l->y + l->h / 2, PAGE_W, 1, T.divider);
-		}
-		for (int i = 0; i < B.nf; i++) {
-			const Frag *f = &B.f[i];
-			const Line *l = &B.l[f->line];
-			float y = base + l->y + (l->h - text_lineh(f->sc));
-			if (y > SCR_H)
-				break;
-			if (y + l->h < HDR_H)
-				continue;
-			float x = PAD_X + f->x;
-			bool on = f->link >= 0 && g_touch.held && g_touch.sy > HDR_H && !g_touch.drag && g_touch.x >= x - 2 &&
-			          g_touch.x <= x + f->w + 2 && g_touch.y >= y - 3 && g_touch.y <= y + text_lineh(f->sc) + 3;
-			if (on)
-				hit = f->link;
-			if (f->link >= 0 && (on || f->link == B.hover))
-				draw_rrect(x - 2, y - 1, f->w + 4, text_lineh(f->sc) + 2, 3, col_alpha(T.accent, 0.22f));
-			text_draw_n(B.text + f->off, f->n, x, y, f->sc, f->col);
-			if (f->under)
-				draw_rect(x, y + text_lineh(f->sc) - 1, f->w, 1, col_alpha(f->col, 0.5f));
-			if (tapped && f->link >= 0 && g_touch.px >= x - 2 && g_touch.px <= x + f->w + 2 && g_touch.py >= y - 3 &&
-			    g_touch.py <= y + text_lineh(f->sc) + 3)
-				hit = f->link;
-		}
-	} else if (B.st == ST_LOADING || B.st == ST_PARSED) {
-		text_draw_center("Cargando…", BOT_W / 2, HDR_H + 90, 0.5f, T.text3);
-	} else if (B.st == ST_ERROR) {
-		draw_icon(IC_CLOSE, BOT_W / 2, HDR_H + 70, 22, T.danger);
-		text_draw_center("No se pudo abrir la página", BOT_W / 2, HDR_H + 92, 0.5f, T.text);
-	}
-	gfx_clip_off();
-	if (B.st == ST_READY && g_touch.held && hit >= 0)
-		B.hover = hit;
-	// cabecera: atrás, dirección y cerrar
+	bool ready = B.st == ST_READY;
+	// --- cabecera: atrás, dirección y cerrar
 	draw_rect(0, 0, BOT_W, HDR_H, T.surface);
 	draw_rect(0, HDR_H - 1, BOT_W, 1, T.divider);
 	bool bp = touch_in(0, 0, 36, HDR_H);
@@ -940,6 +1104,90 @@ void br_bottom(void)
 	const char *u = strstr(B.url, "://");
 	text_draw_clip(u ? u + 3 : B.url, 46, HDR_H / 2 - text_lineh(0.40f) / 2, BOT_W - 92, 0.40f, T.text2);
 	bool edit = tap(36, 0, BOT_W - 72, HDR_H) || (g_kdown & KEY_X);
+	// --- herramientas: zoom y PC / móvil
+	float ty = HDR_H + 4;
+	bool zout = tool_btn(8, ty, 34, "-", false), zin = tool_btn(46, ty, 34, "+", false);
+	char zp[16];
+	snprintf(zp, sizeof zp, "%d %%", ready ? (int)(B.zoom * 100 + 0.5f) : 100);
+	text_draw(zp, 88, ty + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
+	bool mob = ready && B.vw == VW_MOB;
+	bool tpc = tool_btn(BOT_W - 112, ty, 52, "PC", ready && !mob), tmob = tool_btn(BOT_W - 58, ty, 50, "Móvil", mob);
+	// --- touchpad (con su trama de puntos) y franja para desplazar
+	const float TX = 8, TW = BOT_W - 16 - STRIP - 6, SX = BOT_W - 8 - STRIP;
+	draw_rrect(TX, TP_Y, TW, TP_B - TP_Y, 12, T.surface);
+	for (float yy = TP_Y + 10; yy < TP_B - 6; yy += 12)
+		for (float xx = TX + 10; xx < TX + TW - 6; xx += 12)
+			draw_rect(xx, yy, 1.5f, 1.5f, T.divider);
+	draw_rrect(SX, TP_Y, STRIP, TP_B - TP_Y, 12, T.surface);
+	if (ready && B.total > view_h()) {
+		float h = TP_B - TP_Y - 8, gh = fmaxf(18, h * view_h() / B.total), gy = TP_Y + 4 + (h - gh) * (B.sy / (B.total - view_h()));
+		draw_rrect(SX + 8, gy, STRIP - 16, gh, (STRIP - 16) / 2, T.accent);
+	}
+	bool on_pad = g_touch.held && touch_in(TX, TP_Y, TW, TP_B - TP_Y) && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y;
+	bool on_strip = g_touch.held && g_touch.sx >= SX && g_touch.sy >= TP_Y && g_touch.sy < TP_B;
+	bool click = false;
+	if (ready) {
+		// puntero: el dedo en el touchpad o la palanca
+		if (on_pad) {
+			B.px += (g_touch.x - g_touch.px) * 1.4f;
+			B.py += (g_touch.y - g_touch.py) * 1.4f;
+			B.focus = -1;
+		}
+		circlePosition cp;
+		hidCircleRead(&cp);
+		if (abs(cp.dx) > 18 || abs(cp.dy) > 18) {
+			B.px += cp.dx / 26.0f;
+			B.py -= cp.dy / 26.0f;
+			B.focus = -1;
+		}
+		// el puntero en el borde empuja la página
+		float ox = B.px < 0 ? B.px : B.px > TOP_W - 1 ? B.px - (TOP_W - 1) : 0;
+		float oy = B.py < 0 ? B.py : B.py > SCR_H - 1 ? B.py - (SCR_H - 1) : 0;
+		B.sx += ox / B.zoom, B.sy += oy / B.zoom;
+		B.px = clampf(B.px, 0, TOP_W - 1), B.py = clampf(B.py, 0, SCR_H - 1);
+		// franja: arrastrar desplaza, con inercia
+		if (on_strip) {
+			float d = (float)(g_touch.y - g_touch.py) * 3 / B.zoom;
+			B.sy += d;
+			B.vy = d;
+		} else if (fabsf(B.vy) > 0.2f) {
+			B.sy += B.vy;
+			B.vy *= 0.92f;
+		} else
+			B.vy = 0;
+		if (g_krepeat & KEY_DOWN)
+			B.sy += 60 / B.zoom, B.vy = 0;
+		if (g_krepeat & KEY_UP)
+			B.sy -= 60 / B.zoom, B.vy = 0;
+		if (g_krepeat & KEY_RIGHT)
+			focus_step(1);
+		if (g_krepeat & KEY_LEFT)
+			focus_step(-1);
+		if (zin || (g_krepeat & KEY_R))
+			zoom_by(1.25f);
+		if (zout || (g_krepeat & KEY_L))
+			zoom_by(0.8f);
+		clamp_view();
+		click = (g_touch.up && !g_touch.drag && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y && g_touch.sy < TP_B) ||
+		        (g_kdown & KEY_A);
+		if ((tpc && B.force != 1) || (tmob && B.force != 2) || (g_kdown & KEY_Y)) {
+			B.force = (g_kdown & KEY_Y) ? (mob ? 1 : 2) : tpc ? 1 : 2;
+			if (B.doc)
+				layout();
+		}
+	}
+	// --- debajo: a dónde lleva el enlace del puntero, o cómo se usa
+	const char *tip = "Desliza para mover el puntero · toca para hacer clic";
+	u32 tc = T.text3;
+	if (ready && B.hover >= 0 && B.hover < B.nlinks)
+		tip = B.links[B.hover], tc = T.accent;
+	else if (B.st == ST_ERROR)
+		tip = B.err, tc = T.danger;
+	text_draw_center_clip(tip, BOT_W / 2, TP_B + 4, BOT_W - 20, 0.40f, tc);
+	char keys[160];
+	snprintf(keys, sizeof keys, "%s Clic · %s Enlaces · L R Zoom · %s PC/Móvil · %s Atrás", GLYPH_A, GLYPH_DPAD, GLYPH_Y, GLYPH_B);
+	text_draw_center_clip(keys, BOT_W / 2, TP_B + 18, BOT_W - 20, 0.36f, T.text3);
+	// --- acciones
 	if (tap(BOT_W - 36, 0, 36, HDR_H) || (g_kdown & KEY_START)) {
 		close_br();
 		g_kdown = 0;
@@ -960,10 +1208,11 @@ void br_bottom(void)
 				util_strlcpy(full, nu, sizeof full);
 			go(full, true);
 		}
-	} else if (tapped && hit >= 0 && hit < B.nlinks && B.st == ST_READY) {
-		char url[1024];
-		util_strlcpy(url, B.links[hit], sizeof url);
-		go(url, true);
+	} else if (click && ready) {
+		int k = link_at_pointer();
+		if (k < 0 && B.focus >= 0)
+			k = B.f[B.focus].link;
+		go_link(k);
 	}
 	g_kdown = 0;
 	g_touch.up = false;
