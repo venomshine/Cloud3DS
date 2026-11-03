@@ -12,6 +12,7 @@
  *     color y enlace, colocado en líneas que caben en la pantalla de abajo.
  *  3. Se dibujan solo las líneas que se ven; tocar un trozo con enlace abre esa página. */
 #include "browser.h"
+#include "brcss.h"
 #include "dl.h"
 #include "gfx.h"
 #include "icons.h"
@@ -56,13 +57,22 @@ typedef struct {
 	u32 col;
 	s16 link;      /* -1 sin enlace */
 	u8 under;      /* subrayado (enlaces) */
+	u8 bold;       /* negrita: se pinta dos veces, medio píxel corrida */
 } Frag;
 
 typedef struct {
 	float y, h, gap;
 	bool hr;       /* <hr>: una raya en vez de texto */
 	bool used;     /* tiene texto: las vacías no ocupan alto */
+	u8 align;      /* 0 izquierda, 1 centro, 2 derecha */
+	float left, right; /* márgenes de la línea (para alinear) */
 } Line;
+
+typedef struct {   /* fondo de color de un bloque (background-color) */
+	int l0, l1;    /* sus líneas */
+	float x0, x1;
+	u32 col;
+} BgBox;
 
 enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_READY, ST_ERROR };
 
@@ -84,6 +94,12 @@ static struct {
 	u32 nt, ct;
 	char **links;
 	int nlinks, clinks;
+	BgBox *bg;
+	int nbg, cbg;
+	float bg_x0, bg_x1;
+	BrCss *css;          /* las hojas de la página (las monta el hilo de carga) */
+	int ncss;            /* cuántas hojas se usaron */
+	u32 t_css;           /* ms que costó calcular los estilos */
 	float total, off, vel;
 	int hover;           /* enlace bajo el puntero */
 	float t_load;
@@ -140,6 +156,98 @@ static bool utf8_ok(const char *p, size_t n)
 		i += k + 1;
 	}
 	return multi;
+}
+
+static void resolve(const char *base, const char *href, char *out, size_t n);
+static bool attr(dom_node *el, const char *name, char *out, size_t n);
+
+// un archivo de la SD (ruta que empieza por / o sdmc:) o de Internet, entero en b
+static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
+{
+	*code = 0;
+	if (!strncasecmp(url, "sdmc:", 5) || url[0] == '/') {
+		char sp[1100];
+		snprintf(sp, sizeof sp, "%s%s", url[0] == '/' ? "sdmc:" : "", url);
+		FILE *fp = fopen(sp, "rb");
+		if (!fp)
+			return DLF_NOCONN;
+		char tmp[16384];
+		size_t n;
+		while ((n = fread(tmp, 1, sizeof tmp, fp)) > 0 && buf_cb(tmp, 1, n, b) == n)
+			;
+		fclose(fp);
+		*code = 200;
+		return DLF_OK;
+	}
+	return dl_fetch(url, accept, buf_cb, NULL, b, code);
+}
+
+static bool ci_has(const char *h, const char *nd)
+{
+	size_t l = strlen(nd);
+	for (; *h; h++)
+		if (!strncasecmp(h, nd, l))
+			return true;
+	return false;
+}
+
+/* las hojas de estilo de la página, en su orden: <style> y <link rel="stylesheet"> (se bajan aquí) */
+#define CSS_MAX_LINKS 10
+#define CSS_MAX_BYTES (1536 * 1024)
+static void css_collect(BrCss *c, dom_node *n, int depth, int *links, size_t *bytes)
+{
+	if (depth > 60)
+		return;
+	dom_node *ch = NULL;
+	if (dom_node_get_first_child(n, &ch) != DOM_NO_ERR)
+		return;
+	while (ch) {
+		dom_node_type t;
+		if (dom_node_get_node_type(ch, &t) == DOM_NO_ERR && t == DOM_ELEMENT_NODE) {
+			dom_string *nm = NULL;
+			char tag[8] = "";
+			if (dom_node_get_node_name(ch, &nm) == DOM_NO_ERR && nm) {
+				size_t l = dom_string_byte_length(nm);
+				snprintf(tag, sizeof tag, "%.*s", (int)(l < 7 ? l : 7), dom_string_data(nm));
+				dom_string_unref(nm);
+			}
+			char a[512];
+			if (!strcasecmp(tag, "style")) {
+				if (!attr(ch, "media", a, sizeof a) || !strstr(a, "print") || strstr(a, "screen")) {
+					dom_string *tx = NULL;
+					if (dom_node_get_text_content(ch, &tx) == DOM_NO_ERR && tx) {
+						size_t l = dom_string_byte_length(tx);
+						if (*bytes + l <= CSS_MAX_BYTES) {
+							brcss_add(c, dom_string_data(tx), l, B.url);
+							*bytes += l;
+						}
+						dom_string_unref(tx);
+					}
+				}
+			} else if (!strcasecmp(tag, "link") && *links < CSS_MAX_LINKS && attr(ch, "rel", a, sizeof a) && ci_has(a, "stylesheet") &&
+			           !ci_has(a, "alternate")) {
+				char href[1024], media[128];
+				bool med = attr(ch, "media", media, sizeof media);
+				if (attr(ch, "href", href, sizeof href) && href[0] && (!med || !strstr(media, "print") || strstr(media, "screen"))) {
+					char abs[1024];
+					resolve(B.url, href, abs, sizeof abs);
+					Buf cb = {0};
+					long code;
+					(*links)++;
+					if (fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code) == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES) {
+						brcss_add(c, cb.p, cb.n, abs);
+						*bytes += cb.n;
+					}
+					free(cb.p);
+				}
+			} else if (strcasecmp(tag, "script") && strcasecmp(tag, "svg"))
+				css_collect(c, ch, depth + 1, links, bytes);
+		}
+		dom_node *nx = NULL;
+		dom_node_get_next_sibling(ch, &nx);
+		dom_node_unref(ch);
+		ch = nx;
+	}
 }
 
 static void load_thread(void *arg)
@@ -201,6 +309,15 @@ static void load_thread(void *arg)
 	dom_hubbub_parser_completed(parser);
 	dom_hubbub_parser_destroy(parser);
 	free(b.p);
+	// el CSS de la página (se baja y se lee aquí, en el hilo, para no parar la pantalla)
+	BrCss *css = doc ? brcss_new(B.url) : NULL;
+	if (css) {
+		int links = 0;
+		size_t bytes = 0;
+		css_collect(css, (dom_node *)doc, 0, &links, &bytes);
+		B.ncss = brcss_sheets(css);
+	}
+	B.css = css;
 	B.doc = doc;
 	B.st = ST_PARSED;
 }
@@ -216,6 +333,9 @@ static void start_load(const char *url)
 		dom_node_unref(B.doc);
 		B.doc = NULL;
 	}
+	brcss_free(B.css);
+	B.css = NULL;
+	B.ncss = 0;
 	util_strlcpy(B.url, url, sizeof B.url);
 	B.err[0] = 0;
 	B.title[0] = 0;
@@ -289,19 +409,25 @@ static void resolve(const char *base, const char *href, char *out, size_t n)
 
 /* ------------------------------------------------------------ maquetar */
 typedef struct {
-	float sc, indent;
+	float sc, indent, right; /* tamaño de letra, sangría y borde derecho (px de página) */
 	u32 col;
 	int link;
-	bool pre, under, skip;
+	bool pre, under, skip, bold, hidden;
+	u8 align;
+	bool list;     /* <li> con viñeta (list-style no es none) */
 	int *olnum;    /* contador de la <ol> de dentro */
 	int *cells;    /* celdas de la fila (separadores) */
+	const css_computed_style *cs; /* el estilo calculado del padre (con CSS) */
 } St;
 
 static float L_x;          /* posición en la línea actual */
 static bool L_has, L_space;
 static float L_gap;        /* hueco antes de la próxima línea */
 static float L_indent;
+static float L_right = 1e9; /* borde derecho de la línea (con CSS: márgenes, anchos) */
+static u8 L_align;
 static bool L_marker;      /* en la línea solo está la viñeta de un <li> */
+#define RIGHT (L_right < PAGE_W ? L_right : PAGE_W)
 
 static Line *line_new(void)
 {
@@ -316,6 +442,9 @@ static Line *line_new(void)
 	memset(l, 0, sizeof *l);
 	l->h = text_lineh(SC_TEXT);
 	l->gap = L_gap;
+	l->align = L_align;
+	l->left = L_indent;
+	l->right = RIGHT;
 	L_gap = 0;
 	L_x = L_indent;
 	L_has = false;
@@ -362,7 +491,7 @@ static void put(const char *s, int n, const St *st, float w)
 	f->line = B.nl - 1;
 	f->x = L_x, f->w = w;
 	f->off = B.nt, f->n = (u16)n;
-	f->sc = st->sc, f->col = st->col, f->link = (s16)st->link, f->under = st->under;
+	f->sc = st->sc, f->col = st->col, f->link = (s16)st->link, f->under = st->under, f->bold = st->bold;
 	B.nt += n;
 	Line *l = &B.l[B.nl - 1];
 	l->used = true;
@@ -380,16 +509,16 @@ static void word(const char *s, int n, const St *st)
 	float w = text_width_n(s, n, st->sc), sp = 0;
 	if (L_has && L_space)
 		sp = text_width(" ", st->sc);
-	if (!B.nl || (L_has && L_x + sp + w > PAGE_W)) {
+	if (!B.nl || (L_has && L_x + sp + w > RIGHT)) {
 		line_new();
 		sp = 0;
 	}
 	if (!L_has)
 		L_x = L_indent;
 	// una palabra más ancha que la pantalla: a trozos
-	while (w > PAGE_W - L_indent && n > 1) {
+	while (w > RIGHT - L_indent && n > 1) {
 		int k = n;
-		while (k > 1 && text_width_n(s, k, st->sc) > PAGE_W - L_x)
+		while (k > 1 && text_width_n(s, k, st->sc) > RIGHT - L_x)
 			k--;
 		while (k > 1 && (s[k] & 0xC0) == 0x80) // sin partir un carácter UTF-8
 			k--;
@@ -406,6 +535,8 @@ static void word(const char *s, int n, const St *st)
 
 static void text_run(const char *s, size_t n, const St *st)
 {
+	if (st->hidden) // visibility: hidden
+		return;
 	size_t i = 0;
 	if (st->pre) { // se respetan los espacios y los saltos de línea
 		while (i < n) {
@@ -508,6 +639,248 @@ static void children(dom_node *node, const St *st)
 	}
 }
 
+/* ------------------------------------------------------------ con CSS */
+static float SC16 = SC_TEXT; /* tamaño de letra de 16 px */
+
+static u32 css_col(css_color c)
+{
+	return RGBA((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, (c >> 24) & 0xFF);
+}
+
+// una longitud en px de página (los % sobre «base»)
+static float len_px(const css_computed_style *cs, css_fixed len, css_unit u, float base)
+{
+	if (u == CSS_UNIT_PCT)
+		return base * FIXTOFLT(len) / 100;
+	return brcss_px(cs, len, u, B.vw);
+}
+
+static bool is_block_display(uint8_t d)
+{
+	return d != CSS_DISPLAY_INLINE && d != CSS_DISPLAY_INLINE_BLOCK && d != CSS_DISPLAY_INLINE_FLEX && d != CSS_DISPLAY_INLINE_GRID &&
+	       d != CSS_DISPLAY_INLINE_TABLE && d != CSS_DISPLAY_TABLE_CELL;
+}
+
+// la línea vacía en curso toma la sangría, el borde y la alineación de ahora
+static void line_ctx(void)
+{
+	if (B.nl && !L_has) {
+		Line *l = &B.l[B.nl - 1];
+		l->align = L_align, l->left = L_indent, l->right = RIGHT;
+		L_x = L_indent;
+	}
+}
+
+static void bg_add(int l0, int l1, float x0, float x1, u32 col)
+{
+	if (B.nbg == B.cbg) {
+		int nc = B.cbg ? B.cbg * 2 : 64;
+		BgBox *nb = realloc(B.bg, nc * sizeof *nb);
+		if (!nb)
+			return;
+		B.bg = nb, B.cbg = nc;
+	}
+	B.bg[B.nbg++] = (BgBox){l0, l1, x0, x1, col};
+}
+
+static void children(dom_node *node, const St *st);
+static int link_add(const char *href);
+static bool attr(dom_node *el, const char *name, char *out, size_t n);
+
+/* un elemento con su estilo calculado: la página decide qué se ve, colores, tamaños, márgenes */
+static void walk_css(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t d)
+{
+	char a[256];
+	st.cs = cs;
+	css_color c;
+	if (css_computed_color(cs, &c) == CSS_COLOR_COLOR)
+		st.col = css_col(c) | 0xFF000000;
+	css_fixed len;
+	css_unit u;
+	css_computed_font_size(cs, &len, &u);
+	float fpx = brcss_px(cs, len, u, B.vw);
+	st.sc = clampf(SC16 * fpx / 16, 0.15f, 2.4f);
+	uint8_t fw = css_computed_font_weight(cs);
+	st.bold = fw == CSS_FONT_WEIGHT_BOLD || fw == CSS_FONT_WEIGHT_BOLDER || fw >= CSS_FONT_WEIGHT_600;
+	st.under = (css_computed_text_decoration(cs) & CSS_TEXT_DECORATION_UNDERLINE) != 0;
+	uint8_t ws = css_computed_white_space(cs);
+	st.pre = ws == CSS_WHITE_SPACE_PRE || ws == CSS_WHITE_SPACE_PRE_WRAP;
+	uint8_t ta = css_computed_text_align(cs);
+	st.align = (ta == CSS_TEXT_ALIGN_CENTER || ta == CSS_TEXT_ALIGN_LIBCSS_CENTER) ? 1 : (ta == CSS_TEXT_ALIGN_RIGHT || ta == CSS_TEXT_ALIGN_LIBCSS_RIGHT) ? 2 : 0;
+	st.hidden = css_computed_visibility(cs) == CSS_VISIBILITY_HIDDEN;
+
+	if (!strcmp(tag, "br")) {
+		if (L_has)
+			line_new();
+		else
+			L_gap += text_lineh(st.sc);
+		return;
+	}
+	if (!strcmp(tag, "hr")) {
+		block(4);
+		Line *l = line_new();
+		if (l) {
+			l->hr = true;
+			l->h = 6;
+		}
+		L_gap = 4;
+		return;
+	}
+	if (!strcmp(tag, "img")) {
+		char alt[120];
+		attr(node, "alt", alt, sizeof alt);
+		if (!alt[0])
+			return; // sin texto: decorativa
+		char tx[140];
+		snprintf(tx, sizeof tx, "[%s]", alt);
+		St is = st;
+		if (is.link < 0)
+			is.col = PG_MUTED;
+		L_space = true;
+		text_run(tx, strlen(tx), &is);
+		L_space = true;
+		return;
+	}
+
+	bool blk = is_block_display(d);
+	float o_ind = L_indent, o_right = L_right;
+	u8 o_align = L_align;
+	float mb = 0;
+	int l0 = -1;
+	u32 bgc = 0;
+	if (blk) {
+		float avail = st.right - st.indent;
+		css_fixed v;
+		css_unit vu;
+		float mt = 0, ml = 0, mr = 0, pt = 0, pl = 0, pr = 0, pb = 0;
+		if (css_computed_margin_top(cs, &v, &vu) == CSS_MARGIN_SET)
+			mt = len_px(cs, v, vu, avail);
+		if (css_computed_margin_bottom(cs, &v, &vu) == CSS_MARGIN_SET)
+			mb = len_px(cs, v, vu, avail);
+		bool aml = css_computed_margin_left(cs, &v, &vu) == CSS_MARGIN_AUTO;
+		if (!aml)
+			ml = len_px(cs, v, vu, avail);
+		bool amr = css_computed_margin_right(cs, &v, &vu) == CSS_MARGIN_AUTO;
+		if (!amr)
+			mr = len_px(cs, v, vu, avail);
+		if (css_computed_padding_top(cs, &v, &vu) == CSS_PADDING_SET)
+			pt = len_px(cs, v, vu, avail);
+		if (css_computed_padding_bottom(cs, &v, &vu) == CSS_PADDING_SET)
+			pb = len_px(cs, v, vu, avail);
+		if (css_computed_padding_left(cs, &v, &vu) == CSS_PADDING_SET)
+			pl = len_px(cs, v, vu, avail);
+		if (css_computed_padding_right(cs, &v, &vu) == CSS_PADDING_SET)
+			pr = len_px(cs, v, vu, avail);
+		// los márgenes negativos y enormes de algunos diseños no tienen sentido sin su posición exacta
+		ml = clampf(ml, 0, avail * 0.3f), mr = clampf(mr, 0, avail * 0.3f);
+		pl = clampf(pl, 0, avail * 0.2f), pr = clampf(pr, 0, avail * 0.2f);
+		mt = clampf(mt, 0, 60), mb = clampf(mb, 0, 60) + clampf(pb, 0, 40);
+		// ancho: width / max-width, centrado con margin: auto
+		float w = avail - ml - mr;
+		if (css_computed_width(cs, &v, &vu) == CSS_WIDTH_SET && d != CSS_DISPLAY_TABLE_ROW)
+			w = fminf(w, len_px(cs, v, vu, avail));
+		if (css_computed_max_width(cs, &v, &vu) == CSS_MAX_WIDTH_SET)
+			w = fminf(w, len_px(cs, v, vu, avail));
+		w = fmaxf(w, 40);
+		float x0 = st.indent + ml;
+		if (aml && amr)
+			x0 = st.indent + (avail - w) / 2;
+		else if (aml)
+			x0 = st.right - mr - w;
+		float bx0 = x0, bx1 = x0 + w;
+		st.indent = x0 + pl;
+		st.right = x0 + w - pr;
+		if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c >> 24) > 0x20 && (c & 0xFFFFFF) != 0xFFFFFF && strcmp(tag, "body") && strcmp(tag, "html"))
+			bgc = css_col(c) | 0xFF000000;
+		block(mt + clampf(pt, 0, 40));
+		L_indent = st.indent;
+		L_right = st.right;
+		L_align = st.align;
+		line_ctx();
+		if (bgc) {
+			if (!B.nl || L_has)
+				line_new();
+			l0 = B.nl - 1; // la línea (vacía) en la que empieza el bloque
+			B.bg_x0 = bx0, B.bg_x1 = bx1;
+		}
+	}
+	int ol = 0, cells = 0;
+	if (!strcmp(tag, "ol") || !strcmp(tag, "ul"))
+		st.olnum = !strcmp(tag, "ol") ? &ol : NULL;
+	if (d == CSS_DISPLAY_TABLE_ROW)
+		st.cells = &cells;
+	int li_frag = -1;
+	if (d == CSS_DISPLAY_LIST_ITEM && css_computed_list_style_type(cs) != CSS_LIST_STYLE_TYPE_NONE) {
+		char mk[16];
+		St ms = st;
+		ms.col = PG_MUTED, ms.link = -1, ms.under = false, ms.bold = false;
+		if (st.olnum)
+			snprintf(mk, sizeof mk, "%d.", ++*st.olnum);
+		else
+			util_strlcpy(mk, "•", sizeof mk);
+		float mw = text_width("00.", ms.sc) + 2;
+		if (!B.nl || L_has)
+			line_new();
+		L_x = st.indent - mw > 0 ? st.indent - mw : st.indent;
+		li_frag = B.nf;
+		put(mk, strlen(mk), &ms, text_width(mk, ms.sc));
+		if (st.indent - mw <= 0) { // sin sitio a la izquierda: la viñeta dentro
+			st.indent += mw;
+			L_indent = st.indent;
+		}
+		L_x = st.indent;
+		L_has = true;
+		L_space = false;
+		L_marker = true;
+	}
+	if (d == CSS_DISPLAY_TABLE_CELL && st.cells && (*st.cells)++) { // separador entre celdas
+		St ss = st;
+		ss.col = PG_MUTED, ss.link = -1, ss.under = false;
+		L_space = true;
+		word("·", strlen("·"), &ss);
+		L_space = true;
+	}
+	if (!strcmp(tag, "a") && attr(node, "href", a, sizeof a) && a[0] && a[0] != '#' && strncasecmp(a, "javascript:", 11))
+		st.link = link_add(a);
+	float bx0 = B.bg_x0, bx1 = B.bg_x1;
+	float il = 0, ir = 0; // en línea: márgenes y rellenos a los lados (menús hechos con enlaces seguidos)
+	if (!blk) {
+		css_fixed v;
+		css_unit vu;
+		if (css_computed_margin_left(cs, &v, &vu) == CSS_MARGIN_SET)
+			il += len_px(cs, v, vu, 0);
+		if (css_computed_padding_left(cs, &v, &vu) == CSS_PADDING_SET)
+			il += len_px(cs, v, vu, 0);
+		if (css_computed_margin_right(cs, &v, &vu) == CSS_MARGIN_SET)
+			ir += len_px(cs, v, vu, 0);
+		if (css_computed_padding_right(cs, &v, &vu) == CSS_PADDING_SET)
+			ir += len_px(cs, v, vu, 0);
+		il = clampf(il, 0, 60), ir = clampf(ir, 0, 60);
+		if (il > 0 && L_has)
+			L_x += il;
+	}
+	children(node, &st);
+	if (!blk && ir > 0 && L_has)
+		L_x += ir;
+	if (li_frag >= 0 && B.nf == li_frag + 1) { // el <li> no tenía nada visible: fuera su viñeta
+		B.nf--;
+		B.nt = B.f[B.nf].off;
+		B.l[B.f[B.nf].line].used = false;
+		L_has = false;
+		L_marker = false;
+		if (st.olnum)
+			--*st.olnum;
+	}
+	if (blk) {
+		int l1 = L_has ? B.nl - 1 : B.nl - 2; // la última línea con algo
+		if (bgc && l0 >= 0 && l1 >= l0)
+			bg_add(l0, l1, bx0, bx1, bgc);
+		block(mb);
+		L_indent = o_ind, L_right = o_right, L_align = o_align;
+		line_ctx();
+	}
+}
+
 static void walk(dom_node *node, St st)
 {
 	dom_node_type t;
@@ -545,6 +918,24 @@ static void walk(dom_node *node, St st)
 			dom_string_unref(tx);
 		}
 		return;
+	}
+	if (B.css && !strcmp(tag, "head")) { // solo por el <title>
+		children(node, &st);
+		return;
+	}
+	if (B.css) { // con CSS: lo decide el estilo de la página
+		static const char *const NEVER[] = {"script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "canvas", "video", "audio", NULL};
+		if (is(tag, NEVER))
+			return;
+		css_computed_style *cs = brcss_style(B.css, node, st.cs, B.vw);
+		if (cs) {
+			uint8_t d = css_computed_display(cs, st.cs == NULL);
+			// lo oculto y lo que flota fijo encima de la página (avisos de cookies, barras pegadas)
+			if (d != CSS_DISPLAY_NONE && css_computed_position(cs) != CSS_POSITION_FIXED)
+				walk_css(node, tag, st, cs, d);
+			css_computed_style_destroy(cs);
+			return;
+		}
 	}
 	static const char *const SKIP[] = {"script", "style", "noscript", "template", "svg", "iframe", "button", "input", "select",
 	                                   "textarea", "object", "embed", "canvas", "video", "audio", "map", "nav", NULL};
@@ -739,6 +1130,7 @@ static void layout_free(void)
 	free(B.f), B.f = NULL, B.nf = B.cf = 0;
 	free(B.l), B.l = NULL, B.nl = B.cl = 0;
 	free(B.text), B.text = NULL, B.nt = B.ct = 0;
+	free(B.bg), B.bg = NULL, B.nbg = B.cbg = 0;
 	for (int i = 0; i < B.nlinks; i++)
 		free(B.links[i]);
 	free(B.links), B.links = NULL, B.nlinks = B.clinks = 0;
@@ -752,11 +1144,16 @@ static void layout(void)
 	PADP = mob ? 8 : 16;
 	PW = B.vw - 2 * PADP;
 	L_x = L_indent = L_gap = 0;
+	L_right = 1e9;
+	L_align = 0;
 	L_has = L_space = false;
-	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1};
+	SC16 = SC_TEXT * 19.2f / text_lineh(SC_TEXT); // 16 px de letra = 19,2 px de línea
+	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1, .right = PAGE_W};
+	u64 t0 = util_ms();
 	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
-	dom_node *content = find_tag((dom_node *)B.doc, "main", 0);
-	if (!content)
+	// sin CSS, modo lectura: si la página marca su contenido (<main> o <article>), solo eso
+	dom_node *content = B.css ? NULL : find_tag((dom_node *)B.doc, "main", 0);
+	if (!content && !B.css)
 		content = find_tag((dom_node *)B.doc, "article", 0);
 	if (content) {
 		dom_node *head = find_tag((dom_node *)B.doc, "head", 0);
@@ -770,6 +1167,23 @@ static void layout(void)
 		walk((dom_node *)B.doc, st);
 	if (L_has)
 		line_new();
+	B.t_css = (u32)(util_ms() - t0);
+	// alinear (text-align): cada línea se corre dentro de sus márgenes
+	for (int i = 0, f = 0; i < B.nl; i++) {
+		int f0 = f;
+		float end = B.l[i].left;
+		while (f < B.nf && B.f[f].line == i) {
+			end = fmaxf(end, B.f[f].x + B.f[f].w);
+			f++;
+		}
+		if (!B.l[i].align || f == f0)
+			continue;
+		float free_w = B.l[i].right - end;
+		float dx = B.l[i].align == 1 ? free_w / 2 : free_w;
+		if (dx > 0)
+			for (int k = f0; k < f; k++)
+				B.f[k].x += dx;
+	}
 	float y = 6;
 	for (int i = 0; i < B.nl; i++) {
 		if (!B.l[i].used && !B.l[i].hr) { // vacía: solo cuenta su hueco (el mayor de los seguidos)
@@ -789,7 +1203,8 @@ static void layout(void)
 	B.px = TOP_W / 2, B.py = SCR_H / 2;
 	B.focus = -1;
 	B.tip = 2.5f;
-	util_log("web: %s -> %u bytes, %d líneas, %d trozos, %d enlaces", B.url, (unsigned)B.bytes, B.nl, B.nf, B.nlinks);
+	util_log("web: %s -> %u bytes, %d hojas CSS, %d líneas, %d trozos, %d enlaces, maquetar %lu ms", B.url, (unsigned)B.bytes, B.ncss, B.nl, B.nf,
+	         B.nlinks, (unsigned long)B.t_css);
 }
 
 /* ------------------------------------------------------------ uso */
@@ -836,6 +1251,8 @@ static void close_br(void)
 		dom_node_unref(B.doc);
 		B.doc = NULL;
 	}
+	brcss_free(B.css);
+	B.css = NULL;
 	layout_free();
 	B.st = ST_IDLE;
 }
@@ -1014,6 +1431,17 @@ void br_top(void)
 		if (y >= 0 && y < SCR_H)
 			draw_rect((PAD_X - B.sx) * z, y, PAGE_W * z, fmaxf(1, z), PG_RULE);
 	}
+	// fondos de color de los bloques
+	for (int i = 0; i < B.nbg; i++) {
+		const BgBox *bb = &B.bg[i];
+		if (bb->l0 >= B.nl || bb->l1 >= B.nl)
+			continue;
+		float y0 = B.l[bb->l0].y - 4, y1 = B.l[bb->l1].y + B.l[bb->l1].h + 4;
+		float Y0 = (y0 - B.sy) * z, Y1 = (y1 - B.sy) * z;
+		if (Y1 < 0 || Y0 > SCR_H)
+			continue;
+		draw_rect((PAD_X + bb->x0 - B.sx) * z, Y0, (bb->x1 - bb->x0) * z, Y1 - Y0, bb->col);
+	}
 	int hov = link_at_pointer();
 	B.hover = hov;
 	for (int i = first_frag(B.sy); i < B.nf; i++) {
@@ -1032,6 +1460,8 @@ void br_top(void)
 			draw_rect(X, Y + H * 0.35f, Wd, fmaxf(1, H * 0.35f), col_alpha(f->col, 0.55f));
 		else {
 			text_draw_n(B.text + f->off, f->n, X, Y, sc, f->col);
+			if (f->bold) // la fuente no tiene negrita: otra vez, un poco a la derecha
+				text_draw_n(B.text + f->off, f->n, X + fmaxf(0.5f, z * 0.6f), Y, sc, f->col);
 			if (f->under)
 				draw_rect(X, Y + H - fmaxf(1, z * 0.8f), Wd, fmaxf(1, z * 0.6f), col_alpha(f->col, 0.5f));
 		}
