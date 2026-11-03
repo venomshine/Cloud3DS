@@ -18,6 +18,7 @@
 #include "gfx.h"
 #include "icons.h"
 #include "img.h"
+#include "svg.h"
 #include "ui.h"
 #include "util.h"
 
@@ -858,7 +859,12 @@ static void img_thread(void *arg)
 		int mw = (int)fminf(512, fmaxf(16, im->w * 1.5f)), mh = (int)fminf(512, fmaxf(16, im->h * 1.5f));
 		u8 *px = NULL;
 		int w = 0, h = 0;
-		if (r == DLF_OK && code < 400 && b.n && B.img_px < IMG_BUDGET && img_mem_fit((const u8 *)b.p, b.n, mw, mh, &px, &w, &h) == IMG_OK) {
+		bool svg = false;
+		for (size_t i = 0; b.p && i < b.n && i < 512 && !svg; i++) // por su contenido, no por su nombre
+			svg = !strncmp(b.p + i, "<svg", 4);
+		bool ok = r == DLF_OK && code < 400 && b.n && B.img_px < IMG_BUDGET &&
+		          (svg ? svg_render(b.p, b.n, mw, mh, &px, &w, &h) : img_mem_fit((const u8 *)b.p, b.n, mw, mh, &px, &w, &h) == IMG_OK);
+		if (ok) {
 			im->rgba = px, im->tw = w, im->th = h, im->iw = w, im->ih = h;
 			B.img_px += (size_t)w * h;
 			im->st = IM_RGBA;
@@ -1574,9 +1580,7 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		bool ok = attr(node, "src", src, sizeof src) && src[0] && strncmp(src, "data:", 5);
 		if (!ok) // las que se cargan «perezosas» guardan la dirección en data-src
 			ok = attr(node, "data-src", src, sizeof src) && src[0];
-		size_t sl = ok ? strlen(src) : 0;
-		bool svg = sl > 4 && (!strcasecmp(src + sl - 4, ".svg") || strstr(src, ".svg?"));
-		if (ok && !svg) {
+		if (ok) {
 			float w = 0, h = 0;
 			if (attr(node, "width", v, sizeof v))
 				w = (float)atof(v);

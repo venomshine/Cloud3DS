@@ -39,6 +39,8 @@ Las siguientes partes conservan sus propias licencias:
 - `lib/quirc*` — [quirc](https://github.com/dlbeer/quirc) 1.2 de Daniel Beer (lectura de códigos QR), licencia ISC.
 - `source/qrcam.c` sigue la secuencia de la cámara de [FBI](https://github.com/Steveice10/FBI) de Steveice10, licencia MIT.
 - `lib/stb_image.h` — [stb_image](https://github.com/nothings/stb) de Sean Barrett, dominio público o licencia MIT (a elegir).
+- `lib/nanosvg.h`, `lib/nanosvgrast.h` — [NanoSVG](https://github.com/memononen/nanosvg) de Mikko Mononen (leer y pintar imágenes SVG en el navegador), licencia zlib (`lib/nanosvg-LICENSE.txt`).
+- `nsweb/` — librerías de [NetSurf](https://www.netsurf-browser.org/) (libhubbub, libdom, libcss, libparserutils, libwapcaplet) para el navegador, licencia MIT (ver `nsweb/README.md` y el COPYING de cada una).
 - [libctru, citro2d y citro3d](https://github.com/devkitPro) (enlazadas al compilar), licencia zlib.
 - [libcurl](https://curl.se/) (enlazada al compilar), licencia curl (tipo MIT).
 - [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (enlazada al compilar), licencia Apache-2.0.
