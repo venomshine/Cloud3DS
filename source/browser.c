@@ -508,6 +508,7 @@ typedef struct {
 	u32 col;
 	int link;
 	bool pre, under, skip, bold, hidden;
+	bool fixw;     /* el ancho ya lo decidió quien lo coloca (columna, flotante): no se aplica otra vez */
 	u8 align;
 	bool list;     /* <li> con viñeta (list-style no es none) */
 	int *olnum;    /* contador de la <ol> de dentro */
@@ -524,6 +525,38 @@ static u8 L_align;
 static float L_pb;          /* donde acaba lo de antes de la línea en curso (su y = L_pb + su hueco) */
 static bool L_marker;      /* en la línea solo está la viñeta de un <li> */
 #define RIGHT (L_right < PAGE_W ? L_right : PAGE_W)
+/* flotantes (float: left/right): zonas ocupadas; las líneas que pasan a su altura se estrechan */
+typedef struct {
+	float x0, x1, y0, y1;
+	u8 side; /* 1 izquierda, 2 derecha */
+} Fl;
+static Fl FL[64];
+static int NFL;
+
+// los bordes de una línea en y, descontando los flotantes que haya a esa altura
+static void bounds_at(float y, float h, float *l, float *r)
+{
+	float lo = L_indent, ro = RIGHT;
+	*l = lo, *r = ro;
+	for (int i = 0; i < NFL; i++) {
+		const Fl *f = &FL[i];
+		if (y >= f->y1 || y + h <= f->y0 || f->x1 <= lo - 1 || f->x0 >= ro + 1)
+			continue;
+		if (f->side == 1)
+			*l = fmaxf(*l, f->x1 + 8);
+		else
+			*r = fminf(*r, f->x0 - 8);
+	}
+	if (*r - *l < 40) // no cabe nada al lado: se usa todo (mejor encima que ilegible)
+		*l = lo, *r = ro;
+}
+
+static void line_bounds(Line *l)
+{
+	bounds_at(l->y, text_lineh(SC_TEXT), &l->left, &l->right);
+}
+#define CUR_R (B.nl ? B.l[B.nl - 1].right : RIGHT)
+#define CUR_L (B.nl ? B.l[B.nl - 1].left : L_indent)
 
 static Line *line_new(void)
 {
@@ -540,8 +573,9 @@ static Line *line_new(void)
 			c->gap = fmaxf(c->gap, L_gap);
 			c->y = L_pb + c->gap;
 			c->align = L_align, c->left = L_indent, c->right = RIGHT;
+			line_bounds(c);
 			L_gap = 0;
-			L_x = L_indent;
+			L_x = c->left;
 			L_has = false;
 			L_space = false;
 			L_marker = false;
@@ -557,8 +591,9 @@ static Line *line_new(void)
 	l->align = L_align;
 	l->left = L_indent;
 	l->right = RIGHT;
+	line_bounds(l);
 	L_gap = 0;
-	L_x = L_indent;
+	L_x = l->left;
 	L_has = false;
 	L_space = false;
 	L_marker = false;
@@ -625,16 +660,16 @@ static void word(const char *s, int n, const St *st)
 	float w = text_width_n(s, n, st->sc), sp = 0;
 	if (L_has && L_space)
 		sp = text_width(" ", st->sc);
-	if (!B.nl || (L_has && L_x + sp + w > RIGHT)) {
+	if (!B.nl || (L_has && L_x + sp + w > CUR_R)) {
 		line_new();
 		sp = 0;
 	}
 	if (!L_has)
-		L_x = L_indent;
+		L_x = CUR_L;
 	// una palabra más ancha que la pantalla: a trozos
-	while (w > RIGHT - L_indent && n > 1) {
+	while (w > CUR_R - CUR_L && n > 1) {
 		int k = n;
-		while (k > 1 && text_width_n(s, k, st->sc) > RIGHT - L_x)
+		while (k > 1 && text_width_n(s, k, st->sc) > CUR_R - L_x)
 			k--;
 		while (k > 1 && (s[k] & 0xC0) == 0x80) // sin partir un carácter UTF-8
 			k--;
@@ -655,10 +690,10 @@ static void put_box(float w, float h, const St *st, int img)
 	if (!B.nl)
 		line_new();
 	float sp = L_has && L_space ? text_width(" ", st->sc) : 0;
-	if (L_has && L_x + sp + w > RIGHT)
+	if (L_has && L_x + sp + w > CUR_R)
 		line_new(), sp = 0;
 	if (!L_has)
-		L_x = L_indent;
+		L_x = CUR_L;
 	L_x += sp;
 	int nf0 = B.nf;
 	put("", 0, st, w);
@@ -941,7 +976,8 @@ static void line_ctx(void)
 	if (B.nl && !L_has) {
 		Line *l = &B.l[B.nl - 1];
 		l->align = L_align, l->left = L_indent, l->right = RIGHT;
-		L_x = L_indent;
+		line_bounds(l);
+		L_x = l->left;
 	}
 }
 
@@ -1260,6 +1296,9 @@ static void widget(dom_node *node, const char *tag, const St *st, const css_comp
 static void walk_css(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t d);
 static bool css_invisible(const css_computed_style *cs);
 static bool is(const char *t, const char *const *list);
+static float measure(dom_node *n, float sc, float cap, int depth);
+static void line_at(float y);
+static float cur_bottom(void);
 static const char *const NEVER_TAGS[] = {"script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "canvas", "video", "audio", "head", NULL};
 
 
@@ -1382,7 +1421,8 @@ static void line_at(float y)
 	l->gap = 0;
 	l->y = y;
 	l->align = L_align, l->left = L_indent, l->right = RIGHT;
-	L_x = L_indent;
+	line_bounds(l);
+	L_x = l->left;
 	L_gap = 0;
 }
 
@@ -1508,7 +1548,7 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 			L_align = st.align;
 			line_at(top);
 			St cs = st;
-			cs.indent = x, cs.right = x + c[i].w, cs.cells = NULL;
+			cs.indent = x, cs.right = x + c[i].w, cs.cells = NULL, cs.fixw = true;
 			if (c[i].cs)
 				walk_css(c[i].n, c[i].tag, cs, c[i].cs, c[i].d);
 			else
@@ -1530,6 +1570,61 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 			css_computed_style_destroy(c[i].cs);
 	for (dom_node_internal *ch = rest; ch; ch = ch->next) // lo que no cupo en la fila
 		walk((dom_node *)ch, st);
+}
+
+// un flotante: se coloca a su lado en su ancho y deja la zona ocupada para lo que siga
+static bool place_float(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t side)
+{
+	float avail = st.right - st.indent, w = 0;
+	css_fixed v;
+	css_unit u;
+	if (css_computed_width(cs, &v, &u) == CSS_WIDTH_SET)
+		w = len_px(cs, v, u, avail);
+	else if (!strcmp(tag, "img")) {
+		char a[16];
+		w = attr(node, "width", a, sizeof a) ? (float)atof(a) : 0;
+	} else {
+		css_computed_font_size(cs, &v, &u);
+		w = measure(node, clampf(SC16 * brcss_px(cs, v, u, B.vw) / 16, 0.15f, 2.4f), avail, 0) + 16;
+	}
+	if (w <= 0 || w > avail * 0.7f || NFL >= 64) // casi todo el ancho: mejor en su sitio, sin flotar
+		return false;
+	float top = B.nl ? B.l[B.nl - 1].y : L_pb;
+	if (L_has) // a la altura de la línea en curso (que se cierra)
+		top = B.l[B.nl - 1].y;
+	// al lado de los flotantes que ya haya a esa altura; si no cabe, debajo del que acabe antes
+	float o_ind = L_indent, o_right = L_right;
+	u8 o_align = L_align;
+	L_indent = st.indent, L_right = st.right;
+	float l = st.indent, r = st.right;
+	for (int tries = 0; tries < 8; tries++) {
+		float lo = st.indent, ro = st.right, next = 1e30f;
+		for (int i = 0; i < NFL; i++) {
+			const Fl *f = &FL[i];
+			if (top >= f->y1 || top + 1 <= f->y0 || f->x1 <= st.indent - 1 || f->x0 >= st.right + 1)
+				continue;
+			if (f->side == 1)
+				lo = fmaxf(lo, f->x1 + 4);
+			else
+				ro = fminf(ro, f->x0 - 4);
+			next = fminf(next, f->y1);
+		}
+		l = lo, r = ro;
+		if (r - l >= w - 1 || next > 1e29f)
+			break;
+		top = next;
+	}
+	float x = side == 1 ? l : r - w;
+	St fs = st;
+	fs.indent = x, fs.right = x + w, fs.fixw = true;
+	L_indent = x, L_right = x + w;
+	line_at(top);
+	walk_css(node, tag, fs, cs, CSS_DISPLAY_BLOCK);
+	float bot = cur_bottom();
+	FL[NFL++] = (Fl){x, x + w, top, bot, side};
+	L_indent = o_ind, L_right = o_right, L_align = o_align;
+	line_at(top);
+	return true;
 }
 
 /* un elemento con su estilo calculado: la página decide qué se ve, colores, tamaños, márgenes */
@@ -1665,10 +1760,15 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		mt = clampf(mt, 0, 60), mb = clampf(mb, 0, 60) + clampf(pb, 0, 40);
 		// ancho: width / max-width, centrado con margin: auto
 		float w = avail - ml - mr;
-		if (css_computed_width(cs, &v, &vu) == CSS_WIDTH_SET && d != CSS_DISPLAY_TABLE_ROW)
-			w = fminf(w, len_px(cs, v, vu, avail));
-		if (css_computed_max_width(cs, &v, &vu) == CSS_MAX_WIDTH_SET)
-			w = fminf(w, len_px(cs, v, vu, avail));
+		if (st.fixw) // columna o flotante: su ancho ya es el de fuera
+			ml = mr = 0, w = avail, aml = amr = false;
+		else {
+			if (css_computed_width(cs, &v, &vu) == CSS_WIDTH_SET && d != CSS_DISPLAY_TABLE_ROW)
+				w = fminf(w, len_px(cs, v, vu, avail));
+			if (css_computed_max_width(cs, &v, &vu) == CSS_MAX_WIDTH_SET)
+				w = fminf(w, len_px(cs, v, vu, avail));
+		}
+		st.fixw = false;
 		w = fmaxf(w, 40);
 		float x0 = st.indent + ml;
 		if (aml && amr)
@@ -1685,6 +1785,15 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		L_right = st.right;
 		L_align = st.align;
 		line_ctx();
+		uint8_t clr = css_computed_clear(cs); // clear: debajo de los flotantes de ese lado
+		if (clr == CSS_CLEAR_LEFT || clr == CSS_CLEAR_RIGHT || clr == CSS_CLEAR_BOTH) {
+			float fy = 0;
+			for (int i = 0; i < NFL; i++)
+				if (clr == CSS_CLEAR_BOTH || (clr == CSS_CLEAR_LEFT) == (FL[i].side == 1))
+					fy = fmaxf(fy, FL[i].y1);
+			if (B.nl && !L_has && B.l[B.nl - 1].y < fy)
+				line_at(fy);
+		}
 		if (bgc) {
 			if (!B.nl || L_has)
 				line_new();
@@ -1835,8 +1944,14 @@ static void walk(dom_node *node, St st)
 		if (cs) {
 			uint8_t d = css_computed_display(cs, st.cs == NULL);
 			// lo oculto y lo que flota fijo encima de la página (avisos de cookies, barras pegadas)
-			if (d != CSS_DISPLAY_NONE && css_computed_position(cs) != CSS_POSITION_FIXED && !css_invisible(cs))
-				walk_css(node, tag, st, cs, d);
+			uint8_t fl = css_computed_float(cs), pos = css_computed_position(cs);
+			if (d != CSS_DISPLAY_NONE && pos != CSS_POSITION_FIXED && !css_invisible(cs)) {
+				bool done = false;
+				if ((fl == CSS_FLOAT_LEFT || fl == CSS_FLOAT_RIGHT) && pos != CSS_POSITION_ABSOLUTE)
+					done = place_float(node, tag, st, cs, fl == CSS_FLOAT_LEFT ? 1 : 2);
+				if (!done)
+					walk_css(node, tag, st, cs, d);
+			}
 			css_computed_style_destroy(cs);
 			return;
 		}
@@ -2063,6 +2178,7 @@ static void layout(void)
 	L_right = 1e9;
 	L_align = 0;
 	L_pb = 6;
+	NFL = 0;
 	L_has = L_space = false;
 	SC16 = SC_TEXT * 19.2f / text_lineh(SC_TEXT); // 16 px de letra = 19,2 px de línea
 	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1, .right = PAGE_W};
