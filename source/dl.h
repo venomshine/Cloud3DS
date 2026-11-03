@@ -25,7 +25,7 @@ enum { DL_PAUSE, DL_RESUME, DL_CANCEL, DL_REMOVE, DL_INSECURE };
 typedef struct {
 	u32  id;
 	int  st;
-	char url[1024];
+	char url[2048];    /* las de descarga de OneDrive son largas */
 	char host[64];
 	char dir[512];     /* dónde se guarda */
 	char name[256];    /* nombre del archivo (en cuanto se sabe) */
@@ -41,6 +41,7 @@ typedef struct {
 	bool insecure;     /* el usuario pidió bajarla sin comprobar el certificado (tras un error «tls») */
 	bool installing;   /* se está instalando mientras baja (no se puede pausar) */
 	bool installed;    /* se instaló mientras bajaba: no hay archivo en la SD */
+	bool fixed_name;   /* el nombre lo puso quien la pidió (la nube): manda sobre el del servidor */
 } DlItem;
 
 void dl_init(void);
@@ -57,3 +58,7 @@ bool dl_url_ok(const char *url);
  * DLF_NOCONN: no conectó (se puede probar con libcurl); con DLF_OK, *code es el estado HTTP */
 enum { DLF_OK, DLF_NOCONN, DLF_FAIL };
 int dl_fetch(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void (*tot)(void *, u64), void *u, long *code);
+/* petición general (método HTTPC_METHOD_*, cabeceras «Nombre: valor» acabadas en NULL, cuerpo opcional) */
+int dl_request(int method, const char *url, const char *const *headers, const void *body, size_t blen,
+               size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code);
+void dl_set_name(u32 id, const char *name); /* nombre fijo para una descarga (la nube) */

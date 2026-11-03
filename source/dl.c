@@ -168,6 +168,18 @@ int dl_list(DlItem *out, int max)
 	return n;
 }
 
+void dl_set_name(u32 id, const char *name)
+{
+	lock();
+	DlItem *it = find(id);
+	if (it && name[0]) {
+		util_strlcpy(it->name, name, sizeof it->name);
+		it->fixed_name = true;
+		D.rev++;
+	}
+	unlock();
+}
+
 u32 dl_rev(void)
 {
 	return D.rev;
@@ -389,6 +401,81 @@ int dl_fetch(const char *url0, const char *accept, size_t (*wr)(char *, size_t, 
 		if (tot && total)
 			tot(u, total);
 		if (dl > before && wr((char *)buf, 1, dl - before, u) != dl - before) {
+			out = DLF_FAIL;
+			break;
+		}
+		if (r != (Result)HTTPC_RESULTCODE_DOWNLOADPENDING) {
+			if (R_FAILED(r))
+				out = DLF_FAIL;
+			break;
+		}
+	}
+	free(buf);
+	httpcCloseContext(&ctx);
+	return out;
+}
+
+/* petición general con httpc (para la nube): método, cabeceras «Nombre: valor» (lista acabada en
+ * NULL), cuerpo opcional y respuesta por wr. Comprueba el certificado. Sigue redirecciones solo en GET */
+int dl_request(int method, const char *url0, const char *const *headers, const void *body, size_t blen,
+               size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out)
+{
+	if (!hc_ready)
+		return DLF_NOCONN;
+	char url[2048];
+	util_strlcpy(url, url0, sizeof url);
+	httpcContext ctx;
+	u32 code = 0;
+	Result r;
+	for (int redir = 0;; redir++) {
+		if (R_FAILED(httpcOpenContext(&ctx, (HTTPC_RequestMethod)method, url, 0)))
+			return DLF_NOCONN;
+		httpcSetSSLOpt(&ctx, SSLCOPT_Default);
+		if (hc_chain)
+			httpcSelectRootCertChain(&ctx, hc_chain);
+		httpcSetKeepAlive(&ctx, HTTPC_KEEPALIVE_ENABLED);
+		httpcAddRequestHeaderField(&ctx, "User-Agent", UA);
+		for (int i = 0; headers && headers[i]; i++) {
+			char name[64];
+			const char *c = strchr(headers[i], ':');
+			if (!c || c - headers[i] >= (int)sizeof name)
+				continue;
+			snprintf(name, sizeof name, "%.*s", (int)(c - headers[i]), headers[i]);
+			const char *v = c + 1;
+			while (*v == ' ')
+				v++;
+			httpcAddRequestHeaderField(&ctx, name, v);
+		}
+		if (body && blen)
+			httpcAddPostDataRaw(&ctx, (const u32 *)body, blen);
+		r = httpcBeginRequest(&ctx);
+		if (R_SUCCEEDED(r))
+			r = httpcGetResponseStatusCodeTimeout(&ctx, &code, 60ull * 1000000000ull);
+		if (R_FAILED(r)) {
+			util_log("http: %s -> 0x%08lX", url, (unsigned long)r);
+			httpcCloseContext(&ctx);
+			return DLF_NOCONN;
+		}
+		if (method == HTTPC_METHOD_GET && code >= 300 && code < 400 && code != 304 && redir < 8) {
+			char loc[2048] = "";
+			httpcGetResponseHeader(&ctx, "Location", loc, sizeof loc);
+			httpcCloseContext(&ctx);
+			if (!loc[0])
+				return DLF_FAIL;
+			util_strlcpy(url, loc, sizeof url);
+			continue;
+		}
+		break;
+	}
+	*code_out = code;
+	u8 *buf = malloc(64 * 1024);
+	u32 dl = 0, total = 0, before;
+	int out = buf ? DLF_OK : DLF_FAIL;
+	while (buf) {
+		before = dl;
+		r = httpcReceiveDataTimeout(&ctx, buf, 64 * 1024, 60ull * 1000000000ull);
+		httpcGetDownloadSizeState(&ctx, &dl, &total);
+		if (dl > before && wr && wr((char *)buf, 1, dl - before, u) != dl - before) {
 			out = DLF_FAIL;
 			break;
 		}
@@ -752,7 +839,7 @@ static int prog_cb(void *u, curl_off_t dt, curl_off_t dn, curl_off_t ut, curl_of
 /* la descarga con httpc: cabeceras como head_cb y el cuerpo por body_cb y prog_cb */
 static int hc_body(Job *j, const char *url0, bool verify, long *code_out, char *eff, size_t en)
 {
-	char url[1024];
+	char url[2048];
 	util_strlcpy(url, url0, sizeof url);
 	httpcContext ctx;
 	u32 code = 0;
@@ -891,8 +978,8 @@ static void stream_done(DlItem *s, Job *j, CURLcode r, long code, const char *gn
 		set_state(s->id, DL_FAIL, ie, s);
 	else {
 		char nm[256];
-		util_strlcpy(nm, gname[0] ? gname : j->cd_name[0] ? j->cd_name : s->name[0] ? s->name : "descarga", sizeof nm);
-		if (!j->cd_name[0] && !gname[0] && !s->name[0])
+		util_strlcpy(nm, s->fixed_name ? s->name : gname[0] ? gname : j->cd_name[0] ? j->cd_name : s->name[0] ? s->name : "descarga", sizeof nm);
+		if (!s->fixed_name && !j->cd_name[0] && !gname[0] && !s->name[0])
 			name_from_url(url, nm, sizeof nm);
 		util_strlcpy(s->name, nm, sizeof s->name);
 		s->total = j->sdone;
@@ -924,7 +1011,7 @@ static void run(DlItem *s)
 	Job j = {0};
 	j.snap = s;
 	part_path(s->id, s->dir, j.part, sizeof j.part);
-	char url[1024], gname[256] = "";
+	char url[2048], gname[256] = "";
 	util_strlcpy(url, s->url, sizeof url);
 	const char *e = github_resolve(s, url, sizeof url, gname, sizeof gname);
 	if (e) {
@@ -1045,7 +1132,7 @@ static void run(DlItem *s)
 	} else {
 		// listo: su nombre (si ya existe, «x (2)»), la comprobación y lo de después
 		char nm[256];
-		util_strlcpy(nm, gname[0] ? gname : j.cd_name[0] ? j.cd_name : s->name[0] ? s->name : "descarga", sizeof nm);
+		util_strlcpy(nm, s->fixed_name ? s->name : gname[0] ? gname : j.cd_name[0] ? j.cd_name : s->name[0] ? s->name : "descarga", sizeof nm);
 		if (!fsx_name_ok(nm))
 			util_strlcpy(nm, "descarga", sizeof nm);
 		util_strlcpy(s->name, nm, sizeof s->name);
