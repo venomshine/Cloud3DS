@@ -2479,4 +2479,28 @@ TR = {
     'Copiando las partidas a OneDrive':
         ('Backing up saves to OneDrive',
          'セーブをOneDriveにバックアップ中'),
+    'Juego':
+        ('Game',
+         'ゲーム'),
+    'Actualización':
+        ('Update',
+         '更新データ'),
+    'Contenido descargable':
+        ('Downloadable content',
+         '追加コンテンツ'),
+    'Desinstalando':
+        ('Uninstalling',
+         'アンインストール中'),
+    'Liberando %s de la SD':
+        ('Freeing %s on the SD',
+         'SDの%sを解放中'),
+    'Tiempo: %s':
+        ('Time: %s',
+         '経過時間: %s'),
+    'No apagues la consola ni saques la SD hasta que termine. Con juegos grandes puede tardar unos minutos.':
+        ("Don't turn off the console or remove the SD until it finishes. Big games can take a few minutes.",
+         '終わるまで電源を切ったりSDを抜いたりしないでください。大きなゲームは数分かかることがあります。'),
+    'Desinstalando…':
+        ('Uninstalling…',
+         'アンインストール中…'),
 }

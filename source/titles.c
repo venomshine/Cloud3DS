@@ -127,7 +127,7 @@ bool title_is_self(u64 tid)
 	return R_SUCCEEDED(APT_GetProgramID(&me)) && me == tid;
 }
 
-int title_uninstall(u64 tid)
+int title_uninstall(u64 tid, void (*step)(int part))
 {
 	if ((u32)(tid >> 32) != HI_APP || title_is_self(tid))
 		return -1;
@@ -135,13 +135,20 @@ int title_uninstall(u64 tid)
 		return -2;
 	u32 lo = (u32)tid, n = 0;
 	u64 *ids = NULL;
+	if (step)
+		step(0);
 	Result r = AM_DeleteTitle(MEDIATYPE_SD, tid);
 	// su actualización y sus DLC, que sin el juego no sirven
 	if (R_SUCCEEDED(r) && R_SUCCEEDED(AM_GetTitleCount(MEDIATYPE_SD, &n)) && n && (ids = malloc(n * sizeof *ids)) &&
-	    R_SUCCEEDED(AM_GetTitleList(&n, MEDIATYPE_SD, n, ids)))
-		for (u32 i = 0; i < n; i++)
-			if ((u32)ids[i] == lo && ((u32)(ids[i] >> 32) == HI_UPD || (u32)(ids[i] >> 32) == HI_DLC))
-				AM_DeleteTitle(MEDIATYPE_SD, ids[i]);
+	    R_SUCCEEDED(AM_GetTitleList(&n, MEDIATYPE_SD, n, ids))) {
+		for (int pass = 1; pass <= 2; pass++) // primero la actualización, luego los DLC
+			for (u32 i = 0; i < n; i++)
+				if ((u32)ids[i] == lo && (u32)(ids[i] >> 32) == (pass == 1 ? HI_UPD : HI_DLC)) {
+					if (step)
+						step(pass);
+					AM_DeleteTitle(MEDIATYPE_SD, ids[i]);
+				}
+	}
 	free(ids);
 	amExit();
 	util_log("desinstalar %016llX: %08lX", (unsigned long long)tid, (unsigned long)r);
