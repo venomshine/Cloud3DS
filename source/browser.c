@@ -450,7 +450,7 @@ static void walk(dom_node *node, St st);
 static bool skip_class(const char *cls)
 {
 	static const char *const BAD[] = {"dropdown", "menu", "navbox", "noprint", "sidebar", "editsection", "jump-link",
-	                                  "vector-", "printfooter", "catlinks", "mw-indicator", "cookie", "banner", NULL};
+	                                  "printfooter", "catlinks", "mw-indicator", "cookie", "banner", NULL};
 	char low[256];
 	size_t i = 0;
 	for (; cls[i] && i < sizeof low - 1; i++)
