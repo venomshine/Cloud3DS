@@ -74,7 +74,7 @@ typedef struct {   /* fondo de color de un bloque (background-color) */
 	u32 col;
 } BgBox;
 
-enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_READY, ST_ERROR };
+enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR };
 
 static struct {
 	bool open;
@@ -110,6 +110,7 @@ static struct {
 	float px, py;        /* puntero, en la pantalla de arriba */
 	int focus;           /* trozo con enlace marcado con la cruceta (-1 ninguno) */
 	float tip;           /* tiempo enseñando el % de zoom */
+	volatile int nel_done, nel_total; /* nodos colocados y total (para el progreso) */
 } B;
 
 /* ------------------------------------------------------------ cargar (en un hilo) */
@@ -194,9 +195,51 @@ static bool ci_has(const char *h, const char *nd)
 /* las hojas de estilo de la página, en su orden: <style> y <link rel="stylesheet"> (se bajan aquí) */
 #define CSS_MAX_LINKS 10
 #define CSS_MAX_BYTES (1536 * 1024)
+// un <style> o un <link rel="stylesheet">; aparte, para que la recursión de css_collect no lleve
+// estos búferes en cada nivel (con páginas profundas desbordaban la pila del hilo)
+static __attribute__((noinline)) void css_one(BrCss *c, dom_node *el, bool is_style, int *links, size_t *bytes)
+{
+	char a[256];
+	if (is_style) {
+		if (attr(el, "media", a, sizeof a) && strstr(a, "print") && !strstr(a, "screen"))
+			return;
+		dom_string *tx = NULL;
+		if (dom_node_get_text_content(el, &tx) == DOM_NO_ERR && tx) {
+			size_t l = dom_string_byte_length(tx);
+			if (*bytes + l <= CSS_MAX_BYTES) {
+				brcss_add(c, dom_string_data(tx), l, B.url);
+				*bytes += l;
+			}
+			dom_string_unref(tx);
+		}
+		return;
+	}
+	if (*links >= CSS_MAX_LINKS || !attr(el, "rel", a, sizeof a) || !ci_has(a, "stylesheet") || ci_has(a, "alternate"))
+		return;
+	if (attr(el, "media", a, sizeof a) && strstr(a, "print") && !strstr(a, "screen"))
+		return;
+	char *href = malloc(2048), *abs = href ? href + 1024 : NULL;
+	if (!href)
+		return;
+	if (attr(el, "href", href, 1024) && href[0]) {
+		resolve(B.url, href, abs, 1024);
+		Buf cb = {0};
+		long code;
+		(*links)++;
+		int r = fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code);
+		util_log("web: css %s -> %d, HTTP %ld, %u bytes", abs, r, code, (unsigned)cb.n);
+		if (r == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES) {
+			brcss_add(c, cb.p, cb.n, abs);
+			*bytes += cb.n;
+		}
+		free(cb.p);
+	}
+	free(href);
+}
+
 static void css_collect(BrCss *c, dom_node *n, int depth, int *links, size_t *bytes)
 {
-	if (depth > 60)
+	if (depth > 80)
 		return;
 	dom_node *ch = NULL;
 	if (dom_node_get_first_child(n, &ch) != DOM_NO_ERR)
@@ -211,38 +254,9 @@ static void css_collect(BrCss *c, dom_node *n, int depth, int *links, size_t *by
 				snprintf(tag, sizeof tag, "%.*s", (int)(l < 7 ? l : 7), dom_string_data(nm));
 				dom_string_unref(nm);
 			}
-			char a[512];
-			if (!strcasecmp(tag, "style")) {
-				if (!attr(ch, "media", a, sizeof a) || !strstr(a, "print") || strstr(a, "screen")) {
-					dom_string *tx = NULL;
-					if (dom_node_get_text_content(ch, &tx) == DOM_NO_ERR && tx) {
-						size_t l = dom_string_byte_length(tx);
-						if (*bytes + l <= CSS_MAX_BYTES) {
-							brcss_add(c, dom_string_data(tx), l, B.url);
-							*bytes += l;
-						}
-						dom_string_unref(tx);
-					}
-				}
-			} else if (!strcasecmp(tag, "link") && *links < CSS_MAX_LINKS && attr(ch, "rel", a, sizeof a) && ci_has(a, "stylesheet") &&
-			           !ci_has(a, "alternate")) {
-				char href[1024], media[128];
-				bool med = attr(ch, "media", media, sizeof media);
-				if (attr(ch, "href", href, sizeof href) && href[0] && (!med || !strstr(media, "print") || strstr(media, "screen"))) {
-					char abs[1024];
-					resolve(B.url, href, abs, sizeof abs);
-					Buf cb = {0};
-					long code;
-					(*links)++;
-					int r = fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code);
-					util_log("web: css %s -> %d, HTTP %ld, %u bytes", abs, r, code, (unsigned)cb.n);
-					if (r == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES) {
-						brcss_add(c, cb.p, cb.n, abs);
-						*bytes += cb.n;
-					}
-					free(cb.p);
-				}
-			} else if (strcasecmp(tag, "script") && strcasecmp(tag, "svg"))
+			if (!strcasecmp(tag, "style") || !strcasecmp(tag, "link"))
+				css_one(c, ch, !strcasecmp(tag, "style"), links, bytes);
+			else if (strcasecmp(tag, "script") && strcasecmp(tag, "svg"))
 				css_collect(c, ch, depth + 1, links, bytes);
 		}
 		dom_node *nx = NULL;
@@ -250,6 +264,23 @@ static void css_collect(BrCss *c, dom_node *n, int depth, int *links, size_t *by
 		dom_node_unref(ch);
 		ch = nx;
 	}
+}
+
+// cuántos nodos tiene el árbol (para enseñar el progreso al colocar la página)
+static int count_nodes(dom_node *n)
+{
+	int k = 0;
+	dom_node *c = NULL;
+	if (dom_node_get_first_child(n, &c) != DOM_NO_ERR)
+		return 0;
+	while (c) {
+		k += 1 + count_nodes(c);
+		dom_node *nx = NULL;
+		dom_node_get_next_sibling(c, &nx);
+		dom_node_unref(c);
+		c = nx;
+	}
+	return k;
 }
 
 static void load_thread(void *arg)
@@ -322,6 +353,7 @@ static void load_thread(void *arg)
 	}
 	B.css = css;
 	B.doc = doc;
+	B.nel_total = doc ? count_nodes((dom_node *)doc) : 0;
 	B.st = ST_PARSED;
 }
 
@@ -346,7 +378,7 @@ static void start_load(const char *url)
 	B.t_load = 0;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.thr = threadCreate(load_thread, NULL, 256 * 1024, prio + 1, -2, false); // hubbub y libdom anidan mucho en páginas grandes
+	B.thr = threadCreate(load_thread, NULL, 512 * 1024, prio + 1, -2, false); // hubbub y libdom anidan mucho en páginas grandes
 	if (!B.thr) {
 		snprintf(B.err, sizeof B.err, "No se pudo empezar a cargar");
 		B.st = ST_ERROR;
@@ -658,6 +690,29 @@ static float len_px(const css_computed_style *cs, css_fixed len, css_unit u, flo
 	return brcss_px(cs, len, u, B.vw);
 }
 
+// escondido «para lectores de pantalla» o de otras formas que un navegador no enseña:
+// position:absolute con clip o de 1 px, letra de tamaño 0, sangría enorme hacia fuera
+static bool css_invisible(const css_computed_style *cs)
+{
+	css_fixed v;
+	css_unit u;
+	if (css_computed_position(cs) == CSS_POSITION_ABSOLUTE) {
+		css_computed_clip_rect r;
+		if (css_computed_clip(cs, &r) == CSS_CLIP_RECT)
+			return true;
+		if (css_computed_width(cs, &v, &u) == CSS_WIDTH_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) <= 2)
+			return true;
+		if (css_computed_height(cs, &v, &u) == CSS_HEIGHT_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) <= 2)
+			return true;
+	}
+	css_computed_font_size(cs, &v, &u);
+	if (brcss_px(cs, v, u, B.vw) < 1)
+		return true;
+	if (css_computed_text_indent(cs, &v, &u) == CSS_TEXT_INDENT_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) < -500)
+		return true;
+	return false;
+}
+
 static bool is_block_display(uint8_t d)
 {
 	return d != CSS_DISPLAY_INLINE && d != CSS_DISPLAY_INLINE_BLOCK && d != CSS_DISPLAY_INLINE_FLEX && d != CSS_DISPLAY_INLINE_GRID &&
@@ -886,6 +941,7 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 
 static void walk(dom_node *node, St st)
 {
+	B.nel_done++;
 	dom_node_type t;
 	if (dom_node_get_node_type(node, &t) != DOM_NO_ERR)
 		return;
@@ -934,7 +990,7 @@ static void walk(dom_node *node, St st)
 		if (cs) {
 			uint8_t d = css_computed_display(cs, st.cs == NULL);
 			// lo oculto y lo que flota fijo encima de la página (avisos de cookies, barras pegadas)
-			if (d != CSS_DISPLAY_NONE && css_computed_position(cs) != CSS_POSITION_FIXED)
+			if (d != CSS_DISPLAY_NONE && css_computed_position(cs) != CSS_POSITION_FIXED && !css_invisible(cs))
 				walk_css(node, tag, st, cs, d);
 			css_computed_style_destroy(cs);
 			return;
@@ -1153,6 +1209,7 @@ static void layout(void)
 	SC16 = SC_TEXT * 19.2f / text_lineh(SC_TEXT); // 16 px de letra = 19,2 px de línea
 	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1, .right = PAGE_W};
 	u64 t0 = util_ms();
+	B.nel_done = 0;
 	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
 	// sin CSS, modo lectura: si la página marca su contenido (<main> o <article>), solo eso
 	dom_node *content = B.css ? NULL : find_tag((dom_node *)B.doc, "main", 0);
@@ -1418,7 +1475,12 @@ void br_top(void)
 		} else {
 			B.t_load += 1.0f / 60;
 			draw_arc(TOP_W / 2, 140, 10, 2.5f, B.t_load * 6, B.t_load * 6 + 4.2f, T.accent);
-			text_draw_center("Cargando…", TOP_W / 2, 158, TS_SUB, T.text3);
+			text_draw_center(B.st == ST_LAYOUT ? "Colocando la página…" : "Cargando…", TOP_W / 2, 158, TS_SUB, T.text3);
+			if (B.st == ST_LAYOUT && B.nel_total > 0) {
+				float f = clampf((float)B.nel_done / B.nel_total, 0, 1);
+				draw_rrect(TOP_W / 2 - 80, 180, 160, 5, 2.5f, T.surface2);
+				draw_rrect(TOP_W / 2 - 80, 180, fmaxf(5, 160 * f), 5, 2.5f, T.accent);
+			}
 		}
 		(void)X;
 		return;
@@ -1510,17 +1572,32 @@ static bool tool_btn(float x, float y, float w, const char *label, bool on)
 #define TP_B   (SCR_H - 34.0f)
 #define STRIP  30.0f   /* franja de desplazamiento, a la derecha */
 
+// maquetar, en un hilo con pila grande: libcss usa unos 10 KB de pila por elemento y la del hilo
+// principal no da para páginas grandes; así además la pantalla no se queda parada
+static void layout_thread(void *arg)
+{
+	(void)arg;
+	layout();
+	B.hover = -1;
+	B.st = ST_READY;
+}
+
 void br_bottom(void)
 {
-	if (B.st == ST_PARSED) { // el árbol está listo: se maqueta aquí (usa la fuente); se guarda para cambiar PC / móvil
+	if (B.st == ST_PARSED) { // el árbol está listo (se guarda para cambiar PC / móvil sin volver a bajarla)
 		if (B.thr) {
 			threadJoin(B.thr, U64_MAX);
 			threadFree(B.thr);
 			B.thr = NULL;
 		}
-		layout();
-		B.st = ST_READY;
-		B.hover = -1;
+		B.st = ST_LAYOUT;
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		B.thr = threadCreate(layout_thread, NULL, 1024 * 1024, prio + 1, -2, false);
+		if (!B.thr) {
+			snprintf(B.err, sizeof B.err, "Sin memoria para colocar la página");
+			B.st = ST_ERROR;
+		}
 	}
 	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
 	bool ready = B.st == ST_READY;
@@ -1606,7 +1683,7 @@ void br_bottom(void)
 		if ((tpc && B.force != 1) || (tmob && B.force != 2) || (g_kdown & KEY_Y)) {
 			B.force = (g_kdown & KEY_Y) ? (mob ? 1 : 2) : tpc ? 1 : 2;
 			if (B.doc)
-				layout();
+				B.st = ST_PARSED; // se vuelve a colocar (en su hilo)
 		}
 	}
 	// --- debajo: a dónde lleva el enlace del puntero, o cómo se usa

@@ -368,17 +368,38 @@ static css_error ua_default_for_property(void *pw, uint32_t prop, css_hint *hint
 
 static css_select_handler H;
 
+/* libcss guarda en cada nodo lo que calculó (un filtro con sus antepasados y su estilo) para que los
+ * hijos vayan rápido; sin esto, cada elemento repasa todo su camino hasta la raíz */
+static dom_string *KEY;
+
+static void user_data_cb(dom_node_operation op, dom_string *key, void *data, struct dom_node *src, struct dom_node *dst)
+{
+	(void)key;
+	if (op == DOM_NODE_DELETED)
+		css_libcss_node_data_handler(&H, CSS_NODE_DELETED, NULL, src, NULL, data);
+	else if (op == DOM_NODE_CLONED)
+		css_libcss_node_data_handler(&H, CSS_NODE_CLONED, NULL, src, dst, data);
+}
+
 static css_error set_node_data(void *pw, void *n, void *data)
 {
-	// no se guarda: libcss lo vuelve a calcular cuando lo necesite
-	css_libcss_node_data_handler(&H, CSS_NODE_DELETED, pw, n, NULL, data);
+	(void)pw;
+	if (!KEY && dom_string_create_interned((const uint8_t *)"__c3css", 7, &KEY) != DOM_NO_ERR)
+		return CSS_NOMEM;
+	void *old = NULL;
+	if (dom_node_set_user_data((dom_node *)n, KEY, data, user_data_cb, &old) != DOM_NO_ERR)
+		return CSS_NOMEM;
+	if (old && old != data)
+		css_libcss_node_data_handler(&H, CSS_NODE_DELETED, NULL, n, NULL, old);
 	return CSS_OK;
 }
 
 static css_error get_node_data(void *pw, void *n, void **data)
 {
-	(void)pw, (void)n;
+	(void)pw;
 	*data = NULL;
+	if (KEY)
+		dom_node_get_user_data((dom_node *)n, KEY, data);
 	return CSS_OK;
 }
 
