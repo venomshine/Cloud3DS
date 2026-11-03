@@ -234,7 +234,9 @@ static void css_collect(BrCss *c, dom_node *n, int depth, int *links, size_t *by
 					Buf cb = {0};
 					long code;
 					(*links)++;
-					if (fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code) == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES) {
+					int r = fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code);
+					util_log("web: css %s -> %d, HTTP %ld, %u bytes", abs, r, code, (unsigned)cb.n);
+					if (r == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES) {
 						brcss_add(c, cb.p, cb.n, abs);
 						*bytes += cb.n;
 					}
@@ -316,6 +318,7 @@ static void load_thread(void *arg)
 		size_t bytes = 0;
 		css_collect(css, (dom_node *)doc, 0, &links, &bytes);
 		B.ncss = brcss_sheets(css);
+		util_log("web: %d hojas CSS, %u bytes", B.ncss, (unsigned)bytes);
 	}
 	B.css = css;
 	B.doc = doc;

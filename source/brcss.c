@@ -9,6 +9,7 @@
  * cada elemento; para eso pregunta por el árbol (nombre, clases, id, padres, hermanos,
  * atributos) a este «manejador», que lo mira en el DOM de libdom. */
 #include "brcss.h"
+#include "core/node.h" /* la estructura interna de libdom: padre y hermanos sin tocar referencias */
 
 #include <ctype.h>
 #include <stdio.h>
@@ -64,42 +65,23 @@ static bool elem_name_is(dom_node *n, lwc_string *name)
 	return eq;
 }
 
-static bool is_element(dom_node *n)
-{
-	dom_node_type t;
-	return n && dom_node_get_node_type(n, &t) == DOM_NO_ERR && t == DOM_ELEMENT_NODE;
-}
+#define NI(n) ((dom_node_internal *)(n))
 
-// el hermano elemento anterior (sin referencia: el árbol no cambia mientras se usa)
+// el hermano elemento anterior y el siguiente; el árbol no cambia mientras se usa, así que sin
+// referencias (soltar una referencia y seguir usando el nodo era justo lo que fallaba)
 static dom_node *prev_elem(dom_node *n)
 {
-	dom_node *c = NULL;
-	if (dom_node_get_previous_sibling(n, &c) != DOM_NO_ERR)
-		return NULL;
-	while (c) {
-		dom_node *p = c;
-		dom_node_unref(c);
-		if (is_element(p))
-			return p;
-		if (dom_node_get_previous_sibling(p, &c) != DOM_NO_ERR)
-			return NULL;
-	}
+	for (dom_node_internal *p = NI(n)->previous; p; p = p->previous)
+		if (p->type == DOM_ELEMENT_NODE)
+			return (dom_node *)p;
 	return NULL;
 }
 
 static dom_node *next_elem(dom_node *n)
 {
-	dom_node *c = NULL;
-	if (dom_node_get_next_sibling(n, &c) != DOM_NO_ERR)
-		return NULL;
-	while (c) {
-		dom_node *p = c;
-		dom_node_unref(c);
-		if (is_element(p))
-			return p;
-		if (dom_node_get_next_sibling(p, &c) != DOM_NO_ERR)
-			return NULL;
-	}
+	for (dom_node_internal *p = NI(n)->next; p; p = p->next)
+		if (p->type == DOM_ELEMENT_NODE)
+			return (dom_node *)p;
 	return NULL;
 }
 
@@ -164,6 +146,8 @@ static css_error named_ancestor_node(void *pw, void *n, const css_qname *q, void
 	(void)pw;
 	*anc = NULL;
 	dom_element_named_ancestor_node((dom_element *)n, q->name, (dom_element **)anc);
+	if (*anc)
+		dom_node_unref(*anc); // sigue vivo: está en el árbol
 	return CSS_OK;
 }
 
@@ -172,6 +156,8 @@ static css_error named_parent_node(void *pw, void *n, const css_qname *q, void *
 	(void)pw;
 	*par = NULL;
 	dom_element_named_parent_node((dom_element *)n, q->name, (dom_element **)par);
+	if (*par)
+		dom_node_unref(*par);
 	return CSS_OK;
 }
 
@@ -200,6 +186,8 @@ static css_error parent_node(void *pw, void *n, void **par)
 	(void)pw;
 	*par = NULL;
 	dom_element_parent_node((dom_element *)n, (dom_element **)par);
+	if (*par)
+		dom_node_unref(*par);
 	return CSS_OK;
 }
 
@@ -288,11 +276,8 @@ static css_error node_has_attribute_substring(void *pw, void *n, const css_qname
 static css_error node_is_root(void *pw, void *n, bool *m)
 {
 	(void)pw;
-	dom_node *p = NULL;
-	dom_node_get_parent_node(n, &p);
-	*m = !p || !is_element(p);
-	if (p)
-		dom_node_unref(p);
+	dom_node_internal *p = NI(n)->parent;
+	*m = !p || p->type != DOM_ELEMENT_NODE;
 	return CSS_OK;
 }
 
@@ -316,20 +301,9 @@ static css_error node_is_empty(void *pw, void *n, bool *m)
 {
 	(void)pw;
 	*m = true;
-	dom_node *c = NULL;
-	dom_node_get_first_child(n, &c);
-	while (c && *m) {
-		dom_node_type t;
-		dom_node_get_node_type(c, &t);
-		if (t == DOM_ELEMENT_NODE || t == DOM_TEXT_NODE)
+	for (dom_node_internal *c = NI(n)->first_child; c && *m; c = c->next)
+		if (c->type == DOM_ELEMENT_NODE || c->type == DOM_TEXT_NODE)
 			*m = false;
-		dom_node *nx = NULL;
-		dom_node_get_next_sibling(c, &nx);
-		dom_node_unref(c);
-		c = nx;
-	}
-	if (c)
-		dom_node_unref(c);
 	return CSS_OK;
 }
 
