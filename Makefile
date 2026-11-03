@@ -38,9 +38,9 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -Wl,--gc-sections -Wl,--wrap=fontGlyphIndexFromCodePoint
 
-LIBS	:= -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lmpg123 -lvorbisidec -logg -lz -lctru -lm
+LIBS	:= -lnsweb -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lmpg123 -lvorbisidec -logg -lz -lctru -lm
 
-LIBDIRS	:= $(CTRULIB) $(PORTLIBS)
+LIBDIRS	:= $(CTRULIB) $(PORTLIBS) $(CURDIR)/nsweb
 
 # pruebas: make UPDATE_URL=http://… apunta las actualizaciones a otro servidor
 ifneq ($(strip $(UPDATE_URL)),)
@@ -81,14 +81,18 @@ export APP_ICON := $(TOPDIR)/$(ICON)
 export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 
-.PHONY: all clean web cia
+.PHONY: all clean web cia nsweb
 
 #---------------------------------------------------------------------------------
 # La página web se sirve comprimida desde romfs
-all: web $(BUILD) $(DEPSDIR)
+all: nsweb web $(BUILD) $(DEPSDIR)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 web: $(ROMFS)/web/index.html.gz $(ROMFS)/gfx/sprites.t3x
+
+# librerías de NetSurf (MIT) para leer páginas web: nsweb/lib/libnsweb.a
+nsweb:
+	@$(MAKE) --no-print-directory -C nsweb
 
 # logo, resplandor y halo (imágenes de gfx/, generadas con tools/gen_art.py)
 $(ROMFS)/gfx/sprites.t3x: gfx/sprites.t3s $(wildcard gfx/*.png)
