@@ -9,6 +9,7 @@
 #include "app.h"
 #include "fsx.h"
 #include "browser.h"
+#include "cloud.h"
 #include "i18n.h"
 #include "ops.h"
 #include "update.h"
@@ -77,9 +78,12 @@ static struct {
 	bool open, just;
 	float anim;
 	int sel;
-} QA = {.sel = 1};
+	float pos;        // posición del carrusel (se acerca a sel; arrastrando, sigue al dedo)
+	bool drag;
+	float drag_pos;
+} QA = {.sel = 1, .pos = 1};
 
-enum { QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
+enum { QA_CLOUD, QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
 static void qa_top(float a);
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
@@ -99,12 +103,31 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLOUT };
 
 typedef struct {
 	float off, target;
 	int sel;
 } List;
+
+// la nube (OneDrive): pantalla propia que se abre desde el carrusel
+static struct {
+	bool open;
+	List l;
+	CloudItem *it;
+	int n;
+	u32 rev;
+	bool loading;
+	CloudInfo info;
+	bool om, om_just; // opciones de un elemento
+	float om_anim;
+	int om_sel, om_item;
+	bool hm, hm_just; // opciones de la cuenta (cabecera)
+	float hm_anim;
+	int hm_sel;
+} CLU;
+static void cl_top(void);
+static void cl_bottom(void);
 
 static struct {
 	int tab, page;
@@ -1334,6 +1357,10 @@ static void draw_top(void)
 		toast_draw_top();
 		return;
 	}
+	if (CLU.open) { // la nube
+		cl_top();
+		return;
+	}
 	if (qrs_is_open()) { // escáner de QR: la cámara a pantalla completa
 		qr_top();
 		toast_draw_top();
@@ -1573,6 +1600,369 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 		else
 			snprintf(out, n, d->hash_ok == 1 ? "%s · %s · %s" : "%s · %s", b, d->hash_ok == 1 ? _("suma comprobada") : d->host, d->host);
 	}
+}
+
+// ------------------------------------------------------------ nube (OneDrive)
+static void explain_top(float a, IconId ic, u32 col, const char *title, const char *desc, const char *foot, u32 fc);
+static void draw_tabbar(void);
+static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char *title, const IconId *ic, const char *const *lab,
+                      const u32 *col, int n);
+static float info_row(float x, float y, float w, const char *k, const char *v, u32 vc, float a);
+
+static void cl_open(void)
+{
+	CLU.open = true;
+	if (!CLU.it)
+		CLU.it = malloc(sizeof(CloudItem) * 400);
+	cloud_get(&CLU.info);
+	if (CLU.info.st == CLS_ON && !cloud_depth())
+		cloud_list("", "OneDrive");
+	CLU.rev = (u32)-1;
+}
+
+static void cl_refresh(void)
+{
+	CloudInfo ci;
+	cloud_get(&ci);
+	if (ci.rev != CLU.rev && CLU.it) {
+		CLU.rev = ci.rev;
+		CLU.info = ci;
+		CLU.n = cloud_items(CLU.it, 400, &CLU.loading);
+		if (CLU.l.sel >= CLU.n)
+			CLU.l.sel = CLU.n ? CLU.n - 1 : 0;
+	}
+}
+
+static const char *cl_err_text(const char *e)
+{
+	if (!strcmp(e, "offline"))
+		return _("No se pudo conectar con Microsoft. Comprueba el Wi-Fi.");
+	if (!strcmp(e, "expired"))
+		return _("El código caducó. Vuelve a pulsar «Conectar».");
+	if (!strcmp(e, "declined"))
+		return _("Se rechazó el permiso en el móvil.");
+	if (!strcmp(e, "revoked"))
+		return _("El permiso se retiró desde la cuenta de Microsoft. Vuelve a conectar.");
+	if (!strcmp(e, "upload"))
+		return _("No se pudo subir el archivo.");
+	if (!strcmp(e, "download"))
+		return _("No se pudo empezar la descarga.");
+	if (!strcmp(e, "delete"))
+		return _("No se pudo eliminar.");
+	return _("Microsoft no respondió como se esperaba. Inténtalo de nuevo.");
+}
+
+static void cl_item_icon(const CloudItem *c, IconId *ic, u32 *col)
+{
+	const char *dot = strrchr(c->name, '.');
+	const char *ext = dot ? dot + 1 : "";
+	if (c->dir) {
+		bool app = !strcmp(c->name, "Cloud3DS");
+		*ic = app ? IC_CLOUD : IC_FOLDER, *col = app ? T.accent : T.warn;
+	} else if (!strcasecmp(ext, "cia") || !strcasecmp(ext, "3dsx"))
+		*ic = IC_GEM, *col = T.ok;
+	else if (!strcasecmp(ext, "png") || !strcasecmp(ext, "jpg") || !strcasecmp(ext, "jpeg") || !strcasecmp(ext, "bmp") || !strcasecmp(ext, "gif"))
+		*ic = IC_IMAGE, *col = T.accent2;
+	else if (!strcasecmp(ext, "zip") || !strcasecmp(ext, "7z") || !strcasecmp(ext, "rar"))
+		*ic = IC_ARCHIVE, *col = T.warn;
+	else if (!strcasecmp(ext, "mp3") || !strcasecmp(ext, "ogg") || !strcasecmp(ext, "wav"))
+		*ic = IC_SPEAKER, *col = T.accent;
+	else
+		*ic = IC_FILE, *col = T.text2;
+}
+
+static void cl_top(void)
+{
+	draw_header();
+	cl_refresh();
+	const CloudInfo *ci = &CLU.info;
+	if (ci->st == CLS_CODE) { // el QR y el código, a lo grande
+		float y0 = CARD_Y + 2, h = SCR_H - 8 - y0;
+		draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
+		draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
+		const float QS = h - 32;
+		draw_qr(ci->verify, CARD_X + 16, y0 + 16, QS, 1);
+		float rx = CARD_X + 16 + QS + 18, rw = CARD_X + CARD_W - 16 - rx, y = y0 + 16;
+		text_draw_clip(_("Conecta tu OneDrive"), rx, y, rw, TS_TITLE, T.text);
+		y += text_lineh(TS_TITLE) + 4;
+		y += text_wrap_lines(_("Escanea el QR con el móvil y entra con tu cuenta de Microsoft. Cuando te lo pida, escribe este código:"), rw, TS_SUB, 4, rx, y, T.text2, true) *
+		         text_lineh(TS_SUB) + 8;
+		float cw = text_width(ci->user_code, 0.72f) + 20;
+		draw_rrect(rx, y, fminf(cw, rw), text_lineh(0.72f) + 10, 10, T.bg);
+		text_draw(ci->user_code, rx + 10, y + 5, 0.72f, T.accent);
+		y += text_lineh(0.72f) + 18;
+		const char *v = strstr(ci->verify, "://");
+		char pc[160];
+		snprintf(pc, sizeof pc, _("O en el PC: %s"), v ? v + 3 : ci->verify);
+		text_draw_clip(pc, rx, y, rw, TS_SUB, T.text3);
+		u64 now = util_ms();
+		int mins = ci->code_until > now ? (int)((ci->code_until - now) / 60000) + 1 : 0;
+		char w[96];
+		snprintf(w, sizeof w, _("Esperando a que aceptes en el móvil · caduca en %d min"), mins);
+		int nl = text_wrap_lines(w, rw - 16, TS_SUB, 2, 0, 0, 0, false);
+		float wy = y0 + h - 12 - nl * text_lineh(TS_SUB);
+		draw_arc(rx + 6, wy + text_lineh(TS_SUB) / 2, 5, 1.6f, g_time * 6, g_time * 6 + 4.2f, T.accent);
+		text_wrap_lines(w, rw - 16, TS_SUB, 2, rx + 16, wy, T.text3, true);
+		toast_draw_top();
+		return;
+	}
+	if (ci->st == CLS_ON) {
+		// arriba, la cuenta y su espacio (donde va la tira del QR)
+		float y = CARD_Y, h = SDB_H;
+		draw_rrect(CARD_X, y + 3, CARD_W, h, 14, T.shadow);
+		draw_rrect(CARD_X, y, CARD_W, h, 14, T.surface);
+		draw_circle(CARD_X + 26, y + h / 2, 13, T.accent);
+		char ini[8] = "?";
+		const char *src = ci->name[0] ? ci->name : ci->email;
+		if (src[0])
+			snprintf(ini, sizeof ini, "%.*s", utf8_len((u8)src[0]), src);
+		text_draw_center(ini, CARD_X + 26, y + h / 2 - text_lineh(TS_BODY) / 2, TS_BODY, 0xFFFFFFFF);
+		float lx = CARD_X + 48, rx = CARD_X + CARD_W - 14;
+		char acc[200], fr[24], tot[24], r1[48];
+		snprintf(acc, sizeof acc, "OneDrive · %s", ci->email[0] ? ci->email : ci->name);
+		util_fmt_size(fr, sizeof fr, ci->total > ci->used ? ci->total - ci->used : 0);
+		util_fmt_size(tot, sizeof tot, ci->total);
+		snprintf(r1, sizeof r1, _("%s libres"), fr);
+		float w2 = text_width(tot, TS_SUB) + 4;
+		if (ci->total) {
+			text_draw_right(tot, rx, y + 9, TS_SUB, T.text3);
+			text_draw_right(r1, rx - w2 - 4, y + 9, TS_SUB, T.text);
+		}
+		text_draw_clip(acc, lx, y + 9, rx - lx - (ci->total ? text_width(r1, TS_SUB) + w2 + 14 : 0), TS_SUB, T.text);
+		float bw = rx - lx, by = y + h - 15;
+		draw_rrect(lx, by, bw, 6, 3, T.surface2);
+		if (ci->total)
+			draw_rrect(lx, by, fmaxf(6, bw * clampf((float)((double)ci->used / ci->total), 0, 1)), 6, 3, T.accent);
+		// lo marcado
+		float y0 = CARD_Y + h + 8, hh = BODY_B - y0;
+		draw_rrect(CARD_X, y0 + 3, CARD_W, hh, 16, T.shadow);
+		draw_rrect(CARD_X, y0, CARD_W, hh, 16, T.surface);
+		const float X = CARD_X + 14, W = CARD_W - 28;
+		const CloudItem *c = CLU.n && CLU.l.sel < CLU.n ? &CLU.it[CLU.l.sel] : NULL;
+		if (!c) {
+			draw_icon(IC_CLOUD, TOP_W / 2, y0 + hh / 2 - 12, 26, T.text3);
+			text_draw_center(CLU.loading ? _("Cargando…") : ci->err[0] ? cl_err_text(ci->err) : _("Carpeta vacía"), TOP_W / 2, y0 + hh / 2 + 10,
+			                 TS_SUB, ci->err[0] ? T.danger : T.text3);
+		} else {
+			IconId ic;
+			u32 col;
+			cl_item_icon(c, &ic, &col);
+			const float PS = hh - 20;
+			draw_rrect(X - 4, y0 + 10, PS, PS, 12, T.surface2);
+			draw_icon(ic, X - 4 + PS / 2, y0 + 10 + PS / 2, 34, col);
+			float rx2 = X - 4 + PS + 14, rw = X + W - rx2, yy = y0 + 11;
+			text_draw_clip(c->name, rx2, yy, rw, TS_TITLE, T.text);
+			yy += text_lineh(TS_TITLE) + 5;
+			char v[96];
+			if (c->dir) {
+				snprintf(v, sizeof v, c->children == 1 ? _("1 elemento") : _("%d elementos"), c->children);
+				yy = info_row(rx2, yy, rw, _("Contenido"), v, T.text2, 1);
+			} else {
+				util_fmt_size(v, sizeof v, c->size);
+				yy = info_row(rx2, yy, rw, _("Tamaño"), v, T.text2, 1);
+			}
+			if (c->mtime[0]) {
+				snprintf(v, sizeof v, "%.10s %.5s", c->mtime, c->mtime + 11);
+				yy = info_row(rx2, yy, rw, _("Modificado"), v, T.text2, 1);
+			}
+			char hint[96];
+			snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, c->dir ? _("Abrir") : _("Descargar"), GLYPH_Y, _("Opciones"));
+			text_draw_right(hint, X + W, y0 + hh - 10 - text_lineh(TS_SUB), TS_SUB, T.text2);
+		}
+		sd_bar(1);
+		toast_draw_top();
+		return;
+	}
+	// sin conectar (o sin configurar)
+	if (ci->st == CLS_NOCFG)
+		explain_top(1, IC_CLOUD, T.text3, _("Nube"), _("Esta versión de prueba aún no tiene configurada la conexión con Microsoft."), NULL, 0);
+	else
+		explain_top(1, IC_CLOUD, T.accent, _("Conecta tu OneDrive"),
+		            _("Tus archivos de OneDrive en la consola y copias automáticas de tus partidas y capturas. Se conecta con un QR y un código, sin contraseñas."),
+		            ci->err[0] ? cl_err_text(ci->err) : _("Solo hace falta una vez: el permiso se guarda y se renueva solo."), ci->err[0] ? T.danger : T.text3);
+	sd_bar(1);
+	toast_draw_top();
+}
+
+static void cl_options(void)
+{
+	// opciones de un elemento
+	const CloudItem *c = CLU.om_item >= 0 && CLU.om_item < CLU.n ? &CLU.it[CLU.om_item] : NULL;
+	if (!c && CLU.om)
+		CLU.om = false;
+	IconId ic[3];
+	const char *lab[3];
+	u32 col[3];
+	int act[3], n = 0;
+	if (c && c->dir)
+		ic[n] = IC_FOLDER, lab[n] = _("Abrir"), col[n] = T.text, act[n++] = 0;
+	if (c && !c->dir)
+		ic[n] = IC_DOWNLOAD, lab[n] = _("Descargar a la SD"), col[n] = T.ok, act[n++] = 1;
+	ic[n] = IC_TRASH, lab[n] = _("Eliminar"), col[n] = T.danger, act[n++] = 2;
+	int r = sheet_list(&CLU.om, &CLU.om_just, &CLU.om_anim, &CLU.om_sel, c ? c->name : "", ic, lab, col, n);
+	if (r >= 0 && c) {
+		if (act[r] == 0)
+			cloud_list(c->id, c->name);
+		else if (act[r] == 1) {
+			cloud_download(c);
+			toast_icon(_("Descargando: lo verás en Actividad"), IC_DOWNLOAD, T.ok);
+		} else {
+			char msg[260];
+			snprintf(msg, sizeof msg, _("«%s» irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive."), c->name);
+			U.dlg_arg = CLU.om_item;
+			dialog_open(DLG_CLDEL, _("¿Eliminar de OneDrive?"), msg, _("Eliminar"), true);
+		}
+	}
+	// opciones de la cuenta
+	static const IconId hic[2] = {IC_REFRESH, IC_LOGOUT};
+	const char *hlab[2] = {_("Actualizar"), _("Desconectar OneDrive")};
+	const u32 hcol[2] = {T.text, T.danger};
+	int hr = sheet_list(&CLU.hm, &CLU.hm_just, &CLU.hm_anim, &CLU.hm_sel, CLU.info.email[0] ? CLU.info.email : "OneDrive", hic, hlab, hcol, 2);
+	if (hr == 0)
+		cloud_list(cloud_folder_id(), cloud_folder_name());
+	else if (hr == 1)
+		dialog_open(DLG_CLOUT, _("¿Desconectar OneDrive?"), _("Cloud3DS dejará de poder entrar en tu OneDrive. Tus archivos siguen en la nube."), _("Desconectar"), true);
+}
+
+static void cl_bottom(void)
+{
+	cl_refresh();
+	const CloudInfo *ci = &CLU.info;
+	bool sheet = CLU.om || CLU.hm || g_dialog.open;
+	u32 kd = g_kdown, kr = g_krepeat;
+	Touch tc = g_touch;
+	if (sheet) {
+		g_kdown = g_krepeat = 0;
+		memset(&g_touch, 0, sizeof g_touch);
+	}
+	bool close = false;
+	if (ci->st == CLS_ON) {
+		const char *fname = cloud_folder_name();
+		bool sub = cloud_depth() > 1;
+		tab_header_w(sub ? fname : "OneDrive", true, 170);
+		// a la derecha: opciones de la cuenta
+		float hx = BOT_W - 24, hy = 16;
+		draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? T.surface2 : T.surface);
+		draw_icon(IC_DOTS, hx, hy, 14, T.text2);
+		if (tap(hx - 14, hy - 14, 28, 28))
+			CLU.hm = CLU.hm_just = true, CLU.hm_sel = 0;
+		else if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B)) {
+			if (sub)
+				cloud_up();
+			else
+				close = true;
+		}
+		const float RH = 40;
+		list_update(&CLU.l, CLU.n, RH);
+		gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+		if (!CLU.n) {
+			if (CLU.loading) {
+				draw_arc(BOT_W / 2, VIEW_Y + 70, 10, 2.5f, g_time * 6, g_time * 6 + 4.2f, T.accent);
+				text_draw_center(_("Cargando…"), BOT_W / 2, VIEW_Y + 92, TS_SUB, T.text3);
+			} else
+				empty_state(IC_CLOUD, ci->err[0] ? _("No se pudo cargar") : _("Carpeta vacía"),
+				            ci->err[0] ? cl_err_text(ci->err) : _("Sube algo desde Archivos con «Subir a OneDrive»."));
+		}
+		for (int i = 0; i < CLU.n; i++) {
+			float y = VIEW_Y + i * RH - CLU.l.off;
+			if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
+				continue;
+			const CloudItem *c = &CLU.it[i];
+			bool was = CLU.l.sel == i;
+			bool t = row(&CLU.l, i, y, RH);
+			if (!U.buttons && CLU.l.sel == i)
+				draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
+			IconId ic;
+			u32 col;
+			cl_item_icon(c, &ic, &col);
+			draw_rrect(14, y + (RH - 26) / 2, 26, 26, 8, col_alpha(col, 0.16f));
+			draw_icon(ic, 27, y + RH / 2, 14, col);
+			g_clip_ell = CLU.l.sel != i;
+			text_draw_clip(c->name, 50, y + 5, BOT_W - 90, TS_BODY, T.text);
+			char sb[96];
+			if (c->dir)
+				snprintf(sb, sizeof sb, c->children == 1 ? _("Carpeta · 1 elemento") : _("Carpeta · %d elementos"), c->children);
+			else {
+				char sz[24];
+				util_fmt_size(sz, sizeof sz, c->size);
+				snprintf(sb, sizeof sb, "%s · %.10s", sz, c->mtime);
+			}
+			text_draw_clip(sb, 50, y + 22, BOT_W - 90, TS_SUB, T.text3);
+			g_clip_ell = false;
+			if (CLU.l.sel == i) { // ⋮ en la marcada
+				draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
+				draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
+			}
+			bool open = (t && was) || activate(&CLU.l, i);
+			if (t && was && g_touch.px > BOT_W - 44) // el ⋮
+				CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = i;
+			else if (open) {
+				if (c->dir)
+					cloud_list(c->id, c->name);
+				else
+					CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = i;
+			}
+		}
+		gfx_clip_off();
+		if ((g_kdown & KEY_Y) && CLU.n && !CLU.om)
+			CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = CLU.l.sel;
+	} else if (ci->st == CLS_CODE) {
+		tab_header(_("Nube"), true);
+		float x = 10, w = BOT_W - 20, y = VIEW_Y + 4;
+		draw_rrect(x, y, w, 96, 14, T.surface);
+		const char *st[3] = {_("Escanea el QR de arriba con el móvil"), _("Entra con tu cuenta de Microsoft (Outlook, Hotmail, Xbox…)"), NULL};
+		char s3[96];
+		snprintf(s3, sizeof s3, _("Escribe el código %s y pulsa «Permitir»"), ci->user_code);
+		st[2] = s3;
+		for (int i = 0; i < 3; i++) {
+			float sy = y + 10 + i * 28;
+			draw_circle(x + 20, sy + 8, 8, col_lerp(T.surface2, T.accent, 0.25f));
+			char n[4];
+			snprintf(n, sizeof n, "%d", i + 1);
+			text_draw_center(n, x + 20, sy + 8 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
+			text_wrap_lines(st[i], w - 46, TS_SUB, 2, x + 36, sy, T.text, true);
+		}
+
+		char cl[48];
+		snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cancelar"));
+		float by = y + 104;
+		draw_rrect(x, by, w, 30, 15, touch_in(x, by, w, 30) ? T.divider : T.surface2);
+		text_draw_center(cl, BOT_W / 2, by + 15 - text_lineh(TS_BODY) / 2, TS_BODY, T.text);
+		if (tap(x, by, w, 30) || tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
+			cloud_cancel();
+	} else {
+		tab_header(_("Nube"), true);
+		bool cfg = ci->st != CLS_NOCFG;
+		float cy = VIEW_Y + 54;
+		draw_halo(BOT_W / 2, cy, 54, 0.3f);
+		draw_cloud(BOT_W / 2, cy, 22, 1);
+		text_draw_center(cfg ? _("Conecta tu OneDrive") : _("Nube sin configurar"), BOT_W / 2, cy + 34, TS_TITLE, T.text);
+		wrap_center(cfg ? _("Con tu cuenta de Microsoft, en el móvil, con un QR y un código.") : _("Falta el ID de la app de Microsoft en esta versión de prueba."),
+		            BOT_W / 2, cy + 58, 260, TS_SUB, 2, T.text3);
+		float bx = 40, bw = BOT_W - 80, by = SCR_H - TABBAR_H - 44;
+		if (cfg) {
+			bool busy = ci->busy;
+			draw_rrect(bx, by, bw, 34, 17, busy ? T.surface2 : touch_in(bx, by, bw, 34) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+			char b[64];
+			snprintf(b, sizeof b, "%s %s", GLYPH_A, busy ? _("Pidiendo el código…") : _("Conectar"));
+			text_draw_center(b, BOT_W / 2, by + 17 - text_lineh(TS_BODY) / 2, TS_BODY, busy ? T.text3 : 0xFFFFFFFF);
+			if (!busy && (tap(bx, by, bw, 34) || (g_kdown & KEY_A)))
+				cloud_connect();
+		}
+		if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
+			close = true;
+	}
+	int tab = U.tab;
+	draw_tabbar();
+	if (U.tab != tab || QA.open) // otra pestaña o el botón central: fuera de la nube
+		close = true;
+	if (sheet)
+		g_kdown = kd, g_krepeat = kr, g_touch = tc;
+	cl_options();
+	if (close)
+		CLU.open = false;
+	g_kdown = 0;
+	g_touch.up = false;
 }
 
 static void qrs_open(void);
@@ -1885,7 +2275,7 @@ static struct {
 static int sr_nkinds(void);
 
 // acciones sobre archivos (menú de un elemento y selección múltiple)
-enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT, FA_HASH, FA_ZIP };
+enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT, FA_HASH, FA_ZIP, FA_CLOUD };
 
 static const char *chip_name(int i)
 {
@@ -5517,6 +5907,8 @@ static void f_menu_open(void)
 		FM.acts[FM.n++] = FA_HASH;
 	if (!F.trash)
 		FM.acts[FM.n++] = FA_ZIP;
+	if (!e->dir && !F.trash && cl_connected())
+		FM.acts[FM.n++] = FA_CLOUD;
 	FM.sel = 0;
 	FM.color = e->color;
 	FM.open = true;
@@ -5536,13 +5928,14 @@ static const char *fa_name(int a)
 	case FA_SELECT: return _("Seleccionar varios");
 	case FA_HASH: return _("MD5 y SHA-256");
 	case FA_ZIP: return _("Comprimir en ZIP");
+	case FA_CLOUD: return _("Subir a OneDrive");
 	default: return _("Destacar");
 	}
 }
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[11] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD, IC_ARCHIVE};
+	static const IconId IC[12] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD, IC_ARCHIVE, IC_CLOUD};
 	return IC[a];
 }
 
@@ -5692,6 +6085,18 @@ static void fa_run(int a)
 		HS.cmp = HCHK_NONE;
 		HS.open = HS.just = true;
 		HS.sel = 0;
+		return;
+	}
+	if (a == FA_CLOUD) { // a la carpeta de la nube que se está viendo; si no, a Cloud3DS
+		const FEnt *e = f_selected();
+		if (!e)
+			return;
+		char full[700];
+		f_full(F.v[F.sel].idx, full, sizeof full);
+		cloud_upload(full, cloud_depth() > 1 ? cloud_folder_id() : "");
+		char m[200];
+		snprintf(m, sizeof m, _("Subiendo «%s» a OneDrive"), e->name);
+		toast_icon(m, IC_UPLOAD, T.accent);
 		return;
 	}
 	if (a == FA_TYPE) { // también con el editor abierto: solo cambia la extensión
@@ -6502,8 +6907,10 @@ static void explain_top(float a, IconId ic, u32 col, const char *title, const ch
 	text_draw_clip(title, rx, y, rw, TS_TITLE, col_alpha(T.text, a));
 	y += text_lineh(TS_TITLE) + 4;
 	text_wrap_lines(desc, rw, TS_SUB, foot ? 4 : 5, rx, y, col_alpha(T.text2, a), true);
-	if (foot)
-		text_draw_clip(foot, rx, y0 + h - 10 - text_lineh(TS_SUB), rw, TS_SUB, col_alpha(fc, a));
+	if (foot) { // abajo, en una o dos líneas
+		int nl = text_wrap_lines(foot, rw, TS_SUB, 2, 0, 0, 0, false);
+		text_wrap_lines(foot, rw, TS_SUB, 2, rx, y0 + h - 10 - nl * text_lineh(TS_SUB), col_alpha(fc, a), true);
+	}
 }
 
 // Ajustes → PIN y → Conexión: arriba, lo que hace la opción marcada
@@ -6941,7 +7348,9 @@ static void qr_toggle(void)
 static void qa_run(int i)
 {
 	QA.open = false;
-	if (i == QA_CONNECT)
+	if (i == QA_CLOUD)
+		cl_open();
+	else if (i == QA_CONNECT)
 		qr_toggle();
 	else if (i == QA_SCAN)
 		qrs_open();
@@ -6951,7 +7360,17 @@ static void qa_run(int i)
 		U.want_dlurl = true;
 }
 
-#define QA_H 138.0f
+// el carrusel: la tarjeta marcada en el centro, más grande e iluminada; las de los lados asoman
+#define QA_SP 106.0f // separación entre tarjetas
+static void qa_card_text(int i, const char **lab, const char **sub);
+static void cl_open(void);
+static const IconId QA_IC[QA_N] = {IC_CLOUD, IC_QR, IC_CAMERA, IC_LINK, IC_GLOBE};
+static u32 qa_col(int i)
+{
+	const u32 c[QA_N] = {T.accent, T.accent, T.ok, T.warn, T.accent2};
+	return c[i];
+}
+
 static void qa_draw(void)
 {
 	QA.anim = approach(QA.anim, QA.open ? 1 : 0, 16);
@@ -6959,44 +7378,72 @@ static void qa_draw(void)
 		return;
 	float a = ease_out_cubic(QA.anim);
 	float bottom = SCR_H - TABBAR_H;
-	draw_rect(0, 0, BOT_W, bottom, col_alpha(T.dim, a * 0.75f));
-	float x = 8, w = BOT_W - 16, y = bottom - 8 - QA_H + (1 - a) * 20;
-	draw_rrect(x, y + 4, w, QA_H, 18, col_alpha(T.shadow, a));
-	draw_rrect(x, y, w, QA_H, 18, T.surface);
-	text_draw(_("Traer a la consola"), x + 14, y + 12, TS_TITLE, T.text);
-	char cl[48];
-	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cerrar"));
-	float cw = text_width(cl, TS_SUB) + 18, cx = x + w - 10 - cw;
-	draw_rrect(cx, y + 10, cw, 20, 10, touch_in(cx, y + 6, cw, 28) ? T.divider : T.surface2);
-	text_draw_center(cl, cx + cw / 2, y + 20 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
-	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK, IC_GLOBE};
-	const u32 col[QA_N] = {T.accent, T.ok, T.warn, T.accent2};
-	const char *lab[QA_N] = {V.qr_min ? _("Conectar") : _("Ocultar QR"), _("Escanear QR"), _("Descargar"), _("Navegador")};
-	// dos líneas, separadas por «\n»
-	const char *sub[QA_N] = {V.qr_min ? _("Móvil o PC\ncon QR y PIN") : _("Volver a la\ninformación"), _("Con la cámara,\ncomo en FBI"), _("Escribir\nun enlace"), _("Páginas web\nligeras")};
-	const float G = 8, TW = (w - 20 - 2 * G) / QA_N, TH = 96, ty = y + 36;
-	int run = -1;
-	for (int i = 0; i < QA_N; i++) {
-		float tx = x + 10 + i * (TW + G);
-		if (touch_in(tx, ty, TW, TH) && g_touch.down) // la de arriba explica la que se toca
-			QA.sel = i;
-		bool hot = QA.sel == i;
-		draw_rrect(tx, ty, TW, TH, 14, hot ? col_lerp(T.surface2, T.accent, 0.12f) : T.surface2);
-		if (hot)
-			draw_rrect_outline(tx, ty, TW, TH, 14, 1.5f, col_alpha(T.accent, 0.8f));
-		float icx = tx + TW / 2, icy = ty + 26;
-		draw_circle(icx, icy, 18, col_alpha(col[i], 0.16f));
-		draw_icon(ic[i], icx, icy, 18, col[i]);
-		text_draw_center_clip(lab[i], icx, ty + 50, TW - 8, TS_BODY, T.text);
-		char l1[64];
-		const char *nl = strchr(sub[i], '\n');
-		snprintf(l1, sizeof l1, "%.*s", nl ? (int)(nl - sub[i]) : (int)strlen(sub[i]), sub[i]);
-		text_draw_center_clip(l1, icx, ty + 66, TW - 8, 0.34f, T.text3);
-		if (nl)
-			text_draw_center_clip(nl + 1, icx, ty + 66 + text_lineh(0.34f), TW - 8, 0.34f, T.text3);
-		if (!QA.just && tap(tx, ty, TW, TH))
-			run = i;
+	draw_rect(0, 0, BOT_W, bottom, col_alpha(T.dim, a * 0.82f));
+	if (!QA.drag)
+		QA.pos = approach(QA.pos, (float)QA.sel, 14);
+	float yo = (1 - a) * 24;
+	text_draw_center(_("Traer a la consola"), BOT_W / 2, 6 + yo, TS_TITLE, col_alpha(T.text, a));
+	// de la más lejana a la marcada, para que la del centro quede encima
+	int order[QA_N];
+	for (int i = 0; i < QA_N; i++)
+		order[i] = i;
+	for (int i = 0; i < QA_N; i++)
+		for (int j = i + 1; j < QA_N; j++)
+			if (fabsf(order[j] - QA.pos) > fabsf(order[i] - QA.pos)) {
+				int t = order[i];
+				order[i] = order[j], order[j] = t;
+			}
+	const float cy = 30 + 66 + yo;
+	int run = -1, hit = -1;
+	for (int k = 0; k < QA_N; k++) {
+		int i = order[k];
+		float d = i - QA.pos, ad = fminf(fabsf(d), 2.2f);
+		float sc = 1 - 0.24f * fminf(ad, 1) - 0.06f * fmaxf(0, ad - 1);
+		float w = 120 * sc, h = 138 * sc, cx = BOT_W / 2 + d * QA_SP;
+		float x = cx - w / 2, y = cy - h / 2;
+		if (x > BOT_W || x + w < 0)
+			continue;
+		float al = a * (1 - 0.32f * fminf(ad, 1.6f));
+		bool sel = fabsf(d) < 0.5f;
+		u32 c = qa_col(i);
+		if (sel) {
+			draw_rrect(x - 3, y - 3, w + 6, h + 6, 21, col_alpha(c, 0.22f * a));
+			draw_rrect(x, y + 4, w, h, 18, col_alpha(T.shadow, al));
+		}
+		draw_rrect(x, y, w, h, 18, col_alpha(sel ? col_lerp(T.surface2, c, 0.16f) : T.surface2, al));
+		if (sel)
+			draw_rrect_outline(x, y, w, h, 18, 1.5f, col_alpha(c, 0.9f * a));
+		float ir = 23 * sc;
+		draw_circle(cx, y + h * 0.34f, ir, col_alpha(c, 0.18f * al));
+		draw_icon(QA_IC[i], cx, y + h * 0.34f, 22 * sc, col_alpha(c, al));
+		const char *lab, *sb;
+		qa_card_text(i, &lab, &sb);
+		float ls = (sel ? 0.52f : 0.44f) * fmaxf(sc, 0.8f);
+		text_draw_center_clip(lab, cx, y + h * 0.58f, w - 8, ls, col_alpha(T.text, al));
+		if (sel) { // el subtítulo, en dos líneas, solo en la del centro
+			char l1[64];
+			const char *nl = strchr(sb, '\n');
+			snprintf(l1, sizeof l1, "%.*s", nl ? (int)(nl - sb) : (int)strlen(sb), sb);
+			text_draw_center_clip(l1, cx, y + h * 0.58f + 18, w - 10, 0.36f, col_alpha(T.text2, al));
+			if (nl)
+				text_draw_center_clip(nl + 1, cx, y + h * 0.58f + 18 + text_lineh(0.36f), w - 10, 0.36f, col_alpha(T.text2, al));
+		}
+		if (g_touch.up && !g_touch.drag && g_touch.sx >= x && g_touch.sx < x + w && g_touch.sy >= y && g_touch.sy < y + h && hit < 0)
+			hit = i;
 	}
+	// puntos de posición y ayuda
+	float dy = cy + 76;
+	float dw = QA_N * 9 + 8, dx = BOT_W / 2 - dw / 2;
+	for (int i = 0; i < QA_N; i++) {
+		bool on = i == QA.sel;
+		draw_rrect(dx, dy, on ? 14 : 5, 5, 2.5f, col_alpha(on ? qa_col(i) : T.divider, a));
+		dx += on ? 18 : 9;
+	}
+	char h1[48], h2[64]; // a los lados del botón central, que tapa el medio
+	snprintf(h1, sizeof h1, "%s  L R", GLYPH_DPAD);
+	snprintf(h2, sizeof h2, "%s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_B, _("Cerrar"));
+	text_draw_center(h1, BOT_W / 4 - 6, dy + 12, 0.38f, col_alpha(T.text3, a));
+	text_draw_center(h2, BOT_W * 3 / 4 + 6, dy + 12, 0.38f, col_alpha(T.text3, a));
 	if (!QA.open)
 		return;
 	bool fresh = QA.just;
@@ -7006,23 +7453,57 @@ static void qa_draw(void)
 		g_touch.up = false;
 		return;
 	}
-	if (g_krepeat & KEY_RIGHT)
-		QA.sel = (QA.sel + 1) % QA_N;
-	if (g_krepeat & KEY_LEFT)
-		QA.sel = (QA.sel + QA_N - 1) % QA_N;
+	// arrastrar de lado: el carrusel sigue al dedo y al soltar se queda en la más cercana
+	if (g_touch.held && g_touch.sy < bottom) {
+		if (!QA.drag && abs(g_touch.x - g_touch.sx) > 6) {
+			QA.drag = true;
+			QA.drag_pos = QA.pos;
+		}
+		if (QA.drag)
+			QA.pos = clampf(QA.drag_pos - (g_touch.x - g_touch.sx) / QA_SP, -0.4f, QA_N - 0.6f);
+	} else if (QA.drag) {
+		QA.drag = false;
+		QA.sel = (int)clampf(roundf(QA.pos), 0, QA_N - 1);
+	}
+	if (g_krepeat & (KEY_RIGHT | KEY_R))
+		QA.sel = QA.sel + 1 < QA_N ? QA.sel + 1 : QA.sel;
+	if (g_krepeat & (KEY_LEFT | KEY_L))
+		QA.sel = QA.sel > 0 ? QA.sel - 1 : 0;
 	if (g_kdown & KEY_A)
 		run = QA.sel;
+	if (hit >= 0) { // tocar la del centro la abre; una de los lados, la trae al centro
+		if (hit == QA.sel)
+			run = hit;
+		else
+			QA.sel = hit;
+	}
 	// el botón central (que ahora es una X) también la cierra
 	float fx = BOT_W / 2, fy = bottom + 8;
 	bool fab = tap(fx - 25, fy - 25, 50, SCR_H - (fy - 25));
 	if (run >= 0)
 		qa_run(run);
-	else if ((g_kdown & KEY_B) || fab || tap(cx, y + 6, cw, 28) ||
-	         (g_touch.up && !g_touch.drag && (g_touch.sy < y || (g_touch.sy >= bottom && !fab))))
+	else if ((g_kdown & KEY_B) || fab || (g_touch.up && !g_touch.drag && hit < 0 && (g_touch.sy < cy - 80 || (g_touch.sy >= bottom && !fab))))
 		QA.open = false;
-	g_kdown &= ~(KEY_A | KEY_B);
-	g_krepeat &= ~(KEY_LEFT | KEY_RIGHT);
+	g_kdown &= ~(KEY_A | KEY_B | KEY_L | KEY_R);
+	g_krepeat &= ~(KEY_LEFT | KEY_RIGHT | KEY_L | KEY_R);
 	g_touch.up = false;
+}
+
+static void qa_card_text(int i, const char **lab, const char **sb)
+{
+	switch (i) {
+	case QA_CLOUD:
+		*lab = _("Nube");
+		*sb = cl_connected() ? _("Tu OneDrive\ny tus copias") : _("Conecta tu\nOneDrive");
+		break;
+	case QA_CONNECT:
+		*lab = V.qr_min ? _("Conectar") : _("Ocultar QR");
+		*sb = V.qr_min ? _("Móvil o PC\ncon QR y PIN") : _("Volver a la\ninformación");
+		break;
+	case QA_SCAN: *lab = _("Escanear QR"), *sb = _("Con la cámara,\ncomo en FBI"); break;
+	case QA_LINK: *lab = _("Descargar"), *sb = _("Escribir\nun enlace"); break;
+	default: *lab = _("Navegador"), *sb = _("Páginas web\nligeras"); break;
+	}
 }
 
 // pantalla de arriba con la hoja abierta: qué hace la tarjeta marcada y dónde se guarda
@@ -7033,15 +7514,19 @@ static void qa_top(float a)
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	int i = QA.sel;
-	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK, IC_GLOBE};
-	const u32 col[QA_N] = {T.accent, T.ok, T.warn, T.accent2};
+	const IconId *ic = QA_IC;
+	u32 col[QA_N];
+	for (int k = 0; k < QA_N; k++)
+		col[k] = qa_col(k);
 	const float X = CARD_X + 16, W = CARD_W - 32;
 	float cx = X + 26, cy = y0 + 16 + 26;
 	draw_circle(cx, cy, 26, col_alpha(col[i], 0.16f * a));
 	draw_icon(ic[i], cx, cy, 24, col_alpha(col[i], a));
 	float rx = X + 66, rw = X + W - rx, y = y0 + 14;
-	const char *t[QA_N] = {_("Conectar un dispositivo"), _("Escanear un código QR"), _("Descargar un enlace"), _("Navegador (prototipo)")};
-	const char *d[QA_N] = {_("Muestra arriba el código QR y el PIN. Escanéalo con el móvil o escribe la dirección en el navegador del PC: tienen que estar en la misma red Wi-Fi."),
+	const char *t[QA_N] = {_("Nube"), _("Conectar un dispositivo"), _("Escanear un código QR"), _("Descargar un enlace"), _("Navegador (prototipo)")};
+	const char *d[QA_N] = {cl_connected() ? _("Tu OneDrive desde la consola: explora, sube y descarga, y guarda solas las copias de tus partidas y capturas.")
+	                                      : _("Conecta tu cuenta de Microsoft con un QR y un código, sin escribir contraseñas en la consola. Después, tu OneDrive y tus copias, desde aquí."),
+	                       _("Muestra arriba el código QR y el PIN. Escanéalo con el móvil o escribe la dirección en el navegador del PC: tienen que estar en la misma red Wi-Fi."),
 	                       _("Apunta la cámara de la consola a un código QR con un enlace, como los de las webs de homebrew o los de FBI."),
 	                       _("Escribe la dirección de un archivo o de un proyecto de GitHub; de GitHub se descarga su última versión."),
 	                       _("Abre páginas web ligeras: Wikipedia, blogs, foros, noticias y documentación. No ejecuta JavaScript.")};
@@ -7049,7 +7534,9 @@ static void qa_top(float a)
 	y += text_lineh(TS_TITLE) + 4;
 	y += text_wrap_lines(d[i], rw, TS_SUB, 3, rx, y, col_alpha(T.text2, a), true) * text_lineh(TS_SUB) + 4;
 	char note[200];
-	if (i == QA_CONNECT)
+	if (i == QA_CLOUD)
+		util_strlcpy(note, cl_connected() ? _("Las partidas se guardan en la carpeta Cloud3DS de tu OneDrive.") : _("Solo hace falta una vez: el permiso se guarda y se renueva solo."), sizeof note);
+	else if (i == QA_CONNECT)
 		util_strlcpy(note, _("SELECT también lo muestra y lo oculta."), sizeof note);
 	else if (i == QA_WEB)
 		util_strlcpy(note, _("Un .html de la SD también se abre aquí desde Archivos."), sizeof note);
@@ -7114,7 +7601,8 @@ static void draw_tabbar(void)
 		draw_circle(cx, cy, r, col_alpha(0xFFFFFFFF, 0.15f));
 	if (!g_dialog.open && !QA.open && tap(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4))) {
 		QA.open = QA.just = true;
-		QA.sel = V.qr_min ? 1 : 0;
+		QA.sel = QA_CLOUD;
+		QA.pos = QA.sel;
 	}
 }
 
@@ -7128,6 +7616,12 @@ static void draw_bottom(void)
 	}
 	if (br_is_open()) {
 		br_bottom();
+		dialog_draw();
+		return;
+	}
+	if (CLU.open) {
+		cl_bottom();
+		qa_draw();
 		dialog_draw();
 		return;
 	}
@@ -7239,6 +7733,12 @@ static void handle_dialog(int ctx, bool ok)
 				event_add(EV_DELETE, F.e[i].name, G.console, 0);
 			}
 		}
+	} else if (ctx == DLG_CLDEL) {
+		if (U.dlg_arg >= 0 && U.dlg_arg < CLU.n)
+			cloud_delete(&CLU.it[U.dlg_arg]);
+	} else if (ctx == DLG_CLOUT) {
+		cloud_disconnect();
+		toast_icon(_("OneDrive desconectado"), IC_LOGOUT, T.text2);
 	} else if (ctx == DLG_UPDRESTART) {
 		aptSetChainloaderToSelf(); // vuelve a abrir Cloud3DS, ya con la versión nueva
 		U.quit = true;
@@ -7827,7 +8327,7 @@ static void update(void)
 	}
 	if (g_dialog.open)
 		return;
-	if (br_is_open()) // el navegador usa todos los botones (L/R, START…)
+	if (br_is_open() || CLU.open) // el navegador y la nube usan todos los botones (L/R, START…)
 		return;
 	// en el editor de texto, L y R no cambian de pestaña: R edita varias líneas y B cierra
 	bool editor = VW.kind == VW_TXT && U.tab == TAB_FILES;
@@ -7896,6 +8396,7 @@ int main(int argc, char **argv)
 	server_start();
 	upd_init(argc > 0 ? argv[0] : NULL);
 	dl_init(); // después de upd_init, que prepara curl
+	cloud_init(); // usa el servicio HTTP que arranca dl_init
 	ins_init();
 	if (G.upd_auto)
 		upd_check();
@@ -7960,6 +8461,7 @@ int main(int argc, char **argv)
 	}
 
 	br_exit();
+	cloud_exit();
 	music_exit();
 	dl_exit();
 	ops_exit();

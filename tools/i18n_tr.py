@@ -2257,4 +2257,139 @@ TR = {
     'Dirección web (https://…)':
         ('Web address (https://…)',
          'Webアドレス（https://…）'),
+    'No se pudo conectar con Microsoft. Comprueba el Wi-Fi.':
+        ("Couldn't reach Microsoft. Check the Wi-Fi.",
+         'Microsoftに接続できませんでした。Wi-Fiを確認してください。'),
+    'El código caducó. Vuelve a pulsar «Conectar».':
+        ('The code expired. Press “Connect” again.',
+         'コードの期限が切れました。もう一度「接続」を押してください。'),
+    'Se rechazó el permiso en el móvil.':
+        ('Permission was declined on the phone.',
+         'スマホで許可が拒否されました。'),
+    'El permiso se retiró desde la cuenta de Microsoft. Vuelve a conectar.':
+        ('Access was removed from the Microsoft account. Connect again.',
+         'Microsoftアカウントで許可が取り消されました。もう一度接続してください。'),
+    'No se pudo subir el archivo.':
+        ("Couldn't upload the file.",
+         'ファイルをアップロードできませんでした。'),
+    'No se pudo empezar la descarga.':
+        ("Couldn't start the download.",
+         'ダウンロードを開始できませんでした。'),
+    'No se pudo eliminar.':
+        ("Couldn't delete it.",
+         '削除できませんでした。'),
+    'Microsoft no respondió como se esperaba. Inténtalo de nuevo.':
+        ("Microsoft didn't respond as expected. Try again.",
+         'Microsoftから想定外の応答がありました。もう一度お試しください。'),
+    'Conecta tu OneDrive':
+        ('Connect your OneDrive',
+         'OneDriveを接続'),
+    'Escanea el QR con el móvil y entra con tu cuenta de Microsoft. Cuando te lo pida, escribe este código:':
+        ('Scan the QR code with your phone and sign in with your Microsoft account. When asked, enter this code:',
+         'スマホでQRコードを読み取り、Microsoftアカウントでサインインしてください。求められたら次のコードを入力します：'),
+    'O en el PC: %s':
+        ('Or on a PC: %s',
+         'またはPCで：%s'),
+    'Esperando a que aceptes en el móvil · caduca en %d min':
+        ('Waiting for you to accept on your phone · expires in %d min',
+         'スマホでの許可を待っています · あと%d分で期限切れ'),
+    'Cargando…':
+        ('Loading…',
+         '読み込み中…'),
+    'Nube':
+        ('Cloud',
+         'クラウド'),
+    'Esta versión de prueba aún no tiene configurada la conexión con Microsoft.':
+        ("This test build doesn't have the Microsoft connection set up yet.",
+         'このテスト版ではMicrosoftとの接続がまだ設定されていません。'),
+    'Tus archivos de OneDrive en la consola, y las copias de tus partidas y capturas guardadas solas en la nube. Se conecta con un QR y un código, sin escribir contraseñas en la consola.':
+        ('Your OneDrive files on the console, with save and screenshot backups stored in the cloud automatically. Connect with a QR code and a code, without typing passwords on the console.',
+         'OneDriveのファイルを本体で使え、セーブデータとスクリーンショットのバックアップが自動でクラウドに保存されます。QRコードとコードで接続し、本体でパスワードを入力する必要はありません。'),
+    'Solo hace falta una vez: el permiso se guarda y se renueva solo.':
+        ('You only need to do this once: access is saved and renewed automatically.',
+         '一度だけで大丈夫です。許可は保存され、自動で更新されます。'),
+    'Descargar a la SD':
+        ('Download to the SD card',
+         'SDカードにダウンロード'),
+    '«%s» irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive.':
+        ('“%s” will go to your OneDrive recycle bin. You can restore it from the OneDrive website.',
+         '「%s」はOneDriveのごみ箱に移動します。OneDriveのWebサイトから復元できます。'),
+    '¿Eliminar de OneDrive?':
+        ('Delete from OneDrive?',
+         'OneDriveから削除しますか？'),
+    'Desconectar OneDrive':
+        ('Disconnect OneDrive',
+         'OneDriveの接続を解除'),
+    '¿Desconectar OneDrive?':
+        ('Disconnect OneDrive?',
+         'OneDriveの接続を解除しますか？'),
+    'Cloud3DS dejará de poder entrar en tu OneDrive. Tus archivos siguen en la nube.':
+        ('Cloud3DS will no longer be able to access your OneDrive. Your files stay in the cloud.',
+         'Cloud3DSはOneDriveにアクセスできなくなります。ファイルはクラウドに残ります。'),
+    'Desconectar':
+        ('Disconnect',
+         '接続を解除'),
+    'No se pudo cargar':
+        ("Couldn't load",
+         '読み込めませんでした'),
+    'Sube algo desde Archivos con «Subir a OneDrive».':
+        ('Upload something from Files with “Upload to OneDrive”.',
+         'ファイルの「OneDriveにアップロード」から追加できます。'),
+    'Carpeta · 1 elemento':
+        ('Folder · 1 item',
+         'フォルダ · 1 項目'),
+    'Carpeta · %d elementos':
+        ('Folder · %d items',
+         'フォルダ · %d 項目'),
+    'Escanea el QR de arriba con el móvil':
+        ('Scan the QR code above with your phone',
+         '上のQRコードをスマホで読み取る'),
+    'Entra con tu cuenta de Microsoft (Outlook, Hotmail, Xbox…)':
+        ('Sign in with your Microsoft account (Outlook, Hotmail, Xbox…)',
+         'Microsoftアカウント（Outlook、Hotmail、Xboxなど）でサインイン'),
+    'Escribe el código %s y pulsa «Permitir»':
+        ('Enter the code %s and tap “Allow”',
+         'コード %s を入力して「許可」を押す'),
+    'Cloud3DS podrá ver y guardar archivos en tu OneDrive. Puedes quitarle el permiso cuando quieras desde aquí o desde tu cuenta de Microsoft.':
+        ('Cloud3DS will be able to view and save files in your OneDrive. You can remove access at any time here or from your Microsoft account.',
+         'Cloud3DSはOneDriveのファイルを表示・保存できるようになります。許可はここまたはMicrosoftアカウントからいつでも取り消せます。'),
+    'Nube sin configurar':
+        ('Cloud not set up',
+         'クラウド未設定'),
+    'Con tu cuenta de Microsoft, en el móvil, con un QR y un código.':
+        ('With your Microsoft account, on your phone, using a QR code and a code.',
+         'スマホでMicrosoftアカウントを使い、QRコードとコードで接続します。'),
+    'Falta el ID de la app de Microsoft en esta versión de prueba.':
+        ('This test build is missing the Microsoft app ID.',
+         'このテスト版にはMicrosoftのアプリIDがありません。'),
+    'Pidiendo el código…':
+        ('Requesting the code…',
+         'コードを取得中…'),
+    'Subir a OneDrive':
+        ('Upload to OneDrive',
+         'OneDriveにアップロード'),
+    'Subiendo «%s» a OneDrive':
+        ('Uploading “%s” to OneDrive',
+         '「%s」をOneDriveにアップロード中'),
+    'Tu OneDrive\ny tus copias':
+        ('Your OneDrive\nand backups',
+         'OneDriveと\nバックアップ'),
+    'Conecta tu\nOneDrive':
+        ('Connect your\nOneDrive',
+         'OneDriveを\n接続'),
+    'Tu OneDrive desde la consola: explora, sube y descarga, y guarda solas las copias de tus partidas y capturas.':
+        ('Your OneDrive from the console: browse, upload and download, and back up your saves and screenshots automatically.',
+         '本体からOneDriveを利用：閲覧、アップロード、ダウンロードができ、セーブデータとスクリーンショットを自動でバックアップします。'),
+    'Conecta tu cuenta de Microsoft con un QR y un código, sin escribir contraseñas en la consola. Después, tu OneDrive y tus copias, desde aquí.':
+        ('Connect your Microsoft account with a QR code and a code, without typing passwords on the console. Then your OneDrive and backups are right here.',
+         'QRコードとコードでMicrosoftアカウントを接続します。本体でパスワードを入力する必要はありません。接続後はここからOneDriveとバックアップを使えます。'),
+    'Las partidas se guardan en la carpeta Cloud3DS de tu OneDrive.':
+        ('Saves are stored in the Cloud3DS folder of your OneDrive.',
+         'セーブデータはOneDriveのCloud3DSフォルダに保存されます。'),
+    'OneDrive desconectado':
+        ('OneDrive disconnected',
+         'OneDriveの接続を解除しました'),
+    'Tus archivos de OneDrive en la consola y copias automáticas de tus partidas y capturas. Se conecta con un QR y un código, sin contraseñas.':
+        ('Your OneDrive files on the console, plus automatic backups of your saves and screenshots. Connect with a QR code and a code, no passwords.',
+         'OneDriveのファイルを本体で使え、セーブデータとスクリーンショットを自動でバックアップします。QRコードとコードで接続し、パスワードは不要です。'),
 }
