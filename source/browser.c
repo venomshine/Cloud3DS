@@ -102,6 +102,26 @@ static size_t buf_cb(char *d, size_t s, size_t m, void *u)
 	return k;
 }
 
+static bool utf8_ok(const char *p, size_t n)
+{
+	size_t lim = n < 256 * 1024 ? n : 256 * 1024, i = 0;
+	bool multi = false;
+	while (i < lim) {
+		unsigned char c = p[i];
+		int k = c < 0x80 ? 0 : (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : -1;
+		if (k < 0)
+			return false;
+		if (i + k >= lim)
+			break;
+		for (int j = 1; j <= k; j++)
+			if ((p[i + j] & 0xC0) != 0x80)
+				return false;
+		multi |= k > 0;
+		i += k + 1;
+	}
+	return multi;
+}
+
 static void load_thread(void *arg)
 {
 	(void)arg;
@@ -134,7 +154,9 @@ static void load_thread(void *arg)
 		}
 	}
 	B.bytes = b.n;
-	dom_hubbub_parser_params params = {.enc = NULL, .fix_enc = true, .enable_script = false};
+	// muchas páginas (Wikipedia) dicen «UTF-8» demasiado abajo para que hubbub lo vea: si el texto es
+	// UTF-8 válido, se le dice; si no, que lo detecte él
+	dom_hubbub_parser_params params = {.enc = utf8_ok(b.p, b.n) ? "UTF-8" : NULL, .fix_enc = true, .enable_script = false};
 	dom_hubbub_parser *parser = NULL;
 	dom_document *doc = NULL;
 	if (dom_hubbub_parser_create(&params, &parser, &doc) != DOM_HUBBUB_OK || !parser) {
@@ -247,6 +269,7 @@ static float L_x;          /* posición en la línea actual */
 static bool L_has, L_space;
 static float L_gap;        /* hueco antes de la próxima línea */
 static float L_indent;
+static bool L_marker;      /* en la línea solo está la viñeta de un <li> */
 
 static Line *line_new(void)
 {
@@ -265,11 +288,14 @@ static Line *line_new(void)
 	L_x = L_indent;
 	L_has = false;
 	L_space = false;
+	L_marker = false;
 	return l;
 }
 
 static void block(float gap)
 {
+	if (L_marker) // el primer bloque de un <li> va en la línea de su viñeta
+		return;
 	if (L_has)
 		line_new();
 	if (B.nl && !L_has) { // la línea actual está vacía: el hueco va delante de ella
@@ -343,6 +369,7 @@ static void word(const char *s, int n, const St *st)
 	L_x += sp;
 	put(s, n, st, w);
 	L_space = false;
+	L_marker = false;
 }
 
 static void text_run(const char *s, size_t n, const St *st)
@@ -472,7 +499,7 @@ static void walk(dom_node *node, St st)
 		return;
 	}
 	static const char *const SKIP[] = {"script", "style", "noscript", "template", "svg", "iframe", "button", "input", "select",
-	                                   "textarea", "object", "embed", "canvas", "video", "audio", "map", NULL};
+	                                   "textarea", "object", "embed", "canvas", "video", "audio", "map", "nav", NULL};
 	if (is(tag, SKIP))
 		return;
 	if (!strcmp(tag, "head")) { // solo para el <title>
@@ -480,6 +507,8 @@ static void walk(dom_node *node, St st)
 		return;
 	}
 	char a[256];
+	if (attr(node, "role", a, sizeof a) && (!strcmp(a, "navigation") || !strcmp(a, "search") || !strcmp(a, "banner")))
+		return;
 	if (attr(node, "hidden", a, sizeof a) || (attr(node, "aria-hidden", a, sizeof a) && !strcmp(a, "true")))
 		return;
 	if (attr(node, "style", a, sizeof a)) {
@@ -570,6 +599,7 @@ static void walk(dom_node *node, St st)
 		L_indent = st.indent;
 		L_has = true;
 		L_space = false;
+		L_marker = true;
 	}
 	if ((!strcmp(tag, "td") || !strcmp(tag, "th")) && st.cells) {
 		if ((*st.cells)++) { // separador entre celdas
@@ -611,6 +641,38 @@ static void walk(dom_node *node, St st)
 	}
 }
 
+/* el primer elemento <tag> (en anchura limitada a 40 niveles); hay que soltarlo con dom_node_unref */
+static dom_node *find_tag(dom_node *n, const char *tag, int depth)
+{
+	if (depth > 40)
+		return NULL;
+	dom_node *c = NULL;
+	if (dom_node_get_first_child(n, &c) != DOM_NO_ERR)
+		return NULL;
+	while (c) {
+		dom_node_type t;
+		if (dom_node_get_node_type(c, &t) == DOM_NO_ERR && t == DOM_ELEMENT_NODE) {
+			dom_string *nm = NULL;
+			if (dom_node_get_node_name(c, &nm) == DOM_NO_ERR && nm) {
+				bool eq = dom_string_byte_length(nm) == strlen(tag) && !strncasecmp(dom_string_data(nm), tag, strlen(tag));
+				dom_string_unref(nm);
+				if (eq)
+					return c;
+			}
+			dom_node *r = find_tag(c, tag, depth + 1);
+			if (r) {
+				dom_node_unref(c);
+				return r;
+			}
+		}
+		dom_node *nx = NULL;
+		dom_node_get_next_sibling(c, &nx);
+		dom_node_unref(c);
+		c = nx;
+	}
+	return NULL;
+}
+
 static void layout_free(void)
 {
 	free(B.f), B.f = NULL, B.nf = B.cf = 0;
@@ -627,7 +689,20 @@ static void layout(void)
 	L_x = L_indent = L_gap = 0;
 	L_has = L_space = false;
 	St st = {.sc = SC_TEXT, .col = T.text2, .link = -1};
-	walk((dom_node *)B.doc, st);
+	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
+	dom_node *content = find_tag((dom_node *)B.doc, "main", 0);
+	if (!content)
+		content = find_tag((dom_node *)B.doc, "article", 0);
+	if (content) {
+		dom_node *head = find_tag((dom_node *)B.doc, "head", 0);
+		if (head) {
+			walk(head, st);
+			dom_node_unref(head);
+		}
+		walk(content, st);
+		dom_node_unref(content);
+	} else
+		walk((dom_node *)B.doc, st);
 	if (L_has)
 		line_new();
 	float y = 6;
