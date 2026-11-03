@@ -1396,9 +1396,9 @@ static void un_top(void)
 	draw_halo(cx, cy, 110, 0.35f * a);
 	float pulse = 1 + 0.04f * sinf(g_time * 3);
 	draw_ring(cx, cy, 58, 5, col_alpha(T.surface2, a));
-	draw_arc(cx, cy, 58, 5, g_time * 4.5f, g_time * 4.5f + 2.0f, col_alpha(T.danger, a));
-	draw_arc(cx, cy, 68, 2, -g_time * 2.6f, -g_time * 2.6f + 1.3f, col_alpha(T.warn, a * 0.8f));
-	draw_arc(cx, cy, 68, 2, -g_time * 2.6f + 3.14f, -g_time * 2.6f + 4.44f, col_alpha(T.warn, a * 0.8f));
+	draw_arc(cx, cy, 58, 5, g_time * 4.5f, g_time * 4.5f + 2.0f, col_alpha(T.accent, a));
+	draw_arc(cx, cy, 68, 2, -g_time * 2.6f, -g_time * 2.6f + 1.3f, col_alpha(T.accent2, a * 0.7f));
+	draw_arc(cx, cy, 68, 2, -g_time * 2.6f + 3.14f, -g_time * 2.6f + 4.44f, col_alpha(T.accent2, a * 0.7f));
 	float is = 64 * pulse;
 	draw_rrect(cx - 40, cy - 40, 80, 80, 20, col_alpha(T.surface, a));
 	if (UN.icon.ok)
@@ -1420,14 +1420,14 @@ static void un_top(void)
 	text_draw_center_clip(l, cx, cy + 84 + text_lineh(TS_TITLE) + 4, TOP_W - 40, TS_SUB, col_alpha(T.text3, a));
 }
 
-// cinta de aviso amarilla y negra que avanza
+// cinta azul y negra que avanza, medio transparente
 static void un_tape(float y, float h, float a)
 {
 	gfx_clip(0, y, BOT_W, h);
-	draw_rect(0, y, BOT_W, h, col_alpha(0xFF161616, a));
+	draw_rect(0, y, BOT_W, h, col_alpha(0xFF000000, a * 0.35f));
 	float sw = h * 0.9f, off = fmodf(g_time * 24, 2 * sw);
 	for (float x = -2 * sw - h + off; x < BOT_W + h; x += 2 * sw) {
-		u32 c = col_alpha(T.warn, a);
+		u32 c = col_alpha(T.accent, a * 0.45f);
 		draw_tri(x, y + h, x + sw, y + h, x + sw + h, y, c);
 		draw_tri(x, y + h, x + sw + h, y, x + h, y, c);
 	}
@@ -1441,15 +1441,15 @@ static void un_card(void)
 	if (UN.anim < 0.01f)
 		return;
 	float a = ease_out_cubic(UN.anim);
-	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, a));
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, a * 0.93f)); // se adivina lo de debajo
 	un_tape(0, 18, a);
 	un_tape(SCR_H - 18, 18, a);
 	const float cx = BOT_W / 2;
 	float k = 0.5f + 0.5f * sinf(g_time * 4);
-	draw_circle(cx, 62, 28 + 3 * k, col_alpha(T.danger, a * (0.18f + 0.1f * k)));
-	draw_circle(cx, 62, 22, col_alpha(T.danger, a));
+	draw_circle(cx, 62, 28 + 3 * k, col_alpha(T.accent, a * (0.15f + 0.1f * k)));
+	draw_circle(cx, 62, 22, col_alpha(T.accent, a));
 	draw_icon(IC_POWER, cx, 62, 22, col_alpha(0xFFFFFFFF, a));
-	text_draw_center(_("NO TOQUES NADA"), cx, 98, 0.85f, col_alpha(T.warn, a));
+	text_draw_center(_("NO TOQUES NADA"), cx, 98, 0.85f, col_alpha(T.text, a));
 	wrap_center(_("No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada."), cx,
 	            132, BOT_W - 40, TS_SUB, 4, col_alpha(T.text, a));
 	wrap_center(_("Cuando termine, Cloud3DS sigue sola."), cx, SCR_H - 44, BOT_W - 40, TS_SUB, 1, col_alpha(T.text3, a));
