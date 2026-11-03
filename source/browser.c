@@ -161,6 +161,9 @@ static struct {
 	int js_scripts, js_errors;
 	char js_nav[1024];   /* la página pidió ir a otra dirección desde su JavaScript */
 	JsPage *jsp;         /* el JavaScript de la página, vivo para los clics */
+	volatile bool cancel, in_js; /* B mientras carga: parar su JavaScript; está ejecutándose */
+	int idle_left;       /* ms que aún puede seguir su JavaScript con la página a la vista */
+	u64 idle_next, last_in; /* cuándo darle otro rato; última vez que se tocó algo */
 	int nclk;            /* cosas que se tocan por JavaScript */
 	volatile int click_link; /* tras un clic con JavaScript: el enlace a seguir (-1 ninguno, -2 esperando) */
 	PImg *img;
@@ -171,6 +174,7 @@ static struct {
 } B;
 
 static void img_free_all(void);
+static bool blocked_host(const char *url);
 static void fv_free(void);
 
 /* ------------------------------------------------------------ cargar (en un hilo) */
@@ -332,8 +336,34 @@ static void js_log(const char *m)
 	util_log("%s", m);
 }
 
+/* anuncios y rastreo: ni se bajan ni se ejecutan (en una 3DS, solo gastan segundos y memoria) */
+static bool blocked_host(const char *url)
+{
+	static const char *const BL[] = {"googlesyndication.com", "doubleclick.net", "googletagmanager.com", "google-analytics.com", "googleadservices.com",
+	                                 "adservice.google.", "cloudflareinsights.com", "facebook.net", "connect.facebook", "scorecardresearch.com", "quantserve.com",
+	                                 "amazon-adsystem.com", "adnxs.com", "criteo.", "taboola.com", "outbrain.com", "hotjar.com", "clarity.ms",
+	                                 "newrelic.com", "nr-data.net", "segment.io", "segment.com", "mixpanel.com", "pubmatic.com", "rubiconproject.com",
+	                                 "moatads.com", "chartbeat.", "optimizely.com", "adsafeprotected.com", "2mdn.net", "yieldmo.com", NULL};
+	const char *h = strstr(url, "://");
+	if (!h)
+		return false;
+	h += 3;
+	size_t hl = strcspn(h, "/?#:");
+	for (int i = 0; BL[i]; i++) {
+		size_t l = strlen(BL[i]);
+		for (size_t k = 0; k + l <= hl; k++)
+			if (!strncasecmp(h + k, BL[i], l))
+				return true;
+	}
+	return false;
+}
+
 static int js_fetch(const char *url, const char *method, const char *body, size_t blen, char **out, size_t *n, long *code, char *fin, size_t fl)
 {
+	if (blocked_host(url)) {
+		util_log("web: bloqueado %.80s", url);
+		return -1;
+	}
 	Buf b = {0};
 	int r;
 	*code = 0;
@@ -440,9 +470,11 @@ static void load_thread(void *arg)
 	// su JavaScript, antes del CSS: lo que añada o cambie (también hojas de estilo) ya cuenta
 	B.js_nav[0] = 0;
 	if (doc && B.js) {
-		JsHost h = {.fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 8000};
+		JsHost h = {.fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 20000, .cancel = &B.cancel};
+		B.in_js = true;
 		JsResult jr;
 		B.jsp = jsdom_open(doc, &h, &jr);
+		B.in_js = false;
 		B.js_scripts = jr.scripts, B.js_errors = jr.errors;
 		util_log("web: JavaScript: %d scripts, %d con error, %u ms", jr.scripts, jr.errors, jr.ms);
 		if (jr.navigate[0])
@@ -483,6 +515,7 @@ static void start_load(const char *url)
 	fv_free();
 	util_strlcpy(B.url, url, sizeof B.url);
 	B.click_link = -1;
+	B.cancel = false;
 	B.err[0] = 0;
 	B.title[0] = 0;
 	B.st = ST_LOADING;
@@ -949,7 +982,7 @@ static void img_thread(void *arg)
 		PImg *im = &B.img[best];
 		Buf b = {0};
 		long code = 0;
-		int r = fetch_any(im->url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
+		int r = blocked_host(im->url) ? DLF_FAIL : fetch_any(im->url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
 		int mw = (int)fminf(512, fmaxf(16, im->w * 1.5f)), mh = (int)fminf(512, fmaxf(16, im->h * 1.5f));
 		u8 *px = NULL;
 		int w = 0, h = 0;
@@ -2657,7 +2690,10 @@ void br_top(void)
 		} else {
 			B.t_load += 1.0f / 60;
 			draw_arc(TOP_W / 2, 140, 10, 2.5f, B.t_load * 6, B.t_load * 6 + 4.2f, T.accent);
-			text_draw_center(B.st == ST_LAYOUT ? "Colocando la página…" : "Cargando…", TOP_W / 2, 158, TS_SUB, T.text3);
+			text_draw_center(B.st == ST_LAYOUT ? "Colocando la página…" : B.in_js ? (B.cancel ? "Parando el JavaScript…" : "Ejecutando el JavaScript de la página…") : "Cargando…",
+			                 TOP_W / 2, 158, TS_SUB, T.text3);
+			if (B.in_js && !B.cancel)
+				text_draw_center("B: saltárselo y ver la página ya", TOP_W / 2, 200, TS_SUB, T.text3);
 			if (B.st == ST_LAYOUT && B.nel_total > 0) {
 				float f = clampf((float)B.nel_done / B.nel_total, 0, 1);
 				draw_rrect(TOP_W / 2 - 80, 180, 160, 5, 2.5f, T.surface2);
@@ -2838,6 +2874,8 @@ static void layout_thread(void *arg)
 	(void)arg;
 	layout();
 	B.hover = -1;
+	B.idle_left = B.jsp ? 30000 : 0;
+	B.idle_next = util_ms() + 600;
 	B.st = ST_READY;
 	img_start();
 }
@@ -2857,7 +2895,10 @@ static void act_thread(void *arg)
 		float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
 		dom_node *fn = B.focus >= 0 && B.focus < B.nf ? B.f[B.focus].node : NULL;
 		B.st = ST_LAYOUT;
+		brcss_forget((dom_node *)B.doc);
+		int keep = B.idle_left;
 		layout();
+		B.idle_left = keep;
 		B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
 		for (int i = 0; fn && i < B.nf; i++) // lo marcado sigue marcado
 			if (B.f[i].node == fn) {
@@ -2869,6 +2910,41 @@ static void act_thread(void *arg)
 		img_start();
 	}
 	B.click_link = go_on ? ACT_LINK : -1;
+	B.st = ST_READY;
+}
+
+// lo que la página dejó para después, con ella ya a la vista: un rato corto; si cambia, se recoloca
+static void idle_thread(void *arg)
+{
+	(void)arg;
+	JsResult r;
+	bool changed = false;
+	u64 t0 = util_ms();
+	bool more = jsdom_idle(B.jsp, 600, &changed, &r);
+	B.idle_left -= (int)(util_ms() - t0) + 1;
+	if (!more)
+		B.idle_left = 0;
+	if (r.navigate[0])
+		util_strlcpy(B.js_nav, r.navigate, sizeof B.js_nav);
+	if (changed) {
+		float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
+		dom_node *fn = B.focus >= 0 && B.focus < B.nf ? B.f[B.focus].node : NULL;
+		B.st = ST_LAYOUT;
+		brcss_forget((dom_node *)B.doc);
+		int keep = B.idle_left;
+		layout();
+		B.idle_left = keep;
+		B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
+		for (int i = 0; fn && i < B.nf; i++)
+			if (B.f[i].node == fn) {
+				B.focus = i;
+				break;
+			}
+		clamp_view();
+		B.tip = 0;
+		img_start();
+	}
+	B.idle_next = util_ms() + 400;
 	B.st = ST_READY;
 }
 
@@ -2907,6 +2983,27 @@ void br_bottom(void)
 			snprintf(B.err, sizeof B.err, "Sin memoria para colocar la página");
 			B.st = ST_ERROR;
 		}
+	}
+	if (g_kdown || g_touch.held || abs((int)0) > 0)
+		B.last_in = util_ms();
+	{
+		circlePosition cp;
+		hidCircleRead(&cp);
+		if (abs(cp.dx) > 18 || abs(cp.dy) > 18)
+			B.last_in = util_ms();
+	}
+	if (B.st == ST_READY && B.jsp && B.idle_left > 0 && util_ms() > B.idle_next && util_ms() - B.last_in > 800) {
+		if (B.thr) {
+			threadJoin(B.thr, U64_MAX);
+			threadFree(B.thr);
+			B.thr = NULL;
+		}
+		B.st = ST_ACT;
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		B.thr = threadCreate(idle_thread, NULL, 1024 * 1024, prio + 1, -2, false);
+		if (!B.thr)
+			B.st = ST_READY, B.idle_left = 0;
 	}
 	if (B.st == ST_READY && B.click_link >= 0) { // el clic con JavaScript dejó seguir el enlace
 		int k = B.click_link;
@@ -3024,6 +3121,11 @@ void br_bottom(void)
 	// --- acciones
 	if (tap(BOT_W - 36, 0, 36, HDR_H) || (g_kdown & KEY_START)) {
 		close_br();
+		g_kdown = 0;
+		return;
+	}
+	if (B.in_js && (g_kdown & KEY_B)) { // cargando su JavaScript: B lo salta (la página se ve tal cual)
+		B.cancel = true;
 		g_kdown = 0;
 		return;
 	}

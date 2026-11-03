@@ -560,3 +560,18 @@ float brcss_px(const css_computed_style *s, css_fixed len, css_unit unit, float 
 	css_unit_ctx u = unit_ctx(vw);
 	return FIXTOFLT(css_unit_len2css_px(s, &u, len, unit));
 }
+
+/* olvidar lo que libcss guardó en los nodos (tras cambiar el árbol desde JavaScript: si no, reutiliza
+ * estilos calculados con las clases de antes) */
+void brcss_forget(dom_node *n)
+{
+	if (!KEY || !n)
+		return;
+	void *old = NULL;
+	dom_node_set_user_data(n, KEY, NULL, user_data_cb, &old);
+	if (old)
+		css_libcss_node_data_handler(&H, CSS_NODE_DELETED, NULL, n, NULL, old);
+	for (dom_node_internal *c = NI(n)->first_child; c; c = c->next)
+		if (c->type == DOM_ELEMENT_NODE || c->type == DOM_DOCUMENT_NODE)
+			brcss_forget((dom_node *)c);
+}

@@ -31,6 +31,27 @@ function W(h) {
 }
 function H(w) { return w && w._h ? w._h : null; }
 function nodeOf(x) { return typeof x === 'string' ? document.createTextNode(x) : x; }
+/* un <script> que la página mete con appendChild/insertBefore se ejecuta (como en un navegador; los de
+ * innerHTML no). Los externos, en cuanto se pueda, y luego su evento load (o error) */
+const ran = new Set();
+function jsType(el) { const t = (el.getAttribute('type') || '').toLowerCase(); return !t || /^(text|application)\/(x-)?(java|ecma)script$/.test(t) || t === 'module'; }
+function inserted(node) {
+	if (!node || !node._h) return;
+	const scripts = node.nodeType === ELEMENT && node.localName === 'script' ? [node] : node.nodeType === ELEMENT || node.nodeType === FRAG ? qsa(node, 'script') : [];
+	for (const sc of scripts) {
+		const id = N.id(sc._h);
+		if (ran.has(id) || !jsType(sc) || !sc.isConnected) continue;
+		ran.add(id);
+		const src = sc.getAttribute('src');
+		if (src) setTimeout(() => {
+			const prev = G.__script; G.__script = sc;
+			const ok = N.runSrc(resolveUrl(location.href, src));
+			G.__script = prev;
+			sc.dispatchEvent(new Event(ok ? 'load' : 'error'));
+		}, 0);
+		else { const prev = G.__script; G.__script = sc; N.runCode(sc.textContent); G.__script = prev; }
+	}
+}
 
 /* ---------- eventos */
 class Event {
@@ -107,8 +128,8 @@ class Node extends EventTarget {
 	get nodeValue() { return this.nodeType === ELEMENT ? null : N.data(this._h); }
 	set nodeValue(v) { if (this.nodeType !== ELEMENT) N.setData(this._h, String(v)); }
 	hasChildNodes() { return !!N.first(this._h); }
-	appendChild(c) { c = nodeOf(c); if (c instanceof DocumentFragment) { for (const k of c.childNodes) N.append(this._h, k._h); return c; } N.append(this._h, c._h); return c; }
-	insertBefore(c, ref) { c = nodeOf(c); if (c instanceof DocumentFragment) { for (const k of c.childNodes) N.insert(this._h, k._h, H(ref)); return c; } N.insert(this._h, c._h, H(ref)); return c; }
+	appendChild(c) { c = nodeOf(c); if (c instanceof DocumentFragment) { const ks = c.childNodes; for (const k of ks) N.append(this._h, k._h); for (const k of ks) inserted(k); return c; } N.append(this._h, c._h); inserted(c); return c; }
+	insertBefore(c, ref) { c = nodeOf(c); if (c instanceof DocumentFragment) { const ks = c.childNodes; for (const k of ks) N.insert(this._h, k._h, H(ref)); for (const k of ks) inserted(k); return c; } N.insert(this._h, c._h, H(ref)); inserted(c); return c; }
 	removeChild(c) { N.removeChild(this._h, c._h); return c; }
 	replaceChild(n, old) { this.insertBefore(n, old); this.removeChild(old); return old; }
 	cloneNode(deep) { return W(N.clone(this._h, !!deep)); }
@@ -404,6 +425,25 @@ class Document extends Node {
 	write(...s) { const cur = G.__script; const nodes = N.parse(s.join('')); if (cur && cur.parentNode) { for (const h of nodes) N.insert(cur.parentNode._h, h, N.next(cur._h)); } else { const b = this.body; if (b) for (const h of nodes) N.append(b._h, h); } }
 	writeln(...s) { this.write(...s, '\n'); }
 	open() {} close() {}
+	get implementation() {
+		return {
+			hasFeature: () => true,
+			// un documento aparte (jQuery lo usa para leer HTML): aquí, un <html> suelto con su head y su body
+			createHTMLDocument(title) {
+				const html = document.createElement('html'), head = document.createElement('head'), body = document.createElement('body');
+				html.appendChild(head); html.appendChild(body);
+				const d = Object.create(Document.prototype);
+				d._h = html._h; // las búsquedas van por su árbol
+				Object.defineProperties(d, { documentElement: { value: html }, head: { value: head }, body: { value: body }, nodeType: { value: DOC } });
+				d.createElement = t => document.createElement(t);
+				d.createTextNode = t => document.createTextNode(t);
+				d.createDocumentFragment = () => document.createDocumentFragment();
+				d.createComment = t => document.createComment(t);
+				return d;
+			},
+			createDocument() { return this.createHTMLDocument(''); },
+		};
+	}
 	hasFocus() { return true; }
 	execCommand() { return false; }
 }
@@ -514,7 +554,7 @@ G.matchMedia = q => ({ matches: /max-width/.test(q) ? N.width <= (+(/(\d+)/.exec
 G.history = { length: 1, state: null, pushState(s, t, u) { this.state = s; }, replaceState(s, t, u) { this.state = s; }, back() {}, forward() {}, go() {} };
 const store = () => { const m = new Map(); return { getItem: k => (m.has(String(k)) ? m.get(String(k)) : null), setItem: (k, v) => m.set(String(k), String(v)), removeItem: k => m.delete(String(k)), clear: () => m.clear(), key: i => [...m.keys()][i] ?? null, get length() { return m.size; } }; };
 G.localStorage = store(); G.sessionStorage = store();
-G.console = { log: (...a) => N.log('console: ' + a.map(String).join(' ')), info() {}, debug() {}, warn() {}, error: (...a) => N.log('console.error: ' + a.map(String).join(' ')),
+G.console = { log: (...a) => N.log('console: ' + a.map(String).join(' ')), info() {}, debug() {}, warn() {}, error: (...a) => N.log('console.error: ' + a.map(x => x && x.stack ? x + ' @ ' + x.stack.split('\n').slice(0, 4).join(' | ') : String(x)).join(' ')),
 	trace() {}, group() {}, groupEnd() {}, groupCollapsed() {}, table() {}, time() {}, timeEnd() {}, assert() {}, dir() {}, count() {} };
 G.performance = { now: () => N.now(), timing: { navigationStart: 0 }, mark() {}, measure() {}, getEntriesByType: () => [], getEntriesByName: () => [] };
 G.crypto = { getRandomValues: a => { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); return a; }, randomUUID: () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : r & 3 | 8).toString(16); }) };
@@ -583,9 +623,11 @@ G.requestAnimationFrame = f => setTimeout(() => f(N.now()), 16);
 G.cancelAnimationFrame = id => clearTimeout(id);
 G.queueMicrotask = f => Promise.resolve().then(f);
 G.setImmediate = f => setTimeout(f, 0);
-G.__timers = limit => {
+G.__pending = () => { for (const t of timers.values()) if (!t.every) return true; return false; }; // queda algo que no sea un intervalo
+G.__timers = delta => {
+	const limit = vnow + delta, t0 = N.now();
 	let ran = 0;
-	for (let guard = 0; guard < 2000; guard++) {
+	for (let guard = 0; guard < 2000 && N.now() - t0 < 400; guard++) { // a ratos: entre medias se ve la página
 		let best = null, bid = 0;
 		for (const [id, t] of timers) if (!best || t.at < best.at) { best = t; bid = id; }
 		if (!best || best.at > limit) break;
@@ -595,7 +637,7 @@ G.__timers = limit => {
 		ran++;
 		if (best.every && ran > 200) break;
 	}
-	return ran > 0 && [...timers.values()].some(t => t.at <= limit && !t.every);
+	return [...timers.values()].some(t => t.at <= limit && !t.every);
 };
 G.__click = h => {
 	const el = W(h); if (!el) return true;
@@ -606,7 +648,7 @@ G.__click = h => {
 	if (!ev.defaultPrevented && el.localName === 'label') { const f = el.getAttribute('for'); const t = f ? document.getElementById(f) : el.querySelector('input'); if (t && t !== el) t.click(); }
 	return !ev.defaultPrevented;
 };
-G.__current = s => { G.__script = s ? W(s._h || s) : null; };
+G.__current = s => { G.__script = s ? W(s._h || s) : null; if (G.__script) ran.add(N.id(G.__script._h)); };
 G.__loaded = () => {
 	G.__ready = true;
 	document.dispatchEvent(new Event('readystatechange'));

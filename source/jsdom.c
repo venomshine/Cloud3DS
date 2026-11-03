@@ -546,7 +546,63 @@ static JSValue f_navigate(JSContext *ctx, JSValueConst t, int argc, JSValueConst
 	return JS_UNDEFINED;
 }
 
+static bool eval(JSContext *ctx, const char *code, size_t n, const char *name);
+
+// un <script src> añadido desde JavaScript: se baja y se ejecuta en el ámbito global
+static JSValue f_runSrc(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	if (argc < 1 || !J.host->fetch)
+		return JS_FALSE;
+	const char *url = JS_ToCString(ctx, argv[0]);
+	if (!url)
+		return JS_FALSE;
+	char *code = NULL, fin[1024];
+	size_t n = 0;
+	long http = 0;
+	u64 t0 = now_ms();
+	bool ok = J.host->fetch(url, "GET", NULL, 0, &code, &n, &http, fin, sizeof fin) == 0 && http < 400 && code;
+	if (ok) {
+		char *tt = realloc(code, n + 1);
+		if (tt) {
+			code = tt;
+			code[n] = 0;
+			J.res->scripts++;
+			ok = eval(ctx, code, n, url);
+			if (!ok)
+				J.res->errors++;
+		} else
+			ok = false;
+	}
+	free(code);
+	JS_FreeCString(ctx, url);
+	// cargar scripts es trabajo de la página, no espera: no cuenta para el margen de los temporizadores
+	unsigned spent = (unsigned)(now_ms() - t0), cap = J.host->budget_ms;
+	J.budget = J.budget + spent < cap ? J.budget + spent : cap;
+	return JS_NewBool(ctx, ok);
+}
+
+// un <script> con código añadido desde JavaScript
+static JSValue f_runCode(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	if (argc < 1)
+		return JS_FALSE;
+	size_t n;
+	const char *code = JS_ToCStringLen(ctx, &n, argv[0]);
+	if (!code)
+		return JS_FALSE;
+	J.res->scripts++;
+	bool ok = eval(ctx, code, n, "script añadido");
+	if (!ok)
+		J.res->errors++;
+	JS_FreeCString(ctx, code);
+	return JS_NewBool(ctx, ok);
+}
+
 static const JSCFunctionListEntry NATIVE[] = {
+    JS_CFUNC_DEF("runSrc", 1, f_runSrc),
+    JS_CFUNC_DEF("runCode", 1, f_runCode),
     JS_CFUNC_DEF("doc", 0, f_doc),
     JS_CFUNC_DEF("type", 1, f_type),
     JS_CFUNC_DEF("name", 1, f_name),
@@ -582,7 +638,7 @@ static const JSCFunctionListEntry NATIVE[] = {
 static int interrupt(JSContext *rt, void *u)
 {
 	(void)rt, (void)u;
-	return now_ms() - J.t0 > J.budget; // se acabó el tiempo
+	return now_ms() - J.t0 > J.budget || (J.host->cancel && *J.host->cancel); // se acabó el tiempo o se canceló
 }
 
 static void report(JSContext *ctx, const char *where)
@@ -811,7 +867,8 @@ static void resolve(const char *base, const char *href, char *out, size_t n)
 static void use(JsPage *p, JsResult *res, unsigned budget)
 {
 	J.doc = p->doc, J.host = &p->host, J.res = res, J.t0 = now_ms(), J.budget = budget;
-	JS_UpdateStackTop(p->rt); // puede llamarse desde otro hilo
+	if (p->rt)
+		JS_UpdateStackTop(p->rt); // puede llamarse desde otro hilo
 }
 
 JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
@@ -921,9 +978,14 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 		free(l.v);
 		// la página está «cargada»: sus eventos y luego los temporizadores (un rato, no para siempre)
 		call(ctx, "__current", JS_NULL);
+		// tras los scripts, sus eventos y temporizadores tienen como mucho 3 s más (no hace falta
+		// esperar a todo lo que la página programe para enseñarla)
+		// no se empiezan más temporizadores pasado 1,5 s (lo demás, con la página ya a la vista, en
+		// jsdom_idle); lo que ya corre no se corta (cortar un script a medias lo rompe)
+		u64 soft = now_ms() + 1500;
 		call(ctx, "__loaded", JS_UNDEFINED);
 		pending_jobs(rt);
-		for (int round = 0; round < 50 && now_ms() - J.t0 < host->budget_ms; round++) {
+		for (int round = 0; round < 50 && now_ms() < soft && now_ms() - J.t0 < J.budget; round++) {
 			bool more = call(ctx, "__timers", JS_NewInt32(ctx, 3000));
 			pending_jobs(rt);
 			if (!more)
@@ -959,6 +1021,34 @@ bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res)
 	*changed = J.mut > 0;
 	res->ms = (unsigned)(now_ms() - J.t0);
 	return go_on;
+}
+
+bool jsdom_idle(JsPage *p, unsigned ms, bool *changed, JsResult *res)
+{
+	*changed = false;
+	if (!p || !p->ctx)
+		return false;
+	memset(res, 0, sizeof *res);
+	use(p, res, 15000); // corte duro: solo si algo se queda colgado
+	J.mut = 0;
+	bool more = false;
+	for (int round = 0; round < 50 && now_ms() - J.t0 < ms; round++) { // blando: no empezar más
+		more = call(p->ctx, "__timers", JS_NewInt32(p->ctx, 2000));
+		pending_jobs(p->rt);
+		if (!more)
+			break;
+	}
+	JSValue g = JS_GetGlobalObject(p->ctx), f = JS_GetPropertyStr(p->ctx, g, "__pending");
+	if (JS_IsFunction(p->ctx, f)) {
+		JSValue r = JS_Call(p->ctx, f, g, 0, NULL);
+		more = JS_ToBool(p->ctx, r);
+		JS_FreeValue(p->ctx, r);
+	}
+	JS_FreeValue(p->ctx, f);
+	JS_FreeValue(p->ctx, g);
+	*changed = J.mut > 0;
+	res->ms = (unsigned)(now_ms() - J.t0);
+	return more;
 }
 
 void jsdom_close(JsPage *p)

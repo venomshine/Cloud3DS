@@ -28,3 +28,6 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 
 /* una longitud del estilo, en px */
 float brcss_px(const css_computed_style *s, css_fixed len, css_unit unit, float vw);
+
+/* olvidar los estilos que libcss guardó en el árbol (tras cambiarlo) */
+void brcss_forget(dom_node *root);

@@ -23,6 +23,7 @@ typedef struct {
 	const char *ua;       /* navigator.userAgent */
 	float width;          /* window.innerWidth */
 	unsigned budget_ms;   /* tiempo máximo para todo el JavaScript de la página */
+	volatile bool *cancel; /* si se pone a true, el JavaScript se para en cuanto pueda */
 } JsHost;
 
 typedef struct {
@@ -40,4 +41,7 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res);
  * canceló lo que haría el navegador (preventDefault: no seguir el enlace). Se puede llamar desde
  * otro hilo, nunca a la vez que otra función de esta página. */
 bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res);
+/* lo que la página dejó para después (temporizadores, scripts que carga): un rato de ms. *changed: el
+ * árbol cambió. Devuelve si aún le queda algo por hacer. Mismas reglas de hilos que jsdom_click. */
+bool jsdom_idle(JsPage *p, unsigned ms, bool *changed, JsResult *res);
 void jsdom_close(JsPage *p);
