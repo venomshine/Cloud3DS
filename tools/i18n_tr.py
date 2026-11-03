@@ -2239,4 +2239,22 @@ TR = {
     'Separar sistema':
         ('Separate system',
          'システムを分ける'),
+    'Navegador':
+        ('Browser',
+         'ブラウザ'),
+    'Páginas web\nligeras':
+        ('Lightweight\nweb pages',
+         '軽量な\nWebページ'),
+    'Navegador (prototipo)':
+        ('Browser (prototype)',
+         'ブラウザ（試作）'),
+    'Abre páginas web ligeras: Wikipedia, blogs, foros, noticias y documentación. No ejecuta JavaScript.':
+        ("Opens lightweight web pages: Wikipedia, blogs, forums, news and documentation. It doesn't run JavaScript.",
+         'Wikipedia、ブログ、フォーラム、ニュース、ドキュメントなどの軽量なWebページを開きます。JavaScriptは実行しません。'),
+    'Un .html de la SD también se abre aquí desde Archivos.':
+        ('An .html file on the SD card also opens here from Files.',
+         'SDカードの.htmlもファイルからここで開けます。'),
+    'Dirección web (https://…)':
+        ('Web address (https://…)',
+         'Webアドレス（https://…）'),
 }

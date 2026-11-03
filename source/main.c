@@ -8,6 +8,7 @@
 // Cloud3DS - bucle principal e interfaz de la consola
 #include "app.h"
 #include "fsx.h"
+#include "browser.h"
 #include "i18n.h"
 #include "ops.h"
 #include "update.h"
@@ -75,7 +76,7 @@ static struct {
 	int sel;
 } QA = {.sel = 1};
 
-enum { QA_CONNECT, QA_SCAN, QA_LINK, QA_N };
+enum { QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
 static void qa_top(float a);
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
@@ -121,6 +122,7 @@ static struct {
 	bool want_tnew;              // crear un documento de texto en Archivos
 	bool want_search;            // buscar desde la carpeta abierta (teclado)
 	bool want_dlurl;             // descargar un enlace escrito en la consola (teclado)
+	bool want_web;               // abrir una página en el navegador (teclado)
 	bool want_netname;           // cambiar el nombre en la red (teclado)
 	bool nav_eat;                // se cambió de carpeta en este frame: lo pulsado ya se usó
 	float t_mdns, t_fbi, t_shots; // animación de sus interruptores
@@ -1322,6 +1324,11 @@ static void draw_top(void)
 	gfx_target(g_top, T.bg);
 	if (U.splash >= 0) {
 		splash_top(1);
+		return;
+	}
+	if (br_is_open()) { // navegador: las dos pantallas
+		br_top();
+		toast_draw_top();
 		return;
 	}
 	if (qrs_is_open()) { // escáner de QR: la cámara a pantalla completa
@@ -3365,6 +3372,8 @@ static bool f_open_item(int vi)
 	if (e->dir) {
 		if (strlen(full) < sizeof F.path)
 			f_load(full);
+	} else if (!strcasecmp(f_ext(e->name), "html") || !strcasecmp(f_ext(e->name), "htm")) { // en el navegador
+		br_open_file(full);
 	} else if (f_is_img(e) || f_is_txt(e)) {
 		vw_load(F.v[vi].idx);
 	} else if (!strcasecmp(f_ext(e->name), "zip")) {
@@ -5487,7 +5496,8 @@ static void f_menu_open(void)
 	bool locked = e->sys && V.protect_sys;
 	if (!e->dir && !strcasecmp(f_ext(e->name), "cia"))
 		FM.acts[FM.n++] = FA_INSTALL;
-	if (!e->dir && !f_is_img(e) && !f_is_txt(e) && !vw_is_open()) // cualquier archivo se puede mirar como texto
+	bool html = !strcasecmp(f_ext(e->name), "html") || !strcasecmp(f_ext(e->name), "htm");
+	if (!e->dir && !f_is_img(e) && (!f_is_txt(e) || html) && !vw_is_open()) // cualquier archivo se puede mirar como texto (y un .html, editar)
 		FM.acts[FM.n++] = FA_ASTEXT;
 	if (!locked && !e->dir && (f_is_txt(e) || !*f_ext(e->name))) // txt → py, cpp, java…
 		FM.acts[FM.n++] = FA_TYPE;
@@ -6932,6 +6942,8 @@ static void qa_run(int i)
 		qr_toggle();
 	else if (i == QA_SCAN)
 		qrs_open();
+	else if (i == QA_WEB)
+		U.want_web = true;
 	else
 		U.want_dlurl = true;
 }
@@ -6954,11 +6966,11 @@ static void qa_draw(void)
 	float cw = text_width(cl, TS_SUB) + 18, cx = x + w - 10 - cw;
 	draw_rrect(cx, y + 10, cw, 20, 10, touch_in(cx, y + 6, cw, 28) ? T.divider : T.surface2);
 	text_draw_center(cl, cx + cw / 2, y + 20 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
-	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK};
-	const u32 col[QA_N] = {T.accent, T.ok, T.warn};
-	const char *lab[QA_N] = {V.qr_min ? _("Conectar") : _("Ocultar QR"), _("Escanear QR"), _("Descargar")};
+	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK, IC_GLOBE};
+	const u32 col[QA_N] = {T.accent, T.ok, T.warn, T.accent2};
+	const char *lab[QA_N] = {V.qr_min ? _("Conectar") : _("Ocultar QR"), _("Escanear QR"), _("Descargar"), _("Navegador")};
 	// dos líneas, separadas por «\n»
-	const char *sub[QA_N] = {V.qr_min ? _("Móvil o PC\ncon QR y PIN") : _("Volver a la\ninformación"), _("Con la cámara,\ncomo en FBI"), _("Escribir\nun enlace")};
+	const char *sub[QA_N] = {V.qr_min ? _("Móvil o PC\ncon QR y PIN") : _("Volver a la\ninformación"), _("Con la cámara,\ncomo en FBI"), _("Escribir\nun enlace"), _("Páginas web\nligeras")};
 	const float G = 8, TW = (w - 20 - 2 * G) / QA_N, TH = 96, ty = y + 36;
 	int run = -1;
 	for (int i = 0; i < QA_N; i++) {
@@ -7018,23 +7030,26 @@ static void qa_top(float a)
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	int i = QA.sel;
-	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK};
-	const u32 col[QA_N] = {T.accent, T.ok, T.warn};
+	static const IconId ic[QA_N] = {IC_QR, IC_CAMERA, IC_LINK, IC_GLOBE};
+	const u32 col[QA_N] = {T.accent, T.ok, T.warn, T.accent2};
 	const float X = CARD_X + 16, W = CARD_W - 32;
 	float cx = X + 26, cy = y0 + 16 + 26;
 	draw_circle(cx, cy, 26, col_alpha(col[i], 0.16f * a));
 	draw_icon(ic[i], cx, cy, 24, col_alpha(col[i], a));
 	float rx = X + 66, rw = X + W - rx, y = y0 + 14;
-	const char *t[QA_N] = {_("Conectar un dispositivo"), _("Escanear un código QR"), _("Descargar un enlace")};
+	const char *t[QA_N] = {_("Conectar un dispositivo"), _("Escanear un código QR"), _("Descargar un enlace"), _("Navegador (prototipo)")};
 	const char *d[QA_N] = {_("Muestra arriba el código QR y el PIN. Escanéalo con el móvil o escribe la dirección en el navegador del PC: tienen que estar en la misma red Wi-Fi."),
 	                       _("Apunta la cámara de la consola a un código QR con un enlace, como los de las webs de homebrew o los de FBI."),
-	                       _("Escribe la dirección de un archivo o de un proyecto de GitHub; de GitHub se descarga su última versión.")};
+	                       _("Escribe la dirección de un archivo o de un proyecto de GitHub; de GitHub se descarga su última versión."),
+	                       _("Abre páginas web ligeras: Wikipedia, blogs, foros, noticias y documentación. No ejecuta JavaScript.")};
 	text_draw_clip(t[i], rx, y, rw, TS_TITLE, col_alpha(T.text, a));
 	y += text_lineh(TS_TITLE) + 4;
 	y += text_wrap_lines(d[i], rw, TS_SUB, 3, rx, y, col_alpha(T.text2, a), true) * text_lineh(TS_SUB) + 4;
 	char note[200];
 	if (i == QA_CONNECT)
 		util_strlcpy(note, _("SELECT también lo muestra y lo oculta."), sizeof note);
+	else if (i == QA_WEB)
+		util_strlcpy(note, _("Un .html de la SD también se abre aquí desde Archivos."), sizeof note);
 	else {
 		const char *dir = dl_dest_dir("");
 		snprintf(note, sizeof note, _("Los .cia se instalan mientras se descargan, como en FBI. El resto se guarda en %s."), !strcmp(dir, "/") ? _("la raíz de la SD") : dir);
@@ -7106,6 +7121,11 @@ static void draw_bottom(void)
 	g_clip_ell = false;
 	if (U.splash >= 0) {
 		splash_bot(1);
+		return;
+	}
+	if (br_is_open()) {
+		br_bottom();
+		dialog_draw();
 		return;
 	}
 	// con un menú, la tarjeta de instalar o el visor encima, lo de debajo (pestaña y barra) no recibe nada
@@ -7575,6 +7595,18 @@ static void update(void)
 			}
 		}
 	}
+	if (U.want_web) {
+		U.want_web = false;
+		char url[1024];
+		if (kb_input(_("Dirección web (https://…)"), "https://", url, sizeof url, false, false) && strlen(url) > 8) {
+			char full[1024];
+			if (!strstr(url, "://"))
+				snprintf(full, sizeof full, "https://%s", url);
+			else
+				util_strlcpy(full, url, sizeof full);
+			br_open_url(full);
+		}
+	}
 	if (U.want_dlurl) {
 		U.want_dlurl = false;
 		char url[1024];
@@ -7792,6 +7824,8 @@ static void update(void)
 	}
 	if (g_dialog.open)
 		return;
+	if (br_is_open()) // el navegador usa todos los botones (L/R, START…)
+		return;
 	// en el editor de texto, L y R no cambian de pestaña: R edita varias líneas y B cierra
 	bool editor = VW.kind == VW_TXT && U.tab == TAB_FILES;
 	if (!editor && (g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind && U.tab == TAB_FILES)
@@ -7922,6 +7956,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	br_exit();
 	music_exit();
 	dl_exit();
 	ops_exit();
