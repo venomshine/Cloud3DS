@@ -13,6 +13,7 @@
  *  3. Se dibujan solo las líneas que se ven; tocar un trozo con enlace abre esa página. */
 #include "browser.h"
 #include "brcss.h"
+#include "brfav.h"
 #include "core/node.h" /* libdom por dentro: hijos y hermanos sin referencias */
 #include "dl.h"
 #include "gfx.h"
@@ -31,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 #define MAX_PAGE  (6 * 1024 * 1024)
 #define HIST      16
@@ -172,7 +174,17 @@ static struct {
 	int idle_left;       /* ms que aún puede seguir su JavaScript con la página a la vista */
 	u64 idle_next, last_in; /* cuándo darle otro rato; última vez que se tocó algo */
 	u64 ready_ms;        /* cuándo quedó lista la página */
-	char search_q[512];  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
+	char search_q[512];
+	/* inicio, favoritos e historial */
+	bool home;           /* en la página de inicio */
+	int panel;           /* con una página: la lista encima del touchpad (0 no) */
+	bool came_home;      /* se llegó desde el inicio: Atrás en la primera página vuelve a él */
+	int tab, lsel;       /* Favoritos o Historial; lo marcado con la cruceta */
+	float lsy;           /* desplazamiento de la lista */
+	bool lkeys;          /* se usa la cruceta (se ve lo marcado) */
+	bool opt, opt_just, opt_confirm; /* hoja de opciones de un elemento */
+	int opt_li, opt_sel;
+	char logged[1024];   /* la última página apuntada en el historial */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
@@ -2642,6 +2654,10 @@ void br_open_url(const char *url)
 {
 	B.js = true;
 	B.open = true;
+	B.home = false;
+	B.panel = 0;
+	B.came_home = false;
+	B.opt = false;
 	B.nhist = 0;
 	B.force = 0;
 	B.st = ST_IDLE;
@@ -2685,6 +2701,7 @@ void br_exit(void)
 	close_br();
 }
 
+static void home_enter(void);
 static void back(void)
 {
 	if (B.nhist) {
@@ -2693,6 +2710,8 @@ static void back(void)
 		start_load(B.hist[B.nhist]);
 		B.back_sy = sy;
 	}
+	else if (B.came_home)
+		home_enter();
 	else
 		close_br();
 }
@@ -2977,8 +2996,13 @@ static const char *host_of(const char *u, char *out, size_t n)
 	return out;
 }
 
+static void home_top(void);
 void br_top(void)
 {
+	if (B.home) {
+		home_top();
+		return;
+	}
 	if (B.st != ST_READY && B.st != ST_ACT) {
 		draw_rect(0, 0, TOP_W, SCR_H, T.bg);
 		const float X = 24, W = TOP_W - 48;
@@ -3292,6 +3316,567 @@ static void start_action(dom_node *el, int link)
 	}
 }
 
+/* ------------------------------------------------------------ inicio, favoritos e historial */
+#define TS_ROW 0.44f
+enum { TAB_FAV = 1, TAB_HIST = 2 };
+enum { OP_OPEN, OP_RENAME, OP_LEFT, OP_RIGHT, OP_UNFAV, OP_ADDFAV, OP_UNHIST, OP_CLEAR };
+
+// la letra y el color de una página, en un cuadrado redondeado
+static void site_icon(const char *title, const char *url, float x, float y, float s, bool hl)
+{
+	u32 c = bm_color(url);
+	draw_rrect(x, y, s, s, s * 0.34f, col_alpha(c, 0.16f));
+	if (hl)
+		draw_rrect_outline(x - 2, y - 2, s + 4, s + 4, s * 0.34f + 2, 1.5f, T.accent);
+	char l[2] = {bm_letter(title, url), 0};
+	float sc = s >= 30 ? 0.62f : 0.46f;
+	text_draw_center(l, x + s / 2, y + s / 2 - text_lineh(sc) / 2, sc, c);
+}
+
+// «Hoy», «Ayer» o la fecha, para agrupar el historial
+static void day_label(int64_t t, char *out, size_t n)
+{
+	static const char *const MES[12] = {"ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"};
+	time_t now = time(NULL), tt = (time_t)t;
+	struct tm a = *gmtime(&now), b = *gmtime(&tt);
+	long da = (long)(now / 86400), db = (long)(tt / 86400);
+	if (da == db)
+		snprintf(out, n, "HOY");
+	else if (da - db == 1)
+		snprintf(out, n, "AYER");
+	else if (a.tm_year == b.tm_year)
+		snprintf(out, n, "%d %s", b.tm_mday, MES[b.tm_mon]);
+	else
+		snprintf(out, n, "%d %s %d", b.tm_mday, MES[b.tm_mon], 1900 + b.tm_year);
+	for (char *p = out; *p; p++)
+		*p = (char)toupper((unsigned char)*p);
+}
+
+static void hist_sub(const BmHist *h, char *out, size_t n, bool ago)
+{
+	char host[96];
+	bm_host(h->url, host, sizeof host);
+	time_t now = time(NULL), tt = (time_t)h->t;
+	long d = (long)(now - tt);
+	if (ago && d >= 0 && d < 3600)
+		snprintf(out, n, "%s · hace %ld min", host, d / 60 > 0 ? d / 60 : 1);
+	else if (ago && now / 86400 != tt / 86400) {
+		char dl[24];
+		day_label(h->t, dl, sizeof dl);
+		for (char *p = dl; *p; p++)
+			*p = (char)tolower((unsigned char)*p);
+		snprintf(out, n, "%s · %s", host, dl);
+	} else {
+		struct tm b = *gmtime(&tt);
+		snprintf(out, n, "%s · %02d:%02d", host, b.tm_hour, b.tm_min);
+	}
+}
+
+// volver a la página de inicio (se suelta la página que hubiera, para tener la memoria libre)
+static void home_enter(void)
+{
+	if (B.thr) {
+		threadJoin(B.thr, U64_MAX);
+		threadFree(B.thr);
+		B.thr = NULL;
+	}
+	jsdom_close(B.jsp);
+	B.jsp = NULL;
+	if (B.doc) {
+		dom_node_unref(B.doc);
+		B.doc = NULL;
+	}
+	brcss_free(B.css);
+	B.css = NULL;
+	img_free_all();
+	fv_free();
+	layout_free();
+	B.st = ST_IDLE;
+	B.url[0] = B.title[0] = B.err[0] = 0;
+	B.nhist = 0;
+	B.home = true;
+	B.panel = 0;
+	B.came_home = false;
+	B.tab = TAB_FAV;
+	B.lsel = 0;
+	B.lsy = 0;
+	B.opt = false;
+	bm_load();
+}
+
+void br_open_home(void)
+{
+	B.js = true;
+	B.open = true;
+	B.force = 0;
+	home_enter();
+}
+
+// ir a una página desde el inicio o desde la lista
+static void open_from_list(const char *url)
+{
+	bool home = B.home;
+	B.home = false;
+	B.panel = 0;
+	B.opt = false;
+	if (home) {
+		B.came_home = true;
+		B.st = ST_IDLE;
+		go(url, false);
+	} else
+		go(url, true);
+}
+
+// lo que se ve en la lista: favoritos (más «Añadir») o historial (con cabeceras por día)
+typedef struct {
+	int kind;  /* 0 favorito, 1 añadir, 2 cabecera, 3 historial */
+	int idx;
+	float x, y, w, h;
+} LItem;
+static LItem LI[BM_HIST_MAX * 2 + BM_FAV_MAX + 2];
+static int NLI;
+
+#define LS_Y0 (HDR_H + 32.0f)
+#define LS_Y1 (SCR_H - 20.0f)
+
+static void list_build(void)
+{
+	NLI = 0;
+	if (B.tab == TAB_FAV) {
+		const float cw = (BOT_W - 16) / 4.0f, ch = 60;
+		int n = bm_nfav();
+		for (int i = 0; i <= n; i++) {
+			if (i == n && n >= BM_FAV_MAX)
+				break;
+			LItem *it = &LI[NLI++];
+			it->kind = i < n ? 0 : 1;
+			it->idx = i;
+			it->x = 8 + (i % 4) * cw, it->y = 6 + (i / 4) * ch, it->w = cw, it->h = ch;
+		}
+	} else {
+		float y = 4;
+		long last = -1;
+		for (int i = 0; i < bm_nhist(); i++) {
+			const BmHist *h = bm_hist(i);
+			long d = (long)(h->t / 86400);
+			if (d != last) {
+				last = d;
+				LItem *it = &LI[NLI++];
+				*it = (LItem){2, i, 8, y, BOT_W - 16, 18};
+				y += 18;
+			}
+			LItem *it = &LI[NLI++];
+			*it = (LItem){3, i, 8, y, BOT_W - 16, 32};
+			y += 32;
+		}
+	}
+}
+
+static float list_h(void)
+{
+	float h = 0;
+	for (int i = 0; i < NLI; i++)
+		h = fmaxf(h, LI[i].y + LI[i].h);
+	return h + 6;
+}
+
+static bool list_pickable(int i)
+{
+	return i >= 0 && i < NLI && LI[i].kind != 2;
+}
+
+// lleva la vista hasta lo marcado con la cruceta
+static void list_show_sel(void)
+{
+	if (!list_pickable(B.lsel))
+		return;
+	const LItem *it = &LI[B.lsel];
+	float vh = LS_Y1 - LS_Y0;
+	if (it->y - B.lsy < 0)
+		B.lsy = it->y - (B.lsel > 0 && LI[B.lsel - 1].kind == 2 ? 18 : 0);
+	if (it->y + it->h - B.lsy > vh)
+		B.lsy = it->y + it->h - vh;
+}
+
+static void opt_open(int li)
+{
+	if (!list_pickable(li) || LI[li].kind == 1)
+		return;
+	B.opt = true;
+	B.opt_li = li;
+	B.opt_sel = 0;
+	B.opt_confirm = false;
+	B.opt_just = true;
+}
+
+static void add_by_address(void)
+{
+	char nu[1024], full[1024];
+	if (!kb_input("Dirección para añadir a favoritos", "https://", nu, sizeof nu, false, false) || strlen(nu) < 3 || !strcmp(nu, "https://"))
+		return;
+	address_to_url(nu, full, sizeof full);
+	B.search_q[0] = 0;
+	if (!bm_add_fav(NULL, full))
+		toast_icon("Ya no caben más favoritos", IC_CLOSE, T.danger);
+	else
+		toast_icon("Añadido a favoritos", IC_STAR, T.warn);
+}
+
+// la hoja de opciones de un favorito o de una visita
+static void opt_draw_update(void)
+{
+	const LItem *it = &LI[B.opt_li];
+	bool fav = it->kind == 0;
+	const char *title, *url;
+	if (fav) {
+		const BmFav *f = bm_fav(it->idx);
+		if (!f) {
+			B.opt = false;
+			return;
+		}
+		title = f->title, url = f->url;
+	} else {
+		const BmHist *h = bm_hist(it->idx);
+		if (!h) {
+			B.opt = false;
+			return;
+		}
+		title = h->title, url = h->url;
+	}
+	int ops[6], n = 0;
+	ops[n++] = OP_OPEN;
+	if (fav) {
+		ops[n++] = OP_RENAME;
+		if (it->idx > 0)
+			ops[n++] = OP_LEFT;
+		if (it->idx < bm_nfav() - 1)
+			ops[n++] = OP_RIGHT;
+		ops[n++] = OP_UNFAV;
+	} else {
+		ops[n++] = bm_find_fav(url) >= 0 ? OP_UNFAV : OP_ADDFAV;
+		ops[n++] = OP_UNHIST;
+		ops[n++] = OP_CLEAR;
+	}
+	const float X = 8, W = BOT_W - 16, RH = 26, HH = 34;
+	float h = HH + n * RH + 10, y = SCR_H - 8 - h;
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, 0.9f));
+	draw_rrect(X, y + 3, W, h, 14, T.shadow);
+	draw_rrect(X, y, W, h, 14, T.surface);
+	g_clip_ell = true;
+	text_draw_clip(title, X + 12, y + 7, W - 24, TS_ROW, T.text);
+	text_draw_clip(url, X + 12, y + 20, W - 24, 0.36f, T.text3);
+	g_clip_ell = false;
+	bool fresh = B.opt_just;
+	B.opt_just = false;
+	if (g_krepeat & KEY_DOWN)
+		B.opt_sel = (B.opt_sel + 1) % n;
+	if (g_krepeat & KEY_UP)
+		B.opt_sel = (B.opt_sel + n - 1) % n;
+	if (B.opt_sel >= n)
+		B.opt_sel = n - 1;
+	int run = -1;
+	for (int i = 0; i < n; i++) {
+		float ry = y + HH + i * RH;
+		bool hl = B.opt_sel == i || touch_in(X + 4, ry, W - 8, RH);
+		if (hl)
+			draw_rrect(X + 4, ry, W - 8, RH - 2, 9, T.surface2);
+		const char *lab = "";
+		u32 c = T.text;
+		switch (ops[i]) {
+		case OP_OPEN: lab = "Abrir"; break;
+		case OP_RENAME: lab = "Cambiar el nombre"; break;
+		case OP_LEFT: lab = "Mover a la izquierda"; break;
+		case OP_RIGHT: lab = "Mover a la derecha"; break;
+		case OP_UNFAV: lab = "Quitar de favoritos", c = T.danger; break;
+		case OP_ADDFAV: lab = "Añadir a favoritos"; break;
+		case OP_UNHIST: lab = "Quitar del historial", c = T.danger; break;
+		case OP_CLEAR: lab = B.opt_confirm ? "Toca otra vez para borrar todo" : "Borrar todo el historial", c = T.danger; break;
+		}
+		text_draw(lab, X + 14, ry + (RH - 2) / 2 - text_lineh(TS_ROW) / 2, TS_ROW, c);
+		if (!fresh && tap(X + 4, ry, W - 8, RH))
+			run = i;
+	}
+	if (fresh)
+		return;
+	if (g_kdown & KEY_A)
+		run = B.opt_sel;
+	if ((g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && !(g_touch.sx >= X && g_touch.sx < X + W && g_touch.sy >= y && g_touch.sy < y + h))) {
+		B.opt = false;
+		return;
+	}
+	if (run < 0)
+		return;
+	char u[400];
+	util_strlcpy(u, url, sizeof u);
+	switch (ops[run]) {
+	case OP_OPEN:
+		open_from_list(u);
+		return;
+	case OP_RENAME: {
+		char nn[96];
+		if (kb_input("Nombre del favorito", title, nn, sizeof nn, false, false) && nn[0])
+			bm_rename_fav(it->idx, nn);
+		break;
+	}
+	case OP_LEFT:
+		bm_move_fav(it->idx, it->idx - 1);
+		B.lsel = B.opt_li - 1;
+		break;
+	case OP_RIGHT:
+		bm_move_fav(it->idx, it->idx + 1);
+		B.lsel = B.opt_li + 1;
+		break;
+	case OP_UNFAV:
+		bm_del_fav(bm_find_fav(u));
+		toast_icon("Quitado de favoritos", IC_STAR, T.text2);
+		break;
+	case OP_ADDFAV:
+		if (bm_add_fav(title, u))
+			toast_icon("Añadido a favoritos", IC_STAR, T.warn);
+		else
+			toast_icon("Ya no caben más favoritos", IC_CLOSE, T.danger);
+		break;
+	case OP_UNHIST:
+		bm_del_hist(it->idx);
+		break;
+	case OP_CLEAR:
+		if (!B.opt_confirm) {
+			B.opt_confirm = true;
+			return;
+		}
+		bm_clear_hist();
+		toast_icon("Historial borrado", IC_TRASH, T.text2);
+		break;
+	}
+	B.opt = false;
+}
+
+// pantalla de abajo con los favoritos o el historial: en el inicio, o encima del touchpad
+static void lists_bottom(void)
+{
+	bm_load();
+	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
+	// cabecera: atrás, dirección (o búsqueda) y cerrar
+	draw_rect(0, 0, BOT_W, HDR_H, T.surface);
+	draw_rect(0, HDR_H - 1, BOT_W, 1, T.divider);
+	bool can_back = !B.home;
+	bool bp = touch_in(0, 0, 36, HDR_H);
+	draw_circle(18, HDR_H / 2, 11, bp && can_back ? T.surface2 : T.surface);
+	draw_icon(IC_CHEV_LEFT, 18, HDR_H / 2, 13, can_back ? T.text : T.text3);
+	bool cp2 = touch_in(BOT_W - 36, 0, 36, HDR_H);
+	draw_circle(BOT_W - 18, HDR_H / 2, 11, cp2 ? T.surface2 : T.surface);
+	draw_icon(IC_CLOSE, BOT_W - 18, HDR_H / 2, 12, T.text2);
+	draw_rrect(36, 5, BOT_W - 72, HDR_H - 10, (HDR_H - 10) / 2, T.surface2);
+	if (B.home) {
+		draw_icon(IC_SEARCH, 50, HDR_H / 2, 10, T.text3);
+		text_draw_clip("Buscar en Google o escribir dirección", 60, HDR_H / 2 - text_lineh(0.40f) / 2, BOT_W - 106, 0.40f, T.text3);
+	} else {
+		const char *u = strstr(B.url, "://");
+		text_draw_clip(u ? u + 3 : B.url, 46, HDR_H / 2 - text_lineh(0.40f) / 2, BOT_W - 92, 0.40f, T.text2);
+	}
+	// Favoritos | Historial
+	const float SY = HDR_H + 5, SW = (BOT_W - 16) / 2;
+	draw_rrect(8, SY, BOT_W - 16, 22, 11, T.surface);
+	draw_rrect(8 + (B.tab == TAB_HIST ? SW : 0) + 2, SY + 2, SW - 4, 18, 9, T.surface2);
+	text_draw_center("Favoritos", 8 + SW / 2, SY + 11 - text_lineh(TS_SUB) / 2, TS_SUB, B.tab == TAB_FAV ? T.text : T.text3);
+	text_draw_center("Historial", 8 + SW * 1.5f, SY + 11 - text_lineh(TS_SUB) / 2, TS_SUB, B.tab == TAB_HIST ? T.text : T.text3);
+	int tab = B.tab;
+	if (!B.opt) {
+		if (tap(8, SY, SW, 22) || (g_kdown & KEY_L))
+			tab = TAB_FAV;
+		if (tap(8 + SW, SY, SW, 22) || (g_kdown & KEY_R))
+			tab = TAB_HIST;
+	}
+	if (tab != B.tab)
+		B.tab = tab, B.lsel = 0, B.lsy = 0;
+	list_build();
+	// desplazar arrastrando
+	float vh = LS_Y1 - LS_Y0, lh = list_h();
+	if (!B.opt && g_touch.held && g_touch.drag && g_touch.sy >= LS_Y0 && g_touch.sy < LS_Y1)
+		B.lsy -= (float)(g_touch.y - g_touch.py);
+	// cruceta
+	if (!B.opt && NLI) {
+		int d = 0, step = B.tab == TAB_FAV ? 4 : 1;
+		if (g_krepeat & KEY_DOWN)
+			d = step;
+		if (g_krepeat & KEY_UP)
+			d = -step;
+		if (B.tab == TAB_FAV && (g_krepeat & KEY_RIGHT))
+			d = 1;
+		if (B.tab == TAB_FAV && (g_krepeat & KEY_LEFT))
+			d = -1;
+		if (d) {
+			B.lkeys = true;
+			int s = B.lsel + d;
+			while (s >= 0 && s < NLI && !list_pickable(s))
+				s += d > 0 ? 1 : -1;
+			if (s >= 0 && s < NLI)
+				B.lsel = s;
+			list_show_sel();
+		}
+	}
+	if (g_touch.down)
+		B.lkeys = false;
+	if (B.lsel >= NLI)
+		B.lsel = NLI - 1;
+	if (!list_pickable(B.lsel)) {
+		int s = B.lsel < 0 ? 0 : B.lsel;
+		while (s < NLI && !list_pickable(s))
+			s++;
+		B.lsel = s < NLI ? s : 0;
+	}
+	B.lsy = clampf(B.lsy, 0, fmaxf(0, lh - vh));
+	// la lista
+	int open = -1, hold = -1;
+	g_clip_ell = true;
+	gfx_clip(0, LS_Y0, BOT_W, LS_Y1 - LS_Y0);
+	for (int i = 0; i < NLI; i++) {
+		const LItem *it = &LI[i];
+		float y = LS_Y0 + it->y - B.lsy;
+		if (y + it->h < LS_Y0 || y > LS_Y1)
+			continue;
+		bool sel = B.lkeys && i == B.lsel;
+		bool vis_tap = !B.opt && g_touch.sy >= LS_Y0 && g_touch.sy < LS_Y1;
+		if (it->kind == 0 || it->kind == 1) {
+			float cx = it->x + it->w / 2, s = 34;
+			bool p = vis_tap && touch_in(it->x, y, it->w, it->h);
+			if (it->kind == 0) {
+				const BmFav *f = bm_fav(it->idx);
+				if (p)
+					draw_rrect(it->x + 4, y + 1, it->w - 8, it->h - 4, 12, T.surface);
+				site_icon(f->title, f->url, cx - s / 2, y + 6, s, sel);
+				text_draw_center_clip(f->title, cx, y + 44, it->w - 8, 0.36f, T.text2);
+			} else {
+				if (p)
+					draw_rrect(it->x + 4, y + 1, it->w - 8, it->h - 4, 12, T.surface);
+				draw_rrect_outline(cx - s / 2, y + 6, s, s, 12, 1.2f, sel ? T.accent : T.divider);
+				draw_icon(IC_PLUS, cx, y + 6 + s / 2, 14, T.text3);
+				text_draw_center("Añadir", cx, y + 44, 0.36f, T.text3);
+			}
+		} else if (it->kind == 2) {
+			char dl[32];
+			day_label(bm_hist(it->idx)->t, dl, sizeof dl);
+			text_draw(dl, it->x + 8, y + 5, 0.34f, T.text3);
+		} else {
+			const BmHist *h = bm_hist(it->idx);
+			bool p = vis_tap && touch_in(it->x, y, it->w, it->h);
+			if (p || sel)
+				draw_rrect(it->x, y + 1, it->w, it->h - 2, 9, sel ? T.surface2 : T.surface);
+			site_icon(h->title, h->url, it->x + 6, y + 6, 20, false);
+			char sub[160];
+			hist_sub(h, sub, sizeof sub, false);
+			bool fav = bm_find_fav(h->url) >= 0;
+			float tw = it->w - 40 - (fav ? 18 : 0);
+			text_draw_clip(h->title, it->x + 34, y + 3, tw, TS_ROW * 0.92f, T.text);
+			text_draw_clip(sub, it->x + 34, y + 17, tw, 0.34f, T.text3);
+			if (fav)
+				draw_icon(IC_STAR, it->x + it->w - 14, y + 16, 10, T.warn);
+		}
+		if (!B.opt && list_pickable(i) && g_touch.sy >= LS_Y0 && g_touch.sy < LS_Y1) {
+			if (tap(it->x, y, it->w, it->h))
+				open = i;
+			if (long_press(it->x, y, it->w, it->h))
+				hold = i;
+		}
+	}
+	gfx_clip_off();
+	g_clip_ell = false;
+	if (!NLI || (B.tab == TAB_HIST && !bm_nhist()))
+		text_draw_center(B.tab == TAB_HIST ? "Aún no has visitado ninguna página" : "", BOT_W / 2, LS_Y0 + 40, TS_SUB, T.text3);
+	// pie
+	char keys[160];
+	if (B.home)
+		snprintf(keys, sizeof keys, "Toca para abrir · mantén pulsado: opciones · %s Buscar", GLYPH_X);
+	else
+		snprintf(keys, sizeof keys, "Mantén pulsado: opciones · %s Opciones · %s Volver", GLYPH_Y, GLYPH_B);
+	text_draw_center_clip(keys, BOT_W / 2, SCR_H - 15, BOT_W - 16, 0.36f, T.text3);
+	if (B.opt) {
+		opt_draw_update();
+		g_kdown = 0;
+		g_touch.up = false;
+		return;
+	}
+	if (g_kdown & KEY_A)
+		open = list_pickable(B.lsel) ? B.lsel : -1;
+	if (g_kdown & KEY_Y)
+		hold = list_pickable(B.lsel) ? B.lsel : -1;
+	// acciones
+	if (tap(BOT_W - 36, 0, 36, HDR_H) || (g_kdown & KEY_START)) {
+		close_br();
+		g_kdown = 0;
+		return;
+	}
+	if ((can_back && tap(0, 0, 36, HDR_H)) || (!B.home && (g_kdown & KEY_B))) {
+		B.panel = 0;
+		g_kdown = 0;
+		return;
+	}
+	if (B.home && (g_kdown & KEY_B)) {
+		close_br();
+		g_kdown = 0;
+		return;
+	}
+	if (tap(36, 0, BOT_W - 72, HDR_H) || (g_kdown & KEY_X)) {
+		char nu[1024], full[1024];
+		if (kb_input("Buscar en Google o escribir dirección", B.home ? "" : B.url, nu, sizeof nu, false, false) && nu[0]) {
+			address_to_url(nu, full, sizeof full);
+			char q[512];
+			util_strlcpy(q, B.search_q, sizeof q);
+			open_from_list(full);
+			util_strlcpy(B.search_q, q, sizeof B.search_q); // go() la borra si no es de Google
+		}
+		g_kdown = 0;
+		return;
+	}
+	if (hold >= 0) {
+		opt_open(hold);
+		B.lsel = hold;
+	} else if (open >= 0) {
+		const LItem *it = &LI[open];
+		if (it->kind == 1)
+			add_by_address();
+		else {
+			char u[400];
+			util_strlcpy(u, it->kind == 0 ? bm_fav(it->idx)->url : bm_hist(it->idx)->url, sizeof u);
+			open_from_list(u);
+		}
+	}
+	g_kdown = 0;
+	g_touch.up = false;
+}
+
+// pantalla de arriba en el inicio
+static void home_top(void)
+{
+	bm_load();
+	draw_grad_v(0, 0, TOP_W, SCR_H, T.surface, T.bg);
+	text_draw_center("Navegador", TOP_W / 2, 26, TS_TITLE, T.text);
+	const float PW = 260, PX = (TOP_W - PW) / 2, PY = 56, PH = 28;
+	draw_rrect(PX, PY, PW, PH, PH / 2, T.surface2);
+	draw_rrect_outline(PX, PY, PW, PH, PH / 2, 1, T.divider);
+	draw_icon(IC_SEARCH, PX + 16, PY + PH / 2, 11, T.text3);
+	text_draw("Buscar en Google o escribir dirección", PX + 28, PY + PH / 2 - text_lineh(0.40f) / 2, 0.40f, T.text3);
+	text_draw_right(GLYPH_X, PX + PW - 12, PY + PH / 2 - text_lineh(0.40f) / 2, 0.40f, T.text3);
+	const float LX = (TOP_W - 300) / 2;
+	int n = bm_nhist() < 4 ? bm_nhist() : 4;
+	if (!n) {
+		text_draw_center("Tus favoritos están abajo: toca uno para abrirlo", TOP_W / 2, 112, TS_SUB, T.text3);
+		return;
+	}
+	text_draw("SEGUIR DONDE LO DEJASTE", LX + 6, 102, 0.34f, T.text3);
+	g_clip_ell = true;
+	for (int i = 0; i < n; i++) {
+		const BmHist *h = bm_hist(i);
+		float y = 118 + i * 30;
+		site_icon(h->title, h->url, LX + 6, y + 4, 20, false);
+		char sub[160];
+		hist_sub(h, sub, sizeof sub, true);
+		text_draw_clip(h->title, LX + 34, y + 2, 262, TS_ROW * 0.92f, T.text);
+		text_draw_clip(sub, LX + 34, y + 16, 262, 0.34f, T.text3);
+	}
+	g_clip_ell = false;
+}
+
 void br_bottom(void)
 {
 	if (B.st == ST_PARSED) { // el árbol está listo (se guarda para cambiar PC / móvil sin volver a bajarla)
@@ -3352,6 +3937,18 @@ void br_bottom(void)
 		toast_icon("Google no respondió: resultados de DuckDuckGo", IC_SEARCH, T.accent);
 		go(full, false);
 	}
+	// al historial, cuando la página lleva un rato a la vista (las que solo redirigen no se apuntan)
+	if (B.st == ST_READY && !B.js_nav[0] && util_ms() - B.ready_ms > 1500 && strcmp(B.logged, B.url)) {
+		util_strlcpy(B.logged, B.url, sizeof B.logged);
+		if (!strstr(B.url, "/sorry/") && !strstr(B.url, "enablejs")) {
+			bm_load();
+			bm_visit(B.title, B.url);
+		}
+	}
+	if (B.home || B.panel) {
+		lists_bottom();
+		return;
+	}
 	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
 	bool ready = B.st == ST_READY;
 	// --- cabecera: atrás, dirección y cerrar
@@ -3375,6 +3972,32 @@ void br_bottom(void)
 	text_draw(zp, 88, ty + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
 	bool mob = ready && B.vw == VW_MOB;
 	bool tpc = tool_btn(BOT_W - 112, ty, 52, "PC", ready && !mob), tmob = tool_btn(BOT_W - 58, ty, 50, "Móvil", mob);
+	// favoritos: guardar esta página y abrir la lista
+	bm_load();
+	bool is_fav = B.url[0] && bm_find_fav(B.url) >= 0;
+	float fx = BOT_W - 182;
+	bool fp = touch_in(fx, ty, 30, 24), lp = touch_in(fx + 34, ty, 30, 24);
+	draw_rrect(fx, ty, 30, 24, 12, is_fav ? col_alpha(T.warn, 0.22f) : fp ? T.surface2 : T.surface);
+	draw_icon(IC_STAR, fx + 15, ty + 12, 13, is_fav ? T.warn : T.text);
+	draw_rrect(fx + 34, ty, 30, 24, 12, lp ? T.surface2 : T.surface);
+	draw_icon(IC_LIST, fx + 49, ty + 12, 13, T.text);
+	if (tap(fx, ty, 30, 24) && B.url[0]) {
+		if (is_fav) {
+			bm_del_fav(bm_find_fav(B.url));
+			toast_icon("Quitado de favoritos", IC_STAR, T.text2);
+		} else if (bm_add_fav(B.title, B.url))
+			toast_icon("Guardado en favoritos", IC_STAR, T.warn);
+		else
+			toast_icon("Ya no caben más favoritos", IC_CLOSE, T.danger);
+	}
+	if (tap(fx + 34, ty, 30, 24)) {
+		B.panel = 1;
+		B.tab = TAB_FAV;
+		B.lsel = 0, B.lsy = 0, B.lkeys = false;
+		g_touch.up = false;
+		g_kdown = 0;
+		return;
+	}
 	// --- touchpad (con su trama de puntos) y franja para desplazar
 	const float TX = 8, TW = BOT_W - 16 - STRIP - 6, SX = BOT_W - 8 - STRIP;
 	draw_rrect(TX, TP_Y, TW, TP_B - TP_Y, 12, T.surface);

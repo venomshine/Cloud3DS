@@ -8484,15 +8484,7 @@ static void update(void)
 	}
 	if (U.want_web) {
 		U.want_web = false;
-		char url[1024];
-		if (kb_input(_("Dirección web (https://…)"), "https://", url, sizeof url, false, false) && strlen(url) > 8) {
-			char full[1024];
-			if (!strstr(url, "://"))
-				snprintf(full, sizeof full, "https://%s", url);
-			else
-				util_strlcpy(full, url, sizeof full);
-			br_open_url(full);
-		}
+		br_open_home();
 	}
 	if (U.want_dlurl) {
 		U.want_dlurl = false;

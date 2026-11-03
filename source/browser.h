@@ -13,6 +13,7 @@
  * él mismo: títulos, párrafos, listas, citas, código, tablas como filas y enlaces que se tocan.
  * Sin JavaScript. Las imágenes se ven como un marcador con su texto alternativo. */
 
+void br_open_home(void);                 /* la página de inicio: favoritos e historial */
 void br_open_url(const char *url);       /* http:// o https:// */
 void br_open_file(const char *sd_path);  /* un .html de la SD */
 bool br_is_open(void);
