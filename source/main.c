@@ -35,6 +35,9 @@
 #include "ui.h"
 #include "util.h"
 
+// pila del hilo principal: el navegador recorre árboles de páginas grandes de forma recursiva
+u32 __stacksize__ = 256 * 1024;
+
 #include <arpa/inet.h>
 #include <math.h>
 #include <stdio.h>

@@ -169,7 +169,7 @@ static void start_load(const char *url)
 	B.t_load = 0;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.thr = threadCreate(load_thread, NULL, 64 * 1024, prio + 1, -2, false);
+	B.thr = threadCreate(load_thread, NULL, 256 * 1024, prio + 1, -2, false); // hubbub y libdom anidan mucho en páginas grandes
 	if (!B.thr) {
 		snprintf(B.err, sizeof B.err, "No se pudo empezar a cargar");
 		B.st = ST_ERROR;
