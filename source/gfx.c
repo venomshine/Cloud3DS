@@ -67,7 +67,7 @@ void theme_set(bool dark) {
 void gfx_init(void) {
     gfxInitDefault();
     C3D_Init(C3D_DEFAULT_CMDBUF_SIZE * 2);
-    C2D_Init(12000);
+    C2D_Init(20000); // el navegador pinta su página (más grande que la pantalla) de una vez
     C2D_Prepare();
     g_top = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     g_bot = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
@@ -115,6 +115,37 @@ void gfx_target(C3D_RenderTarget *t, u32 clear) {
     C2D_SceneBegin(t);
     s_cur = t;
 }
+
+void gfx_resume(C3D_RenderTarget *t) {
+    C2D_SceneBegin(t);
+    s_cur = t;
+}
+
+// ------------------------------------------------------------ dibujar en una textura
+bool gfx_rt_init(GfxRT *r, int w, int h) {
+    memset(r, 0, sizeof *r);
+    if (!C3D_TexInitVRAM(&r->tex, w, h, GPU_RGBA8)) return false;
+    r->rt = C3D_RenderTargetCreateFromTex(&r->tex, GPU_TEXFACE_2D, 0, -1);
+    if (!r->rt) { C3D_TexDelete(&r->tex); return false; }
+    C3D_TexSetFilter(&r->tex, GPU_NEAREST, GPU_NEAREST);
+    r->sub = (Tex3DS_SubTexture){(u16)w, (u16)h, 0.0f, 1.0f, 1.0f, 0.0f};
+    r->img.tex = &r->tex;
+    r->img.subtex = &r->sub;
+    r->w = w, r->h = h;
+    r->ok = true;
+    return true;
+}
+
+void gfx_rt_free(GfxRT *r) {
+    if (!r->ok) return;
+    C3D_RenderTargetDelete(r->rt);
+    C3D_TexDelete(&r->tex);
+    r->ok = false;
+}
+
+void gfx_rt_begin(GfxRT *r, u32 clear) { gfx_target(r->rt, clear); }
+
+void gfx_rt_draw(GfxRT *r, float x, float y) { C2D_DrawImageAt(r->img, x, y, Z, NULL, 1, 1); }
 
 // recorte rectangular (coordenadas de pantalla; el framebuffer de la 3DS está girado 90°)
 void gfx_clip(float x, float y, float w, float h) {
@@ -460,7 +491,11 @@ float text_width(const char *s, float scale) { return text_width_n(s, (int)strle
 
 static void text_draw_raw(const char *s, float x, float y, float scale, u32 c) {
     C2D_Text t;
-    C2D_TextParse(&t, s_tbuf, s);
+    const char *e = C2D_TextParse(&t, s_tbuf, s);
+    if (e && *e) { // el búfer de glifos del fotograma se llenó (páginas web con mucho texto): lo ya
+        C2D_TextBufClear(s_tbuf); // dibujado no lo necesita, se vacía y se vuelve a leer
+        C2D_TextParse(&t, s_tbuf, s);
+    }
     C2D_DrawText(&t, C2D_WithColor, x, y, Z, scale, scale, c);
 }
 

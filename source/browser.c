@@ -194,7 +194,9 @@ static struct {
 	int oom;             /* OOM_*: la página se ve, pero sin terminar */
 	u32 oom_need;        /* lo que hacía falta (aproximado, bytes) */
 	char reader_url[1024]; /* esta dirección, en modo lectura (sin JavaScript, CSS ni imágenes) */
-	volatile bool lay_oom; /* la colocación se paró por memoria */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
+	volatile bool lay_oom; /* la colocación se paró por memoria */
+	volatile u32 page_ver; /* cambia con lo que se ve (colocación, imágenes, formularios): repintar la caché */
+	bool click_wait;       /* un clic hecho mientras su JavaScript trabajaba: se hace al acabar */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
@@ -807,6 +809,7 @@ static void start_load(const char *url)
 	fv_free();
 	util_strlcpy(B.url, url, sizeof B.url);
 	B.click_link = -1;
+	B.click_wait = false;
 	B.cancel = false;
 	B.err[0] = 0;
 	B.title[0] = 0;
@@ -2640,6 +2643,7 @@ static void layout(void)
 	if (L_has)
 		line_new();
 	B.t_css = (u32)(util_ms() - t0);
+	B.page_ver++;
 	// alinear (text-align): cada línea se corre dentro de sus márgenes
 	for (int i = 0, f = 0; i < B.nl; i++) {
 		int f0 = f;
@@ -3005,6 +3009,7 @@ static void wdg_activate(int k)
 {
 	if (k < 0 || k >= B.nwg)
 		return;
+	B.page_ver++; // su valor cambia: la caché de la página se repinta
 	Wdg *w = &B.wg[k];
 	FVal *v = fv_get(w->node, true);
 	if (!v)
@@ -3125,59 +3130,27 @@ static const char *host_of(const char *u, char *out, size_t n)
 	return out;
 }
 
-static void home_top(void);
-static void oom_top(void);
-void br_top(void)
+/* la página en un rectángulo de VW x VH desde (B.sx, B.sy): mode 0 todo, 1 sin resaltados (para la
+ * caché), 2 solo los resaltados (el enlace del puntero, lo marcado), encima de la caché */
+static void page_paint(float VW, float VH, int mode, int hov)
 {
-	if (B.home) {
-		home_top();
-		return;
-	}
-	if (B.st == ST_OOM) {
-		oom_top();
-		return;
-	}
-	if (B.st != ST_READY && B.st != ST_ACT) {
-		draw_rect(0, 0, TOP_W, SCR_H, T.bg);
-		const float X = 24, W = TOP_W - 48;
-		char host[128];
-		host_of(B.url, host, sizeof host);
-		draw_icon(IC_GLOBE, TOP_W / 2, 70, 30, B.st == ST_ERROR ? T.danger : T.accent);
-		text_draw_center_clip(host, TOP_W / 2, 98, W, TS_TITLE, T.text);
-		if (B.st == ST_ERROR) {
-			text_draw_center(B.err, TOP_W / 2, 126, TS_SUB, T.danger);
-		} else {
-			B.t_load += 1.0f / 60;
-			draw_arc(TOP_W / 2, 140, 10, 2.5f, B.t_load * 6, B.t_load * 6 + 4.2f, T.accent);
-			text_draw_center(B.st == ST_LAYOUT ? "Colocando la página…" : B.in_js ? (B.cancel ? "Parando el JavaScript…" : "Ejecutando el JavaScript de la página…") : "Cargando…",
-			                 TOP_W / 2, 158, TS_SUB, T.text3);
-			if (B.in_js && !B.cancel)
-				text_draw_center("B: saltárselo y ver la página ya", TOP_W / 2, 200, TS_SUB, T.text3);
-			if (B.st == ST_LAYOUT && B.nel_total > 0) {
-				float f = clampf((float)B.nel_done / B.nel_total, 0, 1);
-				draw_rrect(TOP_W / 2 - 80, 180, 160, 5, 2.5f, T.surface2);
-				draw_rrect(TOP_W / 2 - 80, 180, fmaxf(5, 160 * f), 5, 2.5f, T.accent);
-			}
-		}
-		(void)X;
-		return;
-	}
-	draw_rect(0, 0, TOP_W, SCR_H, PG_BG);
 	const float z = B.zoom;
+	if (mode != 2) {
+	draw_rect(0, 0, VW, VH, PG_BG);
 	// reglas <hr>
 	for (int i = 0; i < B.nl; i++) {
 		const Line *l = &B.l[i];
 		if (!l->hr)
 			continue;
 		float y = (l->y + l->h / 2 - B.sy) * z;
-		if (y >= 0 && y < SCR_H)
+		if (y >= 0 && y < VH)
 			draw_rect((PAD_X - B.sx) * z, y, PAGE_W * z, fmaxf(1, z), PG_RULE);
 	}
 	// fondos de color de los bloques
 	for (int i = 0; i < B.nbg; i++) {
 		const BgBox *bb = &B.bg[i];
 		float Y0 = (bb->y0 - B.sy) * z, Y1 = (bb->y1 - B.sy) * z;
-		if (Y1 < 0 || Y0 > SCR_H)
+		if (Y1 < 0 || Y0 > VH)
 			continue;
 		float X0 = (PAD_X + bb->x0 - B.sx) * z, Wb = (bb->x1 - bb->x0) * z;
 		if (bb->col)
@@ -3188,29 +3161,18 @@ void br_top(void)
 		if ((t = bb->bw[3] * z) > 0) draw_rect(X0, Y0, fmaxf(t, 1), Y1 - Y0, bb->bc[3]);
 		if ((t = bb->bw[1] * z) > 0) draw_rect(X0 + Wb - fmaxf(t, 1), Y0, fmaxf(t, 1), Y1 - Y0, bb->bc[1]);
 	}
-	// texturas de las imágenes ya decodificadas (pocas por fotograma, para no dar tirones)
-	for (int i = 0, up = 0; i < B.nimg && up < 2; i++)
-		if (B.img[i].st == IM_RGBA) {
-			bool ok = tex_from_rgba(&B.img[i].tex, B.img[i].rgba, B.img[i].tw, B.img[i].th);
-			free(B.img[i].rgba);
-			B.img[i].rgba = NULL;
-			B.img[i].st = ok ? IM_TEX : IM_FAIL;
-			up++;
-		}
-	int hov = link_at_pointer();
-	B.hover = hov;
-	B.hw = wdg_at_pointer();
+	}
 	for (int k = first_frag(B.sy); k < B.nf; k++) {
 		int i = B.ord[k];
 		const Frag *f = &B.f[i];
 		float x, y, w, h;
 		frag_rect(f, &x, &y, &w, &h);
 		float X = (x - B.sx) * z, Y = (y - B.sy) * z, Wd = w * z, H = h * z;
-		if ((B.l[f->line].y - B.sy) * z > SCR_H)
+		if ((B.l[f->line].y - B.sy) * z > VH)
 			break;
-		if (X > TOP_W || X + Wd < 0 || Y + H < 0)
+		if (X > VW || X + Wd < 0 || Y + H < 0)
 			continue;
-		if ((f->link >= 0 && (f->link == hov || i == B.focus)) || (f->clk >= 0 && B.focus >= 0 && f->clk == B.f[B.focus].clk))
+		if (mode != 1 && ((f->link >= 0 && (f->link == hov || i == B.focus)) || (f->clk >= 0 && B.focus >= 0 && f->clk == B.f[B.focus].clk)))
 			draw_rect(X - 1, Y, Wd + 2, H, col_alpha(PG_LINK, 0.18f));
 		if (f->wdg >= 0 && f->wdg < B.nwg) { // control de formulario
 			const Wdg *w = &B.wg[f->wdg];
@@ -3219,7 +3181,8 @@ void br_top(void)
 			float by = (l->y + l->h - bh - B.sy) * z, BH = bh * z;
 			u32 border = col_hex(0xA2A9B1);
 			FVal *v = fv_get(w->node, false);
-			if (w->type == WG_CHECK || w->type == WG_RADIO) {
+			if (mode == 2) {
+			} else if (w->type == WG_CHECK || w->type == WG_RADIO) {
 				bool on = v && v->checked >= 0 ? v->checked : has_attr(w->node, "checked");
 				float r = BH / 2;
 				if (w->type == WG_RADIO) {
@@ -3265,22 +3228,25 @@ void br_top(void)
 					draw_tri(ax - 4 * z, ay - 2 * z, ax + 4 * z, ay - 2 * z, ax, ay + 3 * z, PG_MUTED);
 				}
 			}
-			if (f->wdg == B.hw)
+			if (mode != 1 && f->wdg == B.hw)
 				draw_rect(X, by, Wd, BH, col_alpha(PG_LINK, 0.18f));
 			continue;
 		}
 		if (f->img >= 0 && f->img < B.nimg) { // imagen: encajada en su sitio sin deformarla
 			PImg *im = &B.img[f->img];
 			float bw = Wd, bh = im->h * z, by = (B.l[f->line].y + B.l[f->line].h - im->h - B.sy) * z;
-			if (im->st == IM_TEX && im->tex.ok) {
+			if (mode == 2) {
+			} else if (im->st == IM_TEX && im->tex.ok) {
 				float k = fminf(bw / im->tw, bh / im->th), dw = im->tw * k, dh = im->th * k;
 				draw_texture(&im->tex, X + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh, 1);
 			} else
 				draw_rect(X, by, bw, bh, im->st == IM_FAIL ? col_hex(0xF2F2F2) : col_hex(0xEAECF0));
-			if (f->link >= 0 && (f->link == hov || i == B.focus))
+			if (mode != 1 && f->link >= 0 && (f->link == hov || i == B.focus))
 				draw_rect(X, by, bw, bh, col_alpha(PG_LINK, 0.25f));
 			continue;
 		}
+		if (mode == 2)
+			continue;
 		float sc = f->sc * z;
 		if (sc < 0.17f) // tan pequeño que no se leería: una raya del color del texto (como una vista previa)
 			draw_rect(X, Y + H * 0.35f, Wd, fmaxf(1, H * 0.35f), col_alpha(f->col, 0.55f));
@@ -3292,6 +3258,110 @@ void br_top(void)
 				draw_rect(X, Y + H - fmaxf(1, z * 0.8f), Wd, fmaxf(1, z * 0.6f), col_alpha(f->col, 0.5f));
 		}
 	}
+}
+
+/* la página ya pintada en una textura algo más grande que la pantalla: mover el puntero o
+ * desplazarse un poco solo mueve la textura (repintar miles de palabras en cada fotograma es lo que
+ * hacía ir a tirones el touchpad). Se repinta al salirse de ella o si cambia algo */
+#define PC_W 512
+#define PC_H 512
+static GfxRT PC;
+static bool PC_tried;
+static struct {
+	bool valid;
+	float x0, y0, zoom; /* origen en la página y zoom con que se pintó */
+	u32 ver;
+} PCS;
+
+static void page_cache_drop(void)
+{
+	PCS.valid = false;
+}
+
+static void page_draw(int hov)
+{
+	const float z = B.zoom;
+	if (!PC_tried) {
+		PC_tried = true;
+		gfx_rt_init(&PC, PC_W, PC_H);
+	}
+	if (!PC.ok) { // sin textura (VRAM llena): como siempre
+		page_paint(TOP_W, SCR_H, 0, hov);
+		return;
+	}
+	float mx = (PC_W - TOP_W) / 2.0f, my = (PC_H - SCR_H) / 2.0f;
+	float dx = (B.sx - PCS.x0) * z, dy = (B.sy - PCS.y0) * z;
+	bool ok = PCS.valid && PCS.zoom == z && PCS.ver == B.page_ver && dx >= 0 && dy >= 0 && dx + TOP_W <= PC_W && dy + SCR_H <= PC_H;
+	if (!ok) {
+		float sx = B.sx, sy = B.sy;
+		PCS.x0 = B.sx - floorf(mx) / z, PCS.y0 = B.sy - floorf(my) / z;
+		B.sx = PCS.x0, B.sy = PCS.y0;
+		gfx_rt_begin(&PC, PG_BG);
+		bool ell = g_clip_ell;
+		g_clip_ell = true; // sin recortes (las tijeras van por pantalla, no por textura)
+		page_paint(PC_W, PC_H, 1, -1);
+		g_clip_ell = ell;
+		gfx_resume(g_top);
+		B.sx = sx, B.sy = sy;
+		PCS.valid = true, PCS.zoom = z, PCS.ver = B.page_ver;
+		dx = (B.sx - PCS.x0) * z, dy = (B.sy - PCS.y0) * z;
+	}
+	gfx_rt_draw(&PC, -floorf(dx + 0.5f), -floorf(dy + 0.5f));
+	page_paint(TOP_W, SCR_H, 2, hov);
+}
+
+static void home_top(void);
+static void oom_top(void);
+void br_top(void)
+{
+	if (B.home) {
+		home_top();
+		return;
+	}
+	if (B.st == ST_OOM) {
+		oom_top();
+		return;
+	}
+	if (B.st != ST_READY && B.st != ST_ACT) {
+		draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+		const float X = 24, W = TOP_W - 48;
+		char host[128];
+		host_of(B.url, host, sizeof host);
+		draw_icon(IC_GLOBE, TOP_W / 2, 70, 30, B.st == ST_ERROR ? T.danger : T.accent);
+		text_draw_center_clip(host, TOP_W / 2, 98, W, TS_TITLE, T.text);
+		if (B.st == ST_ERROR) {
+			text_draw_center(B.err, TOP_W / 2, 126, TS_SUB, T.danger);
+		} else {
+			B.t_load += 1.0f / 60;
+			draw_arc(TOP_W / 2, 140, 10, 2.5f, B.t_load * 6, B.t_load * 6 + 4.2f, T.accent);
+			text_draw_center(B.st == ST_LAYOUT ? "Colocando la página…" : B.in_js ? (B.cancel ? "Parando el JavaScript…" : "Ejecutando el JavaScript de la página…") : "Cargando…",
+			                 TOP_W / 2, 158, TS_SUB, T.text3);
+			if (B.in_js && !B.cancel)
+				text_draw_center("B: saltárselo y ver la página ya", TOP_W / 2, 200, TS_SUB, T.text3);
+			if (B.st == ST_LAYOUT && B.nel_total > 0) {
+				float f = clampf((float)B.nel_done / B.nel_total, 0, 1);
+				draw_rrect(TOP_W / 2 - 80, 180, 160, 5, 2.5f, T.surface2);
+				draw_rrect(TOP_W / 2 - 80, 180, fmaxf(5, 160 * f), 5, 2.5f, T.accent);
+			}
+		}
+		(void)X;
+		return;
+	}
+	// texturas de las imágenes ya decodificadas (pocas por fotograma, para no dar tirones)
+	for (int i = 0, up = 0; i < B.nimg && up < 2; i++)
+		if (B.img[i].st == IM_RGBA) {
+			bool ok = tex_from_rgba(&B.img[i].tex, B.img[i].rgba, B.img[i].tw, B.img[i].th);
+			free(B.img[i].rgba);
+			B.img[i].rgba = NULL;
+			B.img[i].st = ok ? IM_TEX : IM_FAIL;
+			up++;
+			B.page_ver++;
+		}
+	int hov = link_at_pointer();
+	B.hover = hov;
+	B.hw = wdg_at_pointer();
+	page_draw(hov);
+	const float z = B.zoom;
 	// barra de desplazamiento fina a la derecha
 	if (B.total > view_h()) {
 		float bh = fmaxf(16, SCR_H * view_h() / B.total), by = (SCR_H - bh) * (B.sy / (B.total - view_h()));
@@ -3448,7 +3518,9 @@ static void idle_thread(void *arg)
 		B.idle_left = 0;
 	if (r.navigate[0])
 		util_strlcpy(B.js_nav, r.navigate, sizeof B.js_nav);
-	if (changed && B.idle_relayouts >= 3) // ya se recolocó bastante: lo demás, con el próximo clic
+	// recolocar para el JavaScript de fondo para la pantalla un momento: solo una vez, nada más
+	// cargar y sin que se haya tocado nada; lo demás se aplica con el próximo clic
+	if (changed && (B.idle_relayouts >= 1 || B.last_in > B.ready_ms || util_ms() - B.ready_ms > 5000))
 		B.idle_dirty = true, changed = false;
 	if (changed) {
 		B.idle_relayouts++;
@@ -4293,10 +4365,31 @@ void br_bottom(void)
 	}
 	// --- touchpad (con su trama de puntos) y franja para desplazar
 	const float TX = 8, TW = BOT_W - 16 - STRIP - 6, SX = BOT_W - 8 - STRIP;
-	draw_rrect(TX, TP_Y, TW, TP_B - TP_Y, 12, T.surface);
-	for (float yy = TP_Y + 10; yy < TP_B - 6; yy += 12)
-		for (float xx = TX + 10; xx < TX + TW - 6; xx += 12)
-			draw_rect(xx, yy, 1.5f, 1.5f, T.divider);
+	// el touchpad con su trama: pintado una vez en una textura (eran 264 puntos en cada fotograma)
+	static GfxRT pad;
+	static bool pad_tried;
+	static u32 pad_col;
+	if (!pad_tried) {
+		pad_tried = true;
+		gfx_rt_init(&pad, 512, 256);
+	}
+	if (pad.ok) {
+		if (pad_col != (T.surface ^ T.divider) || !pad_col) { // al cambiar el tema, otra vez
+			pad_col = (T.surface ^ T.divider) | 1;
+			gfx_rt_begin(&pad, 0);
+			draw_rrect(0, 0, TW, TP_B - TP_Y, 12, T.surface);
+			for (float yy = 10; yy < TP_B - TP_Y - 6; yy += 12)
+				for (float xx = 10; xx < TW - 6; xx += 12)
+					draw_rect(xx, yy, 1.5f, 1.5f, T.divider);
+			gfx_resume(g_bot);
+		}
+		gfx_rt_draw(&pad, TX, TP_Y);
+	} else {
+		draw_rrect(TX, TP_Y, TW, TP_B - TP_Y, 12, T.surface);
+		for (float yy = TP_Y + 10; yy < TP_B - 6; yy += 12)
+			for (float xx = TX + 10; xx < TX + TW - 6; xx += 12)
+				draw_rect(xx, yy, 1.5f, 1.5f, T.divider);
+	}
 	draw_rrect(SX, TP_Y, STRIP, TP_B - TP_Y, 12, T.surface);
 	if (ready && B.total > view_h()) {
 		float h = TP_B - TP_Y - 8, gh = fmaxf(18, h * view_h() / B.total), gy = TP_Y + 4 + (h - gh) * (B.sy / (B.total - view_h()));
@@ -4305,7 +4398,10 @@ void br_bottom(void)
 	bool on_pad = g_touch.held && touch_in(TX, TP_Y, TW, TP_B - TP_Y) && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y;
 	bool on_strip = g_touch.held && g_touch.sx >= SX && g_touch.sy >= TP_Y && g_touch.sy < TP_B;
 	bool click = false;
-	if (ready) {
+	// con su JavaScript trabajando de fondo (o atendiendo un clic) el puntero y el desplazamiento
+	// siguen: lo que espera es el clic, el zoom y PC / móvil
+	bool moving = ready || B.st == ST_ACT;
+	if (moving) {
 		// puntero: el dedo en el touchpad o la palanca
 		if (on_pad) {
 			B.px += (g_touch.x - g_touch.px) * 1.4f;
@@ -4338,17 +4434,24 @@ void br_bottom(void)
 			B.sy += 60 / B.zoom, B.vy = 0;
 		if (g_krepeat & KEY_UP)
 			B.sy -= 60 / B.zoom, B.vy = 0;
-		if (g_krepeat & KEY_RIGHT)
+		if (ready && (g_krepeat & KEY_RIGHT))
 			focus_step(1);
-		if (g_krepeat & KEY_LEFT)
+		if (ready && (g_krepeat & KEY_LEFT))
 			focus_step(-1);
-		if (zin || (g_krepeat & KEY_R))
+		if (ready && (zin || (g_krepeat & KEY_R)))
 			zoom_by(1.25f);
-		if (zout || (g_krepeat & KEY_L))
+		if (ready && (zout || (g_krepeat & KEY_L)))
 			zoom_by(0.8f);
 		clamp_view();
 		click = (g_touch.up && !g_touch.drag && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y && g_touch.sy < TP_B) ||
 		        (g_kdown & KEY_A);
+		if (!ready) { // el clic espera a que su JavaScript termine el rato que lleva (como mucho medio segundo)
+			B.click_wait |= click;
+			click = false;
+		} else if (B.click_wait)
+			click = true, B.click_wait = false;
+	}
+	if (ready) {
 		if ((tpc && B.force != 1) || (tmob && B.force != 2) || (g_kdown & KEY_Y)) {
 			B.force = (g_kdown & KEY_Y) ? (mob ? 1 : 2) : tpc ? 1 : 2;
 			if (strstr(B.url, "://")) { // de Internet: se vuelve a pedir, presentándose como PC o como móvil
@@ -4369,10 +4472,15 @@ void br_bottom(void)
 		tip = B.err, tc = T.danger;
 	else if (oom_tip)
 		tip = "Memoria llena · toca aquí para verla en modo lectura", tc = T.warn;
+	// sin desplazarse para leerse entero: cada línea que se desplaza recorta con tijeras y obliga a
+	// vaciar la cola de dibujo de la GPU (lo más caro de esta pantalla)
+	g_clip_ell = true;
 	text_draw_center_clip(tip, BOT_W / 2, TP_B + 4, BOT_W - 20, 0.40f, tc);
-	char keys[160];
-	snprintf(keys, sizeof keys, "%s Clic · %s Enlaces · L R Zoom · %s PC/Móvil · %s Atrás", GLYPH_A, GLYPH_DPAD, GLYPH_Y, GLYPH_B);
+	static char keys[160];
+	if (!keys[0])
+		snprintf(keys, sizeof keys, "%s Clic · %s Enlaces · L R Zoom · %s PC/Móvil · %s Atrás", GLYPH_A, GLYPH_DPAD, GLYPH_Y, GLYPH_B);
 	text_draw_center_clip(keys, BOT_W / 2, TP_B + 18, BOT_W - 20, 0.36f, T.text3);
+	g_clip_ell = false;
 	// --- acciones
 	if (oom_tip && tap(0, TP_B, BOT_W, 16)) {
 		oom_reader();

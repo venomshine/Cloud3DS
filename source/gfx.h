@@ -35,6 +35,13 @@ void gfx_tick(void);          // calcula g_dt (antes de la lógica)
 void gfx_frame_begin(void);   // empieza a dibujar (después de la lógica)
 void gfx_frame_end(void);
 void gfx_target(C3D_RenderTarget *t, u32 clear);
+void gfx_resume(C3D_RenderTarget *t);               // seguir dibujando en una pantalla (sin borrarla)
+/* una textura en la que se dibuja (el navegador guarda ahí su página para no repintarla cada fotograma) */
+typedef struct { C3D_Tex tex; C3D_RenderTarget *rt; Tex3DS_SubTexture sub; C2D_Image img; int w, h; bool ok; } GfxRT;
+bool gfx_rt_init(GfxRT *r, int w, int h);
+void gfx_rt_free(GfxRT *r);
+void gfx_rt_begin(GfxRT *r, u32 clear);             // dibujar en ella (luego gfx_resume a la pantalla)
+void gfx_rt_draw(GfxRT *r, float x, float y);
 void gfx_clip(float x, float y, float w, float h);   // solo se dibuja dentro del rectángulo
 void gfx_clip_off(void);
 
