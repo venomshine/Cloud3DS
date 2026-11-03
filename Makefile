@@ -31,7 +31,7 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 			-ffunction-sections \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -D__3DS__
+CFLAGS	+=	$(INCLUDE) -D__3DS__ -DJS_NAN_BOXING=0
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
@@ -93,10 +93,12 @@ web: $(ROMFS)/web/index.html.gz $(ROMFS)/gfx/sprites.t3x
 # librerías de NetSurf (MIT) para leer páginas web: nsweb/lib/libnsweb.a
 nsweb:
 	@$(MAKE) --no-print-directory -C nsweb
+	@[ ! -f $(TARGET).elf ] || [ ! nsweb/lib/libnsweb.a -nt $(TARGET).elf ] || rm -f $(TARGET).elf # que se vuelva a enlazar
 
 # QuickJS-ng (MIT), el JavaScript del navegador: qjs/lib/libqjs.a
 qjs:
 	@$(MAKE) --no-print-directory -C qjs
+	@[ ! -f $(TARGET).elf ] || [ ! qjs/lib/libqjs.a -nt $(TARGET).elf ] || rm -f $(TARGET).elf # que se vuelva a enlazar
 
 # logo, resplandor y halo (imágenes de gfx/, generadas con tools/gen_art.py)
 $(ROMFS)/gfx/sprites.t3x: gfx/sprites.t3s $(wildcard gfx/*.png)
