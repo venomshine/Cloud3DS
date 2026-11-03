@@ -19,6 +19,7 @@
 #include "icons.h"
 #include "img.h"
 #include "svg.h"
+#include "jsdom.h"
 #include "ui.h"
 #include "util.h"
 
@@ -154,6 +155,9 @@ static struct {
 	int hw;              /* control de formulario bajo el puntero */
 	float tip;           /* tiempo enseñando el % de zoom */
 	volatile int nel_done, nel_total; /* nodos colocados y total (para el progreso) */
+	bool js;             /* ejecutar el JavaScript de las páginas */
+	int js_scripts, js_errors;
+	char js_nav[1024];   /* la página pidió ir a otra dirección desde su JavaScript */
 	PImg *img;
 	int nimg, cimg;
 	Thread img_thr;
@@ -317,6 +321,38 @@ static void css_collect(BrCss *c, dom_node *n, int depth, int *links, size_t *by
 	}
 }
 
+/* ------------------------------------------------------------ JavaScript de la página */
+static void js_log(const char *m)
+{
+	util_log("%s", m);
+}
+
+static int js_fetch(const char *url, const char *method, const char *body, size_t blen, char **out, size_t *n, long *code, char *fin, size_t fl)
+{
+	Buf b = {0};
+	int r;
+	*code = 0;
+	if (!strncasecmp(url, "file:", 5)) { // de una página de la SD: es un archivo de la SD
+		url += 5;
+		while (url[0] == '/' && url[1] == '/')
+			url++;
+	}
+	if (strcasecmp(method, "GET") && strstr(url, "://")) { // POST y demás
+		static const char *const H[] = {"Content-Type: application/x-www-form-urlencoded; charset=UTF-8", NULL};
+		r = dl_request(strcasecmp(method, "PUT") ? HTTPC_METHOD_POST : HTTPC_METHOD_PUT, url, H, body, blen, buf_cb, &b, code);
+		util_strlcpy(fin, url, fl);
+	} else {
+		r = fetch_any(url, "*/*", &b, code);
+		util_strlcpy(fin, strstr(url, "://") && dl_last_url()[0] ? dl_last_url() : url, fl);
+	}
+	if (r != DLF_OK) {
+		free(b.p);
+		return -1;
+	}
+	*out = b.p, *n = b.n;
+	return 0;
+}
+
 // cuántos nodos tiene el árbol (para enseñar el progreso al colocar la página)
 static int count_nodes(dom_node *n)
 {
@@ -396,6 +432,17 @@ static void load_thread(void *arg)
 	dom_hubbub_parser_completed(parser);
 	dom_hubbub_parser_destroy(parser);
 	free(b.p);
+	// su JavaScript, antes del CSS: lo que añada o cambie (también hojas de estilo) ya cuenta
+	B.js_nav[0] = 0;
+	if (doc && B.js) {
+		JsHost h = {.fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 8000};
+		JsResult jr;
+		jsdom_run(doc, &h, &jr);
+		B.js_scripts = jr.scripts, B.js_errors = jr.errors;
+		util_log("web: JavaScript: %d scripts, %d con error, %u ms", jr.scripts, jr.errors, jr.ms);
+		if (jr.navigate[0])
+			util_strlcpy(B.js_nav, jr.navigate, sizeof B.js_nav);
+	}
 	// el CSS de la página (se baja y se lee aquí, en el hilo, para no parar la pantalla)
 	BrCss *css = doc ? brcss_new(B.url) : NULL;
 	if (css) {
@@ -2292,6 +2339,7 @@ static void go(const char *url, bool push)
 
 void br_open_url(const char *url)
 {
+	B.js = true;
 	B.open = true;
 	B.nhist = 0;
 	B.force = 0;
@@ -2776,6 +2824,12 @@ void br_bottom(void)
 			snprintf(B.err, sizeof B.err, "Sin memoria para colocar la página");
 			B.st = ST_ERROR;
 		}
+	}
+	if (B.st == ST_READY && B.js_nav[0]) { // location.href = … desde la página
+		char u[1024];
+		util_strlcpy(u, B.js_nav, sizeof u);
+		B.js_nav[0] = 0;
+		go(u, true);
 	}
 	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
 	bool ready = B.st == ST_READY;
