@@ -16,6 +16,7 @@
 #include "dl.h"
 #include "gfx.h"
 #include "icons.h"
+#include "img.h"
 #include "ui.h"
 #include "util.h"
 
@@ -58,7 +59,21 @@ typedef struct {
 	s16 link;      /* -1 sin enlace */
 	u8 under;      /* subrayado (enlaces) */
 	u8 bold;       /* negrita: se pinta dos veces, medio píxel corrida */
+	s16 img;       /* imagen que ocupa este trozo (-1 texto) */
 } Frag;
+
+/* una imagen de la página: se baja y se decodifica en su hilo; la textura la crea el principal */
+enum { IM_WAIT, IM_RGBA, IM_TEX, IM_FAIL };
+typedef struct {
+	char *url;
+	float w, h;            /* tamaño en la página (px) */
+	float y;               /* dónde está (para bajar antes lo que se ve) */
+	bool sized;            /* el tamaño venía de la página */
+	volatile int st;
+	u8 *rgba;
+	int tw, th, iw, ih;    /* textura y tamaño original */
+	Texture tex;
+} PImg;
 
 typedef struct {
 	float y, h, gap;
@@ -111,7 +126,14 @@ static struct {
 	int focus;           /* trozo con enlace marcado con la cruceta (-1 ninguno) */
 	float tip;           /* tiempo enseñando el % de zoom */
 	volatile int nel_done, nel_total; /* nodos colocados y total (para el progreso) */
+	PImg *img;
+	int nimg, cimg;
+	Thread img_thr;
+	volatile bool img_quit;
+	size_t img_px;       /* píxeles decodificados (límite de memoria) */
 } B;
+
+static void img_free_all(void);
 
 /* ------------------------------------------------------------ cargar (en un hilo) */
 typedef struct {
@@ -371,6 +393,7 @@ static void start_load(const char *url)
 	brcss_free(B.css);
 	B.css = NULL;
 	B.ncss = 0;
+	img_free_all();
 	util_strlcpy(B.url, url, sizeof B.url);
 	B.err[0] = 0;
 	B.title[0] = 0;
@@ -395,6 +418,10 @@ static void resolve(const char *base, const char *href, char *out, size_t n)
 		return;
 	}
 	const char *sch = strstr(base, "://");
+	if (!sch && href[0] == '/' && href[1] == '/') { // //servidor/ruta desde un archivo de la SD
+		snprintf(out, n, "https:%s", href);
+		return;
+	}
 	if (!sch) { // archivo de la SD: relativo a su carpeta
 		char d[1024];
 		util_strlcpy(d, base, sizeof d);
@@ -527,6 +554,7 @@ static void put(const char *s, int n, const St *st, float w)
 	f->x = L_x, f->w = w;
 	f->off = B.nt, f->n = (u16)n;
 	f->sc = st->sc, f->col = st->col, f->link = (s16)st->link, f->under = st->under, f->bold = st->bold;
+	f->img = -1;
 	B.nt += n;
 	Line *l = &B.l[B.nl - 1];
 	l->used = true;
@@ -564,6 +592,31 @@ static void word(const char *s, int n, const St *st)
 	}
 	L_x += sp;
 	put(s, n, st, w);
+	L_space = false;
+	L_marker = false;
+}
+
+// una imagen en la línea: un trozo sin texto de w × h
+static void put_box(float w, float h, const St *st, int img)
+{
+	if (!B.nl)
+		line_new();
+	float sp = L_has && L_space ? text_width(" ", st->sc) : 0;
+	if (L_has && L_x + sp + w > RIGHT)
+		line_new(), sp = 0;
+	if (!L_has)
+		L_x = L_indent;
+	L_x += sp;
+	int nf0 = B.nf;
+	put("", 0, st, w);
+	if (B.nf == nf0)
+		return;
+	Frag *f = &B.f[B.nf - 1];
+	f->img = (s16)img;
+	f->under = 0;
+	Line *l = &B.l[f->line];
+	if (h > l->h)
+		l->h = h;
 	L_space = false;
 	L_marker = false;
 }
@@ -672,6 +725,107 @@ static void children(dom_node *node, const St *st)
 		dom_node_unref(c);
 		c = nx;
 	}
+}
+
+/* ------------------------------------------------------------ imágenes */
+#define IMG_MAX     400                 /* imágenes por página */
+#define IMG_BUDGET  (5 * 1024 * 1024)   /* píxeles decodificados en total (~20 MB) */
+
+static int img_find_or_add(const char *url)
+{
+	for (int i = 0; i < B.nimg; i++)
+		if (!strcmp(B.img[i].url, url))
+			return i;
+	if (B.nimg >= IMG_MAX)
+		return -1;
+	if (B.nimg == B.cimg) {
+		int nc = B.cimg ? B.cimg * 2 : 32;
+		PImg *ni = realloc(B.img, nc * sizeof *ni);
+		if (!ni)
+			return -1;
+		B.img = ni, B.cimg = nc;
+	}
+	PImg *im = &B.img[B.nimg];
+	memset(im, 0, sizeof *im);
+	im->url = strdup(url);
+	if (!im->url)
+		return -1;
+	im->st = IM_WAIT;
+	return B.nimg++;
+}
+
+static void img_stop(void)
+{
+	if (B.img_thr) {
+		B.img_quit = true;
+		threadJoin(B.img_thr, U64_MAX);
+		threadFree(B.img_thr);
+		B.img_thr = NULL;
+	}
+	B.img_quit = false;
+}
+
+static void img_free_all(void)
+{
+	img_stop();
+	for (int i = 0; i < B.nimg; i++) {
+		free(B.img[i].url);
+		free(B.img[i].rgba);
+		tex_free(&B.img[i].tex);
+	}
+	free(B.img);
+	B.img = NULL;
+	B.nimg = B.cimg = 0;
+	B.img_px = 0;
+}
+
+static int fetch_any(const char *url, const char *accept, Buf *b, long *code);
+
+// baja y decodifica, primero las que están más cerca de lo que se ve
+static void img_thread(void *arg)
+{
+	(void)arg;
+	for (;;) {
+		if (B.img_quit)
+			return;
+		int best = -1;
+		float bd = 1e30f, vy = B.sy;
+		for (int i = 0; i < B.nimg; i++)
+			if (B.img[i].st == IM_WAIT) {
+				float d = fabsf(B.img[i].y - vy);
+				if (d < bd)
+					bd = d, best = i;
+			}
+		if (best < 0)
+			return;
+		PImg *im = &B.img[best];
+		Buf b = {0};
+		long code = 0;
+		int r = fetch_any(im->url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
+		int mw = (int)fminf(512, fmaxf(16, im->w * 1.5f)), mh = (int)fminf(512, fmaxf(16, im->h * 1.5f));
+		u8 *px = NULL;
+		int w = 0, h = 0;
+		if (r == DLF_OK && code < 400 && b.n && B.img_px < IMG_BUDGET && img_mem_fit((const u8 *)b.p, b.n, mw, mh, &px, &w, &h) == IMG_OK) {
+			im->rgba = px, im->tw = w, im->th = h, im->iw = w, im->ih = h;
+			B.img_px += (size_t)w * h;
+			im->st = IM_RGBA;
+		} else
+			im->st = IM_FAIL;
+		free(b.p);
+	}
+}
+
+static void img_start(void)
+{
+	img_stop();
+	bool any = false;
+	for (int i = 0; i < B.nimg; i++)
+		any |= B.img[i].st == IM_WAIT;
+	if (!any)
+		return;
+	s32 prio = 0x30;
+	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	B.img_thr = threadCreate(img_thread, NULL, 64 * 1024, prio + 2, -2, false);
 }
 
 /* ------------------------------------------------------------ con CSS */
@@ -785,6 +939,47 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		return;
 	}
 	if (!strcmp(tag, "img")) {
+		char src[1024], abs[1024], v[32];
+		bool ok = attr(node, "src", src, sizeof src) && src[0] && strncmp(src, "data:", 5);
+		if (!ok) // las que se cargan «perezosas» guardan la dirección en data-src
+			ok = attr(node, "data-src", src, sizeof src) && src[0];
+		size_t sl = ok ? strlen(src) : 0;
+		bool svg = sl > 4 && (!strcasecmp(src + sl - 4, ".svg") || strstr(src, ".svg?"));
+		if (ok && !svg) {
+			float w = 0, h = 0;
+			if (attr(node, "width", v, sizeof v))
+				w = (float)atof(v);
+			if (attr(node, "height", v, sizeof v))
+				h = (float)atof(v);
+			css_fixed cv;
+			css_unit cu;
+			float avail = RIGHT - L_indent;
+			if (css_computed_width(cs, &cv, &cu) == CSS_WIDTH_SET)
+				w = len_px(cs, cv, cu, avail);
+			if (css_computed_height(cs, &cv, &cu) == CSS_HEIGHT_SET && cu != CSS_UNIT_PCT)
+				h = len_px(cs, cv, cu, avail);
+			resolve(B.url, src, abs, sizeof abs);
+			int k = img_find_or_add(abs);
+			if (k >= 0) {
+				PImg *im = &B.img[k];
+				if (w <= 0 && h <= 0 && im->iw) // ya se sabe su tamaño (se bajó antes)
+					w = im->iw, h = im->ih;
+				else if (w > 0 && h <= 0)
+					h = im->iw ? w * im->ih / im->iw : w * 0.75f;
+				else if (h > 0 && w <= 0)
+					w = im->ih ? h * im->iw / im->ih : h * 1.33f;
+				im->sized = w > 0 && h > 0;
+				if (!im->sized)
+					w = 120, h = 90;
+				if (w > avail && avail > 20) // max-width: 100% casi siempre
+					h = h * avail / w, w = avail;
+				if (w >= 1 && h >= 1) {
+					im->w = w, im->h = h;
+					put_box(w, h, &st, k);
+					return;
+				}
+			}
+		}
 		char alt[120];
 		attr(node, "alt", alt, sizeof alt);
 		if (!alt[0])
@@ -1197,6 +1392,7 @@ static void layout_free(void)
 
 static void layout(void)
 {
+	img_stop(); // su hilo lee la lista de imágenes, que aquí puede crecer
 	layout_free();
 	bool mob = B.force ? B.force == 2 : B.page_mobile;
 	B.vw = mob ? VW_MOB : VW_PC;
@@ -1257,6 +1453,9 @@ static void layout(void)
 		y += B.l[i].h;
 	}
 	B.total = y + 20;
+	for (int i = 0; i < B.nf; i++) // dónde está cada imagen (las de cerca se bajan antes)
+		if (B.f[i].img >= 0 && B.f[i].img < B.nimg)
+			B.img[B.f[i].img].y = B.l[B.f[i].line].y;
 	B.off = B.vel = 0;
 	B.zoom = TOP_W / B.vw; // entera a lo ancho; para leer, zoom
 	B.sx = B.sy = B.vy = 0;
@@ -1313,6 +1512,7 @@ static void close_br(void)
 	}
 	brcss_free(B.css);
 	B.css = NULL;
+	img_free_all();
 	layout_free();
 	B.st = ST_IDLE;
 }
@@ -1507,6 +1707,15 @@ void br_top(void)
 			continue;
 		draw_rect((PAD_X + bb->x0 - B.sx) * z, Y0, (bb->x1 - bb->x0) * z, Y1 - Y0, bb->col);
 	}
+	// texturas de las imágenes ya decodificadas (pocas por fotograma, para no dar tirones)
+	for (int i = 0, up = 0; i < B.nimg && up < 2; i++)
+		if (B.img[i].st == IM_RGBA) {
+			bool ok = tex_from_rgba(&B.img[i].tex, B.img[i].rgba, B.img[i].tw, B.img[i].th);
+			free(B.img[i].rgba);
+			B.img[i].rgba = NULL;
+			B.img[i].st = ok ? IM_TEX : IM_FAIL;
+			up++;
+		}
 	int hov = link_at_pointer();
 	B.hover = hov;
 	for (int i = first_frag(B.sy); i < B.nf; i++) {
@@ -1520,6 +1729,18 @@ void br_top(void)
 			continue;
 		if (f->link >= 0 && (f->link == hov || i == B.focus))
 			draw_rect(X - 1, Y, Wd + 2, H, col_alpha(PG_LINK, 0.18f));
+		if (f->img >= 0 && f->img < B.nimg) { // imagen: encajada en su sitio sin deformarla
+			PImg *im = &B.img[f->img];
+			float bw = Wd, bh = im->h * z, by = (B.l[f->line].y + B.l[f->line].h - im->h - B.sy) * z;
+			if (im->st == IM_TEX && im->tex.ok) {
+				float k = fminf(bw / im->tw, bh / im->th), dw = im->tw * k, dh = im->th * k;
+				draw_texture(&im->tex, X + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh, 1);
+			} else
+				draw_rect(X, by, bw, bh, im->st == IM_FAIL ? col_hex(0xF2F2F2) : col_hex(0xEAECF0));
+			if (f->link >= 0 && (f->link == hov || i == B.focus))
+				draw_rect(X, by, bw, bh, col_alpha(PG_LINK, 0.25f));
+			continue;
+		}
 		float sc = f->sc * z;
 		if (sc < 0.17f) // tan pequeño que no se leería: una raya del color del texto (como una vista previa)
 			draw_rect(X, Y + H * 0.35f, Wd, fmaxf(1, H * 0.35f), col_alpha(f->col, 0.55f));
@@ -1580,6 +1801,7 @@ static void layout_thread(void *arg)
 	layout();
 	B.hover = -1;
 	B.st = ST_READY;
+	img_start();
 }
 
 void br_bottom(void)
