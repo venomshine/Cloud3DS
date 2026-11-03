@@ -32,7 +32,9 @@ typedef struct {
 int  titles_list(TitleInfo **out);
 bool title_icon(u64 tid, u16 *px48);             /* 48×48 RGB565 */
 bool title_is_self(u64 tid);                     /* Cloud3DS */
-int  title_uninstall(u64 tid);                   /* el juego, su actualización y sus DLC; 0 bien */
+/* el juego, su actualización y sus DLC; 0 bien. step (puede ser NULL) se llama antes de borrar cada
+ * parte: 0 el juego, 1 la actualización, 2 un DLC. Tarda (1 GB, minutos): llamarla desde un hilo */
+int  title_uninstall(u64 tid, void (*step)(int part));
 /* copia la partida a la carpeta de Checkpoint; out = la carpeta de la copia. <0: -1 sin partida, -2 error */
 int  save_backup(const TitleInfo *t, char *out, size_t n);
 int  save_backups_count(const TitleInfo *t, u64 *last); /* cuántas copias hay y la fecha de la última */
