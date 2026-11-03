@@ -663,4 +663,134 @@ function navigateForm(form) {
 	const act = resolveUrl(location.href, form.getAttribute('action') || location.href).replace(/[?#].*$/, '');
 	N.navigate(act + '?' + q);
 }
+// Intl: QuickJS no lo trae y muchas webs (DuckDuckGo, las hechas con Next.js…) lo usan nada más
+// empezar; esto es lo básico (números, fechas, plurales, comparar, listas, tiempo relativo)
+if (typeof G.Intl === 'undefined') {
+	const loc = l => (Array.isArray(l) ? l[0] : l) || 'es-ES';
+	const sep = l => /^(es|de|it|pt|nl|fr|ru|pl|tr|id|da|sv|fi|nb|cs)/i.test(l) ? ['.', ','] : [',', '.'];
+	const sup = l => l == null ? [] : Array.isArray(l) ? l.slice() : [l];
+	const group = (s, g) => s.replace(/\B(?=(\d{3})+(?!\d))/g, g);
+	const pad = (n, k) => String(n).padStart(k, '0');
+	const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+	const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+	const DIA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+	const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+	class NumberFormat {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; this.format = this.format.bind(this); }
+		format(n) {
+			const o = this.o, [g, d] = sep(this.l);
+			n = Number(n);
+			if (!isFinite(n)) return isNaN(n) ? 'NaN' : (n < 0 ? '-∞' : '∞');
+			if (o.style === 'percent') n *= 100;
+			if (o.notation === 'compact') {
+				const a = Math.abs(n), u = a >= 1e9 ? [1e9, ' mil M'] : a >= 1e6 ? [1e6, ' M'] : a >= 1e3 ? [1e3, ' mil'] : null;
+				if (u) return (Math.round(n / u[0] * 10) / 10).toString().replace('.', d) + u[1];
+			}
+			const mx = o.maximumFractionDigits != null ? o.maximumFractionDigits : (o.style === 'currency' ? 2 : o.style === 'percent' ? 0 : 3);
+			const mn = o.minimumFractionDigits != null ? o.minimumFractionDigits : (o.style === 'currency' ? 2 : 0);
+			let t = Math.abs(n).toFixed(Math.max(mn, Math.min(mx, 20)));
+			if (t.indexOf('.') >= 0) { t = t.replace(/0+$/, ''); const f = t.split('.')[1] || ''; if (f.length < mn) t += '0'.repeat(mn - f.length); t = t.replace(/\.$/, ''); }
+			let [i, f] = t.split('.');
+			if (o.useGrouping !== false && !(d === ',' && i.length <= 4 && /^es/i.test(this.l))) i = group(i, g);
+			let r = (n < 0 ? '-' : '') + i + (f ? d + f : '');
+			if (o.style === 'percent') r += d === ',' ? ' %' : '%';
+			if (o.style === 'currency') { const c = { EUR: '€', USD: '$', GBP: '£', JPY: '¥' }[o.currency] || o.currency || ''; r = d === ',' ? r + ' ' + c : c + r; }
+			if (o.style === 'unit' && o.unit) r += ' ' + o.unit;
+			return r;
+		}
+		formatToParts(n) { return [{ type: 'integer', value: this.format(n) }]; }
+		resolvedOptions() { return Object.assign({ locale: this.l, numberingSystem: 'latn', style: 'decimal', minimumFractionDigits: 0, maximumFractionDigits: 3 }, this.o); }
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	class DateTimeFormat {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; this.format = this.format.bind(this); }
+		format(x) {
+			const t = x == null ? new Date() : new Date(x), o = this.o, es = /^es/i.test(this.l);
+			if (isNaN(t)) return 'Invalid Date';
+			const parts = [], has = k => o[k] !== undefined;
+			const any = ['year', 'month', 'day', 'weekday', 'hour', 'minute', 'second'].some(has) || o.dateStyle || o.timeStyle;
+			const dY = !any || has('year') || o.dateStyle, dM = !any || has('month') || o.dateStyle, dD = !any || has('day') || o.dateStyle;
+			const long = o.month === 'long' || o.dateStyle === 'long' || o.dateStyle === 'full', short = o.month === 'short' || o.dateStyle === 'medium';
+			if (has('weekday') || o.dateStyle === 'full') parts.push((es ? DIA : DAY)[t.getDay()] + ',');
+			if (dD || dM || dY) {
+				if (long || short) {
+					let m = (es ? MES : MON)[t.getMonth()]; if (short) m = m.slice(0, 3);
+					parts.push(es ? [dD ? t.getDate() : '', dM ? 'de ' + m : '', dY ? 'de ' + t.getFullYear() : ''].filter(Boolean).join(' ') : [dM ? m : '', dD ? t.getDate() + ',' : '', dY ? t.getFullYear() : ''].filter(Boolean).join(' '));
+				} else {
+					const a = [dD && (o.day === '2-digit' ? pad(t.getDate(), 2) : t.getDate()), dM && (o.month === '2-digit' ? pad(t.getMonth() + 1, 2) : t.getMonth() + 1), dY && t.getFullYear()].filter(v => v !== false && v !== undefined);
+					parts.push(es ? a.join('/') : [a[1], a[0], a[2]].filter(v => v !== undefined).join('/'));
+				}
+			}
+			if (has('hour') || has('minute') || o.timeStyle) parts.push(pad(t.getHours(), has('hour') && o.hour !== '2-digit' ? 1 : 2) + ':' + pad(t.getMinutes(), 2) + (has('second') || o.timeStyle === 'medium' ? ':' + pad(t.getSeconds(), 2) : ''));
+			return parts.join(' ').replace(/,$/, '');
+		}
+		formatToParts(x) { return [{ type: 'literal', value: this.format(x) }]; }
+		formatRange(a, b) { return this.format(a) + ' – ' + this.format(b); }
+		resolvedOptions() { return Object.assign({ locale: this.l, calendar: 'gregory', numberingSystem: 'latn', timeZone: 'UTC' }, this.o); }
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	class PluralRules {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; }
+		select(n) { return this.o.type === 'ordinal' ? 'other' : Math.abs(Number(n)) === 1 ? 'one' : 'other'; }
+		resolvedOptions() { return { locale: this.l, type: this.o.type || 'cardinal', pluralCategories: ['one', 'other'] }; }
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	class Collator {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; this.compare = this.compare.bind(this); } // como en los navegadores: se puede pasar suelta a sort
+		compare(a, b) {
+			a = String(a); b = String(b);
+			if (this.o.sensitivity === 'base' || this.o.sensitivity === 'accent') { a = a.toLowerCase(); b = b.toLowerCase(); }
+			if (this.o.numeric) { const x = parseFloat(a), y = parseFloat(b); if (!isNaN(x) && !isNaN(y) && x !== y) return x < y ? -1 : 1; }
+			const na = a.normalize ? a.normalize('NFD').replace(/[̀-ͯ]/g, '') : a, nb = b.normalize ? b.normalize('NFD').replace(/[̀-ͯ]/g, '') : b;
+			return na < nb ? -1 : na > nb ? 1 : a < b ? -1 : a > b ? 1 : 0;
+		}
+		resolvedOptions() { return Object.assign({ locale: this.l, usage: 'sort', sensitivity: 'variant' }, this.o); }
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	class RelativeTimeFormat {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; }
+		format(v, u) {
+			u = String(u).replace(/s$/, ''); const n = Math.abs(v), es = /^es/i.test(this.l);
+			const W = es ? { second: ['segundo', 'segundos'], minute: ['minuto', 'minutos'], hour: ['hora', 'horas'], day: ['día', 'días'], week: ['semana', 'semanas'], month: ['mes', 'meses'], year: ['año', 'años'] } : null;
+			const w = W ? (W[u] || [u, u + 's'])[n === 1 ? 0 : 1] : (n === 1 ? u : u + 's');
+			return es ? (v < 0 ? 'hace ' + n + ' ' + w : 'dentro de ' + n + ' ' + w) : (v < 0 ? n + ' ' + w + ' ago' : 'in ' + n + ' ' + w);
+		}
+		formatToParts(v, u) { return [{ type: 'literal', value: this.format(v, u) }]; }
+		resolvedOptions() { return { locale: this.l, style: 'long', numeric: 'always' }; }
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	class ListFormat {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; }
+		format(list) {
+			const a = Array.from(list).map(String), es = /^es/i.test(this.l), y = this.o.type === 'disjunction' ? (es ? ' o ' : ' or ') : (es ? ' y ' : ' and ');
+			return a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + y + a[a.length - 1];
+		}
+		formatToParts(list) { return [{ type: 'literal', value: this.format(list) }]; }
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	class Segmenter {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; }
+		segment(str) {
+			str = String(str); const w = this.o.granularity === 'word', out = [];
+			if (w) { const re = /\w+|\W+/gu; let m; while ((m = re.exec(str))) out.push({ segment: m[0], index: m.index, input: str, isWordLike: /\w/.test(m[0]) }); }
+			else { let i = 0; for (const c of str) { out.push({ segment: c, index: i, input: str }); i += c.length; } }
+			out.containing = k => out.find(s => k >= s.index && k < s.index + s.segment.length);
+			return out;
+		}
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	class DisplayNames {
+		constructor(l, o) { this.l = loc(l); this.o = o || {}; }
+		of(c) { return c; }
+		static supportedLocalesOf(l) { return sup(l); }
+	}
+	G.Intl = { NumberFormat, DateTimeFormat, PluralRules, Collator, RelativeTimeFormat, ListFormat, Segmenter, DisplayNames, Locale: class { constructor(t) { this.baseName = String(t); this.language = String(t).split('-')[0]; } toString() { return this.baseName; } maximize() { return this; } minimize() { return this; } },
+		getCanonicalLocales: l => sup(l), supportedValuesOf: () => [] };
+	if (!Number.prototype.toLocaleString || (1234.5).toLocaleString() === '1234.5') Number.prototype.toLocaleString = function (l, o) { return new NumberFormat(l, o).format(this); };
+	const dtl = Date.prototype.toLocaleDateString;
+	Date.prototype.toLocaleDateString = function (l, o) { try { return new DateTimeFormat(l, o || { year: 'numeric', month: 'numeric', day: 'numeric' }).format(this); } catch (e) { return dtl.call(this); } };
+	Date.prototype.toLocaleTimeString = function (l, o) { return new DateTimeFormat(l, o || { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(this); };
+	Date.prototype.toLocaleString = function (l, o) { return new DateTimeFormat(l, o || { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(this); };
+	String.prototype.localeCompare = function (b, l, o) { return new Collator(l, o).compare(this, b); };
+}
 })(globalThis);
