@@ -439,6 +439,20 @@ void toast_draw_top(void) {
     draw_rect(0, h - 1, TOP_W * left, 1.5f, col_alpha(s_toast_col, a * 0.9f));
 }
 
+// el mismo aviso, flotando abajo en una píldora (sobre una página web, que no tiene cabecera)
+void toast_draw_float(void) {
+    if (s_toast_t < 0) return;
+    s_toast_t += g_dt;
+    if (s_toast_t > TOAST_LIFE) { s_toast_t = -1; return; }
+    float a = toast_alpha();
+    float tw = fminf(text_width(s_toast, TOAST_TS), TOP_W - 80), w = tw + 42, h = 26;
+    float x = (TOP_W - w) / 2, y = SCR_H - 14 - h + (1 - a) * 8;
+    draw_rrect(x, y + 2, w, h, h / 2, col_alpha(T.shadow, a));
+    draw_rrect(x, y, w, h, h / 2, col_alpha(T.surface, a));
+    draw_icon((IconId)s_toast_ic, x + 17, y + h / 2, 11, col_alpha(s_toast_col, a));
+    text_draw_clip(s_toast, x + 30, y + (h - text_lineh(TOAST_TS)) / 2, tw, TOAST_TS, col_alpha(T.text, a));
+}
+
 // ------------------------------------------------------------ diálogo (pantalla inferior)
 #define DLG_X 24.0f
 #define DLG_W 272.0f

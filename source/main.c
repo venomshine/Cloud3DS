@@ -1493,7 +1493,7 @@ static void draw_top(void)
 	}
 	if (br_is_open()) { // navegador: las dos pantallas
 		br_top();
-		toast_draw_top();
+		toast_draw_float();
 		return;
 	}
 	if (CLU.open) { // la nube
