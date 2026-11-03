@@ -453,11 +453,129 @@ int dl_fetch(const char *url0, const char *accept, size_t (*wr)(char *, size_t, 
 
 /* petición general con httpc (para la nube): método, cabeceras «Nombre: valor» (lista acabada en
  * NULL), cuerpo opcional y respuesta por wr. Comprueba el certificado. Sigue redirecciones solo en GET */
+static int dl_request_curl(int method, const char *url, const char *const *headers, const void *body, size_t blen,
+                           size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out);
+static void common_opts(CURL *c, char *eb);
+static size_t curl_hdr_cb(char *d, size_t sz, size_t nm, void *u);
+static CURLSH *SH;
+
+/* servidores con los que httpc no conecta (TLS moderno: Microsoft, por ejemplo): directos a libcurl */
+static char NOHC[16][96];
+static int NOHC_I;
+static LightLock NOHC_L;
+static bool NOHC_OK;
+
+static void nohc_key(const char *url, char *h, size_t n)
+{
+	const char *p = strstr(url, "://");
+	p = p ? p + 3 : url;
+	size_t l = strcspn(p, "/?#");
+	snprintf(h, n, "%.*s", (int)(l < n - 1 ? l : n - 1), p);
+}
+
+static bool nohc_has(const char *url)
+{
+	if (!NOHC_OK)
+		return false;
+	char h[96];
+	nohc_key(url, h, sizeof h);
+	bool r = false;
+	LightLock_Lock(&NOHC_L);
+	for (int i = 0; i < 16 && !r; i++)
+		r = NOHC[i][0] && !strcmp(NOHC[i], h);
+	LightLock_Unlock(&NOHC_L);
+	return r;
+}
+
+static void nohc_add(const char *url)
+{
+	if (!NOHC_OK || nohc_has(url))
+		return;
+	LightLock_Lock(&NOHC_L);
+	nohc_key(url, NOHC[NOHC_I], sizeof NOHC[0]);
+	NOHC_I = (NOHC_I + 1) % 16;
+	LightLock_Unlock(&NOHC_L);
+}
+
+static int dl_request_hc(int method, const char *url0, const char *const *headers, const void *body, size_t blen,
+                         size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out);
+
+/* petición general (la nube, los formularios del navegador): con httpc y, si no conecta (su TLS es
+ * antiguo y muchos servidores ya no lo aceptan), con libcurl */
 int dl_request(int method, const char *url0, const char *const *headers, const void *body, size_t blen,
                size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out)
 {
-	if (!hc_ready)
-		return DLF_NOCONN;
+	int r = DLF_NOCONN;
+	bool skip = nohc_has(url0);
+	if (!skip && hc_ready)
+		r = dl_request_hc(method, url0, headers, body, blen, wr, u, code_out);
+	if (r != DLF_NOCONN)
+		return r;
+	if (!skip)
+		util_log("http: httpc no conecta con %.80s: libcurl", url0);
+	r = dl_request_curl(method, url0, headers, body, blen, wr, u, code_out);
+	if (r == DLF_OK && !skip)
+		nohc_add(url0);
+	return r;
+}
+
+static size_t sink_cb(char *d, size_t s, size_t m, void *u)
+{
+	(void)d, (void)u;
+	return s * m;
+}
+
+static int dl_request_curl(int method, const char *url, const char *const *headers, const void *body, size_t blen,
+                           size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out)
+{
+	CURL *c = curl_easy_init();
+	if (!c)
+		return DLF_FAIL;
+	char eb[CURL_ERROR_SIZE] = "";
+	struct curl_slist *h = NULL;
+	for (int i = 0; headers && headers[i]; i++)
+		h = curl_slist_append(h, headers[i]);
+	h = curl_slist_append(h, "Expect:"); // sin «100-continue»: algunos servidores no lo contestan
+	common_opts(c, eb);
+	if (t_ua)
+		curl_easy_setopt(c, CURLOPT_USERAGENT, t_ua);
+	if (SH)
+		curl_easy_setopt(c, CURLOPT_SHARE, SH);
+	curl_easy_setopt(c, CURLOPT_URL, url);
+	curl_easy_setopt(c, CURLOPT_HTTPHEADER, h);
+	curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, method == HTTPC_METHOD_GET ? 1L : 0L);
+	if (method == HTTPC_METHOD_POST || method == HTTPC_METHOD_PUT) {
+		curl_easy_setopt(c, CURLOPT_POST, 1L);
+		curl_easy_setopt(c, CURLOPT_POSTFIELDS, body ? body : "");
+		curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)(body ? blen : 0));
+	}
+	if (method == HTTPC_METHOD_PUT)
+		curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "PUT");
+	else if (method == HTTPC_METHOD_DELETE)
+		curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "DELETE");
+	else if (method == HTTPC_METHOD_HEAD)
+		curl_easy_setopt(c, CURLOPT_NOBODY, 1L);
+	char ck[2048];
+	if (t_ck_get && t_ck_get(url, ck, sizeof ck))
+		curl_easy_setopt(c, CURLOPT_COOKIE, ck);
+	curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, curl_hdr_cb);
+	curl_easy_setopt(c, CURLOPT_HEADERDATA, (void *)url);
+	curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, wr ? wr : sink_cb);
+	curl_easy_setopt(c, CURLOPT_WRITEDATA, u);
+	curl_easy_setopt(c, CURLOPT_TIMEOUT, 120L);
+	CURLcode r = curl_easy_perform(c);
+	long code = 0;
+	curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+	curl_easy_cleanup(c);
+	curl_slist_free_all(h);
+	util_log("http: curl %.80s -> %d, HTTP %ld %s", url, (int)r, code, eb);
+	*code_out = code;
+	return r == CURLE_OK ? DLF_OK : (r == CURLE_COULDNT_RESOLVE_HOST || r == CURLE_COULDNT_CONNECT) ? DLF_NOCONN : DLF_FAIL;
+}
+
+static int dl_request_hc(int method, const char *url0, const char *const *headers, const void *body, size_t blen,
+                         size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out)
+{
 	char url[2048];
 	util_strlcpy(url, url0, sizeof url);
 	httpcContext ctx;
@@ -1350,6 +1468,8 @@ void dl_init(void)
 {
 	hc_init();
 	sh_init();
+	LightLock_Init(&NOHC_L);
+	NOHC_OK = true;
 	LightLock_Init(&D.lock);
 	LightEvent_Init(&D.ev, RESET_ONESHOT);
 	D.ready = true;
