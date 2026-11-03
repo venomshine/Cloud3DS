@@ -109,9 +109,11 @@ typedef struct {
 	float left, right; /* márgenes de la línea (para alinear) */
 } Line;
 
-typedef struct {   /* fondo de color de un bloque (background-color) */
+typedef struct {   /* fondo de color y bordes de un bloque */
 	float y0, y1, x0, x1;
-	u32 col;
+	u32 col;       /* fondo (0: sin fondo) */
+	float bw[4];   /* bordes arriba, derecha, abajo, izquierda */
+	u32 bc[4];
 } BgBox;
 
 enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR, ST_ACT /* el JavaScript atiende un clic */ };
@@ -1093,7 +1095,7 @@ static void bg_add(int l0, int l1, float x0, float x1, u32 col)
 			return;
 		B.bg = nb, B.cbg = nc;
 	}
-	B.bg[B.nbg++] = (BgBox){B.l[l0].y - 4, B.l[l1].y + B.l[l1].h + 4, x0, x1, col};
+	B.bg[B.nbg++] = (BgBox){B.l[l0].y - 4, B.l[l1].y + B.l[l1].h + 4, x0, x1, col, {0}, {0}};
 }
 
 static void children(dom_node *node, const St *st);
@@ -1837,6 +1839,9 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 	float mb = 0;
 	int l0 = -1;
 	u32 bgc = 0;
+	float brw[4] = {0};
+	u32 brc[4] = {0};
+	bool has_border = false;
 	if (blk) {
 		float avail = st.right - st.indent;
 		css_fixed v;
@@ -1886,6 +1891,32 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		st.right = x0 + w - pr;
 		if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c >> 24) > 0x20 && (c & 0xFFFFFF) != 0xFFFFFF && strcmp(tag, "body") && strcmp(tag, "html"))
 			bgc = css_col(c) | 0xFF000000;
+		// bordes: ancho y color de cada lado
+		{
+			uint8_t (*wf[4])(const css_computed_style *, css_fixed *, css_unit *) = {css_computed_border_top_width, css_computed_border_right_width,
+			                                                                            css_computed_border_bottom_width, css_computed_border_left_width};
+			uint8_t (*sf[4])(const css_computed_style *) = {css_computed_border_top_style, css_computed_border_right_style, css_computed_border_bottom_style,
+			                                                css_computed_border_left_style};
+			uint8_t (*cf[4])(const css_computed_style *, css_color *) = {css_computed_border_top_color, css_computed_border_right_color,
+			                                                               css_computed_border_bottom_color, css_computed_border_left_color};
+			for (int k = 0; k < 4; k++) {
+				brw[k] = 0;
+				uint8_t bs = sf[k](cs);
+				if (bs == CSS_BORDER_STYLE_NONE || bs == CSS_BORDER_STYLE_HIDDEN || bs == 0)
+					continue;
+				css_fixed bv;
+				css_unit bu;
+				uint8_t wt = wf[k](cs, &bv, &bu);
+				brw[k] = wt == CSS_BORDER_WIDTH_THIN ? 1 : wt == CSS_BORDER_WIDTH_THICK ? 5 : wt == CSS_BORDER_WIDTH_WIDTH ? clampf(len_px(cs, bv, bu, avail), 0, 20) : 3;
+				css_color bcol;
+				brc[k] = cf[k](cs, &bcol) == CSS_BORDER_COLOR_COLOR ? css_col(bcol) : st.col;
+				if (((brc[k] >> 24) & 0xFF) < 0x20)
+					brw[k] = 0;
+				has_border |= brw[k] > 0;
+			}
+			st.indent += brw[3], st.right -= brw[1]; // el contenido va por dentro del borde
+			pt += brw[0], mb += brw[2];
+		}
 		block(mt + clampf(pt, 0, 40));
 		L_indent = st.indent;
 		L_right = st.right;
@@ -1900,7 +1931,7 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 			if (B.nl && !L_has && B.l[B.nl - 1].y < fy)
 				line_at(fy);
 		}
-		if (bgc) {
+		if (bgc || has_border) {
 			if (!B.nl || L_has)
 				line_new();
 			l0 = B.nl - 1; // la línea (vacía) en la que empieza el bloque
@@ -1991,8 +2022,12 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 	}
 	if (blk) {
 		int l1 = L_has ? B.nl - 1 : B.nl - 2; // la última línea con algo
-		if (bgc && l0 >= 0 && l1 >= l0)
+		if ((bgc || has_border) && l0 >= 0 && l1 >= l0) {
 			bg_add(l0, l1, bx0, bx1, bgc);
+			if (B.nbg)
+				for (int k = 0; k < 4; k++)
+					B.bg[B.nbg - 1].bw[k] = brw[k], B.bg[B.nbg - 1].bc[k] = brc[k];
+		}
 		block(mb);
 		L_indent = o_ind, L_right = o_right, L_align = o_align;
 		line_ctx();
@@ -2792,7 +2827,14 @@ void br_top(void)
 		float Y0 = (bb->y0 - B.sy) * z, Y1 = (bb->y1 - B.sy) * z;
 		if (Y1 < 0 || Y0 > SCR_H)
 			continue;
-		draw_rect((PAD_X + bb->x0 - B.sx) * z, Y0, (bb->x1 - bb->x0) * z, Y1 - Y0, bb->col);
+		float X0 = (PAD_X + bb->x0 - B.sx) * z, Wb = (bb->x1 - bb->x0) * z;
+		if (bb->col)
+			draw_rect(X0, Y0, Wb, Y1 - Y0, bb->col);
+		float t;
+		if ((t = bb->bw[0] * z) > 0) draw_rect(X0, Y0, Wb, fmaxf(t, 1), bb->bc[0]);
+		if ((t = bb->bw[2] * z) > 0) draw_rect(X0, Y1 - fmaxf(t, 1), Wb, fmaxf(t, 1), bb->bc[2]);
+		if ((t = bb->bw[3] * z) > 0) draw_rect(X0, Y0, fmaxf(t, 1), Y1 - Y0, bb->bc[3]);
+		if ((t = bb->bw[1] * z) > 0) draw_rect(X0 + Wb - fmaxf(t, 1), Y0, fmaxf(t, 1), Y1 - Y0, bb->bc[1]);
 	}
 	// texturas de las imágenes ya decodificadas (pocas por fotograma, para no dar tirones)
 	for (int i = 0, up = 0; i < B.nimg && up < 2; i++)
