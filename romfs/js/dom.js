@@ -403,8 +403,8 @@ class Document extends Node {
 	get readyState() { return G.__ready ? 'complete' : 'loading'; }
 	get currentScript() { return G.__script || null; }
 	get defaultView() { return G; }
-	get cookie() { return G.__cookies.join('; '); }
-	set cookie(v) { const kv = String(v).split(';')[0]; const k = kv.split('=')[0]; G.__cookies = G.__cookies.filter(c => c.split('=')[0] !== k).concat([kv]); }
+	get cookie() { return N.cookie(); } // las mismas que van en las peticiones
+	set cookie(v) { N.setCookie(String(v)); }
 	get referrer() { return ''; } get domain() { return location.hostname; } get visibilityState() { return 'visible'; } get hidden() { return false; }
 	get characterSet() { return 'UTF-8'; } get compatMode() { return 'CSS1Compat'; } get activeElement() { return this.body; }
 	get forms() { return qsa(this, 'form'); } get images() { return qsa(this, 'img'); } get links() { return qsa(this, 'a[href]'); } get scripts() { return qsa(this, 'script'); }

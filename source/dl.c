@@ -35,6 +35,15 @@ void dl_set_thread_ua(const char *ua)
 	t_ua = ua;
 }
 
+/* cookies del navegador (por hilo): qué mandar a una dirección y qué guardar de una respuesta */
+static __thread size_t (*t_ck_get)(const char *url, char *out, size_t n);
+static __thread void (*t_ck_set)(const char *url, const char *set_cookie);
+
+void dl_set_thread_cookies(size_t (*get)(const char *, char *, size_t), void (*set)(const char *, const char *))
+{
+	t_ck_get = get, t_ck_set = set;
+}
+
 const char *dl_last_url(void)
 {
 	return t_final;
@@ -353,6 +362,11 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		httpcAddRequestHeaderField(ctx, "Connection", "Keep-Alive");
 		if (t_ua) // el navegador: el idioma, como cualquier navegador
 			httpcAddRequestHeaderField(ctx, "Accept-Language", "es-ES,es;q=0.9,en;q=0.7");
+		if (t_ck_get) {
+			char ck[2048];
+			if (t_ck_get(url, ck, sizeof ck))
+				httpcAddRequestHeaderField(ctx, "Cookie", ck);
+		}
 		if (accept)
 			httpcAddRequestHeaderField(ctx, "Accept", accept);
 		if (range_from) {
@@ -367,6 +381,11 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 			util_log("dl: httpc %s -> 0x%08lX", url, (unsigned long)r);
 			httpcCloseContext(ctx);
 			return HC_NOCONN;
+		}
+		if (t_ck_set) { // httpc da la primera Set-Cookie (la de sesión, casi siempre)
+			char sc[1024] = "";
+			if (R_SUCCEEDED(httpcGetResponseHeader(ctx, "Set-Cookie", sc, sizeof sc)) && sc[0])
+				t_ck_set(url, sc);
 		}
 		if (*code >= 300 && *code < 400 && *code != 304) {
 			char loc[1024] = "";
@@ -451,7 +470,12 @@ int dl_request(int method, const char *url0, const char *const *headers, const v
 		if (hc_chain)
 			httpcSelectRootCertChain(&ctx, hc_chain);
 		httpcSetKeepAlive(&ctx, HTTPC_KEEPALIVE_ENABLED);
-		httpcAddRequestHeaderField(&ctx, "User-Agent", UA);
+		httpcAddRequestHeaderField(&ctx, "User-Agent", t_ua ? t_ua : UA);
+		if (t_ck_get) {
+			char ck[2048];
+			if (t_ck_get(url, ck, sizeof ck))
+				httpcAddRequestHeaderField(&ctx, "Cookie", ck);
+		}
 		for (int i = 0; headers && headers[i]; i++) {
 			char name[64];
 			const char *c = strchr(headers[i], ':');
@@ -472,6 +496,11 @@ int dl_request(int method, const char *url0, const char *const *headers, const v
 			util_log("http: %s -> 0x%08lX", url, (unsigned long)r);
 			httpcCloseContext(&ctx);
 			return DLF_NOCONN;
+		}
+		if (t_ck_set) {
+			char sc[1024] = "";
+			if (R_SUCCEEDED(httpcGetResponseHeader(&ctx, "Set-Cookie", sc, sizeof sc)) && sc[0])
+				t_ck_set(url, sc);
 		}
 		if (method == HTTPC_METHOD_GET && code >= 300 && code < 400 && code != 304 && redir < 8) {
 			char loc[2048] = "";
@@ -570,6 +599,20 @@ static void common_opts(CURL *c, char *eb)
 	curl_easy_setopt(c, CURLOPT_BUFFERSIZE, 256L * 1024);
 }
 
+static size_t curl_hdr_cb(char *d, size_t sz, size_t nm, void *u)
+{
+	size_t n = sz * nm;
+	if (t_ck_set && n > 11 && !strncasecmp(d, "Set-Cookie:", 11)) {
+		char v[1024];
+		size_t l = n - 11 < sizeof v - 1 ? n - 11 : sizeof v - 1;
+		memcpy(v, d + 11, l);
+		v[l] = 0;
+		v[strcspn(v, "\r\n")] = 0;
+		t_ck_set((const char *)u, v[0] == ' ' ? v + 1 : v);
+	}
+	return n;
+}
+
 /* como dl_fetch, pero con libcurl (TLS moderno de mbedTLS): para lo que httpc no logra */
 int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out)
 {
@@ -585,6 +628,11 @@ int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size
 	if (t_ua)
 		curl_easy_setopt(c, CURLOPT_USERAGENT, t_ua);
 	curl_easy_setopt(c, CURLOPT_URL, url);
+	char ck[2048];
+	if (t_ck_get && t_ck_get(url, ck, sizeof ck))
+		curl_easy_setopt(c, CURLOPT_COOKIE, ck);
+	curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, curl_hdr_cb);
+	curl_easy_setopt(c, CURLOPT_HEADERDATA, (void *)url);
 	curl_easy_setopt(c, CURLOPT_HTTPHEADER, h);
 	curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, wr);
 	curl_easy_setopt(c, CURLOPT_WRITEDATA, u);

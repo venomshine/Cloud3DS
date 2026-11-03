@@ -342,6 +342,139 @@ static void css_collect(BrCss *c, dom_node *n, int depth, int *links, size_t *by
 	}
 }
 
+/* ------------------------------------------------------------ cookies (de esta sesión del navegador) */
+typedef struct {
+	char dom[96], path[96], name[96], *val;
+	bool host_only;
+} Ck;
+static Ck *CK;
+static int NCK, CCK;
+static LightLock CK_LOCK; /* las usan los hilos de carga, imágenes y JavaScript */
+static bool CK_INIT;
+
+static void ck_host(const char *url, char *host, size_t hn, char *path, size_t pn)
+{
+	const char *h = strstr(url, "://");
+	h = h ? h + 3 : url;
+	size_t l = strcspn(h, "/?#:");
+	snprintf(host, hn, "%.*s", (int)l, h);
+	for (char *p = host; *p; p++)
+		*p = (char)tolower((unsigned char)*p);
+	const char *p = h + strcspn(h, "/?#");
+	if (*p == '/')
+		snprintf(path, pn, "%.*s", (int)strcspn(p, "?#"), p);
+	else
+		snprintf(path, pn, "/");
+}
+
+static bool ck_domain_ok(const char *host, const Ck *c)
+{
+	size_t hl = strlen(host), dl = strlen(c->dom);
+	if (c->host_only)
+		return !strcmp(host, c->dom);
+	return hl >= dl && !strcmp(host + hl - dl, c->dom) && (hl == dl || host[hl - dl - 1] == '.');
+}
+
+static size_t ck_get(const char *url, char *out, size_t n)
+{
+	if (!CK_INIT || strncasecmp(url, "http", 4))
+		return 0;
+	char host[96], path[512];
+	ck_host(url, host, sizeof host, path, sizeof path);
+	size_t o = 0;
+	out[0] = 0;
+	LightLock_Lock(&CK_LOCK);
+	for (int i = 0; i < NCK; i++)
+		if (ck_domain_ok(host, &CK[i]) && !strncmp(path, CK[i].path, strlen(CK[i].path)))
+			o += snprintf(out + o, o < n ? n - o : 0, "%s%s=%s", o ? "; " : "", CK[i].name, CK[i].val);
+	LightLock_Unlock(&CK_LOCK);
+	return o < n ? o : 0;
+}
+
+// Set-Cookie: nombre=valor; Domain=…; Path=…; Max-Age=0 o Expires pasado (se borra)
+static void ck_set(const char *url, const char *sc)
+{
+	if (!CK_INIT)
+		return;
+	char host[96], path[512];
+	ck_host(url, host, sizeof host, path, sizeof path);
+	const char *eq = strchr(sc, '='), *semi = strchr(sc, ';');
+	if (!eq || (semi && semi < eq))
+		return;
+	Ck c = {0};
+	const char *nm = sc;
+	while (*nm == ' ')
+		nm++;
+	snprintf(c.name, sizeof c.name, "%.*s", (int)(eq - nm), nm);
+	size_t vl = semi ? (size_t)(semi - eq - 1) : strlen(eq + 1);
+	c.val = malloc(vl + 1);
+	if (!c.val)
+		return;
+	memcpy(c.val, eq + 1, vl);
+	c.val[vl] = 0;
+	util_strlcpy(c.dom, host, sizeof c.dom);
+	c.host_only = true;
+	char *ls = strrchr(path, '/');
+	snprintf(c.path, sizeof c.path, "%.*s", ls && ls != path ? (int)(ls - path) : 1, path);
+	bool del = false;
+	for (const char *a = semi; a && *a;) {
+		a++;
+		while (*a == ' ')
+			a++;
+		const char *e = a + strcspn(a, ";");
+		if (!strncasecmp(a, "domain=", 7)) {
+			const char *d = a + 7;
+			while (*d == '.')
+				d++;
+			char dm[96];
+			snprintf(dm, sizeof dm, "%.*s", (int)(e - d), d);
+			for (char *p = dm; *p; p++)
+				*p = (char)tolower((unsigned char)*p);
+			size_t hl = strlen(host), dl = strlen(dm);
+			if (dl && hl >= dl && !strcmp(host + hl - dl, dm)) // solo su dominio o uno de arriba
+				util_strlcpy(c.dom, dm, sizeof c.dom), c.host_only = false;
+		} else if (!strncasecmp(a, "path=", 5))
+			snprintf(c.path, sizeof c.path, "%.*s", (int)(e - a - 5), a + 5);
+		else if (!strncasecmp(a, "max-age=", 8) && atoi(a + 8) <= 0)
+			del = true;
+		else if (!strncasecmp(a, "expires=", 8) && (strstr(a, "1970") || strstr(a, "Thu, 01 Jan")))
+			del = true;
+		a = e;
+	}
+	LightLock_Lock(&CK_LOCK);
+	for (int i = 0; i < NCK; i++)
+		if (!strcmp(CK[i].name, c.name) && !strcmp(CK[i].dom, c.dom) && !strcmp(CK[i].path, c.path)) {
+			free(CK[i].val);
+			CK[i] = CK[--NCK];
+			break;
+		}
+	if (!del && NCK < 400) {
+		if (NCK == CCK) {
+			int nc = CCK ? CCK * 2 : 32;
+			Ck *nk = realloc(CK, nc * sizeof *nk);
+			if (nk)
+				CK = nk, CCK = nc;
+		}
+		if (NCK < CCK) {
+			CK[NCK++] = c;
+			c.val = NULL;
+		}
+	}
+	LightLock_Unlock(&CK_LOCK);
+	free(c.val);
+}
+
+static void browser_thread_net(void) // cada hilo del navegador: su User-Agent y las cookies
+{
+	if (!CK_INIT) {
+		LightLock_Init(&CK_LOCK);
+		CK_INIT = true;
+	}
+	const char *ua = B.force == 1 ? UA_PC : UA_MOB;
+	dl_set_thread_ua(ua);
+	dl_set_thread_cookies(ck_get, ck_set);
+}
+
 /* ------------------------------------------------------------ JavaScript de la página */
 static void js_log(const char *m)
 {
@@ -420,7 +553,7 @@ static int count_nodes(dom_node *n)
 static void load_thread(void *arg)
 {
 	(void)arg;
-	dl_set_thread_ua(B.force == 1 ? UA_PC : UA_MOB);
+	browser_thread_net();
 	Buf b = {0};
 	if (!strncasecmp(B.url, "sdmc:", 5) || B.url[0] == '/') {
 		char sp[1100];
@@ -482,7 +615,8 @@ static void load_thread(void *arg)
 	// su JavaScript, antes del CSS: lo que añada o cambie (también hojas de estilo) ya cuenta
 	B.js_nav[0] = 0;
 	if (doc && B.js) {
-		JsHost h = {.fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 20000, .cancel = &B.cancel};
+		JsHost h = {.fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 20000, .cancel = &B.cancel,
+		            .cookie_get = ck_get, .cookie_set = ck_set};
 		B.in_js = true;
 		JsResult jr;
 		B.jsp = jsdom_open(doc, &h, &jr);
@@ -985,7 +1119,7 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code);
 static void img_thread(void *arg)
 {
 	(void)arg;
-	dl_set_thread_ua(B.force == 1 ? UA_PC : UA_MOB);
+	browser_thread_net();
 	for (;;) {
 		if (B.img_quit)
 			return;
@@ -3014,6 +3148,7 @@ static int ACT_LINK;
 static void act_thread(void *arg)
 {
 	(void)arg;
+	browser_thread_net();
 	JsResult r;
 	bool changed = false;
 	bool go_on = jsdom_click(B.jsp, ACT_EL, &changed, &r);
@@ -3045,6 +3180,7 @@ static void act_thread(void *arg)
 static void idle_thread(void *arg)
 {
 	(void)arg;
+	browser_thread_net();
 	JsResult r;
 	bool changed = false;
 	u64 t0 = util_ms();

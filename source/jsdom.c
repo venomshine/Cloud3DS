@@ -600,7 +600,31 @@ static JSValue f_runCode(JSContext *ctx, JSValueConst t, int argc, JSValueConst 
 	return JS_NewBool(ctx, ok);
 }
 
+static JSValue f_cookie(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t, (void)argc, (void)argv;
+	char b[2048] = "";
+	if (J.host->cookie_get)
+		J.host->cookie_get(J.host->url, b, sizeof b);
+	return JS_NewString(ctx, b);
+}
+
+static JSValue f_setCookie(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	if (argc < 1 || !J.host->cookie_set)
+		return JS_UNDEFINED;
+	const char *v = JS_ToCString(ctx, argv[0]);
+	if (v) {
+		J.host->cookie_set(J.host->url, v);
+		JS_FreeCString(ctx, v);
+	}
+	return JS_UNDEFINED;
+}
+
 static const JSCFunctionListEntry NATIVE[] = {
+    JS_CFUNC_DEF("cookie", 0, f_cookie),
+    JS_CFUNC_DEF("setCookie", 1, f_setCookie),
     JS_CFUNC_DEF("runSrc", 1, f_runSrc),
     JS_CFUNC_DEF("runCode", 1, f_runCode),
     JS_CFUNC_DEF("doc", 0, f_doc),

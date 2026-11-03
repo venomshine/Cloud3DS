@@ -24,6 +24,8 @@ typedef struct {
 	float width;          /* window.innerWidth */
 	unsigned budget_ms;   /* tiempo máximo para todo el JavaScript de la página */
 	volatile bool *cancel; /* si se pone a true, el JavaScript se para en cuanto pueda */
+	size_t (*cookie_get)(const char *url, char *out, size_t n); /* document.cookie */
+	void (*cookie_set)(const char *url, const char *set_cookie);
 } JsHost;
 
 typedef struct {
