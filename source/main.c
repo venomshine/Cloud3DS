@@ -1322,6 +1322,151 @@ static bool device_top(float a);
 static bool qrs_is_open(void);
 static void qr_top(void);
 
+// ------------------------------------------------------------ desinstalar (en un hilo)
+// AM_DeleteTitle no dice cuánto lleva: se enseñan las partes (juego, actualización, DLC) con la que
+// se está borrando, el tiempo y que no se apague. HOME queda bloqueado hasta que termine
+static struct {
+	Thread thr;
+	bool busy;
+	volatile bool done;
+	volatile int part; // la que se está borrando (0 juego, 1 actualización, 2 DLC)
+	int res;
+	u64 tid, size[3];
+	bool has[3];
+	char name[64];
+	u64 t0;
+	Texture icon;
+	float anim;
+} UN;
+
+static void un_step(int part)
+{
+	UN.part = part;
+}
+
+static void un_thread(void *arg)
+{
+	(void)arg;
+	UN.res = title_uninstall(UN.tid, un_step);
+	UN.done = true;
+}
+
+static const char *un_part_name(int k)
+{
+	return k == 0 ? _("Juego") : k == 1 ? _("Actualización") : _("Contenido descargable");
+}
+
+// barra que va y viene: se está trabajando aunque no se sepa cuánto falta
+static void un_bar(float x, float y, float w, float h)
+{
+	draw_rrect(x, y, w, h, h / 2, T.surface2);
+	float seg = w * 0.32f, t = fmodf(g_time * 0.7f, 1.0f);
+	float sx = x - seg + (w + seg) * ease_in_out(t);
+	float a = fmaxf(x, sx), b = fminf(x + w, sx + seg);
+	if (b - a > h)
+		draw_rrect(a, y, b - a, h, h / 2, T.danger);
+}
+
+static void un_elapsed(char *out, size_t n)
+{
+	u64 s = (util_ms() - UN.t0) / 1000;
+	snprintf(out, n, "%llu:%02llu", (unsigned long long)(s / 60), (unsigned long long)(s % 60));
+}
+
+static void un_top(void)
+{
+	float a = ease_out_cubic(UN.anim);
+	draw_rect(0, 0, TOP_W, SCR_H, col_alpha(T.bg, a * 0.85f));
+	float y0 = CARD_Y + 2, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
+	const float X = CARD_X + 16, W = CARD_W - 32, IS = 96;
+	draw_rrect(X, y0 + 16, IS, IS, 14, col_alpha(T.surface2, a));
+	if (UN.icon.ok)
+		draw_texture(&UN.icon, X + (IS - 72) / 2, y0 + 16 + (IS - 72) / 2, 72, 72, a);
+	else
+		draw_icon(IC_GAMEPAD, X + IS / 2, y0 + 16 + IS / 2, 38, col_alpha(T.text3, a));
+	float tx = X + IS + 16, tw = X + W - tx, y = y0 + 18;
+	text_draw_clip(_("Desinstalando"), tx, y, tw, TS_SUB, col_alpha(T.danger, a));
+	y += 15;
+	text_draw_clip(UN.name, tx, y, tw, TS_TITLE, col_alpha(T.text, a));
+	y += text_lineh(TS_TITLE) + 6;
+	char sz[24], l[96], el[24];
+	util_fmt_size(sz, sizeof sz, UN.size[0] + UN.size[1] + UN.size[2]);
+	snprintf(l, sizeof l, _("Liberando %s de la SD"), sz);
+	text_draw_clip(l, tx, y, tw, TS_SUB, col_alpha(T.text2, a));
+	y += 18;
+	un_elapsed(el, sizeof el);
+	snprintf(l, sizeof l, _("Tiempo: %s"), el);
+	text_draw_clip(l, tx, y, tw, TS_SUB, col_alpha(T.text3, a));
+	un_bar(X, y0 + 16 + IS + 16, W, 6);
+	float wy = y0 + h - 14 - 2 * text_lineh(TS_SUB);
+	draw_icon(IC_POWER, X + 8, wy + text_lineh(TS_SUB), 16, col_alpha(T.warn, a));
+	text_wrap_lines(_("No apagues la consola ni saques la SD hasta que termine. Con juegos grandes puede tardar unos minutos."), W - 28, TS_SUB, 2, X + 26, wy,
+	                col_alpha(T.text2, a), true);
+}
+
+static void un_card(void)
+{
+	UN.anim = approach(UN.anim, UN.busy ? 1 : 0, 14);
+	if (UN.anim < 0.01f)
+		return;
+	float a = ease_out_cubic(UN.anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	int np = UN.has[1] + UN.has[2] + 1;
+	const float RH = 28;
+	float ch = 64 + np * RH + 30, y = (SCR_H - ch) / 2 + (1 - a) * 30;
+	draw_rrect(10, y + 3, BOT_W - 20, ch, 16, col_alpha(T.shadow, a));
+	draw_rrect(10, y, BOT_W - 20, ch, 16, T.surface);
+	draw_arc(34, y + 24, 9, 2.4f, g_time * 6, g_time * 6 + 4.2f, T.danger);
+	text_draw_clip(_("Desinstalando…"), 52, y + 12, BOT_W - 80, TS_TITLE, T.text);
+	g_clip_ell = true;
+	text_draw_clip(UN.name, 52, y + 14 + text_lineh(TS_TITLE), BOT_W - 80, TS_SUB, T.text3);
+	g_clip_ell = false;
+	float ry = y + 58;
+	for (int k = 0; k < 3; k++) {
+		if (!UN.has[k])
+			continue;
+		bool done = UN.part > k || UN.done, cur = UN.part == k && !UN.done;
+		float cx = 34, cy = ry + RH / 2;
+		if (done) {
+			draw_circle(cx, cy, 8, T.ok);
+			draw_icon(IC_CHECK, cx, cy, 10, 0xFFFFFFFF);
+		} else if (cur)
+			draw_arc(cx, cy, 7, 2.2f, g_time * 6, g_time * 6 + 4.2f, T.danger);
+		else
+			draw_circle(cx, cy, 7, T.surface2);
+		char sz[24];
+		util_fmt_size(sz, sizeof sz, UN.size[k]);
+		text_draw_clip(un_part_name(k), 52, cy - text_lineh(TS_BODY) / 2, 160, TS_BODY, done || cur ? T.text : T.text3);
+		text_draw_right(sz, BOT_W - 26, cy - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
+		ry += RH;
+	}
+	un_bar(26, ry + 10, BOT_W - 52, 6);
+}
+
+// cada vuelta: al terminar el hilo, se avisa y se vuelve a leer la lista
+static void titles_reload(void);
+static void un_poll(void)
+{
+	if (!UN.busy || !UN.done)
+		return;
+	threadJoin(UN.thr, U64_MAX);
+	threadFree(UN.thr);
+	UN.busy = false;
+	aptSetHomeAllowed(true);
+	if (UN.res == 0) {
+		char m[120];
+		snprintf(m, sizeof m, _("Desinstalado: %s"), UN.name);
+		toast_icon(m, IC_TRASH, T.ok);
+		state_lock();
+		event_add(EV_DELETE, UN.name, G.console, 0);
+		state_unlock();
+	} else
+		toast_icon(_("No se pudo desinstalar"), IC_CLOSE, T.danger);
+	titles_reload();
+}
+
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
@@ -1406,6 +1551,8 @@ static void draw_top(void)
 		else if (!(U.tab == TAB_DEVICES && mini > 0.01f && device_top(mini)))
 			mini_body(mini);
 	}
+	if (UN.anim > 0.01f)
+		un_top();
 	toast_draw_top();
 	if (U.fade > 0) {
 		draw_rect(0, 0, TOP_W, SCR_H, col_alpha(T.bg, U.fade));
@@ -7196,6 +7343,7 @@ static void draw_bottom(void)
 	qa_draw();
 	qrs_draw();
 	install_card();
+	un_card();
 	dialog_draw();
 	if (U.fade > 0) {
 		draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, U.fade));
@@ -7256,22 +7404,27 @@ static void handle_dialog(int ctx, bool ok)
 		} else
 			ctx = DLG_UNINSTALL2;
 	}
-	if (ctx == DLG_UNINSTALL2 && U.dlg_arg >= 0 && U.dlg_arg < TI_n) {
-		char nm[64];
-		util_strlcpy(nm, TI[U.dlg_arg].title, sizeof nm);
-		if (title_uninstall(TI[U.dlg_arg].tid) == 0) {
-			char m[120];
-			snprintf(m, sizeof m, _("Desinstalado: %s"), nm);
-			toast_icon(m, IC_TRASH, T.ok);
-			state_lock();
-			event_add(EV_DELETE, nm, G.console, 0);
-			state_unlock();
+	if (ctx == DLG_UNINSTALL2 && U.dlg_arg >= 0 && U.dlg_arg < TI_n && !UN.busy) {
+		const TitleInfo *t = &TI[U.dlg_arg];
+		UN.tid = t->tid;
+		util_strlcpy(UN.name, t->title, sizeof UN.name);
+		UN.size[0] = t->size, UN.size[1] = t->upd_size, UN.size[2] = t->dlc_size;
+		UN.has[0] = true, UN.has[1] = t->has_upd || t->upd_size, UN.has[2] = t->dlc > 0;
+		u16 *px = malloc(48 * 48 * 2);
+		if (px && title_icon(t->tid, px))
+			tex_from_rgb565(&UN.icon, px, 48, 48);
+		else
+			tex_free(&UN.icon);
+		free(px);
+		UN.part = 0, UN.done = false, UN.t0 = util_ms();
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		UN.thr = threadCreate(un_thread, NULL, 32 * 1024, prio + 1, -2, false);
+		if (UN.thr) {
+			UN.busy = true;
+			aptSetHomeAllowed(false); // HOME a mitad sería peligroso
 		} else
 			toast_icon(_("No se pudo desinstalar"), IC_CLOSE, T.danger);
-		free(TI);
-		TI = NULL;
-		F.path[0] = 0; // que vuelva a leer la lista
-		f_load("@titles");
 	} else if (ctx == DLG_TRASHEMPTY) {
 		trash_empty();
 		G.fsrev++;
@@ -7419,6 +7572,12 @@ static void update(void)
 			U.splash = -1;
 			U.fade = 1;
 		}
+		return;
+	}
+	un_poll();
+	if (UN.busy) { // desinstalando: nada de debajo responde hasta que termine (tampoco al dibujar)
+		g_kdown = g_kheld = g_krepeat = 0;
+		memset(&g_touch, 0, sizeof g_touch);
 		return;
 	}
 	if (U.fade > 0)
@@ -7876,6 +8035,16 @@ static void load_console_name(void)
 		util_strlcpy(G.console, "Nintendo 3DS", sizeof G.console);
 }
 
+static void titles_reload(void)
+{
+	free(TI);
+	TI = NULL;
+	if (!strcmp(F.path, "@titles")) {
+		F.path[0] = 0; // que vuelva a leer la lista
+		f_load("@titles");
+	}
+}
+
 int main(int argc, char **argv)
 {
 	osSetSpeedupEnable(true);
@@ -7959,6 +8128,11 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (UN.busy) { // apagando a mitad de desinstalar: se espera a que AM termine
+		threadJoin(UN.thr, U64_MAX);
+		threadFree(UN.thr);
+		aptSetHomeAllowed(true);
+	}
 	br_exit();
 	music_exit();
 	dl_exit();
