@@ -2392,4 +2392,91 @@ TR = {
     'Tus archivos de OneDrive en la consola y copias automáticas de tus partidas y capturas. Se conecta con un QR y un código, sin contraseñas.':
         ('Your OneDrive files on the console, plus automatic backups of your saves and screenshots. Connect with a QR code and a code, no passwords.',
          'OneDriveのファイルを本体で使え、セーブデータとスクリーンショットを自動でバックアップします。QRコードとコードで接続し、パスワードは不要です。'),
+    'La última copia no terminó. Se volverá a intentar.':
+        ("The last backup didn't finish. It will be retried.",
+         '前回のバックアップは完了しませんでした。もう一度試します。'),
+    'La última copia no terminó':
+        ("The last backup didn't finish",
+         '前回のバックアップは未完了'),
+    'Aún no hay copias en la nube':
+        ('No cloud backups yet',
+         'クラウドのバックアップはまだありません'),
+    'Tus partidas están a salvo':
+        ('Your saves are safe',
+         'セーブデータは保護されています'),
+    'La primera copia sube todas las partidas; las siguientes, solo las que cambien.':
+        ('The first backup uploads every save; later ones, only the ones that changed.',
+         '初回はすべてのセーブを、以降は変更されたものだけをアップロードします。'),
+    'Se volverá a intentar. Comprueba el Wi-Fi y el espacio de OneDrive.':
+        ('It will be retried. Check the Wi-Fi and your OneDrive space.',
+         'もう一度試します。Wi-FiとOneDriveの空き容量を確認してください。'),
+    'Última copia: %s · 1 juego · %s subidos':
+        ('Last backup: %s · 1 game · %s uploaded',
+         '前回: %s · 1本 · %s アップロード'),
+    'Última copia: %s · %d juegos · %s subidos':
+        ('Last backup: %s · %d games · %s uploaded',
+         '前回: %s · %d本 · %s アップロード'),
+    'Última copia: %s · no había cambios':
+        ('Last backup: %s · nothing had changed',
+         '前回: %s · 変更なし'),
+    'Subiendo ahora':
+        ('Uploading now',
+         'アップロード中'),
+    'Ahora':
+        ('Now',
+         '現在'),
+    '%s · partida':
+        ('%s · save',
+         '%s · セーブ'),
+    '%s de %s · /Cloud3DS/Partidas/':
+        ('%s of %s · /Cloud3DS/Partidas/',
+         '%s / %s · /Cloud3DS/Partidas/'),
+    '1 captura nueva':
+        ('1 new screenshot',
+         '新しいスクリーンショット 1枚'),
+    '%d capturas nuevas':
+        ('%d new screenshots',
+         '新しいスクリーンショット %d枚'),
+    'Subiendo a /Cloud3DS/Capturas/':
+        ('Uploading to /Cloud3DS/Capturas/',
+         '/Cloud3DS/Capturas/ へアップロード中'),
+    'Nada pendiente. Las partidas que cambien se copian al abrir Cloud3DS.':
+        ('Nothing pending. Saves that change are backed up when Cloud3DS opens.',
+         '保留中のものはありません。変更されたセーブはCloud3DSを開いたときにバックアップされます。'),
+    'Nada pendiente. Las partidas que cambien se copian una vez al día.':
+        ('Nothing pending. Saves that change are backed up once a day.',
+         '保留中のものはありません。変更されたセーブは1日1回バックアップされます。'),
+    'Nada pendiente. Las partidas se copian solo con «Copiar ahora».':
+        ('Nothing pending. Saves are only backed up with "Back up now".',
+         '保留中のものはありません。セーブは「今すぐバックアップ」でのみ保存されます。'),
+    'Copias en la nube':
+        ('Cloud backups',
+         'クラウドバックアップ'),
+    'A mano':
+        ('Manual',
+         '手動'),
+    'Al abrir':
+        ('On open',
+         '起動時'),
+    'Cada día':
+        ('Daily',
+         '毎日'),
+    'Copiar ahora':
+        ('Back up now',
+         '今すぐバックアップ'),
+    'Las nuevas, al momento':
+        ('New ones, right away',
+         '新しいものをすぐに'),
+    'No se suben':
+        ('Not uploaded',
+         'アップロードしない'),
+    'Todas las partidas que cambiaron':
+        ('Every save that changed',
+         '変更されたすべてのセーブ'),
+    '%s · tus archivos siguen en la nube':
+        ('%s · your files stay in the cloud',
+         '%s · ファイルはクラウドに残ります'),
+    'Copiando las partidas a OneDrive':
+        ('Backing up saves to OneDrive',
+         'セーブをOneDriveにバックアップ中'),
 }
