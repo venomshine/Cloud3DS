@@ -169,6 +169,8 @@ static struct {
 	volatile bool cancel, in_js; /* B mientras carga: parar su JavaScript; está ejecutándose */
 	int idle_left;       /* ms que aún puede seguir su JavaScript con la página a la vista */
 	u64 idle_next, last_in; /* cuándo darle otro rato; última vez que se tocó algo */
+	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
+	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
 	volatile int click_link; /* tras un clic con JavaScript: el enlace a seguir (-1 ninguno, -2 esperando) */
 	PImg *img;
@@ -3138,6 +3140,8 @@ static void layout_thread(void *arg)
 	B.anchor[0] = 0;
 	B.idle_left = B.jsp ? 30000 : 0;
 	B.idle_next = util_ms() + 600;
+	B.idle_relayouts = 0;
+	B.idle_dirty = false;
 	B.st = ST_READY;
 	img_start();
 }
@@ -3152,6 +3156,8 @@ static void act_thread(void *arg)
 	JsResult r;
 	bool changed = false;
 	bool go_on = jsdom_click(B.jsp, ACT_EL, &changed, &r);
+	if (B.idle_dirty)
+		changed = true, B.idle_dirty = false;
 	if (r.navigate[0])
 		util_strlcpy(B.js_nav, r.navigate, sizeof B.js_nav);
 	if (changed) { // se coloca otra vez, sin mover la vista
@@ -3190,7 +3196,10 @@ static void idle_thread(void *arg)
 		B.idle_left = 0;
 	if (r.navigate[0])
 		util_strlcpy(B.js_nav, r.navigate, sizeof B.js_nav);
+	if (changed && B.idle_relayouts >= 3) // ya se recolocó bastante: lo demás, con el próximo clic
+		B.idle_dirty = true, changed = false;
 	if (changed) {
+		B.idle_relayouts++;
 		float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
 		dom_node *fn = B.focus >= 0 && B.focus < B.nf ? B.f[B.focus].node : NULL;
 		B.st = ST_LAYOUT;

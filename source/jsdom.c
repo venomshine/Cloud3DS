@@ -171,7 +171,6 @@ static JSValue f_getA(JSContext *ctx, JSValueConst t, int argc, JSValueConst *ar
 
 static JSValue f_setA(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
-	J.mut++;
 	(void)t;
 	N0;
 	if (argc < 3)
@@ -179,10 +178,18 @@ static JSValue f_setA(JSContext *ctx, JSValueConst t, int argc, JSValueConst *ar
 	dom_string *k = dstr(ctx, argv[1]), *v = dstr(ctx, argv[2]);
 	// libdom solo recalcula las clases (las que mira el CSS) al crear el atributo class, no al
 	// cambiarlo: se quita y se vuelve a poner
-	if (k && v && dom_string_byte_length(k) == 5 && !memcmp(dom_string_data(k), "class", 5))
-		dom_element_remove_attribute((dom_element *)n, k);
-	if (k && v)
+	dom_string *old = NULL;
+	if (k)
+		dom_element_get_attribute((dom_element *)n, k, &old);
+	bool same = old && v && dom_string_isequal(old, v);
+	if (old)
+		dom_string_unref(old);
+	if (k && v && !same) { // el mismo valor no es un cambio (no hace falta recolocar la página)
+		J.mut++;
+		if (dom_string_byte_length(k) == 5 && !memcmp(dom_string_data(k), "class", 5))
+			dom_element_remove_attribute((dom_element *)n, k);
 		dom_element_set_attribute((dom_element *)n, k, v);
+	}
 	if (k)
 		dom_string_unref(k);
 	if (v)
