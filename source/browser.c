@@ -33,6 +33,7 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#include <malloc.h>
 
 #define MAX_PAGE  (6 * 1024 * 1024)
 #define HIST      16
@@ -120,7 +121,11 @@ typedef struct {   /* fondo de color y bordes de un bloque */
 	u32 bc[4];
 } BgBox;
 
-enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR, ST_ACT /* el JavaScript atiende un clic */ };
+enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR, ST_ACT /* el JavaScript atiende un clic */, ST_OOM /* no cabe: el aviso */ };
+/* memoria: lo que siempre se deja libre para la app, y por qué se paró una página */
+#define MEM_RESERVE (4u * 1024 * 1024)
+#define MEM_PER_HTML 12u   /* el árbol ocupa unas 9 (Wikipedia) a 16 veces lo que pesa el HTML */
+enum { OOM_NONE, OOM_JS, OOM_PARSE, OOM_LAYOUT };
 
 static struct {
 	bool open;
@@ -184,7 +189,12 @@ static struct {
 	bool lkeys;          /* se usa la cruceta (se ve lo marcado) */
 	bool opt, opt_just, opt_confirm; /* hoja de opciones de un elemento */
 	int opt_li, opt_sel;
-	char logged[1024];   /* la última página apuntada en el historial */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
+	char logged[1024];   /* la última página apuntada en el historial */
+	/* memoria */
+	int oom;             /* OOM_*: la página se ve, pero sin terminar */
+	u32 oom_need;        /* lo que hacía falta (aproximado, bytes) */
+	char reader_url[1024]; /* esta dirección, en modo lectura (sin JavaScript, CSS ni imágenes) */
+	volatile bool lay_oom; /* la colocación se paró por memoria */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
@@ -482,6 +492,14 @@ static void ck_set(const char *url, const char *sc)
 	free(c.val);
 }
 
+/* memoria libre para malloc (aproximada: sin contar la fragmentación) */
+static u32 mem_free(void)
+{
+	struct mallinfo mi = mallinfo();
+	u32 hs = envGetHeapSize(), used = (u32)mi.uordblks;
+	return hs > used ? hs - used : 0;
+}
+
 static bool is_google(const char *url)
 {
 	char host[128], path[8];
@@ -612,6 +630,16 @@ static void load_thread(void *arg)
 			util_strlcpy(B.url, dl_last_url(), sizeof B.url);
 	}
 	B.bytes = b.n;
+	B.oom = OOM_NONE;
+	bool reader = !strcmp(B.reader_url, B.url);
+	// ¿cabe? el árbol ocupa unas 12 veces el HTML: si ni eso cabe, ni se intenta (el aviso)
+	if (!reader && (u64)b.n * MEM_PER_HTML + MEM_RESERVE > mem_free()) { // en modo lectura: lo que quepa
+		B.oom_need = (u32)((u64)b.n * MEM_PER_HTML > 0xFFFFFFFFu ? 0xFFFFFFFFu : b.n * MEM_PER_HTML);
+		util_log("web: no cabe: %u KB de HTML, %u KB libres", (unsigned)(b.n / 1024), (unsigned)(mem_free() / 1024));
+		free(b.p);
+		B.st = ST_OOM;
+		return;
+	}
 	// ¿pide ancho de móvil? (<meta name="viewport" content="width=device-width…">), en los primeros 64 KB
 	B.page_mobile = false;
 	if (b.p) {
@@ -635,14 +663,34 @@ static void load_thread(void *arg)
 		B.st = ST_ERROR;
 		return;
 	}
-	dom_hubbub_parser_parse_chunk(parser, (const uint8_t *)(b.p ? b.p : ""), b.n);
+	// por trozos, mirando la memoria: si se acaba, se queda con lo leído hasta ahí
+	for (size_t off = 0; off < b.n || !b.n; off += 32768) {
+		size_t k = b.n - off < 32768 ? b.n - off : 32768;
+		dom_hubbub_parser_parse_chunk(parser, (const uint8_t *)(b.p ? b.p + off : ""), k);
+		if (!b.n)
+			break;
+		if (off + k < b.n && mem_free() < 2 * MEM_RESERVE) {
+			B.oom = OOM_PARSE;
+			B.oom_need = (u32)(b.n * MEM_PER_HTML);
+			util_log("web: memoria llena leyendo la página (%u de %u KB)", (unsigned)((off + k) / 1024), (unsigned)(b.n / 1024));
+			reader = true; // lo leído se ve sin JavaScript ni CSS (no queda memoria para ellos)
+			break;
+		}
+	}
 	dom_hubbub_parser_completed(parser);
 	dom_hubbub_parser_destroy(parser);
 	free(b.p);
 	// su JavaScript, antes del CSS: lo que añada o cambie (también hojas de estilo) ya cuenta
 	B.js_nav[0] = 0;
-	if (doc && B.js) {
-		JsHost h = {.fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 20000, .cancel = &B.cancel,
+	// el JavaScript, con lo que quede (dejando sitio para colocar la página)
+	u32 fr = mem_free(), lay = (u32)(b.n * 4) + MEM_RESERVE;
+	size_t js_lim = fr > lay + 2u * 1024 * 1024 ? fr - lay : 0;
+	if (js_lim > 24u * 1024 * 1024)
+		js_lim = 24u * 1024 * 1024;
+	if (doc && B.js && !reader && !js_lim && B.oom == OOM_NONE)
+		B.oom = OOM_JS, B.oom_need = lay + 2u * 1024 * 1024;
+	if (doc && B.js && !reader && js_lim) {
+		JsHost h = {.mem_limit = js_lim, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 20000, .cancel = &B.cancel,
 		            .cookie_get = ck_get, .cookie_set = ck_set};
 		B.in_js = true;
 		JsResult jr;
@@ -652,9 +700,16 @@ static void load_thread(void *arg)
 		util_log("web: JavaScript: %d scripts, %d con error, %u ms", jr.scripts, jr.errors, jr.ms);
 		if (jr.navigate[0])
 			util_strlcpy(B.js_nav, jr.navigate, sizeof B.js_nav);
+		if (jr.oom) { // sin memoria: se suelta su JavaScript (la página se ve tal como quedó)
+			util_log("web: el JavaScript se quedó sin memoria (%u KB)", (unsigned)(jr.mem / 1024));
+			if (B.oom == OOM_NONE)
+				B.oom = OOM_JS, B.oom_need = (u32)(jr.mem * 2);
+			jsdom_close(B.jsp);
+			B.jsp = NULL;
+		}
 	}
 	// el CSS de la página (se baja y se lee aquí, en el hilo, para no parar la pantalla)
-	BrCss *css = doc ? brcss_new(B.url) : NULL;
+	BrCss *css = doc && !reader ? brcss_new(B.url) : NULL;
 	if (css) {
 		int links = 0;
 		size_t bytes = 0;
@@ -1171,6 +1226,7 @@ static void img_thread(void *arg)
 		for (size_t i = 0; b.p && i < b.n && i < 512 && !svg; i++) // por su contenido, no por su nombre
 			svg = !strncmp(b.p + i, "<svg", 4);
 		bool ok = r == DLF_OK && code < 400 && b.n && B.img_px < IMG_BUDGET &&
+		          mem_free() > 2 * MEM_RESERVE + (u32)b.n * 2 + (u32)(mw * mh * 4) &&
 		          (svg ? svg_render(b.p, b.n, mw, mh, &px, &w, &h) : img_mem_fit((const u8 *)b.p, b.n, mw, mh, &px, &w, &h) == IMG_OK);
 		if (ok) {
 			im->rgba = px, im->tw = w, im->th = h, im->iw = w, im->ih = h;
@@ -1185,6 +1241,8 @@ static void img_thread(void *arg)
 static void img_start(void)
 {
 	img_stop();
+	if (!strcmp(B.reader_url, B.url)) // modo lectura: sin imágenes
+		return;
 	bool any = false;
 	for (int i = 0; i < B.nimg; i++)
 		any |= B.img[i].st == IM_WAIT;
@@ -2204,7 +2262,12 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 
 static void walk(dom_node *node, St st)
 {
-	B.nel_done++;
+	if (B.lay_oom)
+		return;
+	if ((++B.nel_done & 127) == 0 && mem_free() < MEM_RESERVE) { // la memoria se acaba: hasta aquí
+		B.lay_oom = true;
+		return;
+	}
 	dom_node_type t;
 	if (dom_node_get_node_type(node, &t) != DOM_NO_ERR)
 		return;
@@ -2494,6 +2557,7 @@ static void layout(void)
 	B.nclk = 0;
 	u64 t0 = util_ms();
 	B.nel_done = 0;
+	B.lay_oom = false;
 	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
 	// sin CSS, modo lectura: si la página marca su contenido (<main> o <article>), solo eso
 	dom_node *content = B.css ? NULL : find_tag((dom_node *)B.doc, "main", 0);
@@ -2997,10 +3061,15 @@ static const char *host_of(const char *u, char *out, size_t n)
 }
 
 static void home_top(void);
+static void oom_top(void);
 void br_top(void)
 {
 	if (B.home) {
 		home_top();
+		return;
+	}
+	if (B.st == ST_OOM) {
+		oom_top();
 		return;
 	}
 	if (B.st != ST_READY && B.st != ST_ACT) {
@@ -3170,9 +3239,27 @@ void br_top(void)
 	float cw = fminf(TOP_W - 16, text_width(chip, 0.40f) + 20);
 	B.tip = fmaxf(0, B.tip - 1.0f / 60);
 	float ca = clampf(B.tip / 0.4f, 0, 1); // se ve al abrir y al hacer zoom, y se va sola para no tapar la página
+	// franja: la página se ve sin terminar (memoria) o en modo lectura
+	const char *strip = NULL;
+	bool reader = !strcmp(B.reader_url, B.url);
+	if (B.oom == OOM_JS)
+		strip = "Memoria llena: parte de su JavaScript no se ejecutó";
+	else if (B.oom)
+		strip = "Memoria llena: la página se ve hasta donde cupo";
+	else if (reader)
+		strip = "Modo lectura: solo el texto y los enlaces";
+	float cy = 6;
+	if (strip) {
+		u32 sc = B.oom ? T.warn : T.accent;
+		draw_rect(0, 0, TOP_W, 17, 0xF01A1F2A);
+		draw_rect(0, 16, TOP_W, 1, col_alpha(sc, 0.8f));
+		draw_icon(B.oom ? IC_INFO : IC_BOOK, 12, 8.5f, 10, sc);
+		text_draw_clip(strip, 24, 8.5f - text_lineh(0.38f) / 2, TOP_W - 32, 0.38f, 0xFFFFFFFF);
+		cy = 22;
+	}
 	if (ca > 0.01f) {
-		draw_rrect(8, 6, cw, 18, 9, col_alpha(0xFF1A1F2A, 0.85f * ca));
-		text_draw_clip(chip, 18, 6 + 9 - text_lineh(0.40f) / 2, cw - 20, 0.40f, col_alpha(0xFFFFFFFF, ca));
+		draw_rrect(8, cy, cw, 18, 9, col_alpha(0xFF1A1F2A, 0.85f * ca));
+		text_draw_clip(chip, 18, cy + 9 - text_lineh(0.40f) / 2, cw - 20, 0.40f, col_alpha(0xFFFFFFFF, ca));
 	}
 	draw_pointer(B.px, B.py, hov >= 0);
 }
@@ -3201,10 +3288,32 @@ static bool tool_btn(float x, float y, float w, const char *label, bool on)
 
 // maquetar, en un hilo con pila grande: libcss usa unos 10 KB de pila por elemento y la del hilo
 // principal no da para páginas grandes; así además la pantalla no se queda parada
+// su JavaScript se quedó sin memoria: se suelta (la página sigue como está; los clics, normales)
+static void js_oom_check(const JsResult *r)
+{
+	if (!r->oom || !B.jsp)
+		return;
+	util_log("web: el JavaScript se quedó sin memoria (%u KB)", (unsigned)(r->mem / 1024));
+	jsdom_close(B.jsp);
+	B.jsp = NULL;
+	B.idle_left = 0;
+	if (B.oom == OOM_NONE)
+		B.oom = OOM_JS, B.oom_need = (u32)(r->mem * 2);
+}
+
 static void layout_thread(void *arg)
 {
 	(void)arg;
 	layout();
+	if (B.lay_oom) { // la memoria no dio para colocarla entera
+		util_log("web: memoria llena colocando la página (%d líneas)", B.nl);
+		if (B.oom == OOM_NONE)
+			B.oom = OOM_LAYOUT, B.oom_need = (u32)(B.bytes * MEM_PER_HTML);
+		if (B.nl < 4) { // no se ve casi nada: mejor el aviso
+			B.st = ST_OOM;
+			return;
+		}
+	}
 	B.hover = -1;
 	if (B.back_sy > 0) { // se vuelve atrás: donde se estaba
 		B.sy = B.back_sy;
@@ -3232,6 +3341,7 @@ static void act_thread(void *arg)
 	JsResult r;
 	bool changed = false;
 	bool go_on = jsdom_click(B.jsp, ACT_EL, &changed, &r);
+	js_oom_check(&r);
 	if (B.idle_dirty)
 		changed = true, B.idle_dirty = false;
 	if (r.navigate[0])
@@ -3267,6 +3377,7 @@ static void idle_thread(void *arg)
 	bool changed = false;
 	u64 t0 = util_ms();
 	bool more = jsdom_idle(B.jsp, 600, &changed, &r);
+	js_oom_check(&r);
 	B.idle_left -= (int)(util_ms() - t0) + 1;
 	if (!more)
 		B.idle_left = 0;
@@ -3313,6 +3424,118 @@ static void start_action(dom_node *el, int link)
 	if (!B.thr) { // sin hilo: el clic sigue como un enlace normal
 		B.st = ST_READY;
 		B.click_link = link;
+	}
+}
+
+/* ------------------------------------------------------------ aviso de memoria */
+static bool is_new3ds(void)
+{
+	bool n = false;
+	APT_CheckNew3DS(&n);
+	return n;
+}
+
+static void oom_reader(void)
+{
+	util_strlcpy(B.reader_url, B.url, sizeof B.reader_url);
+	char u[1024];
+	util_strlcpy(u, B.url, sizeof u);
+	start_load(u);
+}
+
+static void oom_top(void)
+{
+	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+	// la dirección, arriba
+	draw_rect(0, 0, TOP_W, 20, T.surface);
+	char host[160];
+	const char *u = strstr(B.url, "://");
+	util_strlcpy(host, u ? u + 3 : B.url, sizeof host);
+	g_clip_ell = true;
+	text_draw_clip(host, 10, 10 - text_lineh(0.38f) / 2, TOP_W - 20, 0.38f, T.text3);
+	g_clip_ell = false;
+	const float LX = 18, LW = 236, QX = 266, QW = 118;
+	draw_circle(LX + 14, 46, 14, col_alpha(T.warn, 0.18f));
+	draw_icon(IC_INFO, LX + 14, 46, 15, T.warn);
+	float y = 68;
+	int n = text_wrap_lines("Esta página es demasiado grande para la memoria de la consola", LW, 0.52f, 3, LX, y, T.text, true);
+	y += n * text_lineh(0.52f) + 8;
+	char msg[300];
+	unsigned have = (unsigned)(envGetHeapSize() / (1024 * 1024)), need = (unsigned)((B.oom_need + 1024 * 1024 - 1) / (1024 * 1024));
+	if (need <= have)
+		need = have + 1;
+	if (is_new3ds())
+		snprintf(msg, sizeof msg, "Necesitaba unos %u MB y Cloud3DS dispone de unos %u MB en esta New 3DS.", need, have);
+	else
+		snprintf(msg, sizeof msg, "Necesitaba unos %u MB y Cloud3DS dispone de unos %u MB en esta consola (en una New 3DS, unos 88 MB).", need, have);
+	n = text_wrap_lines(msg, LW, 0.40f, 4, LX, y, T.text2, true);
+	y += n * text_lineh(0.40f) + 8;
+	text_wrap_lines("Se paró antes de que la consola se quedara sin memoria: la app sigue funcionando.", LW, 0.38f, 3, LX, y, T.text3, true);
+	// el QR, para abrirla en el móvil
+	draw_rrect(QX, 34, QW, 168, 14, T.surface);
+	if (strstr(B.url, "://")) {
+		draw_qr(B.url, QX + 9, 44, QW - 18, 1);
+		text_draw_center("Ábrela en el móvil", QX + QW / 2, 44 + QW - 18 + 12, 0.38f, T.text2);
+	} else { // un archivo de la SD: no hay enlace que abrir en el móvil
+		draw_icon(IC_FILE, QX + QW / 2, 100, 30, T.text3);
+		text_draw_center("Archivo de la SD", QX + QW / 2, 132, 0.38f, T.text2);
+	}
+}
+
+static void oom_bottom(void)
+{
+	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
+	draw_rect(0, 0, BOT_W, HDR_H, T.surface);
+	draw_rect(0, HDR_H - 1, BOT_W, 1, T.divider);
+	text_draw_center("No se pudo abrir del todo", BOT_W / 2, HDR_H / 2 - text_lineh(0.46f) / 2, 0.46f, T.text);
+	static int sel;
+	bool web = strstr(B.url, "://") != NULL;
+	const char *lab[3] = {"Abrir en el móvil", "Modo lectura", "Volver"};
+	const char *sub[3] = {"Escanea el QR de arriba con la cámara del móvil", "Solo el texto y los enlaces, sin ejecutar nada", B.nhist || B.came_home ? "A la página anterior" : "Cerrar el navegador"};
+	IconId ic[3] = {IC_QR, IC_BOOK, IC_CHEV_LEFT};
+	u32 col[3] = {T.accent, T.ok, T.text2};
+	if (g_krepeat & KEY_DOWN)
+		sel = (sel + 1) % 3;
+	if (g_krepeat & KEY_UP)
+		sel = (sel + 2) % 3;
+	if (!web && sel == 0)
+		sel = 1;
+	int run = -1;
+	for (int i = 0; i < 3; i++) {
+		float y = HDR_H + 12 + i * 46;
+		bool dis = i == 0 && !web;
+		bool hl = sel == i || touch_in(10, y, BOT_W - 20, 42);
+		if (hl && !dis)
+			draw_rrect(10, y, BOT_W - 20, 42, 12, T.surface2);
+		draw_rrect(20, y + 7, 28, 28, 9, col_alpha(col[i], dis ? 0.06f : 0.16f));
+		draw_icon(ic[i], 34, y + 21, 14, dis ? T.text3 : col[i]);
+		text_draw(lab[i], 58, y + 6, 0.46f, dis ? T.text3 : T.text);
+		text_draw_clip(sub[i], 58, y + 23, BOT_W - 80, 0.36f, T.text3);
+		if (!dis && tap(10, y, BOT_W - 20, 42))
+			run = i, sel = i;
+	}
+	char keys[80];
+	snprintf(keys, sizeof keys, "%s Elegir · %s Volver", GLYPH_A, GLYPH_B);
+	text_draw_center(keys, BOT_W / 2, SCR_H - 16, 0.36f, T.text3);
+	if (g_kdown & KEY_A)
+		run = sel;
+	if (g_kdown & KEY_B)
+		run = 2;
+	if (g_kdown & KEY_START) {
+		close_br();
+		g_kdown = 0;
+		return;
+	}
+	g_kdown = 0;
+	g_touch.up = false;
+	if (run == 0)
+		toast_icon("Escanea el QR de la pantalla de arriba", IC_QR, T.accent);
+	else if (run == 1) {
+		sel = 0;
+		oom_reader();
+	} else if (run == 2) {
+		sel = 0;
+		back();
 	}
 }
 
@@ -3949,6 +4172,10 @@ void br_bottom(void)
 		lists_bottom();
 		return;
 	}
+	if (B.st == ST_OOM) {
+		oom_bottom();
+		return;
+	}
 	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
 	bool ready = B.st == ST_READY;
 	// --- cabecera: atrás, dirección y cerrar
@@ -4069,15 +4296,23 @@ void br_bottom(void)
 	// --- debajo: a dónde lleva el enlace del puntero, o cómo se usa
 	const char *tip = "Desliza para mover el puntero · toca para hacer clic";
 	u32 tc = T.text3;
+	bool oom_tip = ready && B.oom && strcmp(B.reader_url, B.url);
 	if (ready && B.hover >= 0 && B.hover < B.nlinks)
 		tip = B.links[B.hover], tc = T.accent;
 	else if (B.st == ST_ERROR)
 		tip = B.err, tc = T.danger;
+	else if (oom_tip)
+		tip = "Memoria llena · toca aquí para verla en modo lectura", tc = T.warn;
 	text_draw_center_clip(tip, BOT_W / 2, TP_B + 4, BOT_W - 20, 0.40f, tc);
 	char keys[160];
 	snprintf(keys, sizeof keys, "%s Clic · %s Enlaces · L R Zoom · %s PC/Móvil · %s Atrás", GLYPH_A, GLYPH_DPAD, GLYPH_Y, GLYPH_B);
 	text_draw_center_clip(keys, BOT_W / 2, TP_B + 18, BOT_W - 20, 0.36f, T.text3);
 	// --- acciones
+	if (oom_tip && tap(0, TP_B, BOT_W, 16)) {
+		oom_reader();
+		g_kdown = 0;
+		return;
+	}
 	if (tap(BOT_W - 36, 0, 36, HDR_H) || (g_kdown & KEY_START)) {
 		close_br();
 		g_kdown = 0;
