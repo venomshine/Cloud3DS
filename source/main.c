@@ -1351,93 +1351,78 @@ static const char *un_part_name(int k)
 	return k == 0 ? _("Juego") : k == 1 ? _("Actualización") : _("Contenido descargable");
 }
 
-// barra que va y viene: se está trabajando aunque no se sepa cuánto falta
-static void un_bar(float x, float y, float w, float h)
-{
-	draw_rrect(x, y, w, h, h / 2, T.surface2);
-	float seg = w * 0.32f, t = fmodf(g_time * 0.7f, 1.0f);
-	float sx = x - seg + (w + seg) * ease_in_out(t);
-	float a = fmaxf(x, sx), b = fminf(x + w, sx + seg);
-	if (b - a > h)
-		draw_rrect(a, y, b - a, h, h / 2, T.danger);
-}
-
 static void un_elapsed(char *out, size_t n)
 {
 	u64 s = (util_ms() - UN.t0) / 1000;
 	snprintf(out, n, "%llu:%02llu", (unsigned long long)(s / 60), (unsigned long long)(s % 60));
 }
 
+// arriba, a pantalla completa: el juego en el centro con anillos girando (se está trabajando)
 static void un_top(void)
 {
 	float a = ease_out_cubic(UN.anim);
-	draw_rect(0, 0, TOP_W, SCR_H, col_alpha(T.bg, a * 0.85f));
-	float y0 = CARD_Y + 2, h = SCR_H - 8 - y0;
-	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
-	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
-	const float X = CARD_X + 16, W = CARD_W - 32, IS = 96;
-	draw_rrect(X, y0 + 16, IS, IS, 14, col_alpha(T.surface2, a));
+	draw_rect(0, 0, TOP_W, SCR_H, col_alpha(T.bg, a));
+	const float cx = TOP_W / 2, cy = 92;
+	draw_halo(cx, cy, 110, 0.35f * a);
+	float pulse = 1 + 0.04f * sinf(g_time * 3);
+	draw_ring(cx, cy, 58, 5, col_alpha(T.surface2, a));
+	draw_arc(cx, cy, 58, 5, g_time * 4.5f, g_time * 4.5f + 2.0f, col_alpha(T.danger, a));
+	draw_arc(cx, cy, 68, 2, -g_time * 2.6f, -g_time * 2.6f + 1.3f, col_alpha(T.warn, a * 0.8f));
+	draw_arc(cx, cy, 68, 2, -g_time * 2.6f + 3.14f, -g_time * 2.6f + 4.44f, col_alpha(T.warn, a * 0.8f));
+	float is = 64 * pulse;
+	draw_rrect(cx - 40, cy - 40, 80, 80, 20, col_alpha(T.surface, a));
 	if (UN.icon.ok)
-		draw_texture(&UN.icon, X + (IS - 72) / 2, y0 + 16 + (IS - 72) / 2, 72, 72, a);
+		draw_texture(&UN.icon, cx - is / 2, cy - is / 2, is, is, a);
 	else
-		draw_icon(IC_GAMEPAD, X + IS / 2, y0 + 16 + IS / 2, 38, col_alpha(T.text3, a));
-	float tx = X + IS + 16, tw = X + W - tx, y = y0 + 18;
-	text_draw_clip(_("Desinstalando"), tx, y, tw, TS_SUB, col_alpha(T.danger, a));
-	y += 15;
-	text_draw_clip(UN.name, tx, y, tw, TS_TITLE, col_alpha(T.text, a));
-	y += text_lineh(TS_TITLE) + 6;
-	char sz[24], l[96], el[24];
-	util_fmt_size(sz, sizeof sz, UN.size[0] + UN.size[1] + UN.size[2]);
-	snprintf(l, sizeof l, _("Liberando %s de la SD"), sz);
-	text_draw_clip(l, tx, y, tw, TS_SUB, col_alpha(T.text2, a));
-	y += 18;
+		draw_icon(IC_GAMEPAD, cx, cy, 34, col_alpha(T.text3, a));
+	char t[120], l[160], sz[24], el[24];
+	snprintf(t, sizeof t, _("Desinstalando «%s»"), UN.name);
+	text_draw_center_clip(t, cx, cy + 84, TOP_W - 40, TS_TITLE, col_alpha(T.text, a));
+	int np = UN.has[0] + UN.has[1] + UN.has[2], k = UN.part, idx = 0;
+	for (int i = 0; i < k && i < 3; i++)
+		idx += UN.has[i];
+	util_fmt_size(sz, sizeof sz, UN.size[k < 3 ? k : 0]);
 	un_elapsed(el, sizeof el);
-	snprintf(l, sizeof l, _("Tiempo: %s"), el);
-	text_draw_clip(l, tx, y, tw, TS_SUB, col_alpha(T.text3, a));
-	un_bar(X, y0 + 16 + IS + 16, W, 6);
-	float wy = y0 + h - 14 - 2 * text_lineh(TS_SUB);
-	draw_icon(IC_POWER, X + 8, wy + text_lineh(TS_SUB), 16, col_alpha(T.warn, a));
-	text_wrap_lines(_("No apagues la consola ni saques la SD hasta que termine. Con juegos grandes puede tardar unos minutos."), W - 28, TS_SUB, 2, X + 26, wy,
-	                col_alpha(T.text2, a), true);
+	if (np > 1)
+		snprintf(l, sizeof l, _("Borrando: %s (%s) · paso %d de %d · %s"), un_part_name(k), sz, idx + 1, np, el);
+	else
+		snprintf(l, sizeof l, _("Borrando: %s (%s) · %s"), un_part_name(k), sz, el);
+	text_draw_center_clip(l, cx, cy + 84 + text_lineh(TS_TITLE) + 4, TOP_W - 40, TS_SUB, col_alpha(T.text3, a));
 }
 
+// cinta de aviso amarilla y negra que avanza
+static void un_tape(float y, float h, float a)
+{
+	gfx_clip(0, y, BOT_W, h);
+	draw_rect(0, y, BOT_W, h, col_alpha(0xFF161616, a));
+	float sw = h * 0.9f, off = fmodf(g_time * 24, 2 * sw);
+	for (float x = -2 * sw - h + off; x < BOT_W + h; x += 2 * sw) {
+		u32 c = col_alpha(T.warn, a);
+		draw_tri(x, y + h, x + sw, y + h, x + sw + h, y, c);
+		draw_tri(x, y + h, x + sw + h, y, x + h, y, c);
+	}
+	gfx_clip_off();
+}
+
+// abajo, a pantalla completa: el cartel de no tocar nada
 static void un_card(void)
 {
-	UN.anim = approach(UN.anim, UN.busy ? 1 : 0, 14);
+	UN.anim = approach(UN.anim, UN.busy ? 1 : 0, 10);
 	if (UN.anim < 0.01f)
 		return;
 	float a = ease_out_cubic(UN.anim);
-	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
-	int np = UN.has[1] + UN.has[2] + 1;
-	const float RH = 28;
-	float ch = 64 + np * RH + 30, y = (SCR_H - ch) / 2 + (1 - a) * 30;
-	draw_rrect(10, y + 3, BOT_W - 20, ch, 16, col_alpha(T.shadow, a));
-	draw_rrect(10, y, BOT_W - 20, ch, 16, T.surface);
-	draw_arc(34, y + 24, 9, 2.4f, g_time * 6, g_time * 6 + 4.2f, T.danger);
-	text_draw_clip(_("Desinstalando…"), 52, y + 12, BOT_W - 80, TS_TITLE, T.text);
-	g_clip_ell = true;
-	text_draw_clip(UN.name, 52, y + 14 + text_lineh(TS_TITLE), BOT_W - 80, TS_SUB, T.text3);
-	g_clip_ell = false;
-	float ry = y + 58;
-	for (int k = 0; k < 3; k++) {
-		if (!UN.has[k])
-			continue;
-		bool done = UN.part > k || UN.done, cur = UN.part == k && !UN.done;
-		float cx = 34, cy = ry + RH / 2;
-		if (done) {
-			draw_circle(cx, cy, 8, T.ok);
-			draw_icon(IC_CHECK, cx, cy, 10, 0xFFFFFFFF);
-		} else if (cur)
-			draw_arc(cx, cy, 7, 2.2f, g_time * 6, g_time * 6 + 4.2f, T.danger);
-		else
-			draw_circle(cx, cy, 7, T.surface2);
-		char sz[24];
-		util_fmt_size(sz, sizeof sz, UN.size[k]);
-		text_draw_clip(un_part_name(k), 52, cy - text_lineh(TS_BODY) / 2, 160, TS_BODY, done || cur ? T.text : T.text3);
-		text_draw_right(sz, BOT_W - 26, cy - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
-		ry += RH;
-	}
-	un_bar(26, ry + 10, BOT_W - 52, 6);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, a));
+	un_tape(0, 18, a);
+	un_tape(SCR_H - 18, 18, a);
+	const float cx = BOT_W / 2;
+	float k = 0.5f + 0.5f * sinf(g_time * 4);
+	draw_circle(cx, 62, 28 + 3 * k, col_alpha(T.danger, a * (0.18f + 0.1f * k)));
+	draw_circle(cx, 62, 22, col_alpha(T.danger, a));
+	draw_icon(IC_POWER, cx, 62, 22, col_alpha(0xFFFFFFFF, a));
+	text_draw_center(_("NO TOQUES NADA"), cx, 98, 0.85f, col_alpha(T.warn, a));
+	wrap_center(_("No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada."), cx,
+	            132, BOT_W - 40, TS_SUB, 4, col_alpha(T.text, a));
+	wrap_center(_("Cuando termine, Cloud3DS sigue sola."), cx, SCR_H - 44, BOT_W - 40, TS_SUB, 1, col_alpha(T.text3, a));
 }
 
 // cada vuelta: al terminar el hilo, se avisa y se vuelve a leer la lista
