@@ -4395,7 +4395,9 @@ void br_bottom(void)
 		float h = TP_B - TP_Y - 8, gh = fmaxf(18, h * view_h() / B.total), gy = TP_Y + 4 + (h - gh) * (B.sy / (B.total - view_h()));
 		draw_rrect(SX + 8, gy, STRIP - 16, gh, (STRIP - 16) / 2, T.accent);
 	}
-	bool on_pad = g_touch.held && touch_in(TX, TP_Y, TW, TP_B - TP_Y) && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y;
+	// el dedo empezó en el touchpad (sigue valiendo aunque se arrastre: touch_in deja de valer al
+	// arrastrar, y el puntero solo se movía los primeros píxeles de cada pasada)
+	bool on_pad = g_touch.held && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y && g_touch.sy < TP_B;
 	bool on_strip = g_touch.held && g_touch.sx >= SX && g_touch.sy >= TP_Y && g_touch.sy < TP_B;
 	bool click = false;
 	// con su JavaScript trabajando de fondo (o atendiendo un clic) el puntero y el desplazamiento
@@ -4403,10 +4405,13 @@ void br_bottom(void)
 	bool moving = ready || B.st == ST_ACT;
 	if (moving) {
 		// puntero: el dedo en el touchpad o la palanca
-		if (on_pad) {
-			B.px += (g_touch.x - g_touch.px) * 1.4f;
-			B.py += (g_touch.y - g_touch.py) * 1.4f;
-			B.focus = -1;
+		if (on_pad) { // con aceleración: despacio, preciso; deprisa, cruza la pantalla
+			float ddx = (float)(g_touch.x - g_touch.px), ddy = (float)(g_touch.y - g_touch.py);
+			float sp = sqrtf(ddx * ddx + ddy * ddy), k = 1.2f + fminf(sp, 12.0f) * 0.12f;
+			B.px += ddx * k;
+			B.py += ddy * k;
+			if (sp > 0)
+				B.focus = -1;
 		}
 		circlePosition cp;
 		hidCircleRead(&cp);
