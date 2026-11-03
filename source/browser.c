@@ -34,6 +34,10 @@
 #define HIST      16
 #define HDR_H     30.0f
 #define SC_TEXT   0.46f
+/* cómo se presenta: en Móvil, como el navegador de la 3DS (las webs dan su versión sencilla); en PC,
+ * como uno de escritorio */
+#define UA_MOB "Mozilla/5.0 (Nintendo 3DS; U; ; es) Version/1.7630.EU Cloud3DS"
+#define UA_PC  "Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0 Cloud3DS"
 #define VW_PC     980.0f   /* ancho de la página «de PC» (como un portátil) */
 #define VW_MOB    400.0f   /* ancho «de móvil» (las webs que lo piden con <meta viewport>) */
 #define ZOOM_MAX  2.0f
@@ -332,6 +336,7 @@ static int count_nodes(dom_node *n)
 static void load_thread(void *arg)
 {
 	(void)arg;
+	dl_set_thread_ua(B.force == 1 ? UA_PC : UA_MOB);
 	Buf b = {0};
 	if (!strncasecmp(B.url, "sdmc:", 5) || B.url[0] == '/') {
 		char sp[1100];
@@ -359,6 +364,8 @@ static void load_thread(void *arg)
 			B.st = ST_ERROR;
 			return;
 		}
+		if (dl_last_url()[0] && strcmp(dl_last_url(), B.url)) // tras redirigir: los enlaces son relativos a la final
+			util_strlcpy(B.url, dl_last_url(), sizeof B.url);
 	}
 	B.bytes = b.n;
 	// ¿pide ancho de móvil? (<meta name="viewport" content="width=device-width…">), en los primeros 64 KB
@@ -830,6 +837,7 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code);
 static void img_thread(void *arg)
 {
 	(void)arg;
+	dl_set_thread_ua(B.force == 1 ? UA_PC : UA_MOB);
 	for (;;) {
 		if (B.img_quit)
 			return;
@@ -2701,8 +2709,12 @@ void br_bottom(void)
 		        (g_kdown & KEY_A);
 		if ((tpc && B.force != 1) || (tmob && B.force != 2) || (g_kdown & KEY_Y)) {
 			B.force = (g_kdown & KEY_Y) ? (mob ? 1 : 2) : tpc ? 1 : 2;
-			if (B.doc)
-				B.st = ST_PARSED; // se vuelve a colocar (en su hilo)
+			if (strstr(B.url, "://")) { // de Internet: se vuelve a pedir, presentándose como PC o como móvil
+				char u2[1024];
+				util_strlcpy(u2, B.url, sizeof u2);
+				start_load(u2);
+			} else if (B.doc)
+				B.st = ST_PARSED; // de la SD: se vuelve a colocar (en su hilo)
 		}
 	}
 	// --- debajo: a dónde lleva el enlace del puntero, o cómo se usa
@@ -2729,9 +2741,14 @@ void br_bottom(void)
 	}
 	if (edit) {
 		char nu[1024];
-		if (kb_input("Dirección (https://…)", B.url, nu, sizeof nu, false, false) && nu[0]) {
+		if (kb_input("Dirección o búsqueda", B.url, nu, sizeof nu, false, false) && nu[0]) {
 			char full[1024];
-			if (!strstr(nu, "://") && nu[0] != '/')
+			bool url = strstr(nu, "://") || nu[0] == '/' || (strchr(nu, '.') && !strchr(nu, ' '));
+			if (!url) { // palabras sueltas: se buscan (DuckDuckGo en HTML funciona sin JavaScript)
+				char q[900];
+				url_esc(nu, q, sizeof q);
+				snprintf(full, sizeof full, "https://html.duckduckgo.com/html/?q=%s", q);
+			} else if (!strstr(nu, "://") && nu[0] != '/')
 				snprintf(full, sizeof full, "https://%s", nu);
 			else
 				util_strlcpy(full, nu, sizeof full);

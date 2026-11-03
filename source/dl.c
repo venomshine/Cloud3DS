@@ -25,6 +25,20 @@
 
 #define CA_BUNDLE "romfs:/certs/cacert.pem"
 #define UA "Cloud3DS/" APP_VERSION " (Nintendo 3DS)"
+/* el navegador se presenta como un navegador (y elige móvil o escritorio) y quiere saber a dónde
+ * acabó la petición tras las redirecciones: por hilo, para no mezclarse con las descargas */
+static __thread const char *t_ua;
+static __thread char t_final[1024];
+
+void dl_set_thread_ua(const char *ua)
+{
+	t_ua = ua;
+}
+
+const char *dl_last_url(void)
+{
+	return t_final;
+}
 #define HC_ROOTS "romfs:/certs/httpc_roots.bin"
 #define HC_BUF (256 * 1024)
 
@@ -335,7 +349,7 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		if (verify && hc_chain)
 			httpcSelectRootCertChain(ctx, hc_chain);
 		httpcSetKeepAlive(ctx, HTTPC_KEEPALIVE_ENABLED);
-		httpcAddRequestHeaderField(ctx, "User-Agent", UA);
+		httpcAddRequestHeaderField(ctx, "User-Agent", t_ua ? t_ua : UA);
 		httpcAddRequestHeaderField(ctx, "Connection", "Keep-Alive");
 		if (accept)
 			httpcAddRequestHeaderField(ctx, "Accept", accept);
@@ -385,6 +399,7 @@ int dl_fetch(const char *url0, const char *accept, size_t (*wr)(char *, size_t, 
 	int e = hc_open(&ctx, url, sizeof url, true, 0, accept, &code);
 	if (e != HC_OK)
 		return e == HC_NOCONN ? DLF_NOCONN : DLF_FAIL;
+	util_strlcpy(t_final, url, sizeof t_final);
 	*code_out = code;
 	if (code >= 400) {
 		httpcCloseContext(&ctx);
