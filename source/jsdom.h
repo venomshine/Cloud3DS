@@ -26,12 +26,15 @@ typedef struct {
 	volatile bool *cancel; /* si se pone a true, el JavaScript se para en cuanto pueda */
 	size_t (*cookie_get)(const char *url, char *out, size_t n); /* document.cookie */
 	void (*cookie_set)(const char *url, const char *set_cookie);
+	size_t mem_limit;     /* memoria máxima para el JavaScript (0: la de siempre) */
 } JsHost;
 
 typedef struct {
 	int scripts, errors;  /* ejecutados y con error */
 	unsigned ms;          /* lo que tardó */
 	char navigate[1024];  /* la página pidió ir a otra dirección (location.href = …) */
+	bool oom;             /* se quedó sin memoria: su JavaScript ya no sigue */
+	size_t mem;           /* memoria que ocupa su JavaScript */
 } JsResult;
 
 typedef struct JsPage JsPage;

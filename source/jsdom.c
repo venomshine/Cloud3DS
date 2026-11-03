@@ -38,6 +38,7 @@ struct JsPage {
 	dom_document *doc;
 	JsHost host;
 	char url[1024], ua[200];
+	bool oom;          /* se quedó sin memoria: no se ejecuta nada más */
 };
 
 static struct {
@@ -48,6 +49,7 @@ static struct {
 	unsigned budget;
 	JSClassID cls;
 	unsigned mut;      /* cambios en el árbol */
+	bool oom;          /* se acabó la memoria del JavaScript */
 } J;
 
 static u64 now_ms(void)
@@ -669,7 +671,7 @@ static const JSCFunctionListEntry NATIVE[] = {
 static int interrupt(JSContext *rt, void *u)
 {
 	(void)rt, (void)u;
-	return now_ms() - J.t0 > J.budget || (J.host->cancel && *J.host->cancel); // se acabó el tiempo o se canceló
+	return J.oom || now_ms() - J.t0 > J.budget || (J.host->cancel && *J.host->cancel); // sin memoria, se acabó el tiempo o se canceló
 }
 
 static void report(JSContext *ctx, const char *where)
@@ -678,6 +680,8 @@ static void report(JSContext *ctx, const char *where)
 	const char *s = JS_ToCString(ctx, e);
 	char msg[300];
 	snprintf(msg, sizeof msg, "js: error en %s: %s", where, s ? s : "?");
+	if (!s || strstr(s, "out of memory"))
+		J.oom = true;
 	if (J.host->log)
 		J.host->log(msg);
 	if (s)
@@ -897,9 +901,21 @@ static void resolve(const char *base, const char *href, char *out, size_t n)
 
 static void use(JsPage *p, JsResult *res, unsigned budget)
 {
-	J.doc = p->doc, J.host = &p->host, J.res = res, J.t0 = now_ms(), J.budget = budget;
+	J.doc = p->doc, J.host = &p->host, J.res = res, J.t0 = now_ms(), J.budget = budget, J.oom = p->oom;
 	if (p->rt)
 		JS_UpdateStackTop(p->rt); // puede llamarse desde otro hilo
+}
+
+// al terminar: si se quedó sin memoria (queda así) y cuánta ocupa
+static void done(JsPage *p, JsResult *res)
+{
+	p->oom |= J.oom;
+	res->oom = p->oom;
+	if (p->rt) {
+		JSMemoryUsage mu;
+		JS_ComputeMemoryUsage(p->rt, &mu);
+		res->mem = (size_t)mu.malloc_size;
+	}
 }
 
 JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
@@ -929,7 +945,7 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 		jsdom_close(pg);
 		return NULL;
 	}
-	JS_SetMemoryLimit(rt, JS_MEM);
+	JS_SetMemoryLimit(rt, host->mem_limit ? host->mem_limit : JS_MEM);
 	JS_SetMaxStackSize(rt, JS_STACK);
 	JS_SetInterruptHandler(rt, interrupt, NULL);
 	J.cls = 0;
@@ -1024,6 +1040,7 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 		}
 	}
 	res->ms = (unsigned)(now_ms() - J.t0);
+	done(pg, res);
 	if (!ok) {
 		jsdom_close(pg);
 		return NULL;
@@ -1034,9 +1051,9 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res)
 {
 	*changed = false;
-	if (!p || !p->ctx || !target)
-		return true;
 	memset(res, 0, sizeof *res);
+	if (!p || !p->ctx || !target || p->oom) // sin memoria: el clic es un clic normal (los enlaces se siguen)
+		return true;
 	use(p, res, 3000);
 	J.mut = 0;
 	JSValue t = wrap(p->ctx, target);
@@ -1051,15 +1068,16 @@ bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res)
 	}
 	*changed = J.mut > 0;
 	res->ms = (unsigned)(now_ms() - J.t0);
+	done(p, res);
 	return go_on;
 }
 
 bool jsdom_idle(JsPage *p, unsigned ms, bool *changed, JsResult *res)
 {
 	*changed = false;
-	if (!p || !p->ctx)
-		return false;
 	memset(res, 0, sizeof *res);
+	if (!p || !p->ctx || p->oom)
+		return false;
 	use(p, res, 15000); // corte duro: solo si algo se queda colgado
 	J.mut = 0;
 	bool more = false;
@@ -1079,7 +1097,8 @@ bool jsdom_idle(JsPage *p, unsigned ms, bool *changed, JsResult *res)
 	JS_FreeValue(p->ctx, g);
 	*changed = J.mut > 0;
 	res->ms = (unsigned)(now_ms() - J.t0);
-	return more;
+	done(p, res);
+	return more && !p->oom;
 }
 
 void jsdom_close(JsPage *p)
