@@ -1932,7 +1932,7 @@ static void cl_top(void)
 		const char *v = strstr(ci->verify, "://");
 		char pc[160];
 		snprintf(pc, sizeof pc, _("O en el PC: %s"), v ? v + 3 : ci->verify);
-		text_draw_clip(pc, rx, y, rw, TS_SUB, T.text3);
+		text_wrap_lines(pc, rw, TS_SUB, 2, rx, y, T.text3, true);
 		u64 now = util_ms();
 		int mins = ci->code_until > now ? (int)((ci->code_until - now) / 60000) + 1 : 0;
 		char w[96];
