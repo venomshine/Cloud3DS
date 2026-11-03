@@ -57,7 +57,7 @@ static struct {
 	CloudInfo info;
 	char access[4096], refresh[4096];
 	u64 access_until;
-	char device_code[1024];
+	char device_code[4096]; /* el de Microsoft mide ~1050 caracteres */
 	int interval;
 	u64 next_poll;
 	Job q[16];
@@ -344,7 +344,7 @@ static void poll_code(void)
 		unlock();
 		return;
 	}
-	char dc[1100], body[1400];
+	static char dc[4200], body[4400]; // solo el hilo de la nube los usa
 	url_enc(C.device_code, dc, sizeof dc, false);
 	snprintf(body, sizeof body, "grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Adevice_code&client_id=%s&device_code=%s", OD_CLIENT_ID, dc);
 	long code;
@@ -977,10 +977,16 @@ void cloud_init(void)
 	C.info.st = OD_CLIENT_ID[0] ? CLS_OFF : CLS_NOCFG;
 	FILE *f = fopen(OD_FILE, "rb");
 	if (f && C.info.st == CLS_OFF) {
-		char buf[8192];
-		size_t n = fread(buf, 1, sizeof buf - 1, f);
-		buf[n] = 0;
-		cJSON *j = cJSON_Parse(buf);
+		// entero: con la lista de capturas ya subidas puede pasar de decenas de KB
+		fseek(f, 0, SEEK_END);
+		long sz = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		char *buf = sz > 0 && sz < 4 * 1024 * 1024 ? malloc(sz + 1) : NULL;
+		size_t n = buf ? fread(buf, 1, sz, f) : 0;
+		if (buf)
+			buf[n] = 0;
+		cJSON *j = buf ? cJSON_Parse(buf) : NULL;
+		free(buf);
 		const cJSON *r = cJSON_GetObjectItemCaseSensitive(j, "refresh"), *nm = cJSON_GetObjectItemCaseSensitive(j, "name"),
 		            *em = cJSON_GetObjectItemCaseSensitive(j, "email");
 		const cJSON *sm = cJSON_GetObjectItemCaseSensitive(j, "saves_mode"), *cp = cJSON_GetObjectItemCaseSensitive(j, "caps"),
@@ -1010,7 +1016,7 @@ void cloud_init(void)
 		fclose(f);
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	C.thr = threadCreate(thread_main, NULL, 48 * 1024, prio + 1, -2, false);
+	C.thr = threadCreate(thread_main, NULL, 64 * 1024, prio + 1, -2, false);
 	if (C.info.st == CLS_ON) {
 		push(J_ME, NULL, NULL);
 		if (C.info.saves_mode == CLB_OPEN)
