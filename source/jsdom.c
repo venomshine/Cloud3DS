@@ -581,9 +581,56 @@ static void report(JSContext *ctx, const char *where)
 	JS_FreeValue(ctx, e);
 }
 
+// QuickJS solo acepta UTF-8 válido; los bytes sueltos (archivos en Latin-1) se pasan a UTF-8
+static char *fix_utf8(const char *s, size_t n, size_t *out_n)
+{
+	size_t i = 0;
+	while (i < n) {
+		unsigned char c = s[i];
+		int k = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : -1;
+		if (k < 0 || i + k >= n + (k ? 0 : 1))
+			break;
+		bool ok = true;
+		for (int j = 1; j <= k; j++)
+			ok &= ((unsigned char)s[i + j] >> 6) == 2;
+		if (!ok)
+			break;
+		i += k + 1;
+	}
+	if (i >= n)
+		return NULL; // ya es válido
+	char *o = malloc(n * 2 + 1);
+	if (!o)
+		return NULL;
+	size_t w = 0;
+	for (i = 0; i < n;) {
+		unsigned char c = s[i];
+		int k = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : -1;
+		bool ok = k >= 0 && i + k < n;
+		for (int j = 1; ok && j <= k; j++)
+			ok = ((unsigned char)s[i + j] >> 6) == 2;
+		if (ok) {
+			memcpy(o + w, s + i, k + 1);
+			w += k + 1, i += k + 1;
+		} else { // Latin-1 -> UTF-8
+			o[w++] = (char)(0xC0 | (c >> 6));
+			o[w++] = (char)(0x80 | (c & 0x3F));
+			i++;
+		}
+	}
+	o[w] = 0;
+	*out_n = w;
+	return o;
+}
+
 static bool eval(JSContext *ctx, const char *code, size_t n, const char *name)
 {
+	size_t fn = 0;
+	char *fixed = fix_utf8(code, n, &fn);
+	if (fixed)
+		code = fixed, n = fn;
 	JSValue v = JS_Eval(ctx, code, n, name, JS_EVAL_TYPE_GLOBAL);
+	free(fixed);
 	bool ok = !JS_IsException(v);
 	if (!ok)
 		report(ctx, name);
@@ -805,6 +852,12 @@ void jsdom_run(dom_document *doc, const JsHost *host, JsResult *res)
 				if (host->fetch(abs, "GET", NULL, 0, &code, &cn, &code_http, fin, sizeof fin) != 0 || code_http >= 400) {
 					free(code);
 					code = NULL;
+				} else if (code) { // QuickJS necesita el código terminado en 0
+					char *t = realloc(code, cn + 1);
+					if (t)
+						code = t, code[cn] = 0;
+					else
+						free(code), code = NULL;
 				}
 				snprintf(name, sizeof name, "%s", abs);
 			} else {
