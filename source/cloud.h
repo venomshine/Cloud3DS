@@ -26,7 +26,20 @@ typedef struct {
 	/* conectado */
 	char name[96], email[128];
 	u64  used, total;
+	/* copias */
+	int  saves_mode;        /* CLB_* */
+	bool caps;              /* subir las capturas nuevas */
+	u64  last_backup;       /* unix */
+	int  last_titles;       /* partidas subidas en la última copia */
+	u64  last_bytes;
+	bool backing_up;
+	char backing[80];       /* lo que se está subiendo ahora */
+	int  bk_xid;            /* su transferencia (lo subido va en ella) */
+	u64  bk_base, bk_total; /* lo subido antes de esta partida y lo que ocupa */
+	int  caps_queue;        /* capturas nuevas esperando */
 } CloudInfo;
+
+enum { CLB_MANUAL, CLB_OPEN, CLB_DAILY }; /* cuándo se copian las partidas */
 
 typedef struct {
 	char id[64];
@@ -58,3 +71,8 @@ int  cloud_items(CloudItem *out, int max, bool *loading);
 void cloud_download(const CloudItem *it);           /* a la cola de descargas (un .cia se instala al bajar) */
 void cloud_upload(const char *sd_path, const char *parent_id); /* "" en parent: la carpeta Cloud3DS */
 void cloud_delete(const CloudItem *it);             /* a la papelera de OneDrive */
+
+/* copias en la nube: partidas (formato de Checkpoint, solo las que cambiaron) y capturas */
+void cloud_set_saves_mode(int mode);
+void cloud_set_caps(bool on);
+void cloud_backup_now(void);

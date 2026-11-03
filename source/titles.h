@@ -37,3 +37,5 @@ int  title_uninstall(u64 tid);                   /* el juego, su actualización 
 int  save_backup(const TitleInfo *t, char *out, size_t n);
 int  save_backups_count(const TitleInfo *t, u64 *last); /* cuántas copias hay y la fecha de la última */
 void save_dir(const TitleInfo *t, char *out, size_t n);  /* su carpeta de copias (puede no existir aún) */
+/* huella (MD5 en hex, 33 bytes) de la partida, sin copiarla; <0 si no tiene o no se pudo leer */
+int  save_fingerprint(const TitleInfo *t, char *hex);

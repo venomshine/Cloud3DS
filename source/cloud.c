@@ -16,6 +16,7 @@
 #include "dl.h"
 #include "fsx.h"
 #include "state.h"
+#include "titles.h"
 #include "util.h"
 
 #include <stdio.h>
@@ -40,7 +41,8 @@
 #define CHUNK     (640 * 1024) /* múltiplo de 320 KiB, como pide OneDrive */
 #define DEPTH     16
 
-enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME };
+enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME, J_SAVES, J_CAPS };
+#define SHOTS "/luma/screenshots"
 typedef struct {
 	int type;
 	char a[700];   /* ruta de la SD, id… */
@@ -69,6 +71,9 @@ static struct {
 	int nitems;
 	bool loading;
 	char folder_id[64]; /* la carpeta Cloud3DS, cuando ya se sabe */
+	cJSON *hashes;      /* huella de la última partida subida de cada juego */
+	cJSON *shots;       /* capturas ya subidas */
+	u64 next_caps;      /* ms: próxima mirada a las capturas */
 } C;
 
 static void lock(void) { LightLock_Lock(&C.lock); }
@@ -143,6 +148,15 @@ static void save_tokens(void)
 	cJSON_AddStringToObject(j, "refresh", C.refresh);
 	cJSON_AddStringToObject(j, "name", C.info.name);
 	cJSON_AddStringToObject(j, "email", C.info.email);
+	cJSON_AddNumberToObject(j, "saves_mode", C.info.saves_mode);
+	cJSON_AddBoolToObject(j, "caps", C.info.caps);
+	cJSON_AddNumberToObject(j, "last_backup", (double)C.info.last_backup);
+	cJSON_AddNumberToObject(j, "last_titles", C.info.last_titles);
+	cJSON_AddNumberToObject(j, "last_bytes", (double)C.info.last_bytes);
+	if (C.hashes)
+		cJSON_AddItemToObject(j, "hashes", cJSON_Duplicate(C.hashes, true));
+	if (C.shots)
+		cJSON_AddItemToObject(j, "shots", cJSON_Duplicate(C.shots, true));
 	char *s = cJSON_PrintUnformatted(j);
 	cJSON_Delete(j);
 	if (!s)
@@ -341,6 +355,8 @@ static void poll_code(void)
 		lock();
 		C.info.st = CLS_ON;
 		C.info.err[0] = 0;
+		C.info.saves_mode = CLB_OPEN;
+		C.info.caps = true;
 		bump();
 		unlock();
 		util_log("nube: conectada");
@@ -471,38 +487,28 @@ static bool app_folder(char *id, size_t n)
 	return false;
 }
 
-static void do_upload(const char *sd, const char *parent0)
+/* sube un archivo de la SD a la carpeta parent de OneDrive; xid >= 0: suma su progreso a esa
+ * transferencia a partir de base. Devuelve si salió bien */
+static bool upload_file(const char *sd, const char *parent, int xid, u64 base)
 {
-	char parent[64];
-	if (parent0[0])
-		util_strlcpy(parent, parent0, sizeof parent);
-	else if (!app_folder(parent, sizeof parent)) {
-		set_err("upload");
-		return;
-	}
 	const char *nm = strrchr(sd, '/');
 	nm = nm ? nm + 1 : sd;
 	char sp[720];
 	snprintf(sp, sizeof sp, "sdmc:%s", sd);
 	FILE *f = fopen(sp, "rb");
-	if (!f) {
-		set_err("upload");
-		return;
-	}
+	if (!f)
+		return false;
 	fseek(f, 0, SEEK_END);
 	u64 size = (u64)ftell(f);
 	fseek(f, 0, SEEK_SET);
-	state_lock();
-	int xid = xfer_begin(XF_DOWNLOAD, nm, "OneDrive", size); // la consola envía
-	state_unlock();
 	char enc[500], path[700];
 	url_enc(nm, enc, sizeof enc, false);
-	u8 *buf = malloc(CHUNK);
+	u8 *buf = malloc(size < CHUNK ? (size ? size : 1) : CHUNK);
 	bool ok = buf != NULL;
 	long code = 0;
 	Mem m = {NULL, 0, 256 * 1024};
 	if (ok && size <= CHUNK) { // pequeño: de una vez
-		size_t got = fread(buf, 1, size, f);
+		size_t got = size ? fread(buf, 1, size, f) : 0;
 		snprintf(path, sizeof path, "/me/drive/items/%s:/%s:/content?@microsoft.graph.conflictBehavior=rename", parent, enc);
 		ok = got == size && graph(HTTPC_METHOD_PUT, path, "application/octet-stream", buf, size, &m, &code) == DLF_OK && code < 300;
 	} else if (ok) { // grande: una sesión y trozos
@@ -530,18 +536,43 @@ static void do_upload(const char *sd, const char *parent0)
 			int r = dl_request(HTTPC_METHOD_PUT, upurl, H, buf, got, mem_cb, &m, &code);
 			ok = r == DLF_OK && (code == 200 || code == 201 || code == 202);
 			off += got;
-			state_lock();
-			xfer_progress(xid, off);
-			state_unlock();
+			if (xid >= 0) {
+				state_lock();
+				xfer_progress(xid, base + off);
+				state_unlock();
+			}
 		}
 	}
 	free(m.p);
 	free(buf);
 	fclose(f);
+	if (xid >= 0) {
+		state_lock();
+		xfer_progress(xid, base + size);
+		state_unlock();
+	}
 	util_log("nube: subir %s -> %s (HTTP %ld)", sd, ok ? "bien" : "mal", code);
+	return ok;
+}
+
+static void do_upload(const char *sd, const char *parent0)
+{
+	char parent[64];
+	if (parent0[0])
+		util_strlcpy(parent, parent0, sizeof parent);
+	else if (!app_folder(parent, sizeof parent)) {
+		set_err("upload");
+		return;
+	}
+	const char *nm = strrchr(sd, '/');
+	bool d;
+	u64 size = 0;
+	fsx_stat(sd, &d, &size);
 	state_lock();
-	if (ok)
-		xfer_progress(xid, size);
+	int xid = xfer_begin(XF_DOWNLOAD, nm ? nm + 1 : sd, "OneDrive", size); // la consola envía
+	state_unlock();
+	bool ok = upload_file(sd, parent, xid, 0);
+	state_lock();
 	xfer_end(xid, ok ? XS_DONE : XS_FAILED);
 	state_unlock();
 	if (!ok)
@@ -553,6 +584,285 @@ static void do_upload(const char *sd, const char *parent0)
 	if (here)
 		do_list(parent);
 	do_me();
+}
+
+/* la carpeta de OneDrive con esa ruta (desde la raíz, con «/»), creándola si falta; su id en out */
+static bool ensure_path(const char *rel, char *out, size_t n)
+{
+	char parent[64] = "", sofar[600] = "";
+	const char *p = rel;
+	while (*p) {
+		const char *e = strchr(p, '/');
+		size_t l = e ? (size_t)(e - p) : strlen(p);
+		char seg[200];
+		snprintf(seg, sizeof seg, "%.*s", (int)(l < sizeof seg - 1 ? l : sizeof seg - 1), p);
+		p += l + (e ? 1 : 0);
+		if (!seg[0])
+			continue;
+		size_t sl = strlen(sofar);
+		snprintf(sofar + sl, sizeof sofar - sl, "%s%s", sl ? "/" : "", seg);
+		char enc[900], path[1000];
+		url_enc(sofar, enc, sizeof enc, true);
+		snprintf(path, sizeof path, "/me/drive/root:/%s?$select=id", enc);
+		long code;
+		bool got = false;
+		for (int t = 0; t < 2 && !got; t++) {
+			cJSON *j = graph_json(path, &code);
+			const cJSON *i = cJSON_GetObjectItemCaseSensitive(j, "id");
+			if (cJSON_IsString(i)) {
+				util_strlcpy(parent, i->valuestring, sizeof parent);
+				got = true;
+			}
+			cJSON_Delete(j);
+			if (got || code != 404 || t)
+				break;
+			// no está: se crea dentro de la anterior
+			cJSON *b = cJSON_CreateObject();
+			cJSON_AddStringToObject(b, "name", seg);
+			cJSON_AddItemToObject(b, "folder", cJSON_CreateObject());
+			cJSON_AddStringToObject(b, "@microsoft.graph.conflictBehavior", "fail");
+			char *body = cJSON_PrintUnformatted(b);
+			cJSON_Delete(b);
+			char cpath[200];
+			if (parent[0])
+				snprintf(cpath, sizeof cpath, "/me/drive/items/%s/children", parent);
+			else
+				util_strlcpy(cpath, "/me/drive/root/children", sizeof cpath);
+			Mem m = {NULL, 0, 64 * 1024};
+			graph(HTTPC_METHOD_POST, cpath, "application/json", body, body ? strlen(body) : 0, &m, &code);
+			free(body);
+			// la respuesta trae su id; si otro la creó a la vez (409), se vuelve a buscar
+			cJSON *r = code < 300 && m.p ? cJSON_ParseWithLength(m.p, m.n) : NULL;
+			const cJSON *ri = cJSON_GetObjectItemCaseSensitive(r, "id");
+			if (cJSON_IsString(ri)) {
+				util_strlcpy(parent, ri->valuestring, sizeof parent);
+				got = true;
+			}
+			cJSON_Delete(r);
+			free(m.p);
+		}
+		if (!got)
+			return false;
+	}
+	util_strlcpy(out, parent, n);
+	return parent[0] != 0;
+}
+
+typedef struct {
+	char files[64][300];
+	int nf;
+	char dirs[16][160];
+	int nd;
+	u64 bytes;
+} TreeList;
+
+static bool tree_cb(const FsxEntry *e, void *u)
+{
+	TreeList *t = u;
+	if (e->dir) {
+		if (t->nd < 16)
+			util_strlcpy(t->dirs[t->nd++], e->name, sizeof t->dirs[0]);
+	} else if (t->nf < 64) {
+		util_strlcpy(t->files[t->nf++], e->name, sizeof t->files[0]);
+		t->bytes += e->size;
+	}
+	return true;
+}
+
+static u64 tree_bytes(const char *dir)
+{
+	TreeList *t = calloc(1, sizeof *t);
+	if (!t)
+		return 0;
+	fsx_list(dir, false, tree_cb, t);
+	u64 b = t->bytes;
+	for (int i = 0; i < t->nd; i++) {
+		char p[700];
+		snprintf(p, sizeof p, "%s/%s", dir, t->dirs[i]);
+		b += tree_bytes(p);
+	}
+	free(t);
+	return b;
+}
+
+/* sube una carpeta de la SD (con sus subcarpetas) dentro de la carpeta parent de OneDrive */
+static bool upload_tree(const char *dir, const char *parent, const char *remote_rel, int xid, u64 *done)
+{
+	TreeList *t = calloc(1, sizeof *t);
+	if (!t)
+		return false;
+	fsx_list(dir, false, tree_cb, t);
+	bool ok = true;
+	for (int i = 0; i < t->nf && ok; i++) {
+		char p[700];
+		snprintf(p, sizeof p, "%s/%s", dir, t->files[i]);
+		bool d;
+		u64 sz = 0;
+		fsx_stat(p, &d, &sz);
+		ok = upload_file(p, parent, xid, *done);
+		*done += sz;
+	}
+	for (int i = 0; i < t->nd && ok; i++) {
+		char p[700], rel[700], id[64];
+		snprintf(p, sizeof p, "%s/%s", dir, t->dirs[i]);
+		snprintf(rel, sizeof rel, "%s/%s", remote_rel, t->dirs[i]);
+		ok = ensure_path(rel, id, sizeof id) && upload_tree(p, id, rel, xid, done);
+	}
+	free(t);
+	return ok;
+}
+
+/* copia en la nube de las partidas que cambiaron desde la última vez (formato de Checkpoint) */
+static void do_saves(void)
+{
+	TitleInfo *ti = NULL;
+	int n = titles_list(&ti);
+	if (n <= 0) {
+		free(ti);
+		return;
+	}
+	lock();
+	C.info.backing_up = true;
+	bump();
+	unlock();
+	if (!C.hashes)
+		C.hashes = cJSON_CreateObject();
+	int done_titles = 0;
+	u64 done_bytes = 0;
+	bool any_err = false;
+	state_lock();
+	int xid = xfer_begin(XF_DOWNLOAD, "Partidas", "OneDrive", 0);
+	state_unlock();
+	lock();
+	C.info.bk_xid = xid;
+	unlock();
+	for (int i = 0; i < n && !C.quit; i++) {
+		const TitleInfo *t = &ti[i];
+		char key[20], fp[40];
+		snprintf(key, sizeof key, "%016llX", (unsigned long long)t->tid);
+		if (save_fingerprint(t, fp) < 0)
+			continue; // sin partida
+		const cJSON *old = cJSON_GetObjectItemCaseSensitive(C.hashes, key);
+		if (cJSON_IsString(old) && !strcmp(old->valuestring, fp))
+			continue; // igual que la última copia
+		lock();
+		util_strlcpy(C.info.backing, t->title, sizeof C.info.backing);
+		bump();
+		unlock();
+		char out[600];
+		if (save_backup(t, out, sizeof out) < 0) { // también queda la copia en la SD
+			any_err = true;
+			continue;
+		}
+		// /Cloud3DS/Partidas/<carpeta del juego>/<fecha>
+		const char *stamp = strrchr(out, '/');
+		char gdir[600];
+		util_strlcpy(gdir, out, sizeof gdir);
+		char *sl = strrchr(gdir, '/');
+		if (sl)
+			*sl = 0;
+		const char *game = strrchr(gdir, '/');
+		char rel[700], id[64];
+		snprintf(rel, sizeof rel, OD_FOLDER "/Partidas/%s/%s", game ? game + 1 : gdir, stamp ? stamp + 1 : out);
+		u64 before = done_bytes;
+		lock();
+		C.info.bk_base = done_bytes;
+		C.info.bk_total = tree_bytes(out);
+		bump();
+		unlock();
+		bool ok = ensure_path(rel, id, sizeof id) && upload_tree(out, id, rel, xid, &done_bytes);
+		if (ok) {
+			cJSON_DeleteItemFromObjectCaseSensitive(C.hashes, key);
+			cJSON_AddStringToObject(C.hashes, key, fp);
+			done_titles++;
+		} else {
+			any_err = true;
+			done_bytes = before;
+		}
+	}
+	free(ti);
+	state_lock();
+	xfer_end(xid, any_err ? XS_FAILED : XS_DONE);
+	state_unlock();
+	lock();
+	C.info.backing_up = false;
+	C.info.backing[0] = 0;
+	C.info.bk_xid = -1;
+	if (!any_err) {
+		C.info.last_backup = util_unix_now();
+		C.info.last_titles = done_titles;
+		C.info.last_bytes = done_bytes;
+	}
+	if (any_err)
+		util_strlcpy(C.info.err, "backup", sizeof C.info.err);
+	bump();
+	unlock();
+	util_log("nube: copia de partidas: %d subidas%s", done_titles, any_err ? " (con errores)" : "");
+	save_tokens();
+}
+
+static bool shot_cb(const FsxEntry *e, void *u)
+{
+	TreeList *t = u;
+	size_t l = strlen(e->name);
+	if (!e->dir && l > 4 && !strcasecmp(e->name + l - 4, ".bmp") && t->nf < 64)
+		util_strlcpy(t->files[t->nf++], e->name, sizeof t->files[0]);
+	return true;
+}
+
+static bool shot_done(const char *name)
+{
+	const cJSON *e;
+	cJSON_ArrayForEach(e, C.shots)
+	if (cJSON_IsString(e) && !strcmp(e->valuestring, name))
+		return true;
+	return false;
+}
+
+/* las capturas nuevas de Rosalina, a /Cloud3DS/Capturas */
+static void do_caps(void)
+{
+	TreeList *t = calloc(1, sizeof *t);
+	if (!t)
+		return;
+	fsx_list(SHOTS, false, shot_cb, t);
+	if (!C.shots)
+		C.shots = cJSON_CreateArray();
+	char id[64] = "";
+	int up = 0, todo = 0;
+	for (int i = 0; i < t->nf; i++)
+		todo += !shot_done(t->files[i]);
+	lock();
+	C.info.caps_queue = todo;
+	bump();
+	unlock();
+	for (int i = 0; i < t->nf && !C.quit; i++) {
+		if (shot_done(t->files[i]))
+			continue;
+		if (!id[0] && !ensure_path(OD_FOLDER "/Capturas", id, sizeof id))
+			break;
+		char p[400];
+		snprintf(p, sizeof p, SHOTS "/%s", t->files[i]);
+		if (!upload_file(p, id, -1, 0))
+			break;
+		cJSON_AddItemToArray(C.shots, cJSON_CreateString(t->files[i]));
+		while (cJSON_GetArraySize(C.shots) > 1000) // las más antiguas se olvidan
+			cJSON_DeleteItemFromArray(C.shots, 0);
+		up++;
+		lock();
+		C.info.caps_queue = todo - up;
+		bump();
+		unlock();
+	}
+	free(t);
+	lock();
+	C.info.caps_queue = 0;
+	bump();
+	unlock();
+	if (up) {
+		util_log("nube: %d capturas subidas", up);
+		save_tokens();
+	}
 }
 
 static void do_download(const char *id, const char *name)
@@ -618,6 +928,18 @@ static void thread_main(void *arg)
 			continue;
 		if (C.info.st == CLS_CODE)
 			poll_code();
+		if (C.info.st == CLS_ON && util_ms() > C.next_caps) {
+			C.next_caps = util_ms() + 60000;
+			bool queued = false;
+			lock();
+			for (int k = 0; k < C.nq; k++)
+				queued |= C.q[k].type == J_CAPS || C.q[k].type == J_SAVES;
+			unlock();
+			if (!queued && C.info.caps)
+				push(J_CAPS, NULL, NULL);
+			if (!queued && C.info.saves_mode == CLB_DAILY && util_unix_now() > C.info.last_backup + 86400)
+				push(J_SAVES, NULL, NULL);
+		}
 		Job j;
 		lock();
 		bool have = C.nq > 0;
@@ -636,6 +958,8 @@ static void thread_main(void *arg)
 		case J_DOWNLOAD: do_download(j.a, j.b); break;
 		case J_UPLOAD: do_upload(j.a, j.b); break;
 		case J_DELETE: do_delete(j.a); break;
+		case J_SAVES: do_saves(); break;
+		case J_CAPS: do_caps(); break;
 		}
 		lock();
 		C.info.busy = C.nq > 0;
@@ -649,6 +973,7 @@ void cloud_init(void)
 {
 	LightLock_Init(&C.lock);
 	LightEvent_Init(&C.ev, RESET_ONESHOT);
+	C.info.bk_xid = -1;
 	C.info.st = OD_CLIENT_ID[0] ? CLS_OFF : CLS_NOCFG;
 	FILE *f = fopen(OD_FILE, "rb");
 	if (f && C.info.st == CLS_OFF) {
@@ -658,6 +983,19 @@ void cloud_init(void)
 		cJSON *j = cJSON_Parse(buf);
 		const cJSON *r = cJSON_GetObjectItemCaseSensitive(j, "refresh"), *nm = cJSON_GetObjectItemCaseSensitive(j, "name"),
 		            *em = cJSON_GetObjectItemCaseSensitive(j, "email");
+		const cJSON *sm = cJSON_GetObjectItemCaseSensitive(j, "saves_mode"), *cp = cJSON_GetObjectItemCaseSensitive(j, "caps"),
+		            *lb = cJSON_GetObjectItemCaseSensitive(j, "last_backup"), *lt = cJSON_GetObjectItemCaseSensitive(j, "last_titles"),
+		            *ly = cJSON_GetObjectItemCaseSensitive(j, "last_bytes");
+		C.info.saves_mode = cJSON_IsNumber(sm) ? sm->valueint : CLB_OPEN;
+		C.info.caps = cJSON_IsBool(cp) ? cJSON_IsTrue(cp) : true;
+		C.info.last_backup = cJSON_IsNumber(lb) ? (u64)lb->valuedouble : 0;
+		C.info.last_titles = cJSON_IsNumber(lt) ? lt->valueint : 0;
+		C.info.last_bytes = cJSON_IsNumber(ly) ? (u64)ly->valuedouble : 0;
+		cJSON *h = cJSON_DetachItemFromObjectCaseSensitive(j, "hashes"), *sh = cJSON_DetachItemFromObjectCaseSensitive(j, "shots");
+		if (h)
+			C.hashes = h;
+		if (sh)
+			C.shots = sh;
 		if (cJSON_IsString(r) && r->valuestring[0]) {
 			util_strlcpy(C.refresh, r->valuestring, sizeof C.refresh);
 			if (cJSON_IsString(nm))
@@ -673,8 +1011,12 @@ void cloud_init(void)
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
 	C.thr = threadCreate(thread_main, NULL, 48 * 1024, prio + 1, -2, false);
-	if (C.info.st == CLS_ON)
+	if (C.info.st == CLS_ON) {
 		push(J_ME, NULL, NULL);
+		if (C.info.saves_mode == CLB_OPEN)
+			push(J_SAVES, NULL, NULL);
+	}
+	C.next_caps = util_ms() + 20000;
 }
 
 void cloud_exit(void)
@@ -802,4 +1144,28 @@ void cloud_upload(const char *sd_path, const char *parent_id)
 void cloud_delete(const CloudItem *it)
 {
 	push(J_DELETE, it->id, NULL);
+}
+
+void cloud_set_saves_mode(int mode)
+{
+	lock();
+	C.info.saves_mode = mode;
+	bump();
+	unlock();
+	save_tokens();
+}
+
+void cloud_set_caps(bool on)
+{
+	lock();
+	C.info.caps = on;
+	bump();
+	unlock();
+	save_tokens();
+}
+
+void cloud_backup_now(void)
+{
+	push(J_SAVES, NULL, NULL);
+	push(J_CAPS, NULL, NULL);
 }

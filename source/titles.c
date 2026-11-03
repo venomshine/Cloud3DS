@@ -6,6 +6,7 @@
  * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
  */
 #include "titles.h"
+#include "digest.h"
 #include "fsx.h"
 #include "i18n.h"
 #include "util.h"
@@ -276,6 +277,83 @@ int save_backup(const TitleInfo *t, char *out, size_t n)
 		fsx_rmrf(out); // a medias no sirve
 		return -2;
 	}
+	return 0;
+}
+
+/* huella de la partida (MD5 de los nombres y el contenido de todos sus archivos), sin copiarla:
+ * para saber si cambió desde la última copia en la nube */
+static void hash_dir(FS_Archive a, const u16 *src, int srclen, Md5 *m, u8 *buf, bool *err)
+{
+	u16 path[512];
+	memcpy(path, src, srclen * 2);
+	path[srclen] = 0;
+	Handle d;
+	if (R_FAILED(FSUSER_OpenDirectory(&d, a, (FS_Path){PATH_UTF16, (srclen + 1) * 2, path}))) {
+		*err = true;
+		return;
+	}
+	FS_DirectoryEntry *e = malloc(sizeof *e);
+	u32 got;
+	while (e && !*err && R_SUCCEEDED(FSDIR_Read(d, &got, 1, e)) && got) {
+		int nl = 0;
+		while (nl < 0x105 && e->name[nl])
+			nl++;
+		if (srclen + 1 + nl >= 500)
+			continue;
+		u16 child[512];
+		memcpy(child, path, srclen * 2);
+		int cl = srclen;
+		if (cl == 0 || child[cl - 1] != '/')
+			child[cl++] = '/';
+		memcpy(child + cl, e->name, nl * 2);
+		cl += nl;
+		child[cl] = 0;
+		md5_update(m, (const u8 *)child, cl * 2);
+		if (e->attributes & FS_ATTRIBUTE_DIRECTORY) {
+			hash_dir(a, child, cl, m, buf, err);
+			continue;
+		}
+		Handle f;
+		u64 sz = 0, off = 0;
+		if (R_FAILED(FSUSER_OpenFile(&f, a, (FS_Path){PATH_UTF16, (cl + 1) * 2, child}, FS_OPEN_READ, 0)) || R_FAILED(FSFILE_GetSize(f, &sz))) {
+			*err = true;
+			break;
+		}
+		while (off < sz) {
+			u32 rd = 0, want = sz - off > 64 * 1024 ? 64 * 1024 : (u32)(sz - off);
+			if (R_FAILED(FSFILE_Read(f, &rd, off, buf, want)) || !rd) {
+				*err = true;
+				break;
+			}
+			md5_update(m, buf, rd);
+			off += rd;
+		}
+		FSFILE_Close(f);
+	}
+	free(e);
+	FSDIR_Close(d);
+}
+
+int save_fingerprint(const TitleInfo *t, char *hex)
+{
+	u32 path[3] = {MEDIATYPE_SD, (u32)t->tid, (u32)(t->tid >> 32)};
+	FS_Archive a;
+	if (R_FAILED(FSUSER_OpenArchive(&a, ARCHIVE_USER_SAVEDATA, (FS_Path){PATH_BINARY, sizeof path, path})))
+		return -1;
+	u8 *buf = malloc(64 * 1024);
+	bool err = !buf;
+	Md5 m;
+	md5_init(&m);
+	static const u16 root[1] = {'/'};
+	if (!err)
+		hash_dir(a, root, 1, &m, buf, &err);
+	free(buf);
+	FSUSER_CloseArchive(a);
+	if (err)
+		return -2;
+	u8 d[16];
+	md5_final(&m, d);
+	digest_hex(d, 16, hex);
 	return 0;
 }
 
