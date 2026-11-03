@@ -25,7 +25,7 @@ build/libhubbub/%.o: libhubbub/%.c
 	$(CC) $(BASE) -Ilibhubbub/src -c $< -o $@
 build/libcss/%.o: libcss/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(BASE) -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Ilibcss/src -c $< -o $@
+	$(CC) $(BASE) -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -D_ALIGNED='__attribute__((aligned))' -Ilibcss/src -c $< -o $@
 build/libdom/%.o: libdom/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BASE) -Ilibdom/src -Ilibdom/bindings -c $< -o $@
