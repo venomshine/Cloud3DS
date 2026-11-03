@@ -1820,7 +1820,7 @@ static void cl_item_icon(const CloudItem *c, IconId *ic, u32 *col)
 static void cl_backups_top(void)
 {
 	const CloudInfo *ci = &CLU.info;
-	float y0 = CARD_Y + 2, h = SCR_H - 8 - y0;
+	float y0 = BODY_Y, h = SCR_H - 8 - y0;
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
 	const float X = CARD_X + 16, W = CARD_W - 32;
@@ -1909,13 +1909,14 @@ static void cl_top(void)
 {
 	draw_header();
 	cl_refresh();
+	mini_strip(1); // la tira de la dirección, como en el resto de la app: hay un servidor a tu nombre
 	const CloudInfo *ci = &CLU.info;
 	if (CLU.bk && ci->st == CLS_ON) {
 		cl_backups_top();
 		return;
 	}
-	if (ci->st == CLS_CODE) { // el QR y el código, a lo grande
-		float y0 = CARD_Y + 2, h = SCR_H - 8 - y0;
+	if (ci->st == CLS_CODE) { // el QR y el código, a lo grande (debajo de la tira)
+		float y0 = BODY_Y, h = SCR_H - 8 - y0;
 		draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
 		draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
 		const float QS = h - 32;
@@ -1928,25 +1929,28 @@ static void cl_top(void)
 		float cw = text_width(ci->user_code, 0.72f) + 20;
 		draw_rrect(rx, y, fminf(cw, rw), text_lineh(0.72f) + 10, 10, T.bg);
 		text_draw(ci->user_code, rx + 10, y + 5, 0.72f, T.accent);
-		y += text_lineh(0.72f) + 18;
+		y += text_lineh(0.72f) + 16;
 		const char *v = strstr(ci->verify, "://");
 		char pc[160];
 		snprintf(pc, sizeof pc, _("O en el PC: %s"), v ? v + 3 : ci->verify);
-		text_wrap_lines(pc, rw, TS_SUB, 2, rx, y, T.text3, true);
 		u64 now = util_ms();
 		int mins = ci->code_until > now ? (int)((ci->code_until - now) / 60000) + 1 : 0;
 		char w[96];
 		snprintf(w, sizeof w, _("Esperando a que aceptes en el móvil · caduca en %d min"), mins);
 		int nl = text_wrap_lines(w, rw - 16, TS_SUB, 2, 0, 0, 0, false);
-		float wy = y0 + h - 12 - nl * text_lineh(TS_SUB);
+		float wy = y0 + h - 10 - nl * text_lineh(TS_SUB);
+		// «O en el PC», en lo que quede entre el código y la espera (sin pisarla)
+		int pl = (int)((wy - 6 - y) / text_lineh(TS_SUB));
+		if (pl > 0)
+			text_wrap_lines(pc, rw, TS_SUB, pl < 2 ? pl : 2, rx, y, T.text3, true);
 		draw_arc(rx + 6, wy + text_lineh(TS_SUB) / 2, 5, 1.6f, g_time * 6, g_time * 6 + 4.2f, T.accent);
 		text_wrap_lines(w, rw - 16, TS_SUB, 2, rx + 16, wy, T.text3, true);
 		toast_draw_top();
 		return;
 	}
 	if (ci->st == CLS_ON) {
-		// arriba, la cuenta y su espacio (donde va la tira del QR)
-		float y = CARD_Y, h = SDB_H;
+		// abajo, la cuenta y su espacio (donde en el resto va la tarjeta de la SD)
+		float h = SDB_H, y = SCR_H - 8 - h;
 		draw_rrect(CARD_X, y + 3, CARD_W, h, 14, T.shadow);
 		draw_rrect(CARD_X, y, CARD_W, h, 14, T.surface);
 		draw_circle(CARD_X + 26, y + h / 2, 13, T.accent);
@@ -1971,8 +1975,8 @@ static void cl_top(void)
 		draw_rrect(lx, by, bw, 6, 3, T.surface2);
 		if (ci->total)
 			draw_rrect(lx, by, fmaxf(6, bw * clampf((float)((double)ci->used / ci->total), 0, 1)), 6, 3, T.accent);
-		// lo marcado
-		float y0 = CARD_Y + h + 8, hh = BODY_B - y0;
+		// lo marcado, en medio
+		float y0 = BODY_Y, hh = BODY_B - y0;
 		draw_rrect(CARD_X, y0 + 3, CARD_W, hh, 16, T.shadow);
 		draw_rrect(CARD_X, y0, CARD_W, hh, 16, T.surface);
 		const float X = CARD_X + 14, W = CARD_W - 28;
@@ -2007,7 +2011,6 @@ static void cl_top(void)
 			snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, c->dir ? _("Abrir") : _("Descargar"), GLYPH_Y, _("Opciones"));
 			text_draw_right(hint, X + W, y0 + hh - 10 - text_lineh(TS_SUB), TS_SUB, T.text2);
 		}
-		sd_bar(1);
 		toast_draw_top();
 		return;
 	}
@@ -2254,20 +2257,22 @@ static void cl_bottom(void)
 	} else {
 		tab_header(_("Nube"), true);
 		bool cfg = ci->st != CLS_NOCFG;
-		float cy = VIEW_Y + 54;
-		draw_halo(BOT_W / 2, cy, 54, 0.3f);
-		draw_cloud(BOT_W / 2, cy, 22, 1);
-		text_draw_center(cfg ? _("Conecta tu OneDrive") : _("Nube sin configurar"), BOT_W / 2, cy + 34, TS_TITLE, T.text);
+		// de arriba abajo sin pisarse: la nube, el título, el texto (dos líneas) y el botón, que acaba
+		// por encima del botón redondo de la barra (sobresale QR_PAD)
+		float cy = VIEW_Y + 30;
+		draw_halo(BOT_W / 2, cy, 44, 0.3f);
+		draw_cloud(BOT_W / 2, cy, 20, 1);
+		text_draw_center(cfg ? _("Conecta tu OneDrive") : _("Nube sin configurar"), BOT_W / 2, cy + 26, TS_TITLE, T.text);
 		wrap_center(cfg ? _("Con tu cuenta de Microsoft, en el móvil, con un QR y un código.") : _("Falta el ID de la app de Microsoft en esta versión de prueba."),
-		            BOT_W / 2, cy + 58, 260, TS_SUB, 2, T.text3);
-		float bx = 40, bw = BOT_W - 80, by = SCR_H - TABBAR_H - 44;
+		            BOT_W / 2, cy + 48, 270, TS_SUB, 2, T.text3);
+		float bx = 40, bw = BOT_W - 80, by = SCR_H - TABBAR_H - QR_PAD - 6 - 32;
 		if (cfg) {
 			bool busy = ci->busy;
-			draw_rrect(bx, by, bw, 34, 17, busy ? T.surface2 : touch_in(bx, by, bw, 34) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+			draw_rrect(bx, by, bw, 32, 16, busy ? T.surface2 : touch_in(bx, by, bw, 32) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
 			char b[64];
 			snprintf(b, sizeof b, "%s %s", GLYPH_A, busy ? _("Pidiendo el código…") : _("Conectar"));
-			text_draw_center(b, BOT_W / 2, by + 17 - text_lineh(TS_BODY) / 2, TS_BODY, busy ? T.text3 : 0xFFFFFFFF);
-			if (!busy && (tap(bx, by, bw, 34) || (g_kdown & KEY_A)))
+			text_draw_center(b, BOT_W / 2, by + 16 - text_lineh(TS_BODY) / 2, TS_BODY, busy ? T.text3 : 0xFFFFFFFF);
+			if (!busy && (tap(bx, by, bw, 32) || (g_kdown & KEY_A)))
 				cloud_connect();
 		}
 		if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
