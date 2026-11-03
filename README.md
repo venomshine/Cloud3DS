@@ -60,7 +60,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 - **Crear carpetas, renombrar y borrar**, también varios a la vez.
 - **Seguro por defecto:** modo **solo lectura** y **carpetas del sistema protegidas** (`Nintendo 3DS`, `3ds`, `luma`, `boot.firm`…): llevan un candado y no se pueden borrar ni renombrar mientras la protección esté activa.
 - **Sin sorpresas:** las subidas y las copias se escriben en un temporal y solo se guardan al terminar; si se corta, no quedan archivos a medias. Avisa si no hay espacio o si el archivo pasa de 4 GB (límite de FAT32).
-- **En la consola:** el QR, la dirección y el PIN siempre a la vista, con las transferencias en directo al lado. Con **SELECT** el QR se minimiza y deja la pantalla de arriba libre. Pestañas de **Actividad**, **Dispositivos** y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
+- **En la consola:** el QR, la dirección y el PIN siempre a la vista, con las transferencias en directo al lado. La ventana del QR se cierra sola en cuanto haces otra cosa y queda la tira con la dirección y el PIN. El servidor se puede apagar en Ajustes → Conexión (la nube y las descargas siguen funcionando). Pestañas de **Actividad**, **Dispositivos** y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
 - **Se actualiza sola:** busca versiones nuevas en GitHub y las instala desde Ajustes, comprobando antes que el archivo es el original (SHA-256). Nunca baja de versión.
 - **Puedes cerrar la tapa:** mientras transfiere, la consola no se suspende y apaga la pantalla.
 - Fecha, hora, Wi-Fi y batería en la pantalla superior. Tema oscuro y claro.
@@ -76,7 +76,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 | **X** | Desvincular el dispositivo elegido (en Dispositivos) |
 | **Y** | Borrar el historial (en Actividad) |
 | **B** | Atrás / cancelar |
-| **SELECT** | Minimizar o abrir el QR (también con el botón del QR, abajo a la derecha) |
+| **SELECT** | Abrir el menú: Nube, Conectar (QR), Escanear QR, Descargar y Navegador (también con el botón central) |
 | **START** | Salir (siempre pregunta) |
 
 Todo se puede hacer también con la pantalla táctil.
@@ -131,7 +131,7 @@ Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python
 
 **Install:** open **FBI** → *Remote Install* → *Scan QR Code* and scan the QR above, or download `Cloud3DS.cia` / `Cloud3DS.3dsx` from the [latest release](https://github.com/venomshine/Cloud3DS/releases/latest).
 
-**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, copy and move, view photos and videos, rename and delete. If something already exists, choose to replace (or merge folders), rename, keep both, skip or cancel all. Highlight folders with a color, and system folders are shown in their own group. Devices show their real name when the network provides it, can be renamed and unpaired from the console. Press SELECT to minimize the QR card. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads and copies never leave half-written files behind.
+**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, copy and move, view photos and videos, rename and delete. If something already exists, choose to replace (or merge folders), rename, keep both, skip or cancel all. Highlight folders with a color, and system folders are shown in their own group. Devices show their real name when the network provides it, can be renamed and unpaired from the console. The QR window closes by itself as soon as you do something else; SELECT opens the menu (Cloud, Connect, Scan QR, Download, Browser). The server can be turned off in Settings → Connection. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads and copies never leave half-written files behind.
 
 **Updates:** Cloud3DS checks GitHub for new versions when it opens. Go to **Settings → Updates** to download, verify (SHA-256) and install the new one without FBI.
 

@@ -1021,6 +1021,13 @@ static void mini_strip(float a)
 {
 	// una sola línea: dirección y estado a la izquierda, PIN a la derecha
 	float y = CARD_Y, cy = y + MINI_H / 2;
+	if (V.srv_off) { // apagado: se sigue viendo, en gris, para saber que existe
+		draw_rrect_outline(CARD_X + 1, y + 1, CARD_W - 2, MINI_H - 2, (MINI_H - 2) / 2, 1, col_alpha(T.divider, a));
+		draw_icon(IC_LOCK, CARD_X + 18, cy, 13, col_alpha(T.text3, a));
+		text_draw(_("Servidor apagado"), CARD_X + 34, cy - text_lineh(0.52f) / 2, 0.52f, col_alpha(T.text3, a));
+		text_draw_right(_("Se enciende en Conectar"), CARD_X + CARD_W - 14, cy - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.text3, a));
+		return;
+	}
 	draw_icon(IC_QR, CARD_X + 18, cy, 13, col_alpha(T.accent, a));
 	char url[48], pin[16];
 	url_text(url, sizeof url, false);
@@ -1209,7 +1216,7 @@ static void mini_body(float a)
 		draw_halo(TOP_W / 2, cy, 64, 0.25f * a);
 		draw_cloud(TOP_W / 2, cy, 20, a);
 		text_draw_center(_("Tu nube está lista"), TOP_W / 2, cy + 28, TS_BODY, col_alpha(T.text2, a));
-		text_draw_center(_("Pulsa SELECT para ver el código QR"), TOP_W / 2, cy + 48, TS_SUB, col_alpha(T.text3, a));
+		text_draw_center(_("SELECT abre el menú"), TOP_W / 2, cy + 48, TS_SUB, col_alpha(T.text3, a));
 		return;
 	}
 	if (nx == 1 && !nw) { // una sola: a lo grande
@@ -1524,7 +1531,7 @@ static void draw_top(void)
 	} else if (V.srv_error[0]) {
 		card_message(IC_INFO, T.warn, _("No se pudo iniciar el servidor"),
 		             _("Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS."));
-	} else if (!V.running) {
+	} else if (!V.running && !V.srv_off) { // apagado a propósito: la tira gris, no «preparando»
 		card();
 		draw_arc(TOP_W / 2, CARD_Y + 80, 16, 3, g_time * 6, g_time * 6 + 4.2f, T.accent);
 		text_draw_center(_("Preparando tu nube…"), TOP_W / 2, CARD_Y + 114, TS_BODY, T.text3);
@@ -7155,6 +7162,21 @@ static void set_flag(bool *f)
 	state_unlock();
 }
 
+// enciende o apaga el servidor (se guarda: sigue así al volver a abrir)
+static void srv_set(bool on)
+{
+	state_lock();
+	G.srv_off = !on;
+	if (!on)
+		G.qr_min = true; // sin servidor, el QR no sirve
+	G.dirty_cfg = true;
+	G.rev++;
+	memcpy(&V, &G, sizeof G);
+	state_unlock();
+	server_set_enabled(on);
+	toast_icon(on ? _("Servidor encendido") : _("Servidor apagado"), on ? IC_WIFI : IC_LOCK, on ? T.ok : T.text3);
+}
+
 static void ask_exit(void);
 
 static void settings_action(int i)
@@ -7241,6 +7263,18 @@ static void settings_sub_top(float a)
 		return;
 	}
 	int i = U.list[TAB_COUNT + 4].sel;
+	if (i == 0 || V.srv_off) {
+		if (V.srv_off)
+			explain_top(a, IC_LOCK, T.text3, _("Servidor apagado"),
+			            _("La web, cloud3ds.local, las subidas desde el PC y la instalación remota no funcionan. La nube, las descargas y el navegador siguen igual."),
+			            _("Apagado gasta menos batería. Se enciende aquí o con SELECT, en «Conectar»."), T.text3);
+		else
+			explain_top(a, IC_WIFI, T.ok, _("Servidor para el PC y el móvil"),
+			            _("Con él encendido, el móvil o el PC entran en la consola desde el navegador: ven, suben y bajan archivos e instalan CIA."),
+			            _("Si no lo usas, puedes apagarlo: gasta menos batería."), T.text3);
+		return;
+	}
+	i--;
 	if (i == 0) {
 		snprintf(foot, sizeof foot, V.mdns ? _("Activado: %s.local") : _("Desactivado"), V.net_name);
 		explain_top(a, IC_GLOBE, T.ok, _("Nombre en la red"),
@@ -7338,7 +7372,7 @@ static void settings_main(void)
 		case SET_CONN:
 			title = _("Conexión"); ic = IC_WIFI; col = T.ok; chev = true;
 			snprintf(vbuf, sizeof vbuf, "%s.local", V.net_name);
-			sub = V.mdns ? vbuf : _("Nombre en la red y FBI remoto");
+			sub = V.srv_off ? _("Servidor apagado") : V.mdns ? vbuf : _("Nombre en la red y FBI remoto");
 			break;
 		case SET_SHOTS:
 			title = _("Capturas al instante"); sub = _("Aparecen al instante en la web"); ic = IC_CAMERA; col = T.accent;
@@ -7414,23 +7448,33 @@ static void settings_conn(void)
 	List *l = cur_list();
 	tab_header(_("Conexión"), true);
 	const float RH = 48;
-	list_update(l, 3, RH);
+	list_update(l, 4, RH);
+	static float t_srv = 1;
+	t_srv = approach(t_srv, V.srv_off ? 0 : 1, 14);
 	U.t_mdns = approach(U.t_mdns, V.mdns ? 1 : 0, 14);
 	U.t_fbi = approach(U.t_fbi, V.fbi_remote ? 1 : 0, 14);
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < 4; i++) {
 		float y = VIEW_Y + i * RH - l->off;
 		bool t = row(l, i, y, RH);
+		bool dim = i > 0 && V.srv_off; // sin servidor, lo demás no hace nada
 		char title[64], sub[120];
 		IconId ic;
 		u32 col;
 		if (i == 0) {
+			snprintf(title, sizeof title, "%s", _("Servidor para el PC y el móvil"));
+			if (V.srv_off)
+				snprintf(sub, sizeof sub, "%s", _("Apagado · la nube sigue funcionando"));
+			else
+				snprintf(sub, sizeof sub, "%s", _("Encendido · la web y las subidas"));
+			ic = IC_WIFI, col = V.srv_off ? T.text3 : T.ok;
+		} else if (i == 1) {
 			snprintf(title, sizeof title, "%s", _("Nombre en la red"));
 			if (V.mdns && !(V.remote_ok & 1) && V.running)
 				snprintf(sub, sizeof sub, "%s", _("No se pudo activar en esta red"));
 			else
 				snprintf(sub, sizeof sub, _("Acceso por %s.local"), V.net_name);
 			ic = IC_GLOBE, col = T.ok;
-		} else if (i == 1) {
+		} else if (i == 2) {
 			snprintf(title, sizeof title, "%s", _("Instalación remota (FBI)"));
 			if (V.fbi_remote && !(V.remote_ok & 2) && V.running)
 				snprintf(sub, sizeof sub, "%s", _("El puerto 5000 está ocupado"));
@@ -7442,22 +7486,28 @@ static void settings_conn(void)
 			snprintf(sub, sizeof sub, "%s", _("Útil con varias consolas, p. ej. 3ds-salon.local"));
 			ic = IC_PEN, col = T.accent2;
 		}
-		row_icon(28, y + RH / 2, ic, col);
+		float k = dim ? 0.4f : 1;
+		row_icon(28, y + RH / 2, ic, col_alpha(col, k));
 		float right = BOT_W - 16;
-		if (i < 2) {
-			toggle(right - 36, y + RH / 2 - 10, i == 0 ? U.t_mdns : U.t_fbi);
+		if (i < 3) {
+			if (dim)
+				draw_rrect(right - 36, y + RH / 2 - 10, 36, 20, 10, T.surface2);
+			else
+				toggle(right - 36, y + RH / 2 - 10, i == 0 ? t_srv : i == 1 ? U.t_mdns : U.t_fbi);
 			right -= 46;
 		} else {
-			draw_icon(IC_CHEV_RIGHT, right - 4, y + RH / 2, 12, T.text3);
+			draw_icon(IC_CHEV_RIGHT, right - 4, y + RH / 2, 12, col_alpha(T.text3, k));
 			right -= 16;
 		}
-		text_draw_clip(title, 50, y + 7, right - 50, TS_BODY, T.text);
-		text_draw_clip(sub, 50, y + 25, right - 50, TS_SUB, T.text3);
-		if (t || activate(l, i)) {
-			if (i == 0) {
+		text_draw_clip(title, 50, y + 7, right - 50, TS_BODY, col_alpha(T.text, k));
+		text_draw_clip(sub, 50, y + 25, right - 50, TS_SUB, col_alpha(T.text3, k));
+		if ((t || activate(l, i)) && !dim) {
+			if (i == 0)
+				srv_set(V.srv_off);
+			else if (i == 1) {
 				set_flag(&G.mdns);
 				remote_changed();
-			} else if (i == 1) {
+			} else if (i == 2) {
 				set_flag(&G.fbi_remote);
 				remote_changed();
 			} else
@@ -7646,10 +7696,12 @@ static void settings_about(void)
 	}
 }
 
-static void qr_toggle(void)
+static void qr_show(bool on)
 {
+	if (V.qr_min == !on)
+		return;
 	state_lock();
-	G.qr_min = !G.qr_min;
+	G.qr_min = !on;
 	G.dirty_cfg = true;
 	G.rev++;
 	memcpy(&V, &G, sizeof G);
@@ -7664,9 +7716,11 @@ static void qa_run(int i)
 	QA.open = false;
 	if (i == QA_CLOUD)
 		cl_open();
-	else if (i == QA_CONNECT)
-		qr_toggle();
-	else if (i == QA_SCAN)
+	else if (i == QA_CONNECT) {
+		if (V.srv_off)
+			srv_set(true);
+		qr_show(true);
+	} else if (i == QA_SCAN)
 		qrs_open();
 	else if (i == QA_WEB)
 		U.want_web = true;
@@ -7811,8 +7865,8 @@ static void qa_card_text(int i, const char **lab, const char **sb)
 		*sb = cl_connected() ? _("Tu OneDrive\ny tus copias") : _("Conecta tu\nOneDrive");
 		break;
 	case QA_CONNECT:
-		*lab = V.qr_min ? _("Conectar") : _("Ocultar QR");
-		*sb = V.qr_min ? _("Móvil o PC\ncon QR y PIN") : _("Volver a la\ninformación");
+		*lab = _("Conectar");
+		*sb = V.srv_off ? _("Servidor\napagado") : _("Móvil o PC\ncon QR y PIN");
 		break;
 	case QA_SCAN: *lab = _("Escanear QR"), *sb = _("Con la cámara,\ncomo en FBI"); break;
 	case QA_LINK: *lab = _("Descargar"), *sb = _("Escribir\nun enlace"); break;
@@ -7851,7 +7905,8 @@ static void qa_top(float a)
 	if (i == QA_CLOUD)
 		util_strlcpy(note, cl_connected() ? _("Las partidas se guardan en la carpeta Cloud3DS de tu OneDrive.") : _("Solo hace falta una vez: el permiso se guarda y se renueva solo."), sizeof note);
 	else if (i == QA_CONNECT)
-		util_strlcpy(note, _("SELECT también lo muestra y lo oculta."), sizeof note);
+		util_strlcpy(note, V.srv_off ? _("El servidor está apagado: al abrir esta tarjeta se enciende. Se vuelve a apagar en Ajustes, en «Conexión».")
+		                             : _("La ventana del QR se cierra sola en cuanto haces otra cosa."), sizeof note);
 	else if (i == QA_WEB)
 		util_strlcpy(note, _("Un .html de la SD también se abre aquí desde Archivos."), sizeof note);
 	else {
@@ -8249,6 +8304,9 @@ static void update(void)
 	}
 	if (U.fade > 0)
 		U.fade = fmaxf(0, U.fade - g_dt * 3.5f);
+	// la ventana del QR no se queda: en cuanto se hace otra cosa, vuelve a la tira
+	if (!V.qr_min && ((g_kdown & ~KEY_TOUCH) || g_touch.down || U.ins_pend || V.srv_off || QA.open || CLU.open || br_is_open()))
+		qr_show(false);
 	if (g_kdown & ~KEY_TOUCH)
 		U.buttons = true;
 	if (g_touch.down)
@@ -8640,9 +8698,6 @@ static void update(void)
 		}
 		return;
 	}
-	bool in_editor = VW.kind == VW_TXT && U.tab == TAB_FILES; // ahí SELECT edita varias líneas
-	if ((g_kdown & KEY_SELECT) && U.ins_pend && !in_editor) // el QR se abre y se cierra siempre, también con la tarjeta de instalar
-		qr_toggle();
 	if (install_input())
 		return;
 	exit_refresh();
@@ -8674,8 +8729,15 @@ static void update(void)
 	}
 	if ((g_kdown & KEY_START) && !(U.tab == TAB_FILES && VW.kind == VW_TXT)) // en el editor, START guarda
 		ask_exit();
-	if ((g_kdown & KEY_SELECT) && !editor)
-		qr_toggle();
+	if ((g_kdown & KEY_SELECT) && !editor) { // SELECT abre y cierra el menú del botón central
+		if (QA.open)
+			QA.open = false;
+		else {
+			QA.open = QA.just = true;
+			QA.sel = QA_CLOUD;
+			QA.pos = QA.sel;
+		}
+	}
 }
 
 static aptHookCookie hook;
@@ -8729,6 +8791,7 @@ int main(int argc, char **argv)
 	aptHook(&hook, apt_hook, NULL);
 	hidSetRepeatParameters(18, 5);
 
+	server_set_enabled(!G.srv_off); // apagado desde Ajustes: se queda apagado al volver a abrir
 	server_start();
 	upd_init(argc > 0 ? argv[0] : NULL);
 	dl_init(); // después de upd_init, que prepara curl

@@ -2506,4 +2506,46 @@ TR = {
     'Cuando termine, Cloud3DS sigue sola.':
         ("When it's done, Cloud3DS carries on by itself.",
          '終わるとCloud3DSは自動で戻ります。'),
+    'Servidor apagado':
+        ('Server off',
+         'サーバーはオフ'),
+    'Se enciende en Conectar':
+        ('Turn it on in Connect',
+         '「接続」でオンにできます'),
+    'SELECT abre el menú':
+        ('SELECT opens the menu',
+         'SELECTでメニューを開く'),
+    'Servidor encendido':
+        ('Server on',
+         'サーバーをオンにしました'),
+    'La web, cloud3ds.local, las subidas desde el PC y la instalación remota no funcionan. La nube, las descargas y el navegador siguen igual.':
+        ("The web page, cloud3ds.local, uploads from the PC and remote install don't work. The cloud, downloads and the browser keep working.",
+         'Webページ、cloud3ds.local、PCからのアップロード、リモートインストールは使えません。クラウド、ダウンロード、ブラウザはそのまま使えます。'),
+    'Apagado gasta menos batería. Se enciende aquí o con SELECT, en «Conectar».':
+        ('Off uses less battery. Turn it on here or with SELECT, in "Connect".',
+         'オフはバッテリーの消費が少なくなります。ここか、SELECTの「接続」でオンにできます。'),
+    'Servidor para el PC y el móvil':
+        ('Server for PC and phone',
+         'PC・スマホ用サーバー'),
+    'Con él encendido, el móvil o el PC entran en la consola desde el navegador: ven, suben y bajan archivos e instalan CIA.':
+        ("While it's on, your phone or PC can open the console in a browser: browse, upload and download files and install CIAs.",
+         'オンの間、スマホやPCのブラウザから本体に入れます。ファイルの閲覧・アップロード・ダウンロードやCIAのインストールができます。'),
+    'Si no lo usas, puedes apagarlo: gasta menos batería.':
+        ("If you don't use it, you can turn it off: it saves battery.",
+         '使わないならオフにできます。バッテリーの節約になります。'),
+    'Apagado · la nube sigue funcionando':
+        ('Off · the cloud still works',
+         'オフ · クラウドは使えます'),
+    'Encendido · la web y las subidas':
+        ('On · web page and uploads',
+         'オン · Webとアップロード'),
+    'Servidor\napagado':
+        ('Server\noff',
+         'サーバー\nオフ'),
+    'El servidor está apagado: al abrir esta tarjeta se enciende. Se vuelve a apagar en Ajustes, en «Conexión».':
+        ('The server is off: opening this card turns it on. Turn it off again in Settings, under "Connection".',
+         'サーバーはオフです。このカードを開くとオンになります。設定の「接続」でまたオフにできます。'),
+    'La ventana del QR se cierra sola en cuanto haces otra cosa.':
+        ('The QR window closes by itself as soon as you do something else.',
+         'ほかの操作をするとQRの画面は自動で閉じます。'),
 }

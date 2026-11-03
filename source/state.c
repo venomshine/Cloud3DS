@@ -328,6 +328,7 @@ void config_load(void)
 	if (jstr(r, "net_name")[0] && remote_name_ok(jstr(r, "net_name")))
 		util_strlcpy(G.net_name, jstr(r, "net_name"), sizeof G.net_name);
 	G.qr_min = jbool(r, "qr_min", false);
+	G.srv_off = jbool(r, "srv_off", false);
 	G.upd_auto = jbool(r, "upd_auto", true);
 	G.f_sort = (u8)jnum(r, "f_sort", 0) % 4;
 	G.f_desc = jbool(r, "f_desc", false);
@@ -397,6 +398,7 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "shots_live", G.shots_live);
 	cJSON_AddStringToObject(r, "net_name", G.net_name);
 	cJSON_AddBoolToObject(r, "qr_min", G.qr_min);
+	cJSON_AddBoolToObject(r, "srv_off", G.srv_off);
 	cJSON_AddBoolToObject(r, "upd_auto", G.upd_auto);
 	cJSON_AddNumberToObject(r, "f_sort", G.f_sort);
 	cJSON_AddBoolToObject(r, "f_desc", G.f_desc);

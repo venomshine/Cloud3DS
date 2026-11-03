@@ -100,6 +100,7 @@ typedef struct {
 	char shot_top[128], shot_bot[128]; /* sus nombres en /luma/screenshots */
 	int  shot_seen;   /* a cuántos dispositivos llegó la última */
 	bool qr_min;      /* tarjeta del QR minimizada */
+	bool srv_off;     /* servidor apagado desde Ajustes */
 	u8   f_sort;      /* explorador de la consola: 0 nombre, 1 fecha, 2 tamaño, 3 tipo */
 	bool f_desc;      /* orden al revés */
 	u8   f_group;     /* agrupar: 0 no, 1 tipo, 2 fecha, 3 tamaño, 4 color */

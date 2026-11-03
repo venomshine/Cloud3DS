@@ -15,3 +15,5 @@
 void server_start(void);
 void server_stop(void);
 void server_restart(void); /* p. ej. al despertar de la suspensión */
+/* apagado: deja de escuchar y de anunciarse (cloud3ds.local); la red sigue para la nube y las descargas */
+void server_set_enabled(bool on);

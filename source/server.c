@@ -95,7 +95,7 @@ typedef struct {
 static Conn conns[MAX_CONN];
 static int lfd = -1;
 static Thread thr;
-static volatile bool quit, restart;
+static volatile bool quit, restart, paused;
 static u32 *soc_buf;
 static bool soc_ok;
 static u8 *page;
@@ -2751,8 +2751,26 @@ static void server_thread(void *arg)
 	int last_wifi = -2;
 	u64 last_wifi_t = 0;
 	bool logged_noip = false;
+	bool names_on = soc_ok;
 	while (!quit) {
 		restart = false;
+		if (paused) { // apagado desde Ajustes: sin escuchar ni anunciarse, pero la red sigue (nube, descargas)
+			if (names_on)
+				names_stop();
+			names_on = false;
+			state_lock();
+			if (G.running) {
+				G.running = false;
+				G.rev++;
+			}
+			state_unlock();
+			svcSleepThread(300 * 1000000ll);
+			continue;
+		}
+		if (!names_on && soc_ok) {
+			names_start();
+			names_on = true;
+		}
 		u32 ip = util_ip();
 		/* estado real del Wi-Fi (ac:u), para el log y para la pantalla */
 		u64 now = util_ms();
@@ -2861,4 +2879,10 @@ void server_stop(void)
 void server_restart(void)
 {
 	restart = true;
+}
+
+void server_set_enabled(bool on)
+{
+	paused = !on;
+	restart = true; // sale del bucle de atender y cierra lo abierto
 }
