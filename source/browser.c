@@ -40,6 +40,8 @@
  * como uno de escritorio */
 #define UA_MOB "Mozilla/5.0 (Nintendo 3DS; U; ; es) Version/1.7630.EU Cloud3DS"
 #define UA_PC  "Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0 Cloud3DS"
+/* Google solo busca con navegadores que conoce: al de la 3DS le dice que se actualice */
+#define UA_GOOGLE_MOB "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0"
 #define VW_PC     980.0f   /* ancho de la página «de PC» (como un portátil) */
 #define VW_MOB    400.0f   /* ancho «de móvil» (las webs que lo piden con <meta viewport>) */
 #define ZOOM_MAX  2.0f
@@ -169,6 +171,8 @@ static struct {
 	volatile bool cancel, in_js; /* B mientras carga: parar su JavaScript; está ejecutándose */
 	int idle_left;       /* ms que aún puede seguir su JavaScript con la página a la vista */
 	u64 idle_next, last_in; /* cuándo darle otro rato; última vez que se tocó algo */
+	u64 ready_ms;        /* cuándo quedó lista la página */
+	char search_q[512];  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
@@ -466,6 +470,13 @@ static void ck_set(const char *url, const char *sc)
 	free(c.val);
 }
 
+static bool is_google(const char *url)
+{
+	char host[128], path[8];
+	ck_host(url, host, sizeof host, path, sizeof path);
+	return strstr(host, "google.") != NULL;
+}
+
 static void browser_thread_net(void) // cada hilo del navegador: su User-Agent y las cookies
 {
 	if (!CK_INIT) {
@@ -473,6 +484,8 @@ static void browser_thread_net(void) // cada hilo del navegador: su User-Agent y
 		CK_INIT = true;
 	}
 	const char *ua = B.force == 1 ? UA_PC : UA_MOB;
+	if (B.force != 1 && is_google(B.url))
+		ua = UA_GOOGLE_MOB;
 	dl_set_thread_ua(ua);
 	dl_set_thread_cookies(ck_get, ck_set);
 }
@@ -2556,8 +2569,46 @@ static bool is_file_url(const char *url)
 
 static void scroll_to_anchor(const char *id);
 
+/* lo escrito en la barra: una dirección, o si no lo parece, una búsqueda en Google */
+static bool looks_like_address(const char *t)
+{
+	if (strstr(t, "://") || t[0] == '/' || !strncasecmp(t, "localhost", 9))
+		return true;
+	if (strchr(t, ' ') || !strchr(t, '.'))
+		return false;
+	const char *dot = strrchr(t, '.'), *end = dot + 1; // lo de tras el último punto: com, es, org… o una IP
+	size_t n = strcspn(end, "/:?#");
+	if (n < 2) {
+		bool digits = n > 0;
+		for (size_t i = 0; i < n; i++)
+			digits = digits && isdigit((unsigned char)end[i]);
+		return digits;
+	}
+	for (size_t i = 0; i < n; i++)
+		if (!isalnum((unsigned char)end[i]))
+			return false;
+	return dot != t;
+}
+
+static void address_to_url(const char *t, char *out, size_t n)
+{
+	while (*t == ' ')
+		t++;
+	if (!looks_like_address(t)) {
+		char q[900];
+		url_esc(t, q, sizeof q);
+		snprintf(out, n, "https://www.google.com/search?q=%s&hl=es", q);
+		util_strlcpy(B.search_q, t, sizeof B.search_q);
+	} else if (!strstr(t, "://") && t[0] != '/')
+		snprintf(out, n, "https://%s", t);
+	else
+		util_strlcpy(out, t, n);
+}
+
 static void go(const char *url, bool push)
 {
+	if (!is_google(url))
+		B.search_q[0] = 0;
 	const char *hash = strchr(url, '#');
 	size_t base_n = hash ? (size_t)(hash - url) : strlen(url);
 	size_t cur_n = strcspn(B.url, "#");
@@ -3142,6 +3193,7 @@ static void layout_thread(void *arg)
 	B.idle_next = util_ms() + 600;
 	B.idle_relayouts = 0;
 	B.idle_dirty = false;
+	B.ready_ms = util_ms();
 	B.st = ST_READY;
 	img_start();
 }
@@ -3287,7 +3339,18 @@ void br_bottom(void)
 		char u[1024];
 		util_strlcpy(u, B.js_nav, sizeof u);
 		B.js_nav[0] = 0;
-		go(u, true);
+		// sin que se haya tocado nada desde que cargó, es una redirección: no queda en el historial
+		go(u, B.last_in > B.ready_ms);
+	}
+	if (B.search_q[0] && is_google(B.url) &&
+	    (B.st == ST_ERROR || (B.st == ST_READY && (strstr(B.url, "/sorry/") || strstr(B.url, "enablejs"))))) {
+		// Google pidió un captcha, no aceptó el navegador o no contestó: la misma búsqueda en DuckDuckGo
+		char q[900], full[1024];
+		url_esc(B.search_q, q, sizeof q);
+		snprintf(full, sizeof full, "https://html.duckduckgo.com/html/?q=%s", q);
+		B.search_q[0] = 0;
+		toast_icon("Google no respondió: resultados de DuckDuckGo", IC_SEARCH, T.accent);
+		go(full, false);
 	}
 	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
 	bool ready = B.st == ST_READY;
@@ -3411,15 +3474,7 @@ void br_bottom(void)
 		char nu[1024];
 		if (kb_input("Dirección o búsqueda", B.url, nu, sizeof nu, false, false) && nu[0]) {
 			char full[1024];
-			bool url = strstr(nu, "://") || nu[0] == '/' || (strchr(nu, '.') && !strchr(nu, ' '));
-			if (!url) { // palabras sueltas: se buscan (DuckDuckGo en HTML funciona sin JavaScript)
-				char q[900];
-				url_esc(nu, q, sizeof q);
-				snprintf(full, sizeof full, "https://html.duckduckgo.com/html/?q=%s", q);
-			} else if (!strstr(nu, "://") && nu[0] != '/')
-				snprintf(full, sizeof full, "https://%s", nu);
-			else
-				util_strlcpy(full, nu, sizeof full);
+			address_to_url(nu, full, sizeof full);
 			go(full, true);
 		}
 	} else if (click && ready && wdg_at_pointer() >= 0) {
