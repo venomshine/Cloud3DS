@@ -446,6 +446,22 @@ static bool is(const char *t, const char *const *list)
 
 static void walk(dom_node *node, St st);
 
+/* modo lectura sin CSS: lo que casi siempre son menús, desplegables o avisos de edición */
+static bool skip_class(const char *cls)
+{
+	static const char *const BAD[] = {"dropdown", "menu", "navbox", "noprint", "sidebar", "editsection", "jump-link",
+	                                  "vector-", "printfooter", "catlinks", "mw-indicator", "cookie", "banner", NULL};
+	char low[256];
+	size_t i = 0;
+	for (; cls[i] && i < sizeof low - 1; i++)
+		low[i] = (char)tolower((unsigned char)cls[i]);
+	low[i] = 0;
+	for (const char *const *b = BAD; *b; b++)
+		if (strstr(low, *b))
+			return true;
+	return false;
+}
+
 static void children(dom_node *node, const St *st)
 {
 	dom_node *c = NULL;
@@ -508,6 +524,8 @@ static void walk(dom_node *node, St st)
 	}
 	char a[256];
 	if (attr(node, "role", a, sizeof a) && (!strcmp(a, "navigation") || !strcmp(a, "search") || !strcmp(a, "banner")))
+		return;
+	if (attr(node, "class", a, sizeof a) && skip_class(a)) // menús y desplegables que la página oculta con CSS
 		return;
 	if (attr(node, "hidden", a, sizeof a) || (attr(node, "aria-hidden", a, sizeof a) && !strcmp(a, "true")))
 		return;
@@ -580,6 +598,7 @@ static void walk(dom_node *node, St st)
 		L_gap = 4;
 		return;
 	}
+	int li_frag = -1;
 	if (!strcmp(tag, "li")) { // la viñeta o el número, colgando a la izquierda
 		char mk[16];
 		St ms = st;
@@ -593,6 +612,7 @@ static void walk(dom_node *node, St st)
 		if (!B.nl || L_has)
 			line_new();
 		L_x = st.indent;
+		li_frag = B.nf;
 		put(mk, strlen(mk), &ms, text_width(mk, ms.sc));
 		st.indent += text_width("00.", ms.sc) + 2;
 		L_x = st.indent;
@@ -634,6 +654,15 @@ static void walk(dom_node *node, St st)
 		return;
 	}
 	children(node, &st);
+	if (li_frag >= 0 && B.nf == li_frag + 1) { // el <li> no tenía nada visible: fuera su viñeta
+		B.nf--;
+		B.nt = B.f[B.nf].off;
+		B.l[B.f[B.nf].line].used = false;
+		L_has = false;
+		L_marker = false;
+		if (st.olnum)
+			--*st.olnum;
+	}
 	if (blk) {
 		L_indent = st.indent;
 		block(gap);
