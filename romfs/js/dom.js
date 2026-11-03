@@ -64,8 +64,12 @@ class EventTarget {
 			const id = node._h ? N.id(node._h) : node === G ? 'window' : 'other';
 			const m = listeners.get(id);
 			ev.currentTarget = node;
-			const on = node['on' + ev.type];
-			if (typeof on === 'function') try { on.call(node, ev); } catch (e) { report(e); }
+			let on = node['on' + ev.type];
+			if (typeof on !== 'function' && node._h && N.type(node._h) === ELEMENT) { // onclick="…" en el HTML
+				const code = N.getA(node._h, 'on' + ev.type);
+				if (code) try { on = inlineHandler(node, ev.type, code); } catch (e) { report(e); }
+			}
+			if (typeof on === 'function') try { if (on.call(node, ev) === false) ev.preventDefault(); } catch (e) { report(e); }
 			if (m && m[ev.type]) for (const f of m[ev.type].slice()) {
 				try { typeof f === 'function' ? f.call(node, ev) : f.handleEvent(ev); } catch (e) { report(e); }
 				if (ev._stop) break;
@@ -75,6 +79,13 @@ class EventTarget {
 		}
 		return !ev.defaultPrevented;
 	}
+}
+const inlineCache = new Map();
+function inlineHandler(node, type, code) {
+	const k = N.id(node._h) + ':' + type;
+	let f = inlineCache.get(k);
+	if (!f || f._code !== code) { f = new Function('event', code); f._code = code; inlineCache.set(k, f); }
+	return f;
 }
 function report(e) { N.log('js: ' + (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e)); }
 
@@ -585,6 +596,15 @@ G.__timers = limit => {
 		if (best.every && ran > 200) break;
 	}
 	return ran > 0 && [...timers.values()].some(t => t.at <= limit && !t.every);
+};
+G.__click = h => {
+	const el = W(h); if (!el) return true;
+	const ev = new G.MouseEvent('click', { bubbles: true, cancelable: true });
+	ev.button = 0; ev.which = 1;
+	el.dispatchEvent(ev);
+	// <label for> y casillas: como un navegador
+	if (!ev.defaultPrevented && el.localName === 'label') { const f = el.getAttribute('for'); const t = f ? document.getElementById(f) : el.querySelector('input'); if (t && t !== el) t.click(); }
+	return !ev.defaultPrevented;
 };
 G.__current = s => { G.__script = s ? W(s._h || s) : null; };
 G.__loaded = () => {

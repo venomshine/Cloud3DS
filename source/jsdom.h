@@ -31,4 +31,13 @@ typedef struct {
 	char navigate[1024];  /* la página pidió ir a otra dirección (location.href = …) */
 } JsResult;
 
-void jsdom_run(dom_document *doc, const JsHost *host, JsResult *res);
+typedef struct JsPage JsPage;
+
+/* ejecuta los scripts de la página y deja su JavaScript vivo para los clics (NULL si no se pudo) */
+JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res);
+/* un clic en un elemento: sus eventos (también onclick="…"), lo que dispare y sus temporizadores.
+ * *changed: el árbol cambió (hay que volver a colocar la página); devuelve false si la página
+ * canceló lo que haría el navegador (preventDefault: no seguir el enlace). Se puede llamar desde
+ * otro hilo, nunca a la vez que otra función de esta página. */
+bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res);
+void jsdom_close(JsPage *p);

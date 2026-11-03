@@ -32,12 +32,22 @@ static u64 osGetTime(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &
 #define JS_STACK (200 * 1024)
 #define SCRIPT_MAX (3 * 1024 * 1024)
 
+struct JsPage {
+	JSRuntime *rt;
+	JSContext *ctx;
+	dom_document *doc;
+	JsHost host;
+	char url[1024], ua[200];
+};
+
 static struct {
 	dom_document *doc;
 	const JsHost *host;
 	JsResult *res;
 	u64 t0;
+	unsigned budget;
 	JSClassID cls;
+	unsigned mut;      /* cambios en el árbol */
 } J;
 
 static u64 now_ms(void)
@@ -161,6 +171,7 @@ static JSValue f_getA(JSContext *ctx, JSValueConst t, int argc, JSValueConst *ar
 
 static JSValue f_setA(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
+	J.mut++;
 	(void)t;
 	N0;
 	if (argc < 3)
@@ -181,6 +192,7 @@ static JSValue f_setA(JSContext *ctx, JSValueConst t, int argc, JSValueConst *ar
 
 static JSValue f_remA(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
+	J.mut++;
 	(void)t;
 	N0;
 	if (argc < 2)
@@ -232,6 +244,7 @@ static JSValue f_text(JSContext *ctx, JSValueConst t, int argc, JSValueConst *ar
 
 static JSValue f_setText(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
+	J.mut++;
 	(void)t;
 	N0;
 	if (argc < 2)
@@ -255,6 +268,7 @@ static JSValue f_data(JSContext *ctx, JSValueConst t, int argc, JSValueConst *ar
 
 static JSValue f_setData(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
+	J.mut++;
 	(void)t;
 	N0;
 	if (argc < 2)
@@ -312,6 +326,7 @@ static JSValue f_createFrag(JSContext *ctx, JSValueConst t, int argc, JSValueCon
 
 static JSValue f_append(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
+	J.mut++;
 	(void)t;
 	N0;
 	dom_node *c = argc > 1 ? unwrap(argv[1]) : NULL, *r = NULL;
@@ -324,6 +339,7 @@ static JSValue f_append(JSContext *ctx, JSValueConst t, int argc, JSValueConst *
 
 static JSValue f_insert(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
+	J.mut++;
 	(void)t;
 	N0;
 	dom_node *c = argc > 1 ? unwrap(argv[1]) : NULL, *ref = argc > 2 ? unwrap(argv[2]) : NULL, *r = NULL;
@@ -335,6 +351,7 @@ static JSValue f_insert(JSContext *ctx, JSValueConst t, int argc, JSValueConst *
 
 static JSValue f_removeChild(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
+	J.mut++;
 	(void)t;
 	N0;
 	dom_node *c = argc > 1 ? unwrap(argv[1]) : NULL, *r = NULL;
@@ -565,7 +582,7 @@ static const JSCFunctionListEntry NATIVE[] = {
 static int interrupt(JSContext *rt, void *u)
 {
 	(void)rt, (void)u;
-	return now_ms() - J.t0 > J.host->budget_ms; // se acabó el tiempo de la página
+	return now_ms() - J.t0 > J.budget; // se acabó el tiempo
 }
 
 static void report(JSContext *ctx, const char *where)
@@ -791,21 +808,38 @@ static void resolve(const char *base, const char *href, char *out, size_t n)
 	}
 }
 
-void jsdom_run(dom_document *doc, const JsHost *host, JsResult *res)
+static void use(JsPage *p, JsResult *res, unsigned budget)
+{
+	J.doc = p->doc, J.host = &p->host, J.res = res, J.t0 = now_ms(), J.budget = budget;
+	JS_UpdateStackTop(p->rt); // puede llamarse desde otro hilo
+}
+
+JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 {
 	memset(res, 0, sizeof *res);
-	J.doc = doc, J.host = host, J.res = res, J.t0 = now_ms();
+	JsPage *pg = calloc(1, sizeof *pg);
+	if (!pg)
+		return NULL;
+	pg->doc = (dom_document *)dom_node_ref(doc);
+	pg->host = *host;
+	snprintf(pg->url, sizeof pg->url, "%s", host->url);
+	snprintf(pg->ua, sizeof pg->ua, "%s", host->ua);
+	pg->host.url = pg->url, pg->host.ua = pg->ua;
+	use(pg, res, host->budget_ms);
+	J.mut = 0;
 	size_t pn = 0;
 	char *prelude = read_file(DOM_JS, &pn);
 	if (!prelude) {
 		if (host->log)
-			host->log("js: falta romfs:/js/dom.js");
-		return;
+			host->log("js: falta dom.js");
+		jsdom_close(pg);
+		return NULL;
 	}
-	JSRuntime *rt = JS_NewRuntime();
+	JSRuntime *rt = pg->rt = JS_NewRuntime();
 	if (!rt) {
 		free(prelude);
-		return;
+		jsdom_close(pg);
+		return NULL;
 	}
 	JS_SetMemoryLimit(rt, JS_MEM);
 	JS_SetMaxStackSize(rt, JS_STACK);
@@ -813,11 +847,11 @@ void jsdom_run(dom_document *doc, const JsHost *host, JsResult *res)
 	J.cls = 0;
 	JS_NewClassID(rt, &J.cls);
 	JS_NewClass(rt, J.cls, &NODE_CLASS);
-	JSContext *ctx = JS_NewContext(rt);
+	JSContext *ctx = pg->ctx = JS_NewContext(rt);
 	if (!ctx) {
-		JS_FreeRuntime(rt);
 		free(prelude);
-		return;
+		jsdom_close(pg);
+		return NULL;
 	}
 	JSValue g = JS_GetGlobalObject(ctx), nat = JS_NewObject(ctx);
 	JS_SetPropertyFunctionList(ctx, nat, NATIVE, sizeof NATIVE / sizeof NATIVE[0]);
@@ -828,12 +862,6 @@ void jsdom_run(dom_document *doc, const JsHost *host, JsResult *res)
 	JS_FreeValue(ctx, g);
 	bool ok = eval(ctx, prelude, pn, "dom.js");
 	free(prelude);
-	{
-		char m[80];
-		snprintf(m, sizeof m, "js: dom.js listo en %u ms", (unsigned)(now_ms() - J.t0));
-		if (host->log)
-			host->log(m);
-	}
 	if (ok) {
 		NodeList l = {0};
 		collect((dom_node *)doc, &l, 0);
@@ -883,15 +911,8 @@ void jsdom_run(dom_document *doc, const JsHost *host, JsResult *res)
 			call(ctx, "__current", sv);
 			JS_FreeValue(ctx, sv);
 			res->scripts++;
-			u64 ts = now_ms();
 			if (!eval(ctx, code, cn, name))
 				res->errors++;
-			{
-				char m[160];
-				snprintf(m, sizeof m, "js: %.100s: %u ms", name, (unsigned)(now_ms() - ts));
-				if (host->log)
-					host->log(m);
-			}
 			free(code);
 			pending_jobs(rt);
 		}
@@ -909,7 +930,48 @@ void jsdom_run(dom_document *doc, const JsHost *host, JsResult *res)
 				break;
 		}
 	}
-	JS_FreeContext(ctx);
-	JS_FreeRuntime(rt);
 	res->ms = (unsigned)(now_ms() - J.t0);
+	if (!ok) {
+		jsdom_close(pg);
+		return NULL;
+	}
+	return pg;
+}
+
+bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res)
+{
+	*changed = false;
+	if (!p || !p->ctx || !target)
+		return true;
+	memset(res, 0, sizeof *res);
+	use(p, res, 3000);
+	J.mut = 0;
+	JSValue t = wrap(p->ctx, target);
+	bool go_on = call(p->ctx, "__click", t); // false: preventDefault
+	JS_FreeValue(p->ctx, t);
+	pending_jobs(p->rt);
+	for (int round = 0; round < 20 && now_ms() - J.t0 < 3000; round++) {
+		bool more = call(p->ctx, "__timers", JS_NewInt32(p->ctx, 1000));
+		pending_jobs(p->rt);
+		if (!more)
+			break;
+	}
+	*changed = J.mut > 0;
+	res->ms = (unsigned)(now_ms() - J.t0);
+	return go_on;
+}
+
+void jsdom_close(JsPage *p)
+{
+	if (!p)
+		return;
+	if (p->rt)
+		JS_UpdateStackTop(p->rt);
+	if (p->ctx)
+		JS_FreeContext(p->ctx);
+	if (p->rt)
+		JS_FreeRuntime(p->rt);
+	if (p->doc)
+		dom_node_unref(p->doc);
+	free(p);
 }

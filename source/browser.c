@@ -68,6 +68,8 @@ typedef struct {
 	u8 bold;       /* negrita: se pinta dos veces, medio píxel corrida */
 	s16 img;       /* imagen que ocupa este trozo (-1 texto) */
 	s16 wdg;       /* control de formulario (-1 ninguno) */
+	dom_node *node; /* el elemento del que sale (para los clics del JavaScript) */
+	s16 clk;       /* se puede tocar por su JavaScript (onclick, role=button…): su número, o -1 */
 } Frag;
 
 /* controles de formulario: cuadros de texto, botones, casillas y listas */
@@ -112,7 +114,7 @@ typedef struct {   /* fondo de color de un bloque (background-color) */
 	u32 col;
 } BgBox;
 
-enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR };
+enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR, ST_ACT /* el JavaScript atiende un clic */ };
 
 static struct {
 	bool open;
@@ -158,6 +160,9 @@ static struct {
 	bool js;             /* ejecutar el JavaScript de las páginas */
 	int js_scripts, js_errors;
 	char js_nav[1024];   /* la página pidió ir a otra dirección desde su JavaScript */
+	JsPage *jsp;         /* el JavaScript de la página, vivo para los clics */
+	int nclk;            /* cosas que se tocan por JavaScript */
+	volatile int click_link; /* tras un clic con JavaScript: el enlace a seguir (-1 ninguno, -2 esperando) */
 	PImg *img;
 	int nimg, cimg;
 	Thread img_thr;
@@ -437,7 +442,7 @@ static void load_thread(void *arg)
 	if (doc && B.js) {
 		JsHost h = {.fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 8000};
 		JsResult jr;
-		jsdom_run(doc, &h, &jr);
+		B.jsp = jsdom_open(doc, &h, &jr);
 		B.js_scripts = jr.scripts, B.js_errors = jr.errors;
 		util_log("web: JavaScript: %d scripts, %d con error, %u ms", jr.scripts, jr.errors, jr.ms);
 		if (jr.navigate[0])
@@ -465,6 +470,8 @@ static void start_load(const char *url)
 		threadFree(B.thr);
 		B.thr = NULL;
 	}
+	jsdom_close(B.jsp); // antes que el documento: tiene sus nodos
+	B.jsp = NULL;
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -475,6 +482,7 @@ static void start_load(const char *url)
 	img_free_all();
 	fv_free();
 	util_strlcpy(B.url, url, sizeof B.url);
+	B.click_link = -1;
 	B.err[0] = 0;
 	B.title[0] = 0;
 	B.st = ST_LOADING;
@@ -561,6 +569,8 @@ typedef struct {
 	int *olnum;    /* contador de la <ol> de dentro */
 	int *cells;    /* celdas de la fila (separadores) */
 	const css_computed_style *cs; /* el estilo calculado del padre (con CSS) */
+	dom_node *el;  /* el elemento que se está colocando */
+	int clk;       /* dentro de algo que se toca por JavaScript (-1 no) */
 } St;
 
 static float L_x;          /* posición en la línea actual */
@@ -690,6 +700,8 @@ static void put(const char *s, int n, const St *st, float w)
 	f->sc = st->sc, f->col = st->col, f->link = (s16)st->link, f->under = st->under, f->bold = st->bold;
 	f->img = -1;
 	f->wdg = -1;
+	f->node = st->el;
+	f->clk = (s16)st->clk;
 	B.nt += n;
 	Line *l = &B.l[B.nl - 1];
 	l->used = true;
@@ -1679,6 +1691,9 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 {
 	char a[256];
 	st.cs = cs;
+	st.el = node;
+	if (st.link < 0 && (attr(node, "onclick", a, sizeof a) || (attr(node, "role", a, sizeof a) && (!strcmp(a, "button") || !strcmp(a, "tab") || !strcmp(a, "link")))))
+		st.clk = B.nclk++;
 	css_color c;
 	if (css_computed_color(cs, &c) == CSS_COLOR_COLOR)
 		st.col = css_col(c) | 0xFF000000;
@@ -2228,7 +2243,8 @@ static void layout(void)
 	NFL = 0;
 	L_has = L_space = false;
 	SC16 = SC_TEXT * 19.2f / text_lineh(SC_TEXT); // 16 px de letra = 19,2 px de línea
-	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1, .right = PAGE_W};
+	St st = {.sc = SC_TEXT, .col = PG_TEXT, .link = -1, .right = PAGE_W, .clk = -1};
+	B.nclk = 0;
 	u64 t0 = util_ms();
 	B.nel_done = 0;
 	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
@@ -2365,6 +2381,8 @@ static void close_br(void)
 		threadFree(B.thr);
 		B.thr = NULL;
 	}
+	jsdom_close(B.jsp); // antes que el documento: tiene sus nodos
+	B.jsp = NULL;
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -2465,6 +2483,22 @@ static int link_at_pointer(void)
 	return -1;
 }
 
+// el trozo bajo el puntero (o -1): para saber a qué elemento se le hace clic
+static int frag_at_pointer(void)
+{
+	float qx = B.sx + B.px / B.zoom, qy = B.sy + B.py / B.zoom, pad = 3 / B.zoom;
+	for (int k = first_frag(qy - 60); k < B.nf; k++) {
+		const Frag *f = &B.f[B.ord[k]];
+		float x, y, w, h;
+		frag_rect(f, &x, &y, &w, &h);
+		if (B.l[f->line].y > qy + pad)
+			break;
+		if (qx >= x - pad && qx <= x + w + pad && qy >= B.l[f->line].y - pad && qy <= B.l[f->line].y + B.l[f->line].h + pad)
+			return B.ord[k];
+	}
+	return -1;
+}
+
 // el control de formulario bajo el puntero (o -1)
 static int wdg_at_pointer(void)
 {
@@ -2559,7 +2593,7 @@ static void focus_step(int dir)
 			i--;
 	} else
 		i += dir;
-#define FKEY(f) ((f).wdg >= 0 ? 100000 + (f).wdg : (f).link)
+#define FKEY(f) ((f).wdg >= 0 ? 100000 + (f).wdg : (f).link >= 0 ? (f).link : (f).clk >= 0 ? 200000 + (f).clk : -1)
 	int cur = B.focus >= 0 ? FKEY(B.f[B.focus]) : -2;
 	for (; i >= 0 && i < B.nf; i += dir)
 		if (FKEY(B.f[i]) >= 0 && FKEY(B.f[i]) != cur)
@@ -2611,7 +2645,7 @@ static const char *host_of(const char *u, char *out, size_t n)
 
 void br_top(void)
 {
-	if (B.st != ST_READY) {
+	if (B.st != ST_READY && B.st != ST_ACT) {
 		draw_rect(0, 0, TOP_W, SCR_H, T.bg);
 		const float X = 24, W = TOP_W - 48;
 		char host[128];
@@ -2674,7 +2708,7 @@ void br_top(void)
 			break;
 		if (X > TOP_W || X + Wd < 0 || Y + H < 0)
 			continue;
-		if (f->link >= 0 && (f->link == hov || i == B.focus))
+		if ((f->link >= 0 && (f->link == hov || i == B.focus)) || (f->clk >= 0 && B.focus >= 0 && f->clk == B.f[B.focus].clk))
 			draw_rect(X - 1, Y, Wd + 2, H, col_alpha(PG_LINK, 0.18f));
 		if (f->wdg >= 0 && f->wdg < B.nwg) { // control de formulario
 			const Wdg *w = &B.wg[f->wdg];
@@ -2808,6 +2842,55 @@ static void layout_thread(void *arg)
 	img_start();
 }
 
+// un clic con el JavaScript de la página: sus eventos y, si cambió algo, se vuelve a colocar
+static dom_node *ACT_EL;
+static int ACT_LINK;
+static void act_thread(void *arg)
+{
+	(void)arg;
+	JsResult r;
+	bool changed = false;
+	bool go_on = jsdom_click(B.jsp, ACT_EL, &changed, &r);
+	if (r.navigate[0])
+		util_strlcpy(B.js_nav, r.navigate, sizeof B.js_nav);
+	if (changed) { // se coloca otra vez, sin mover la vista
+		float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
+		dom_node *fn = B.focus >= 0 && B.focus < B.nf ? B.f[B.focus].node : NULL;
+		B.st = ST_LAYOUT;
+		layout();
+		B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
+		for (int i = 0; fn && i < B.nf; i++) // lo marcado sigue marcado
+			if (B.f[i].node == fn) {
+				B.focus = i;
+				break;
+			}
+		clamp_view();
+		B.tip = 0;
+		img_start();
+	}
+	B.click_link = go_on ? ACT_LINK : -1;
+	B.st = ST_READY;
+}
+
+static void start_action(dom_node *el, int link)
+{
+	if (B.thr) {
+		threadJoin(B.thr, U64_MAX);
+		threadFree(B.thr);
+		B.thr = NULL;
+	}
+	ACT_EL = el, ACT_LINK = link;
+	B.click_link = -2;
+	B.st = ST_ACT;
+	s32 prio = 0x30;
+	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	B.thr = threadCreate(act_thread, NULL, 1024 * 1024, prio + 1, -2, false);
+	if (!B.thr) { // sin hilo: el clic sigue como un enlace normal
+		B.st = ST_READY;
+		B.click_link = link;
+	}
+}
+
 void br_bottom(void)
 {
 	if (B.st == ST_PARSED) { // el árbol está listo (se guarda para cambiar PC / móvil sin volver a bajarla)
@@ -2824,6 +2907,11 @@ void br_bottom(void)
 			snprintf(B.err, sizeof B.err, "Sin memoria para colocar la página");
 			B.st = ST_ERROR;
 		}
+	}
+	if (B.st == ST_READY && B.click_link >= 0) { // el clic con JavaScript dejó seguir el enlace
+		int k = B.click_link;
+		B.click_link = -1;
+		go_link(k);
 	}
 	if (B.st == ST_READY && B.js_nav[0]) { // location.href = … desde la página
 		char u[1024];
@@ -2962,10 +3050,14 @@ void br_bottom(void)
 	} else if (click && ready && wdg_at_pointer() >= 0) {
 		wdg_activate(wdg_at_pointer());
 	} else if (click && ready) {
-		int k = link_at_pointer();
+		int k = link_at_pointer(), fi = frag_at_pointer();
 		if (k < 0 && B.focus >= 0)
 			k = B.f[B.focus].link;
-		go_link(k);
+		dom_node *el = fi >= 0 ? B.f[fi].node : B.focus >= 0 ? B.f[B.focus].node : NULL;
+		if (B.jsp && el)
+			start_action(el, k);
+		else
+			go_link(k);
 	}
 	g_kdown = 0;
 	g_touch.up = false;
