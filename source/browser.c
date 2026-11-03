@@ -61,7 +61,24 @@ typedef struct {
 	u8 under;      /* subrayado (enlaces) */
 	u8 bold;       /* negrita: se pinta dos veces, medio píxel corrida */
 	s16 img;       /* imagen que ocupa este trozo (-1 texto) */
+	s16 wdg;       /* control de formulario (-1 ninguno) */
 } Frag;
+
+/* controles de formulario: cuadros de texto, botones, casillas y listas */
+enum { WG_TEXT, WG_PASS, WG_AREA, WG_BUTTON, WG_CHECK, WG_RADIO, WG_SELECT };
+typedef struct {
+	dom_node *node;   /* el elemento (vive lo que el documento) */
+	dom_node *form;   /* su <form> (o NULL) */
+	u8 type;
+	char label[96];   /* lo que se ve: texto del botón, placeholder u opción */
+} Wdg;
+
+/* lo que el usuario escribió o marcó (sobrevive a recolocar la página; se pierde al cambiar de página) */
+typedef struct {
+	dom_node *node;
+	char *value;
+	int checked;      /* -1 sin tocar */
+} FVal;
 
 /* una imagen de la página: se baja y se decodifica en su hilo; la textura la crea el principal */
 enum { IM_WAIT, IM_RGBA, IM_TEX, IM_FAIL };
@@ -112,6 +129,10 @@ static struct {
 	BgBox *bg;
 	int nbg, cbg;
 	int *ord;            /* los trozos ordenados por altura */
+	Wdg *wg;
+	int nwg, cwg;
+	FVal *fv;
+	int nfv, cfv;
 	float bg_x0, bg_x1;
 	BrCss *css;          /* las hojas de la página (las monta el hilo de carga) */
 	int ncss;            /* cuántas hojas se usaron */
@@ -125,6 +146,7 @@ static struct {
 	float vw, zoom, sx, sy, vy; /* ancho, zoom (px de pantalla por px de página), desplazamiento e inercia */
 	float px, py;        /* puntero, en la pantalla de arriba */
 	int focus;           /* trozo con enlace marcado con la cruceta (-1 ninguno) */
+	int hw;              /* control de formulario bajo el puntero */
 	float tip;           /* tiempo enseñando el % de zoom */
 	volatile int nel_done, nel_total; /* nodos colocados y total (para el progreso) */
 	PImg *img;
@@ -135,6 +157,7 @@ static struct {
 } B;
 
 static void img_free_all(void);
+static void fv_free(void);
 
 /* ------------------------------------------------------------ cargar (en un hilo) */
 typedef struct {
@@ -395,6 +418,7 @@ static void start_load(const char *url)
 	B.css = NULL;
 	B.ncss = 0;
 	img_free_all();
+	fv_free();
 	util_strlcpy(B.url, url, sizeof B.url);
 	B.err[0] = 0;
 	B.title[0] = 0;
@@ -575,6 +599,7 @@ static void put(const char *s, int n, const St *st, float w)
 	f->off = B.nt, f->n = (u16)n;
 	f->sc = st->sc, f->col = st->col, f->link = (s16)st->link, f->under = st->under, f->bold = st->bold;
 	f->img = -1;
+	f->wdg = -1;
 	B.nt += n;
 	Line *l = &B.l[B.nl - 1];
 	l->used = true;
@@ -882,6 +907,9 @@ static bool css_invisible(const css_computed_style *cs)
 	css_computed_font_size(cs, &v, &u);
 	if (brcss_px(cs, v, u, B.vw) < 1)
 		return true;
+	css_fixed op;
+	if (css_computed_opacity(cs, &op) == CSS_OPACITY_SET && FIXTOFLT(op) < 0.05f) // transparente del todo
+		return true;
 	if (css_computed_text_indent(cs, &v, &u) == CSS_TEXT_INDENT_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) < -500)
 		return true;
 	return false;
@@ -919,11 +947,8 @@ static void children(dom_node *node, const St *st);
 static int link_add(const char *href);
 static bool attr(dom_node *el, const char *name, char *out, size_t n);
 
-static void walk_css(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t d);
-static bool css_invisible(const css_computed_style *cs);
-static bool is(const char *t, const char *const *list);
+/* ------------------------------------------------------------ formularios */
 #define NI(n) ((dom_node_internal *)(n))
-static const char *const NEVER_TAGS[] = {"script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "canvas", "video", "audio", "head", NULL};
 
 static void tag_of(dom_node *n, char *tag, size_t sz)
 {
@@ -937,6 +962,292 @@ static void tag_of(dom_node *n, char *tag, size_t sz)
 	tag[i] = 0;
 	dom_string_unref(nm);
 }
+
+
+static FVal *fv_get(dom_node *n, bool make)
+{
+	for (int i = 0; i < B.nfv; i++)
+		if (B.fv[i].node == n)
+			return &B.fv[i];
+	if (!make)
+		return NULL;
+	if (B.nfv == B.cfv) {
+		int nc = B.cfv ? B.cfv * 2 : 16;
+		FVal *nv = realloc(B.fv, nc * sizeof *nv);
+		if (!nv)
+			return NULL;
+		B.fv = nv, B.cfv = nc;
+	}
+	FVal *v = &B.fv[B.nfv++];
+	v->node = n, v->value = NULL, v->checked = -1;
+	return v;
+}
+
+static void fv_free(void)
+{
+	for (int i = 0; i < B.nfv; i++)
+		free(B.fv[i].value);
+	free(B.fv);
+	B.fv = NULL;
+	B.nfv = B.cfv = 0;
+}
+
+static void text_of(dom_node *n, char *out, size_t sz) // su texto, con los espacios juntos
+{
+	out[0] = 0;
+	dom_string *t = NULL;
+	if (dom_node_get_text_content(n, &t) != DOM_NO_ERR || !t)
+		return;
+	const char *p = dom_string_data(t);
+	size_t l = dom_string_byte_length(t), k = 0;
+	bool sp = true;
+	for (size_t i = 0; i < l && k < sz - 1; i++) {
+		bool w = isspace((unsigned char)p[i]);
+		if (w && !sp)
+			out[k++] = ' ';
+		else if (!w)
+			out[k++] = p[i];
+		sp = w;
+	}
+	while (k && out[k - 1] == ' ')
+		k--;
+	out[k] = 0;
+	dom_string_unref(t);
+}
+
+static bool has_attr(dom_node *n, const char *a)
+{
+	char v[8];
+	return attr(n, a, v, sizeof v);
+}
+
+// la opción elegida de un <select>: su texto y su valor (la marcada, o la primera)
+static void select_pick(dom_node *sel, int want, char *label, size_t ls, char *value, size_t vs, int *count)
+{
+	int k = 0, chosen = -1;
+	label[0] = value[0] = 0;
+	for (int pass = 0; pass < 2 && chosen < 0; pass++) {
+		k = 0;
+		for (dom_node_internal *c = NI(sel)->first_child; c; c = c->next) {
+			dom_node_internal *opts[2] = {c, NULL};
+			if (c->type != DOM_ELEMENT_NODE)
+				continue;
+			char tag[12];
+			tag_of((dom_node *)c, tag, sizeof tag);
+			if (!strcmp(tag, "optgroup"))
+				opts[0] = c->first_child;
+			for (dom_node_internal *o = opts[0]; o; o = !strcmp(tag, "optgroup") ? o->next : NULL) {
+				if (o->type != DOM_ELEMENT_NODE)
+					continue;
+				char ot[12];
+				tag_of((dom_node *)o, ot, sizeof ot);
+				if (strcmp(ot, "option"))
+					continue;
+				bool pick = want >= 0 ? k == want : pass == 0 ? has_attr((dom_node *)o, "selected") : k == 0;
+				if (pick && chosen < 0) {
+					chosen = k;
+					text_of((dom_node *)o, label, ls);
+					if (!attr((dom_node *)o, "value", value, vs))
+						util_strlcpy(value, label, vs);
+				}
+				k++;
+			}
+		}
+		if (want >= 0)
+			break;
+	}
+	if (count)
+		*count = k;
+}
+
+static void url_esc(const char *in, char *out, size_t n)
+{
+	static const char hx[] = "0123456789ABCDEF";
+	size_t o = 0;
+	for (; *in && o + 4 < n; in++) {
+		unsigned char c = *in;
+		if (isalnum(c) || strchr("-_.~", c))
+			out[o++] = c;
+		else
+			out[o++] = '%', out[o++] = hx[c >> 4], out[o++] = hx[c & 15];
+	}
+	out[o] = 0;
+}
+
+static void go(const char *url, bool push);
+
+// enviar un formulario (GET): los campos con nombre, como haría un navegador
+static void form_submit(dom_node *form, dom_node *submitter)
+{
+	char *q = calloc(1, 8192), act[1024], tmp[1024], esc[2048];
+	if (!q)
+		return;
+	size_t ql = 0;
+	// recorrido de todo el formulario
+	dom_node_internal *stack[64];
+	int sp = 0;
+	for (dom_node_internal *c = NI(form)->first_child; c || sp;) {
+		if (!c) {
+			c = stack[--sp]->next;
+			continue;
+		}
+		if (c->type == DOM_ELEMENT_NODE) {
+			char tag[12], name[256], type[24], val[1024];
+			tag_of((dom_node *)c, tag, sizeof tag);
+			bool field = !strcmp(tag, "input") || !strcmp(tag, "select") || !strcmp(tag, "textarea") || !strcmp(tag, "button");
+			if (field && attr((dom_node *)c, "name", name, sizeof name) && name[0] && !has_attr((dom_node *)c, "disabled")) {
+				bool add = true;
+				val[0] = 0;
+				if (!attr((dom_node *)c, "type", type, sizeof type))
+					util_strlcpy(type, !strcmp(tag, "button") ? "submit" : "text", sizeof type);
+				for (char *p = type; *p; p++)
+					*p = (char)tolower((unsigned char)*p);
+				FVal *v = fv_get((dom_node *)c, false);
+				if (!strcmp(tag, "select")) {
+					char lab[2];
+					select_pick((dom_node *)c, v && v->value ? atoi(v->value) : -1, lab, sizeof lab, val, sizeof val, NULL);
+				} else if (!strcmp(tag, "textarea")) {
+					if (v && v->value)
+						util_strlcpy(val, v->value, sizeof val);
+					else
+						text_of((dom_node *)c, val, sizeof val);
+				} else if (!strcmp(type, "checkbox") || !strcmp(type, "radio")) {
+					bool on = v && v->checked >= 0 ? v->checked : has_attr((dom_node *)c, "checked");
+					add = on;
+					if (!attr((dom_node *)c, "value", val, sizeof val))
+						util_strlcpy(val, "on", sizeof val);
+				} else if (!strcmp(type, "submit") || !strcmp(type, "image") || !strcmp(type, "button") || !strcmp(type, "reset")) {
+					add = (dom_node *)c == submitter && strcmp(type, "reset");
+					attr((dom_node *)c, "value", val, sizeof val);
+				} else if (!strcmp(type, "file"))
+					add = false;
+				else if (v && v->value)
+					util_strlcpy(val, v->value, sizeof val);
+				else
+					attr((dom_node *)c, "value", val, sizeof val);
+				if (add) {
+					url_esc(name, esc, sizeof esc);
+					ql += snprintf(q + ql, 8192 - ql, "%s%s=", ql ? "&" : "", esc);
+					url_esc(val, esc, sizeof esc);
+					ql += snprintf(q + ql, 8192 - ql, "%s", esc);
+					if (ql >= 8000)
+						break;
+				}
+			}
+			if (c->first_child && strcmp(tag, "select") && strcmp(tag, "textarea") && sp < 64) {
+				stack[sp++] = c;
+				c = c->first_child;
+				continue;
+			}
+		}
+		c = c->next;
+	}
+	if (!attr(form, "action", tmp, sizeof tmp) || !tmp[0])
+		util_strlcpy(tmp, B.url, sizeof tmp);
+	resolve(B.url, tmp, act, sizeof act);
+	act[strcspn(act, "?#")] = 0;
+	char *url = malloc(1024 + 8192);
+	if (url) {
+		snprintf(url, 1024 + 8192, "%s?%s", act, q);
+		util_log("web: formulario -> %s", url);
+		char *u2 = malloc(1024);
+		if (u2) { // B.url guarda 1024: si la dirección es más larga, se corta (raro en búsquedas)
+			util_strlcpy(u2, url, 1024);
+			go(u2, true);
+			free(u2);
+		}
+		free(url);
+	}
+	free(q);
+}
+
+// un control de formulario: ocupa su caja en la línea
+static void widget(dom_node *node, const char *tag, const St *st, const css_computed_style *cs)
+{
+	char type[24] = "text";
+	if (!strcmp(tag, "input") && attr(node, "type", type, sizeof type))
+		for (char *p = type; *p; p++)
+			*p = (char)tolower((unsigned char)*p);
+	if (!strcmp(tag, "button"))
+		util_strlcpy(type, "submit", sizeof type);
+	Wdg w = {.node = node};
+	if (!strcmp(tag, "textarea"))
+		w.type = WG_AREA;
+	else if (!strcmp(tag, "select"))
+		w.type = WG_SELECT;
+	else if (!strcmp(type, "password"))
+		w.type = WG_PASS;
+	else if (!strcmp(type, "checkbox"))
+		w.type = WG_CHECK;
+	else if (!strcmp(type, "radio"))
+		w.type = WG_RADIO;
+	else if (!strcmp(type, "submit") || !strcmp(type, "button") || !strcmp(type, "reset") || !strcmp(type, "image"))
+		w.type = WG_BUTTON;
+	else if (!strcmp(type, "hidden") || !strcmp(type, "file") || !strcmp(type, "range") || !strcmp(type, "color"))
+		return;
+	else
+		w.type = WG_TEXT;
+	FVal *v = fv_get(node, false);
+	if (w.type == WG_BUTTON) {
+		if (!strcmp(tag, "button"))
+			text_of(node, w.label, sizeof w.label);
+		else if (!attr(node, "value", w.label, sizeof w.label) && !attr(node, "alt", w.label, sizeof w.label))
+			util_strlcpy(w.label, !strcmp(type, "reset") ? "Borrar" : "Enviar", sizeof w.label);
+	} else if (w.type == WG_SELECT) {
+		char val[256];
+		select_pick(node, v && v->value ? atoi(v->value) : -1, w.label, sizeof w.label, val, sizeof val, NULL);
+	} else if (w.type == WG_TEXT || w.type == WG_PASS || w.type == WG_AREA) {
+		if (v && v->value)
+			util_strlcpy(w.label, v->value, sizeof w.label);
+		else if (!attr(node, "value", w.label, sizeof w.label) || !w.label[0])
+			w.label[0] = 0;
+	}
+	lwc_string *fn;
+	if (lwc_intern_string("form", 4, &fn) == lwc_error_ok) {
+		dom_element_named_ancestor_node((dom_element *)node, fn, (dom_element **)&w.form);
+		if (w.form)
+			dom_node_unref(w.form); // sigue vivo: está en el árbol
+		lwc_string_unref(fn);
+	}
+	float lh = text_lineh(st->sc), bw, bh = lh * 1.5f;
+	css_fixed cv;
+	css_unit cu;
+	char a[16];
+	float avail = RIGHT - L_indent;
+	if (w.type == WG_CHECK || w.type == WG_RADIO)
+		bw = bh = lh;
+	else if (css_computed_width(cs, &cv, &cu) == CSS_WIDTH_SET)
+		bw = len_px(cs, cv, cu, avail);
+	else if (w.type == WG_BUTTON || w.type == WG_SELECT)
+		bw = text_width(w.label[0] ? w.label : "Enviar", st->sc) + lh * (w.type == WG_SELECT ? 2.2f : 1.4f);
+	else if (w.type == WG_AREA)
+		bw = (attr(node, "cols", a, sizeof a) ? atoi(a) : 30) * text_width("n", st->sc) + 12;
+	else
+		bw = attr(node, "size", a, sizeof a) && atoi(a) > 0 ? atoi(a) * text_width("n", st->sc) + 12 : 180;
+	if (w.type == WG_AREA)
+		bh = (attr(node, "rows", a, sizeof a) && atoi(a) > 0 ? atoi(a) : 2) * lh + 8;
+	bw = clampf(bw, 12, avail > 40 ? avail : 400);
+	if (B.nwg == B.cwg) {
+		int nc = B.cwg ? B.cwg * 2 : 16;
+		Wdg *nw = realloc(B.wg, nc * sizeof *nw);
+		if (!nw)
+			return;
+		B.wg = nw, B.cwg = nc;
+	}
+	B.wg[B.nwg] = w;
+	int nf0 = B.nf;
+	put_box(bw, bh, st, -1);
+	if (B.nf > nf0) {
+		B.f[B.nf - 1].wdg = (s16)B.nwg;
+		B.nwg++;
+	}
+}
+
+static void walk_css(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t d);
+static bool css_invisible(const css_computed_style *cs);
+static bool is(const char *t, const char *const *list);
+static const char *const NEVER_TAGS[] = {"script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "canvas", "video", "audio", "head", NULL};
+
 
 /* lo que mide el contenido sin partir líneas (aproximado, sin CSS: para repartir el ancho de una fila) */
 static float measure(dom_node *n, float sc, float cap, int depth)
@@ -994,6 +1305,50 @@ static float measure(dom_node *n, float sc, float cap, int depth)
 	return fminf(cap, fmaxf(mx, sum));
 }
 
+// la palabra más ancha (lo mínimo que puede medir una columna sin partir palabras)
+static float min_word(dom_node *n, float sc, int depth)
+{
+	if (depth > 30)
+		return 0;
+	float mx = 0;
+	for (dom_node_internal *c = NI(n)->first_child; c; c = c->next) {
+		if (c->type == DOM_TEXT_NODE) {
+			dom_string *d = NULL;
+			if (dom_characterdata_get_data((dom_characterdata *)c, &d) == DOM_NO_ERR && d) {
+				const char *t = dom_string_data(d);
+				size_t l = dom_string_byte_length(d);
+				for (size_t i = 0; i < l && i < 2000;) {
+					while (i < l && isspace((unsigned char)t[i]))
+						i++;
+					size_t j = i;
+					while (j < l && !isspace((unsigned char)t[j]))
+						j++;
+					if (j > i)
+						mx = fmaxf(mx, text_width_n(t + i, (int)(j - i), sc));
+					i = j;
+				}
+				dom_string_unref(d);
+			}
+		} else if (c->type == DOM_ELEMENT_NODE) {
+			char tag[16];
+			tag_of((dom_node *)c, tag, sizeof tag);
+			if (is(tag, NEVER_TAGS))
+				continue;
+			if (!strcmp(tag, "img")) {
+				char v[160];
+				float w = attr((dom_node *)c, "width", v, sizeof v) ? (float)atof(v) : 0;
+				if (attr((dom_node *)c, "src", v, sizeof v) && strstr(v, ".svg"))
+					w = 0;
+				if (w <= 0 && attr((dom_node *)c, "alt", v, sizeof v) && v[0])
+					w = text_width(v, sc) + text_width("[]", sc);
+				mx = fmaxf(mx, w);
+			} else
+				mx = fmaxf(mx, min_word((dom_node *)c, sc, depth + 1));
+		}
+	}
+	return mx;
+}
+
 // dónde acaba lo colocado hasta ahora
 static float cur_bottom(void)
 {
@@ -1028,7 +1383,7 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 		css_computed_style *cs;
 		char tag[16];
 		uint8_t d;
-		float w, grow;
+		float w, grow, minw;
 		bool fixed;
 	} c[MAX_COLS];
 	int n = 0;
@@ -1040,7 +1395,6 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 			break;
 		}
 		if (ch->type == DOM_TEXT_NODE) {
-			float m = measure((dom_node *)NI(node), st.sc, avail, 30); // texto suelto: se mide aparte
 			dom_string *d = NULL;
 			bool blank = true;
 			if (dom_characterdata_get_data((dom_characterdata *)ch, &d) == DOM_NO_ERR && d) {
@@ -1054,7 +1408,6 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 				}
 				dom_string_unref(d);
 			}
-			(void)m;
 			continue;
 		}
 		if (ch->type != DOM_ELEMENT_NODE)
@@ -1097,6 +1450,7 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 				ex += len_px(cs, v, u, avail);
 			w = measure((dom_node *)ch, sc, avail, 0) + clampf(ex, 0, 80) + 2;
 		}
+		c[n].minw = fixed ? 0 : fminf(min_word((dom_node *)ch, sc, 0) + 10, avail * 0.6f);
 		c[n].n = (dom_node *)ch, c[n].cs = cs, c[n].d = d;
 		util_strlcpy(c[n].tag, tag, sizeof c[n].tag);
 		c[n].w = clampf(w, 0, avail);
@@ -1127,7 +1481,7 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 			float need = -extra;
 			for (int i = i0; i < i1; i++) {
 				float share = flex > 0 ? (c[i].fixed ? 0 : c[i].w / flex) : c[i].w / tot;
-				c[i].w = fmaxf(24, c[i].w - need * share);
+				c[i].w = fmaxf(fmaxf(24, c[i].minw), c[i].w - need * share);
 			}
 		}
 		for (int i = i0; i < i1; i++)
@@ -1201,6 +1555,10 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 			l->h = 6;
 		}
 		L_gap = 4;
+		return;
+	}
+	if (!strcmp(tag, "input") || !strcmp(tag, "button") || !strcmp(tag, "select") || !strcmp(tag, "textarea")) {
+		widget(node, tag, &st, cs);
 		return;
 	}
 	if (!strcmp(tag, "img")) {
@@ -1666,6 +2024,7 @@ static void layout_free(void)
 	free(B.text), B.text = NULL, B.nt = B.ct = 0;
 	free(B.bg), B.bg = NULL, B.nbg = B.cbg = 0;
 	free(B.ord), B.ord = NULL;
+	free(B.wg), B.wg = NULL, B.nwg = B.cwg = 0;
 	for (int i = 0; i < B.nlinks; i++)
 		free(B.links[i]);
 	free(B.links), B.links = NULL, B.nlinks = B.clinks = 0;
@@ -1806,6 +2165,7 @@ static void close_br(void)
 	brcss_free(B.css);
 	B.css = NULL;
 	img_free_all();
+	fv_free();
 	layout_free();
 	B.st = ST_IDLE;
 }
@@ -1898,6 +2258,89 @@ static int link_at_pointer(void)
 	return -1;
 }
 
+// el control de formulario bajo el puntero (o -1)
+static int wdg_at_pointer(void)
+{
+	float qx = B.sx + B.px / B.zoom, qy = B.sy + B.py / B.zoom, pad = 3 / B.zoom;
+	for (int k = first_frag(qy - 60); k < B.nf; k++) {
+		const Frag *f = &B.f[B.ord[k]];
+		if (B.l[f->line].y > qy + pad)
+			break;
+		if (f->wdg < 0)
+			continue;
+		float x = PAD_X + f->x, y = B.l[f->line].y + B.l[f->line].h - f->w * 0, w = f->w;
+		const Line *l = &B.l[f->line];
+		(void)y;
+		if (qx >= x - pad && qx <= x + w + pad && qy >= l->y - pad && qy <= l->y + l->h + pad)
+			return f->wdg;
+	}
+	return -1;
+}
+
+// tocar un control: escribir, marcar, elegir o enviar
+static void wdg_activate(int k)
+{
+	if (k < 0 || k >= B.nwg)
+		return;
+	Wdg *w = &B.wg[k];
+	FVal *v = fv_get(w->node, true);
+	if (!v)
+		return;
+	if (w->type == WG_TEXT || w->type == WG_PASS || w->type == WG_AREA) {
+		char hint[96] = "", out[1024];
+		if (!attr(w->node, "placeholder", hint, sizeof hint) && !attr(w->node, "aria-label", hint, sizeof hint))
+			util_strlcpy(hint, "Escribe aquí", sizeof hint);
+		if (kb_input(hint, v->value ? v->value : w->label, out, sizeof out, w->type == WG_AREA, w->type == WG_PASS)) {
+			free(v->value);
+			v->value = strdup(out);
+			util_strlcpy(w->label, out, sizeof w->label);
+			if (w->type != WG_AREA && w->form) // como pulsar Intro: se envía (una búsqueda, por ejemplo)
+				form_submit(w->form, NULL);
+		}
+	} else if (w->type == WG_CHECK) {
+		bool on = v->checked >= 0 ? v->checked : has_attr(w->node, "checked");
+		v->checked = !on;
+	} else if (w->type == WG_RADIO) {
+		char name[128] = "", n2[128];
+		attr(w->node, "name", name, sizeof name);
+		for (int i = 0; i < B.nwg; i++) // las del mismo grupo se desmarcan
+			if (B.wg[i].type == WG_RADIO && B.wg[i].form == w->form && attr(B.wg[i].node, "name", n2, sizeof n2) && !strcmp(n2, name)) {
+				FVal *o = fv_get(B.wg[i].node, true);
+				if (o)
+					o->checked = 0;
+			}
+		v = fv_get(w->node, true);
+		if (v)
+			v->checked = 1;
+	} else if (w->type == WG_SELECT) { // la siguiente opción
+		char lab[96], val[256];
+		int n = 0, cur = v->value ? atoi(v->value) : -1;
+		if (cur < 0) { // la que estaba marcada
+			select_pick(w->node, -1, lab, sizeof lab, val, sizeof val, &n);
+			for (int i = 0; i < n; i++) {
+				char l2[96], v2[256];
+				select_pick(w->node, i, l2, sizeof l2, v2, sizeof v2, NULL);
+				if (!strcmp(l2, lab)) {
+					cur = i;
+					break;
+				}
+			}
+		} else
+			select_pick(w->node, 0, lab, sizeof lab, val, sizeof val, &n);
+		int nx = n ? (cur + 1) % n : 0;
+		char num[12];
+		snprintf(num, sizeof num, "%d", nx);
+		free(v->value);
+		v->value = strdup(num);
+		select_pick(w->node, nx, w->label, sizeof w->label, val, sizeof val, NULL);
+	} else if (w->type == WG_BUTTON) {
+		char type[16] = "submit";
+		attr(w->node, "type", type, sizeof type);
+		if (w->form && strcasecmp(type, "button") && strcasecmp(type, "reset"))
+			form_submit(w->form, w->node);
+	}
+}
+
 // cruceta ◀ ▶: al enlace anterior o siguiente; el puntero se pone encima y la vista lo sigue
 static void focus_step(int dir)
 {
@@ -1909,14 +2352,15 @@ static void focus_step(int dir)
 			i--;
 	} else
 		i += dir;
-	int cur = B.focus >= 0 ? B.f[B.focus].link : -2;
+#define FKEY(f) ((f).wdg >= 0 ? 100000 + (f).wdg : (f).link)
+	int cur = B.focus >= 0 ? FKEY(B.f[B.focus]) : -2;
 	for (; i >= 0 && i < B.nf; i += dir)
-		if (B.f[i].link >= 0 && B.f[i].link != cur)
+		if (FKEY(B.f[i]) >= 0 && FKEY(B.f[i]) != cur)
 			break;
 	if (i < 0 || i >= B.nf)
 		return;
 	if (dir < 0) // al principio de ese enlace, no a su última palabra
-		while (i > 0 && B.f[i - 1].link == B.f[i].link)
+		while (i > 0 && FKEY(B.f[i - 1]) == FKEY(B.f[i]))
 			i--;
 	B.focus = i;
 	float x, y, w, h;
@@ -2012,6 +2456,7 @@ void br_top(void)
 		}
 	int hov = link_at_pointer();
 	B.hover = hov;
+	B.hw = wdg_at_pointer();
 	for (int k = first_frag(B.sy); k < B.nf; k++) {
 		int i = B.ord[k];
 		const Frag *f = &B.f[i];
@@ -2024,6 +2469,63 @@ void br_top(void)
 			continue;
 		if (f->link >= 0 && (f->link == hov || i == B.focus))
 			draw_rect(X - 1, Y, Wd + 2, H, col_alpha(PG_LINK, 0.18f));
+		if (f->wdg >= 0 && f->wdg < B.nwg) { // control de formulario
+			const Wdg *w = &B.wg[f->wdg];
+			const Line *l = &B.l[f->line];
+			float bh = (w->type == WG_CHECK || w->type == WG_RADIO) ? text_lineh(f->sc) : (w->type == WG_AREA ? l->h : text_lineh(f->sc) * 1.5f);
+			float by = (l->y + l->h - bh - B.sy) * z, BH = bh * z;
+			u32 border = col_hex(0xA2A9B1);
+			FVal *v = fv_get(w->node, false);
+			if (w->type == WG_CHECK || w->type == WG_RADIO) {
+				bool on = v && v->checked >= 0 ? v->checked : has_attr(w->node, "checked");
+				float r = BH / 2;
+				if (w->type == WG_RADIO) {
+					draw_circle(X + r, by + r, r, border);
+					draw_circle(X + r, by + r, r - fmaxf(1, z), col_hex(0xFFFFFF));
+					if (on)
+						draw_circle(X + r, by + r, r * 0.5f, PG_LINK);
+				} else {
+					draw_rect(X, by, BH, BH, on ? PG_LINK : border);
+					if (!on)
+						draw_rect(X + fmaxf(1, z), by + fmaxf(1, z), BH - 2 * fmaxf(1, z), BH - 2 * fmaxf(1, z), col_hex(0xFFFFFF));
+					else
+						draw_icon(IC_CHECK, X + r, by + r, BH * 0.8f, 0xFFFFFFFF);
+				}
+			} else {
+				bool btn = w->type == WG_BUTTON;
+				draw_rrect(X, by, Wd, BH, fminf(4 * z, BH / 2), border);
+				draw_rrect(X + fmaxf(1, z * 0.8f), by + fmaxf(1, z * 0.8f), Wd - 2 * fmaxf(1, z * 0.8f), BH - 2 * fmaxf(1, z * 0.8f), fminf(3 * z, BH / 2),
+				           btn ? col_hex(0xF8F9FA) : col_hex(0xFFFFFF));
+				char shown[96];
+				const char *t = w->label;
+				u32 tc = PG_TEXT;
+				if (w->type == WG_PASS && t[0]) {
+					size_t n = strlen(t);
+					memset(shown, '*', n < 95 ? n : 95);
+					shown[n < 95 ? n : 95] = 0;
+					t = shown;
+				}
+				if (!t[0] && !btn && w->type != WG_SELECT) { // vacío: lo que la página sugiere
+					if (attr(w->node, "placeholder", shown, sizeof shown) || attr(w->node, "aria-label", shown, sizeof shown))
+						t = shown, tc = PG_MUTED;
+				}
+				float sc = f->sc * z, pad = 4 * z;
+				if (sc >= 0.17f && t[0]) {
+					float ty = by + (fminf(BH, text_lineh(f->sc) * 1.5f * z) - text_lineh(sc)) / 2;
+					if (btn)
+						text_draw_center_clip(t, X + Wd / 2, ty, Wd - 2 * pad, sc, tc);
+					else
+						text_draw_clip(t, X + pad, ty, Wd - 2 * pad - (w->type == WG_SELECT ? 10 * z : 0), sc, tc);
+				}
+				if (w->type == WG_SELECT) {
+					float ax = X + Wd - 9 * z, ay = by + BH / 2;
+					draw_tri(ax - 4 * z, ay - 2 * z, ax + 4 * z, ay - 2 * z, ax, ay + 3 * z, PG_MUTED);
+				}
+			}
+			if (f->wdg == B.hw)
+				draw_rect(X, by, Wd, BH, col_alpha(PG_LINK, 0.18f));
+			continue;
+		}
 		if (f->img >= 0 && f->img < B.nimg) { // imagen: encajada en su sitio sin deformarla
 			PImg *im = &B.img[f->img];
 			float bw = Wd, bh = im->h * z, by = (B.l[f->line].y + B.l[f->line].h - im->h - B.sy) * z;
@@ -2235,6 +2737,8 @@ void br_bottom(void)
 				util_strlcpy(full, nu, sizeof full);
 			go(full, true);
 		}
+	} else if (click && ready && wdg_at_pointer() >= 0) {
+		wdg_activate(wdg_at_pointer());
 	} else if (click && ready) {
 		int k = link_at_pointer();
 		if (k < 0 && B.focus >= 0)
