@@ -60,6 +60,8 @@ enum { DLF_OK, DLF_NOCONN, DLF_FAIL };
 /* para el hilo que llama: User-Agent propio (NULL, el de Cloud3DS) y la dirección final de su último dl_fetch */
 void dl_set_thread_ua(const char *ua);
 const char *dl_last_url(void);
+/* lo mismo con libcurl (TLS moderno): para webs que no aceptan a httpc */
+int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code);
 int dl_fetch(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void (*tot)(void *, u64), void *u, long *code);
 /* petición general (método HTTPC_METHOD_*, cabeceras «Nombre: valor» acabadas en NULL, cuerpo opcional) */
 int dl_request(int method, const char *url, const char *const *headers, const void *body, size_t blen,

@@ -249,7 +249,14 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 		*code = 200;
 		return DLF_OK;
 	}
-	return dl_fetch(url, accept, buf_cb, NULL, b, code);
+	int r = dl_fetch(url, accept, buf_cb, NULL, b, code);
+	// algunas webs rechazan el TLS antiguo de httpc (403, 429…) o no conecta: otra vez con libcurl
+	if (r != DLF_OK || *code == 403 || *code == 429 || *code == 503) {
+		free(b->p);
+		b->p = NULL, b->n = b->cap = 0;
+		r = dl_fetch_curl(url, accept, buf_cb, b, code);
+	}
+	return r;
 }
 
 static bool ci_has(const char *h, const char *nd)
@@ -431,7 +438,7 @@ static void load_thread(void *arg)
 		fclose(fp);
 	} else {
 		long code = 0;
-		int r = dl_fetch(B.url, "text/html,*/*;q=0.8", buf_cb, NULL, &b, &code);
+		int r = fetch_any(B.url, "text/html,application/xhtml+xml,*/*;q=0.8", &b, &code);
 		if (r != DLF_OK || code >= 400) {
 			if (r == DLF_OK)
 				snprintf(B.err, sizeof B.err, "El servidor respondió %ld", code);

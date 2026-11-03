@@ -351,6 +351,8 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		httpcSetKeepAlive(ctx, HTTPC_KEEPALIVE_ENABLED);
 		httpcAddRequestHeaderField(ctx, "User-Agent", t_ua ? t_ua : UA);
 		httpcAddRequestHeaderField(ctx, "Connection", "Keep-Alive");
+		if (t_ua) // el navegador: el idioma, como cualquier navegador
+			httpcAddRequestHeaderField(ctx, "Accept-Language", "es-ES,es;q=0.9,en;q=0.7");
 		if (accept)
 			httpcAddRequestHeaderField(ctx, "Accept", accept);
 		if (range_from) {
@@ -566,6 +568,40 @@ static void common_opts(CURL *c, char *eb)
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
 	curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
 	curl_easy_setopt(c, CURLOPT_BUFFERSIZE, 256L * 1024);
+}
+
+/* como dl_fetch, pero con libcurl (TLS moderno de mbedTLS): para lo que httpc no logra */
+int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out)
+{
+	CURL *c = curl_easy_init();
+	if (!c)
+		return DLF_FAIL;
+	char eb[CURL_ERROR_SIZE] = "", acc[160];
+	snprintf(acc, sizeof acc, "Accept: %s", accept ? accept : "*/*");
+	struct curl_slist *h = curl_slist_append(NULL, acc);
+	if (t_ua)
+		h = curl_slist_append(h, "Accept-Language: es-ES,es;q=0.9,en;q=0.7");
+	common_opts(c, eb);
+	if (t_ua)
+		curl_easy_setopt(c, CURLOPT_USERAGENT, t_ua);
+	curl_easy_setopt(c, CURLOPT_URL, url);
+	curl_easy_setopt(c, CURLOPT_HTTPHEADER, h);
+	curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, wr);
+	curl_easy_setopt(c, CURLOPT_WRITEDATA, u);
+	curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
+	curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, quit_cb);
+	CURLcode r = curl_easy_perform(c);
+	long code = 0;
+	curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+	char *eff = NULL;
+	curl_easy_getinfo(c, CURLINFO_EFFECTIVE_URL, &eff);
+	if (eff)
+		util_strlcpy(t_final, eff, sizeof t_final);
+	curl_easy_cleanup(c);
+	curl_slist_free_all(h);
+	util_log("dl: curl %.80s -> %d, HTTP %ld %s", url, (int)r, code, eb);
+	*code_out = code;
+	return r == CURLE_OK ? DLF_OK : (r == CURLE_COULDNT_RESOLVE_HOST || r == CURLE_COULDNT_CONNECT) ? DLF_NOCONN : DLF_FAIL;
 }
 
 static const char *curl_err(CURLcode r, long code)
