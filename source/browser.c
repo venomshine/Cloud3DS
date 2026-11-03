@@ -179,7 +179,9 @@ static struct {
 	int idle_left;       /* ms que aún puede seguir su JavaScript con la página a la vista */
 	u64 idle_next, last_in; /* cuándo darle otro rato; última vez que se tocó algo */
 	u64 ready_ms;        /* cuándo quedó lista la página */
-	char search_q[512];
+	char search_q[512];  /* lo buscado (por si el buscador no responde: el siguiente) */
+	int search_stage;    /* 0 Google, 1 DuckDuckGo, 2 Bing */
+	int http_code;       /* lo que respondió el servidor a la página */
 	/* inicio, favoritos e historial */
 	bool home;           /* en la página de inicio */
 	int panel;           /* con una página: la lista encima del touchpad (0 no) */
@@ -683,6 +685,7 @@ static void load_thread(void *arg)
 	} else {
 		long code = 0;
 		int r = fetch_any(B.url, "text/html,application/xhtml+xml,*/*;q=0.8", &b, &code);
+		B.http_code = (int)code;
 		if (r != DLF_OK || code >= 400) {
 			if (r == DLF_OK)
 				snprintf(B.err, sizeof B.err, "El servidor respondió %ld", code);
@@ -2743,15 +2746,23 @@ static void address_to_url(const char *t, char *out, size_t n)
 		url_esc(t, q, sizeof q);
 		snprintf(out, n, "https://www.google.com/search?q=%s&hl=es", q);
 		util_strlcpy(B.search_q, t, sizeof B.search_q);
+		B.search_stage = 0;
 	} else if (!strstr(t, "://") && t[0] != '/')
 		snprintf(out, n, "https://%s", t);
 	else
 		util_strlcpy(out, t, n);
 }
 
+static bool is_search_host(const char *url)
+{
+	char host[128], path[8];
+	ck_host(url, host, sizeof host, path, sizeof path);
+	return strstr(host, "google.") || strstr(host, "duckduckgo.com") || strstr(host, "bing.com");
+}
+
 static void go(const char *url, bool push)
 {
-	if (!is_google(url))
+	if (!is_search_host(url))
 		B.search_q[0] = 0;
 	const char *hash = strchr(url, '#');
 	size_t base_n = hash ? (size_t)(hash - url) : strlen(url);
@@ -4288,15 +4299,31 @@ void br_bottom(void)
 		// sin que se haya tocado nada desde que cargó, es una redirección: no queda en el historial
 		go(u, B.last_in > B.ready_ms);
 	}
-	if (B.search_q[0] && is_google(B.url) &&
-	    (B.st == ST_ERROR || (B.st == ST_READY && (strstr(B.url, "/sorry/") || strstr(B.url, "enablejs"))))) {
-		// Google pidió un captcha, no aceptó el navegador o no contestó: la misma búsqueda en DuckDuckGo
+	// el buscador pidió un captcha, no aceptó el navegador o no contestó: la misma búsqueda en el
+	// siguiente (Google → DuckDuckGo → Bing)
+	bool s_fail = false;
+	if (B.search_q[0] && B.search_stage == 0 && is_google(B.url))
+		s_fail = B.st == ST_ERROR || (B.st == ST_READY && (strstr(B.url, "/sorry/") || strstr(B.url, "enablejs")));
+	else if (B.search_q[0] && B.search_stage == 1 && strstr(B.url, "duckduckgo.com"))
+		s_fail = B.st == ST_ERROR || (B.st == ST_READY && B.http_code == 202); // 202: su página de «¿eres un robot?»
+	if (s_fail) {
 		char q[900], full[1024];
 		url_esc(B.search_q, q, sizeof q);
-		snprintf(full, sizeof full, "https://html.duckduckgo.com/html/?q=%s", q);
-		B.search_q[0] = 0;
-		toast_icon("Google no respondió: resultados de DuckDuckGo", IC_SEARCH, T.accent);
+		if (B.search_stage == 0) {
+			snprintf(full, sizeof full, "https://html.duckduckgo.com/html/?q=%s", q);
+			toast_icon("Google no respondió: resultados de DuckDuckGo", IC_SEARCH, T.accent);
+		} else {
+			snprintf(full, sizeof full, "https://www.bing.com/search?q=%s&setlang=es&cc=ES", q);
+			toast_icon("DuckDuckGo no respondió: resultados de Bing", IC_SEARCH, T.accent);
+		}
+		util_log("web: %s no respondió (%d, HTTP %d): siguiente buscador", B.search_stage ? "DuckDuckGo" : "Google", B.st, B.http_code);
+		B.search_stage++;
+		if (B.search_stage >= 2) // el último: si falla, se queda el error
+			B.search_q[0] = 0;
+		char keep[512];
+		util_strlcpy(keep, B.search_q, sizeof keep);
 		go(full, false);
+		util_strlcpy(B.search_q, keep, sizeof B.search_q);
 	}
 	// al historial, cuando la página lleva un rato a la vista (las que solo redirigen no se apuntan)
 	if (B.st == ST_READY && !B.js_nav[0] && util_ms() - B.ready_ms > 1500 && strcmp(B.logged, B.url)) {
