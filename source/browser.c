@@ -2744,9 +2744,9 @@ static void address_to_url(const char *t, char *out, size_t n)
 	if (!looks_like_address(t)) {
 		char q[900];
 		url_esc(t, q, sizeof q);
-		snprintf(out, n, "https://www.google.com/search?q=%s&hl=es", q);
+		snprintf(out, n, "https://html.duckduckgo.com/html/?q=%s", q); // Google no deja buscar a este navegador (ver go)
 		util_strlcpy(B.search_q, t, sizeof B.search_q);
-		B.search_stage = 0;
+		B.search_stage = 1;
 	} else if (!strstr(t, "://") && t[0] != '/')
 		snprintf(out, n, "https://%s", t);
 	else
@@ -2760,8 +2760,71 @@ static bool is_search_host(const char *url)
 	return strstr(host, "google.") || strstr(host, "duckduckgo.com") || strstr(host, "bing.com");
 }
 
+// el valor de un parámetro de la dirección (?q=…), ya decodificado
+static bool url_param(const char *url, const char *name, char *out, size_t n)
+{
+	const char *q = strchr(url, '?');
+	size_t nl = strlen(name);
+	for (const char *p = q; p && *p; p = strchr(p + 1, '&')) {
+		const char *k = p + 1;
+		if (!strncmp(k, name, nl) && k[nl] == '=') {
+			const char *v = k + nl + 1;
+			size_t j = 0;
+			for (; *v && *v != '&' && *v != '#' && j + 1 < n; v++) {
+				if (*v == '+')
+					out[j++] = ' ';
+				else if (*v == '%' && isxdigit((unsigned char)v[1]) && isxdigit((unsigned char)v[2])) {
+					char hx[3] = {v[1], v[2], 0};
+					out[j++] = (char)strtol(hx, NULL, 16);
+					v += 2;
+				} else
+					out[j++] = *v;
+			}
+			out[j] = 0;
+			return true;
+		}
+	}
+	return false;
+}
+
+/* buscadores que no funcionan con este navegador, a sus versiones que sí:
+ * - Google: su comprobación con JavaScript detecta que no es Chrome ni Firefox y responde 429 a la
+ *   búsqueda (visto en la consola: siempre, con httpc y con libcurl). Se busca lo mismo en DuckDuckGo.
+ * - duckduckgo.com: su página normal es una aplicación que necesita partes de JavaScript que el
+ *   motor no tiene; html.duckduckgo.com es la versión sin JavaScript. */
+static bool search_rewrite(const char *url, char *out, size_t n)
+{
+	char host[128], path[256], q[512];
+	ck_host(url, host, sizeof host, path, sizeof path);
+	bool google = strstr(host, "google.") != NULL, ddg = !strcmp(host, "duckduckgo.com") || !strcmp(host, "www.duckduckgo.com");
+	if (google && !strcmp(path, "/search") && url_param(url, "q", q, sizeof q) && q[0]) {
+		char e[900];
+		url_esc(q, e, sizeof e);
+		snprintf(out, n, "https://html.duckduckgo.com/html/?q=%s", e);
+		util_strlcpy(B.search_q, q, sizeof B.search_q);
+		B.search_stage = 1;
+		toast_icon("Google no deja buscar a este navegador: resultados de DuckDuckGo", IC_SEARCH, T.accent);
+		return true;
+	}
+	if (ddg && (!strcmp(path, "/") || !strcmp(path, "/search"))) {
+		if (url_param(url, "q", q, sizeof q) && q[0]) {
+			char e[900];
+			url_esc(q, e, sizeof e);
+			snprintf(out, n, "https://html.duckduckgo.com/html/?q=%s", e);
+			util_strlcpy(B.search_q, q, sizeof B.search_q);
+			B.search_stage = 1;
+		} else
+			snprintf(out, n, "https://html.duckduckgo.com/html/");
+		return true;
+	}
+	return false;
+}
+
 static void go(const char *url, bool push)
 {
+	char rw[1024];
+	if (search_rewrite(url, rw, sizeof rw))
+		url = rw;
 	if (!is_search_host(url))
 		B.search_q[0] = 0;
 	const char *hash = strchr(url, '#');
