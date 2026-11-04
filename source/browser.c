@@ -15,6 +15,7 @@
 #include "brcss.h"
 #include "cssprep.h"
 #include "brfav.h"
+#include "brlayout.h"
 #include "core/node.h" /* libdom por dentro: hijos y hermanos sin referencias */
 #include "dl.h"
 #include "gfx.h"
@@ -1687,8 +1688,8 @@ static void form_submit(dom_node *form, dom_node *submitter)
 	free(q);
 }
 
-// un control de formulario: ocupa su caja en la línea
-static void widget(dom_node *node, const char *tag, const St *st, const css_computed_style *cs)
+// un control de formulario: se apunta en B.wg; su tamaño (con letra sc y un ancho disponible). -1 si no se ve
+static int wdg_make(dom_node *node, const char *tag, float sc, const css_computed_style *cs, float avail, float *ow, float *oh)
 {
 	char type[24] = "text";
 	if (!strcmp(tag, "input") && attr(node, "type", type, sizeof type))
@@ -1710,7 +1711,7 @@ static void widget(dom_node *node, const char *tag, const St *st, const css_comp
 	else if (!strcmp(type, "submit") || !strcmp(type, "button") || !strcmp(type, "reset") || !strcmp(type, "image"))
 		w.type = WG_BUTTON;
 	else if (!strcmp(type, "hidden") || !strcmp(type, "file") || !strcmp(type, "range") || !strcmp(type, "color"))
-		return;
+		return -1;
 	else
 		w.type = WG_TEXT;
 	FVal *v = fv_get(node, false);
@@ -1735,21 +1736,20 @@ static void widget(dom_node *node, const char *tag, const St *st, const css_comp
 			dom_node_unref(w.form); // sigue vivo: está en el árbol
 		lwc_string_unref(fn);
 	}
-	float lh = text_lineh(st->sc), bw, bh = lh * 1.5f;
+	float lh = text_lineh(sc), bw, bh = lh * 1.5f;
 	css_fixed cv;
 	css_unit cu;
 	char a[16];
-	float avail = RIGHT - L_indent;
 	if (w.type == WG_CHECK || w.type == WG_RADIO)
 		bw = bh = lh;
 	else if (css_computed_width(cs, &cv, &cu) == CSS_WIDTH_SET)
 		bw = len_px(cs, cv, cu, avail);
 	else if (w.type == WG_BUTTON || w.type == WG_SELECT)
-		bw = text_width(w.label[0] ? w.label : "Enviar", st->sc) + lh * (w.type == WG_SELECT ? 2.2f : 1.4f);
+		bw = text_width(w.label[0] ? w.label : "Enviar", sc) + lh * (w.type == WG_SELECT ? 2.2f : 1.4f);
 	else if (w.type == WG_AREA)
-		bw = (attr(node, "cols", a, sizeof a) ? atoi(a) : 30) * text_width("n", st->sc) + 12;
+		bw = (attr(node, "cols", a, sizeof a) ? atoi(a) : 30) * text_width("n", sc) + 12;
 	else
-		bw = attr(node, "size", a, sizeof a) && atoi(a) > 0 ? atoi(a) * text_width("n", st->sc) + 12 : 180;
+		bw = attr(node, "size", a, sizeof a) && atoi(a) > 0 ? atoi(a) * text_width("n", sc) + 12 : 180;
 	if (w.type == WG_AREA)
 		bh = (attr(node, "rows", a, sizeof a) && atoi(a) > 0 ? atoi(a) : 2) * lh + 8;
 	bw = clampf(bw, 12, avail > 40 ? avail : 400);
@@ -1757,16 +1757,26 @@ static void widget(dom_node *node, const char *tag, const St *st, const css_comp
 		int nc = B.cwg ? B.cwg * 2 : 16;
 		Wdg *nw = realloc(B.wg, nc * sizeof *nw);
 		if (!nw)
-			return;
+			return -1;
 		B.wg = nw, B.cwg = nc;
 	}
 	B.wg[B.nwg] = w;
+	*ow = bw, *oh = bh;
+	return B.nwg++;
+}
+
+static void widget(dom_node *node, const char *tag, const St *st, const css_computed_style *cs)
+{
+	float bw, bh;
+	int k = wdg_make(node, tag, st->sc, cs, RIGHT - L_indent, &bw, &bh);
+	if (k < 0)
+		return;
 	int nf0 = B.nf;
 	put_box(bw, bh, st, -1);
-	if (B.nf > nf0) {
-		B.f[B.nf - 1].wdg = (s16)B.nwg;
-		B.nwg++;
-	}
+	if (B.nf > nf0)
+		B.f[B.nf - 1].wdg = (s16)k;
+	else
+		B.nwg--;
 }
 
 static void walk_css(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t d);
@@ -2792,7 +2802,8 @@ static float sv_len(dom_node *n, const char *name, float em)
 	return strstr(u, "em") ? x * em : x;
 }
 
-static void svg_inline(dom_node *node, St *st, const css_computed_style *cs)
+// un <svg> de la página como imagen: su número en B.img y su tamaño (-1 si no vale)
+static int svg_make(dom_node *node, const css_computed_style *cs, float *ow, float *oh)
 {
 	css_fixed v;
 	css_unit u;
@@ -2823,7 +2834,7 @@ static void svg_inline(dom_node *node, St *st, const css_computed_style *cs)
 	else if (h <= 0)
 		h = w / ar;
 	if (w < 3 || h < 3 || w > 1600 || h > 1600)
-		return;
+		return -1;
 	// el color del texto (para currentColor y lo que no diga su color), en modo oscuro aclarado
 	css_color tc = 0xFF000000;
 	css_computed_color(cs, &tc);
@@ -2856,7 +2867,7 @@ static void svg_inline(dom_node *node, St *st, const css_computed_style *cs)
 	sv_puts(&b, "</svg>");
 	if (b.n >= MAX_PAGE || b.n < 40) {
 		free(b.p);
-		return;
+		return -1;
 	}
 	// clave: el mismo icono repetido se pinta una vez
 	uint32_t hsh = 2166136261u;
@@ -2867,7 +2878,7 @@ static void svg_inline(dom_node *node, St *st, const css_computed_style *cs)
 	int k = img_find_or_add(key);
 	if (k < 0) {
 		free(b.p);
-		return;
+		return -1;
 	}
 	PImg *im = &B.img[k];
 	if (im->st == IM_WAIT && !im->data && !im->rgba && !im->tex.ok)
@@ -2875,7 +2886,16 @@ static void svg_inline(dom_node *node, St *st, const css_computed_style *cs)
 	else
 		free(b.p);
 	im->w = w, im->h = h, im->sized = true;
-	put_box(w, h, st, k);
+	*ow = w, *oh = h;
+	return k;
+}
+
+static void svg_inline(dom_node *node, St *st, const css_computed_style *cs)
+{
+	float w, h;
+	int k = svg_make(node, cs, &w, &h);
+	if (k >= 0)
+		put_box(w, h, st, k);
 }
 
 static void walk(dom_node *node, St st)
@@ -3168,6 +3188,175 @@ static int ord_cmp(const void *a, const void *b)
 	return *(const int *)a - *(const int *)b;
 }
 
+/* ------------------------------------------------------------ con el motor de cajas (brlayout) */
+static float px_sc(float px) { return clampf(SC16 * px / 16, 0.15f, 2.4f); }
+static float bl_tw(void *u, const char *t, int n, float px, bool bold)
+{
+	(void)u, (void)bold;
+	return text_width_n(t, n, px_sc(px));
+}
+static float bl_lh(void *u, float px)
+{
+	(void)u;
+	return text_lineh(px_sc(px));
+}
+static int bl_link(void *u, dom_node *a, const char *href)
+{
+	(void)u, (void)a;
+	return link_add(href);
+}
+static int bl_clk(void *u, dom_node *n)
+{
+	(void)u, (void)n;
+	return B.nclk++;
+}
+static int bl_img(void *u, dom_node *n, const char *src, float *iw, float *ih)
+{
+	(void)u, (void)n;
+	char abs[1024];
+	resolve(B.url, src, abs, sizeof abs);
+	int k = img_find_or_add(abs);
+	if (k >= 0 && B.img[k].iw > 0)
+		*iw = B.img[k].iw, *ih = B.img[k].ih;
+	return k;
+}
+static int bl_svg(void *u, dom_node *n, const css_computed_style *cs, float *w, float *h)
+{
+	(void)u;
+	if (!strcmp(B.reader_url, B.url))
+		return -1;
+	return svg_make(n, cs, w, h);
+}
+static int bl_wdg(void *u, dom_node *n, const char *tag, const css_computed_style *cs, float px, float *w, float *h)
+{
+	(void)u;
+	return wdg_make(n, tag, px_sc(px), cs, B.vw, w, h);
+}
+// una línea por cada alto y posición distintos (la de antes se reutiliza si es igual)
+static int bl_line(float y, float h)
+{
+	if (B.nl && B.l[B.nl - 1].y == y && B.l[B.nl - 1].h == h)
+		return B.nl - 1;
+	if (B.nl == B.cl) {
+		int nc = B.cl ? B.cl * 2 : 256;
+		Line *nl = realloc(B.l, nc * sizeof *nl);
+		if (!nl)
+			return -1;
+		B.l = nl, B.cl = nc;
+	}
+	Line *l = &B.l[B.nl];
+	memset(l, 0, sizeof *l);
+	l->y = y, l->h = h, l->used = true;
+	return B.nl++;
+}
+static Frag *bl_frag(float x, float y, float w, float h, const char *t, int n, const BrlText *st)
+{
+	int li = bl_line(y, h);
+	if (li < 0)
+		return NULL;
+	if (B.nf == B.cf) {
+		int nc = B.cf ? B.cf * 2 : 1024;
+		Frag *nf = realloc(B.f, nc * sizeof *nf);
+		if (!nf)
+			return NULL;
+		B.f = nf, B.cf = nc;
+	}
+	if (B.nt + n + 1 > B.ct) {
+		u32 nc = B.ct ? B.ct * 2 : 64 * 1024;
+		while (nc < B.nt + n + 1)
+			nc *= 2;
+		char *nt = realloc(B.text, nc);
+		if (!nt)
+			return NULL;
+		B.text = nt, B.ct = nc;
+	}
+	memcpy(B.text + B.nt, t, n);
+	Frag *f = &B.f[B.nf++];
+	memset(f, 0, sizeof *f);
+	f->line = li, f->x = x, f->w = w;
+	f->off = B.nt, f->n = (u16)n;
+	f->sc = px_sc(st->px), f->col = st->col, f->link = st->link, f->under = st->under, f->bold = st->bold;
+	f->img = -1, f->wdg = -1;
+	f->node = st->node, f->clk = st->clk;
+	B.nt += n;
+	return f;
+}
+static void bl_text(void *u, float x, float y, float w, float h, const char *t, int n, const BrlText *st)
+{
+	(void)u, (void)h;
+	bl_frag(x, y, w, text_lineh(px_sc(st->px)), t, n, st);
+}
+static void bl_box(void *u, float x, float y, float w, float h, int img, int wdg, const BrlText *st)
+{
+	(void)u;
+	Frag *f = bl_frag(x, y, w, h, "", 0, st);
+	if (!f)
+		return;
+	f->under = 0;
+	if (img >= 0 && img < B.nimg) {
+		f->img = (s16)img;
+		B.img[img].w = w, B.img[img].h = h;
+	}
+	if (wdg >= 0 && wdg < B.nwg)
+		f->wdg = (s16)wdg;
+}
+static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4])
+{
+	(void)u;
+	if (B.nbg == B.cbg) {
+		int nc = B.cbg ? B.cbg * 2 : 64;
+		BgBox *nb = realloc(B.bg, nc * sizeof *nb);
+		if (!nb)
+			return;
+		B.bg = nb, B.cbg = nc;
+	}
+	BgBox *b = &B.bg[B.nbg++];
+	*b = (BgBox){y0, y1, x0, x1, col ? (col | 0xFF000000) : 0, {0}, {0}};
+	for (int k = 0; k < 4; k++)
+		b->bw[k] = bw[k], b->bc[k] = bc[k] | 0xFF000000;
+}
+static bool bl_stop(void *u)
+{
+	(void)u;
+	if (B.abort)
+		return true;
+	if (mem_free() < MEM_RESERVE) {
+		B.lay_oom = true;
+		return true;
+	}
+	B.nel_done += 128;
+	return false;
+}
+
+// el <title> de la página
+static void title_get(void)
+{
+	if (B.title[0])
+		return;
+	dom_node *t = find_tag((dom_node *)B.doc, "title", 0);
+	if (!t)
+		return;
+	dom_string *tx = NULL;
+	if (dom_node_get_text_content(t, &tx) == DOM_NO_ERR && tx) {
+		size_t l = dom_string_byte_length(tx);
+		snprintf(B.title, sizeof B.title, "%.*s", (int)(l < sizeof B.title - 1 ? l : sizeof B.title - 1), dom_string_data(tx));
+		dom_string_unref(tx);
+	}
+	dom_node_unref(t);
+}
+
+static float layout_boxes(void)
+{
+	title_get();
+	BrLay L = {.css = B.css, .vw = B.vw, .vh = 600, .light = B.light || !strcmp(B.reader_url, B.url), .u = NULL,
+	           .text_w = bl_tw, .line_h = bl_lh, .link = bl_link, .clk = bl_clk, .img = bl_img, .svg = bl_svg, .wdg = bl_wdg,
+	           .bg = bl_bg, .text = bl_text, .box = bl_box, .stop = bl_stop};
+	uint32_t pbg = 0;
+	float h = brl_run(&L, B.doc, &pbg);
+	B.page_bg = pbg;
+	return h;
+}
+
 static void layout(void)
 {
 	img_stop(); // su hilo lee la lista de imágenes, que aquí puede crecer
@@ -3191,6 +3380,12 @@ static void layout(void)
 	B.page_bg = 0, B.page_bg_html = false;
 	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
 	// sin CSS, modo lectura: si la página marca su contenido (<main> o <article>), solo eso
+	float boxes_h = -1;
+	if (B.css) { // con CSS: el motor de cajas (todo en px de página, sin margen propio)
+		PADP = 0;
+		PW = B.vw;
+		boxes_h = layout_boxes();
+	}
 	dom_node *content = B.css ? NULL : find_tag((dom_node *)B.doc, "main", 0);
 	if (!content && !B.css)
 		content = find_tag((dom_node *)B.doc, "article", 0);
@@ -3202,9 +3397,9 @@ static void layout(void)
 		}
 		walk(content, st);
 		dom_node_unref(content);
-	} else
+	} else if (boxes_h < 0)
 		walk((dom_node *)B.doc, st);
-	if (L_has)
+	if (L_has && boxes_h < 0)
 		line_new();
 	B.t_css = (u32)(util_ms() - t0);
 	B.page_ver++;
@@ -3234,7 +3429,7 @@ static void layout(void)
 			B.l[i].h = 0;
 		y = fmaxf(y, B.l[i].y + B.l[i].h);
 	}
-	B.total = y + 20;
+	B.total = (boxes_h >= 0 ? fmaxf(y, boxes_h) : y) + 20;
 	// orden para pintar y tocar: por altura (con columnas, el orden del documento ya no lo es)
 	free(B.ord);
 	B.ord = malloc(sizeof *B.ord * (B.nf ? B.nf : 1));
