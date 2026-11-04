@@ -916,6 +916,7 @@ typedef struct {
 	int link;
 	bool pre, under, skip, bold, hidden;
 	bool fixw;     /* el ancho ya lo decidió quien lo coloca (columna, flotante): no se aplica otra vez */
+	bool flexrow;  /* cs es un contenedor flex en fila (para justify-content / align-items) */
 	u8 align;
 	bool list;     /* <li> con viñeta (list-style no es none) */
 	int *olnum;    /* contador de la <ol> de dentro */
@@ -1077,8 +1078,9 @@ static void word(const char *s, int n, const St *st)
 	}
 	if (!L_has)
 		L_x = CUR_L;
-	// una palabra más ancha que la pantalla: a trozos
-	while (w > CUR_R - CUR_L && n > 1) {
+	// una palabra más ancha que su columna se sale (como en los navegadores); solo las enormes
+	// (direcciones largas…) van a trozos
+	while (w > fmaxf(CUR_R - CUR_L, 200) && n > 1) {
 		int k = n;
 		while (k > 1 && text_width_n(s, k, st->sc) > CUR_R - L_x)
 			k--;
@@ -1716,6 +1718,13 @@ static float cur_bottom(void);
 static const char *const NEVER_TAGS[] = {"script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "canvas", "video", "audio", "head", NULL};
 
 
+// los títulos, con su letra más grande (lo habitual: 2, 1,5, 1,17… veces), para medirlos
+static float head_scale(const char *tag)
+{
+	static const float K[6] = {2.0f, 1.5f, 1.25f, 1.1f, 1.0f, 1.0f};
+	return tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6' && !tag[2] ? K[tag[1] - '1'] : 1.0f;
+}
+
 /* lo que mide el contenido sin partir líneas (aproximado, sin CSS: para repartir el ancho de una fila) */
 static float measure(dom_node *n, float sc, float cap, int depth)
 {
@@ -1761,7 +1770,7 @@ static float measure(dom_node *n, float sc, float cap, int depth)
 				sum += w > 0 ? w : 40;
 				continue;
 			}
-			float m = measure((dom_node *)c, sc, cap, depth + 1);
+			float m = measure((dom_node *)c, sc * head_scale(tag), cap, depth + 1);
 			if (is(tag, BLK)) {
 				mx = fmaxf(mx, fmaxf(sum, m));
 				sum = 0;
@@ -1810,7 +1819,7 @@ static float min_word(dom_node *n, float sc, int depth)
 					w = text_width(v, sc) + text_width("[]", sc);
 				mx = fmaxf(mx, w);
 			} else
-				mx = fmaxf(mx, min_word((dom_node *)c, sc, depth + 1));
+				mx = fmaxf(mx, min_word((dom_node *)c, sc * head_scale(tag), depth + 1));
 		}
 	}
 	return mx;
@@ -1852,7 +1861,10 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 		char tag[16];
 		uint8_t d;
 		float w, grow, minw;
-		bool fixed;
+		bool fixed, span, brk;
+		int32_t order;
+		int gstart, gspan; /* rejilla: columna de inicio (1…, 0 la siguiente) y cuántas ocupa */
+		float xoff;        /* rejilla: hueco a su izquierda (columnas que se salta) */
 	} c[MAX_COLS];
 	int n = 0;
 	float avail = st.right - st.indent;
@@ -1916,7 +1928,8 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 				ex += len_px(cs, v, u, avail);
 			if (css_computed_margin_right(cs, &v, &u) == CSS_MARGIN_SET)
 				ex += len_px(cs, v, u, avail);
-			w = measure((dom_node *)ch, sc, avail, 0) + clampf(ex, 0, 80) + 2;
+			// lo medido no cuenta los márgenes de lo de dentro (enlaces de un menú separados): un poco de holgura
+			w = measure((dom_node *)ch, sc, avail, 0) * 1.12f + clampf(ex, 0, 80) + 8;
 		}
 		c[n].minw = fixed ? 0 : fminf(min_word((dom_node *)ch, sc, 0) + 10, avail * 0.6f);
 		c[n].n = (dom_node *)ch, c[n].cs = cs, c[n].d = d;
@@ -1924,7 +1937,128 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 		c[n].w = clampf(w, 0, avail);
 		c[n].grow = css_computed_flex_grow(cs, &fl) == CSS_FLEX_GROW_SET ? FIXTOFLT(fl) : 0;
 		c[n].fixed = fixed;
+		c[n].order = 0;
+		css_computed_order(cs, &c[n].order);
+		c[n].span = css_computed_column_span(cs) == CSS_COLUMN_SPAN_ALL;
+		{ // de cssprep: z-index = 100000 + columna de inicio * 100 + cuántas ocupa
+			int32_t z = 0;
+			c[n].gstart = 0, c[n].gspan = 1;
+			if (css_computed_z_index(cs, &z) == CSS_Z_INDEX_SET) {
+				if (z >= 100000 * 1024)
+					z = FIXTOINT(z);
+				if (z >= 100000 && z < 200000)
+					c[n].gstart = (z - 100000) / 100, c[n].gspan = (z - 100000) % 100;
+			}
+			if (c[n].gspan < 1)
+				c[n].gspan = 1;
+		}
+		c[n].brk = false, c[n].xoff = 0;
 		n++;
+	}
+	// order (flex) y grid-area (su orden, de cssprep): se colocan en ese orden, estable
+	for (int i = 1; i < n; i++)
+		for (int j = i; j > 0 && c[j - 1].order > c[j].order; j--) {
+			typeof(c[0]) t = c[j];
+			c[j] = c[j - 1], c[j - 1] = t;
+		}
+	/* rejilla con columnas (grid-template-columns, pasado por cssprep a column-count: cuántas;
+	 * column-width: ancho fijo de la primera; column-rule-width: el de la última): cada hijo, su
+	 * columna; los que ocupan toda la fila (column-span: all), solos */
+	int gcols = 0;
+	float gw[16];
+	if (st.cs && css_computed_display(st.cs, false) == CSS_DISPLAY_GRID) {
+		int32_t k = 0;
+		if (css_computed_column_count(st.cs, &k) == CSS_COLUMN_COUNT_SET && k > 0) {
+			k = FIXTOINT(k); // libcss lo guarda en coma fija
+			gcols = k < 1 ? 1 : k > 16 ? 16 : k;
+		}
+	}
+	if (gcols) {
+		css_fixed v;
+		css_unit u;
+		float first = -1, last = -1, room = avail - gapx * (gcols - 1);
+		if (css_computed_column_width(st.cs, &v, &u) == CSS_COLUMN_WIDTH_SET)
+			first = brcss_px(st.cs, v, u, B.vw);
+		if (gcols > 1 && css_computed_column_rule_style(st.cs) == CSS_COLUMN_RULE_STYLE_SOLID &&
+		    css_computed_column_rule_width(st.cs, &v, &u) == CSS_COLUMN_RULE_WIDTH_WIDTH) // solo la de cssprep
+			last = brcss_px(st.cs, v, u, B.vw);
+		int flex = gcols;
+		float fixed_w = 0;
+		if (first > 0 && first < room)
+			fixed_w += first, flex--;
+		if (last > 0 && fixed_w + last < room)
+			fixed_w += last, flex--;
+		float each = flex > 0 ? (room - fixed_w) / flex : 0;
+		for (int i = 0; i < gcols; i++)
+			gw[i] = each;
+		if (first > 0 && first < room)
+			gw[0] = first;
+		if (last > 0 && gcols > 1 && gw[gcols - 1] == each)
+			gw[gcols - 1] = last;
+		// el ancho de cada pista (de cssprep, en counter-reset: «g1 200 g2 -10…»: px, o -10 por fr)
+		const css_computed_counter *ctr = NULL;
+		if (css_computed_counter_reset(st.cs, &ctr) == CSS_COUNTER_RESET_NAMED && ctr) {
+			int tw[16];
+			bool have = false;
+			for (int i = 0; i < gcols; i++)
+				tw[i] = -10;
+			for (; ctr->name; ctr++) {
+				const char *nm = lwc_string_data(ctr->name);
+				if (nm[0] == 'g' && isdigit((unsigned char)nm[1])) {
+					int k2 = atoi(nm + 1) - 1;
+					if (k2 >= 0 && k2 < gcols)
+						tw[k2] = FIXTOINT(ctr->value), have = true;
+				}
+			}
+			if (have) {
+				float fixed = 0, frs = 0;
+				for (int i = 0; i < gcols; i++)
+					if (tw[i] > 0)
+						fixed += tw[i];
+					else
+						frs += -tw[i];
+				float k3 = fixed > room ? room / fixed : 1; // no caben: los fijos, a escala
+				float rest = fmaxf(0, room - fixed * k3);
+				for (int i = 0; i < gcols; i++)
+					gw[i] = tw[i] > 0 ? tw[i] * k3 : (frs > 0 ? rest * -tw[i] / frs : 0);
+			}
+		}
+		// cada hijo: su columna (la siguiente libre o la que pida) y su ancho (las que ocupe)
+		int col = 0;
+		for (int i = 0; i < n; i++) {
+			if (c[i].span) {
+				c[i].w = avail, c[i].brk = true, col = gcols; // solo en su fila
+				continue;
+			}
+			int sp = c[i].gspan < 1 ? 1 : c[i].gspan > gcols ? gcols : c[i].gspan;
+			// colocación automática: las pistas estrechas (separaciones de 2-3 rem) no son para contenido
+			if (c[i].gstart <= 0)
+				while (col < gcols && gw[col] < 48 && gcols > 1)
+					col++;
+			// red de seguridad: lo colocado solo que cae en una pista estrecha (rejillas que no se han
+			// entendido del todo) ocupa toda la fila: apilado se lee; en 50 px, no
+			if (c[i].gstart <= 0 && sp == 1 && col < gcols && gw[col] < 160 && gcols > 1) {
+				c[i].span = true, c[i].w = avail, c[i].brk = true, col = gcols;
+				continue;
+			}
+			int want = c[i].gstart > 0 ? c[i].gstart - 1 : col;
+			if (want + sp > gcols)
+				want = c[i].gstart > 0 && c[i].gstart - 1 + sp <= gcols ? c[i].gstart - 1 : 0;
+			if (want < col || col >= gcols || (c[i].gstart <= 0 && col + sp > gcols)) // no cabe en esta fila
+				c[i].brk = true, col = 0;
+			if (i == 0)
+				c[i].brk = true;
+			float off = 0;
+			for (int k = col; k < want; k++)
+				off += gw[k] + gapx;
+			c[i].xoff = off;
+			col = want;
+			float w = 0;
+			for (int k = col; k < col + sp && k < gcols; k++)
+				w += gw[k] + (k > col ? gapx : 0);
+			c[i].w = w, c[i].fixed = true, c[i].grow = 0;
+			col += sp;
+		}
 	}
 	// a filas (si se puede partir) y en cada una: repartir lo que sobra o encoger
 	float top = (L_has || !B.nl) ? cur_bottom() : B.l[B.nl - 1].y;
@@ -1933,7 +2067,7 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 	while (i0 < n) {
 		int i1 = i0;
 		float tot = 0, grow = 0;
-		while (i1 < n && (i1 == i0 || !wrap || tot + gapx + c[i1].w <= avail)) {
+		while (i1 < n && (i1 == i0 || (gcols ? !c[i1].brk && !c[i0].span : (!wrap || tot + gapx + c[i1].w <= avail)))) {
 			tot += (i1 > i0 ? gapx : 0) + c[i1].w;
 			grow += c[i1].grow;
 			i1++;
@@ -1954,26 +2088,66 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 		}
 		for (int i = i0; i < i1; i++)
 			c[i].w = fmaxf(c[i].w, 16);
-		float x = st.indent, maxb = top;
-		int nbg0 = B.nbg;
+		// justify-content: dónde va lo que sobra (si nada crece)
+		float x = st.indent, maxb = top, gap_extra = 0;
+		float left = avail;
+		for (int i = i0; i < i1; i++)
+			left -= c[i].w + (i > i0 ? gapx : 0);
+		uint8_t jc = st.cs && st.flexrow ? css_computed_justify_content(st.cs) : CSS_JUSTIFY_CONTENT_FLEX_START;
+		int cnt = i1 - i0;
+		if (left > 1 && grow <= 0) {
+			if (jc == CSS_JUSTIFY_CONTENT_CENTER)
+				x += left / 2;
+			else if (jc == CSS_JUSTIFY_CONTENT_FLEX_END)
+				x += left;
+			else if (jc == CSS_JUSTIFY_CONTENT_SPACE_BETWEEN && cnt > 1)
+				gap_extra = left / (cnt - 1);
+			else if (jc == CSS_JUSTIFY_CONTENT_SPACE_AROUND)
+				gap_extra = left / cnt, x += gap_extra / 2;
+			else if (jc == CSS_JUSTIFY_CONTENT_SPACE_EVENLY)
+				gap_extra = left / (cnt + 1), x += gap_extra;
+		}
+		struct {
+			int l0, l1, b0, b1;
+			float bot;
+		} rng[MAX_COLS];
 		for (int i = i0; i < i1; i++) {
+			x += c[i].xoff; // rejilla: las columnas que se salta
 			L_indent = x;
 			L_right = x + c[i].w;
 			L_align = st.align;
 			line_at(top);
+			rng[i].l0 = B.nl - 1, rng[i].b0 = B.nbg;
 			St cs = st;
 			cs.indent = x, cs.right = x + c[i].w, cs.cells = NULL, cs.fixw = true;
 			if (c[i].cs)
 				walk_css(c[i].n, c[i].tag, cs, c[i].cs, c[i].d);
 			else
 				walk(c[i].n, cs);
-			maxb = fmaxf(maxb, cur_bottom());
-			x += c[i].w + gapx;
+			rng[i].l1 = B.nl, rng[i].b1 = B.nbg;
+			rng[i].bot = cur_bottom();
+			maxb = fmaxf(maxb, rng[i].bot);
+			x += c[i].w + gapx + gap_extra;
 		}
-		// align-items: stretch: los fondos de las columnas llegan hasta la más alta
-		for (int k = nbg0; k < B.nbg; k++)
-			if (B.bg[k].y0 <= top + 8)
-				B.bg[k].y1 = fmaxf(B.bg[k].y1, maxb + 4);
+		uint8_t ai = st.cs && st.flexrow ? css_computed_align_items(st.cs) : CSS_ALIGN_ITEMS_STRETCH;
+		for (int i = i0; i < i1; i++) {
+			// align-items: center / flex-end: se baja lo de cada columna respecto a la más alta
+			float dy = ai == CSS_ALIGN_ITEMS_CENTER ? (maxb - rng[i].bot) / 2 : ai == CSS_ALIGN_ITEMS_FLEX_END ? maxb - rng[i].bot : 0;
+			if (dy > 0.5f && cnt > 1) {
+				for (int l = rng[i].l0 + (rng[i].l0 < 0); l < rng[i].l1; l++)
+					if (l >= 0 && B.l[l].y >= top - 0.5f)
+						B.l[l].y += dy;
+				for (int k = rng[i].b0; k < rng[i].b1; k++)
+					B.bg[k].y0 += dy, B.bg[k].y1 += dy;
+			}
+			// align-items: stretch: el fondo de cada columna (su caja, la última que se añadió) llega
+			// hasta la más alta; lo de dentro (etiquetas, insignias…) se queda como está
+			if (ai == CSS_ALIGN_ITEMS_STRETCH && rng[i].b1 > rng[i].b0) {
+				BgBox *bb = &B.bg[rng[i].b1 - 1];
+				if (bb->y0 <= top + 8)
+					bb->y1 = fmaxf(bb->y1, maxb);
+			}
+		}
 		L_indent = o_ind, L_right = o_right;
 		line_at(maxb);
 		top = maxb;
@@ -2326,8 +2500,11 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		if (il > 0 && L_has)
 			L_x += il;
 	}
-	if (row)
+	if (row) {
+		st.flexrow = d == CSS_DISPLAY_FLEX || d == CSS_DISPLAY_INLINE_FLEX;
 		row_children(node, st, d == CSS_DISPLAY_GRID || css_computed_flex_wrap(cs) == CSS_FLEX_WRAP_WRAP, gapx);
+		st.flexrow = false;
+	}
 	else
 		children(node, &st);
 	if (!blk && ir > 0 && L_has)
