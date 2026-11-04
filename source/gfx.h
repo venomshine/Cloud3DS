@@ -106,3 +106,4 @@ bool tex_from_rgba(Texture *t, const u8 *rgba, int w, int h);   // w,h <= 1024
 bool tex_from_rgb565(Texture *t, const u16 *px, int w, int h);  // reutilizable (cámara)
 void tex_free(Texture *t);
 void draw_texture(Texture *t, float x, float y, float w, float h, float alpha);
+void draw_texture_part(Texture *t, float x, float y, float w, float h, float u0, float v0, float u1, float v1);

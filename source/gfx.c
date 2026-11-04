@@ -777,6 +777,21 @@ void draw_texture(Texture *t, float x, float y, float w, float h, float alpha) {
     C2D_AlphaImageTint(&tint, alpha);
     C2D_DrawImageAt(t->img, x, y, Z, alpha < 0.999f ? &tint : NULL, w / t->w, h / t->h);
 }
+// un trozo de la textura (u0…u1, v0…v1: en fracción de la imagen) en w × h
+void draw_texture_part(Texture *t, float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
+    if (!t->ok || u1 <= u0 || v1 <= v0) return;
+    const Tex3DS_SubTexture *st = t->img.subtex;
+    Tex3DS_SubTexture sub = *st;
+    sub.left = st->left + (st->right - st->left) * u0;
+    sub.right = st->left + (st->right - st->left) * u1;
+    sub.top = st->top + (st->bottom - st->top) * v0;
+    sub.bottom = st->top + (st->bottom - st->top) * v1;
+    sub.width = (u16)(st->width * (u1 - u0) + 0.5f);
+    sub.height = (u16)(st->height * (v1 - v0) + 0.5f);
+    if (!sub.width || !sub.height) return;
+    C2D_Image im = {t->img.tex, &sub};
+    C2D_DrawImageAt(im, x, y, Z, NULL, w / sub.width, h / sub.height);
+}
 #ifdef G3_FONTDBG
 void font_debug(void) {
     FILE *f = fopen("sdmc:/fontdbg.txt", "w");

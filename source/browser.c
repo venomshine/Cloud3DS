@@ -123,6 +123,7 @@ typedef struct {   /* fondo de color y bordes de un bloque */
 	u32 col;       /* fondo (0: sin fondo) */
 	float bw[4];   /* bordes arriba, derecha, abajo, izquierda */
 	u32 bc[4];
+	bool over;     /* va encima de una imagen (se pinta después de ellas) */
 } BgBox;
 
 enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR, ST_ACT /* el JavaScript atiende un clic */, ST_OOM /* no cabe: el aviso */ };
@@ -3311,7 +3312,14 @@ static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col,
 		B.bg = nb, B.cbg = nc;
 	}
 	BgBox *b = &B.bg[B.nbg++];
-	*b = (BgBox){y0, y1, x0, x1, col ? (col | 0xFF000000) : 0, {0}, {0}};
+	*b = (BgBox){y0, y1, x0, x1, col, {0}, {0}, false}; /* (con su transparencia) */
+	for (int i = B.nf - 1; i >= 0 && i >= B.nf - 400 && !b->over; i--) { // ¿tapa una imagen ya puesta?
+		const Frag *f = &B.f[i];
+		if (f->img < 0)
+			continue;
+		const Line *l = &B.l[f->line];
+		b->over = f->x < x1 && f->x + f->w > x0 && l->y < y1 && l->y + l->h > y0;
+	}
 	for (int k = 0; k < 4; k++)
 		b->bw[k] = bw[k], b->bc[k] = bc[k] | 0xFF000000;
 }
@@ -4078,6 +4086,27 @@ static u32 lt_map(u32 c, bool fg)
 #define DKB(c) (B.dark_tx ? dk_map((c), false) : B.lt_tx ? lt_map((c), false) : (c))
 #define DKF(c) (B.dark_tx ? dk_map((c), true) : B.lt_tx ? lt_map((c), true) : (c))
 
+static void bg_paint(float VH, bool over)
+{
+	const float z = B.zoom;
+	for (int i = 0; i < B.nbg; i++) {
+		const BgBox *bb = &B.bg[i];
+		if (bb->over != over)
+			continue;
+		float Y0 = (bb->y0 - B.sy) * z, Y1 = (bb->y1 - B.sy) * z;
+		if (Y1 < 0 || Y0 > VH)
+			continue;
+		float X0 = (PAD_X + bb->x0 - B.sx) * z, Wb = (bb->x1 - bb->x0) * z;
+		if (bb->col)
+			draw_rect(X0, Y0, Wb, Y1 - Y0, DKB(bb->col));
+		float t;
+		if ((t = bb->bw[0] * z) > 0) draw_rect(X0, Y0, Wb, fmaxf(t, 1), DKB(bb->bc[0]));
+		if ((t = bb->bw[2] * z) > 0) draw_rect(X0, Y1 - fmaxf(t, 1), Wb, fmaxf(t, 1), DKB(bb->bc[2]));
+		if ((t = bb->bw[3] * z) > 0) draw_rect(X0, Y0, fmaxf(t, 1), Y1 - Y0, DKB(bb->bc[3]));
+		if ((t = bb->bw[1] * z) > 0) draw_rect(X0 + Wb - fmaxf(t, 1), Y0, fmaxf(t, 1), Y1 - Y0, DKB(bb->bc[1]));
+	}
+}
+
 /* la página en un rectángulo de VW x VH desde (B.sx, B.sy): mode 0 todo, 1 sin resaltados (para la
  * caché), 2 solo los resaltados (el enlace del puntero, lo marcado), encima de la caché */
 static void page_paint(float VW, float VH, int mode, int hov)
@@ -4094,25 +4123,18 @@ static void page_paint(float VW, float VH, int mode, int hov)
 		if (y >= 0 && y < VH)
 			draw_rect((PAD_X - B.sx) * z, y, PAGE_W * z, fmaxf(1, z), DKB(PG_RULE));
 	}
-	// fondos de color de los bloques
-	for (int i = 0; i < B.nbg; i++) {
-		const BgBox *bb = &B.bg[i];
-		float Y0 = (bb->y0 - B.sy) * z, Y1 = (bb->y1 - B.sy) * z;
-		if (Y1 < 0 || Y0 > VH)
-			continue;
-		float X0 = (PAD_X + bb->x0 - B.sx) * z, Wb = (bb->x1 - bb->x0) * z;
-		if (bb->col)
-			draw_rect(X0, Y0, Wb, Y1 - Y0, DKB(bb->col));
-		float t;
-		if ((t = bb->bw[0] * z) > 0) draw_rect(X0, Y0, Wb, fmaxf(t, 1), DKB(bb->bc[0]));
-		if ((t = bb->bw[2] * z) > 0) draw_rect(X0, Y1 - fmaxf(t, 1), Wb, fmaxf(t, 1), DKB(bb->bc[2]));
-		if ((t = bb->bw[3] * z) > 0) draw_rect(X0, Y0, fmaxf(t, 1), Y1 - Y0, DKB(bb->bc[3]));
-		if ((t = bb->bw[1] * z) > 0) draw_rect(X0 + Wb - fmaxf(t, 1), Y0, fmaxf(t, 1), Y1 - Y0, DKB(bb->bc[1]));
+	// fondos de color de los bloques (los que tapan una imagen, después de las imágenes)
+	bg_paint(VH, false);
 	}
-	}
+	// primero las imágenes y luego lo demás: el texto que va encima de una foto (titulares) se lee
+	for (int pass = 0; pass < 2; pass++) {
+	if (pass == 1 && mode != 2)
+		bg_paint(VH, true);
 	for (int k = first_frag(B.sy); k < B.nf; k++) {
 		int i = B.ord[k];
 		const Frag *f = &B.f[i];
+		if ((f->img >= 0 && f->img < B.nimg) != (pass == 0))
+			continue;
 		float x, y, w, h;
 		frag_rect(f, &x, &y, &w, &h);
 		float X = (x - B.sx) * z, Y = (y - B.sy) * z, Wd = w * z, H = h * z;
@@ -4185,8 +4207,9 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			float bw = Wd, bh = im->h * z, by = (B.l[f->line].y + B.l[f->line].h - im->h - B.sy) * z;
 			if (mode == 2) {
 			} else if (im->st == IM_TEX && im->tex.ok) {
-				float k = fminf(bw / im->tw, bh / im->th), dw = im->tw * k, dh = im->th * k;
-				draw_texture(&im->tex, X + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh, 1);
+				// llena su caja (como object-fit: cover): lo que sobra de la imagen, recortado por igual
+				float k = fmaxf(bw / im->tw, bh / im->th), fu = fminf(1, bw / (im->tw * k)), fv = fminf(1, bh / (im->th * k));
+				draw_texture_part(&im->tex, X, by, bw, bh, (1 - fu) / 2, (1 - fv) / 2, (1 + fu) / 2, (1 + fv) / 2);
 			} else
 				draw_rect(X, by, bw, bh, DKB(im->st == IM_FAIL ? col_hex(0xF2F2F2) : col_hex(0xEAECF0)));
 			if (mode != 1 && f->link >= 0 && (f->link == hov || i == B.focus))
@@ -4205,6 +4228,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			if (f->under)
 				draw_rect(X, Y + H - fmaxf(1, z * 0.8f), Wd, fmaxf(1, z * 0.6f), col_alpha(DKF(f->col), 0.5f));
 		}
+	}
 	}
 }
 
