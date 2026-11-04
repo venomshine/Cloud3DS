@@ -346,8 +346,8 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 	}
 	bool skip = nohc_has(url);
 	int r = skip ? DLF_NOCONN : dl_fetch(url, accept, buf_cb, NULL, b, code);
-	// algunas webs rechazan el TLS antiguo de httpc (403, 429…) o no conecta: otra vez con libcurl
-	if (r != DLF_OK || *code == 403 || *code == 429 || *code == 503) {
+	// algunas webs rechazan el TLS antiguo de httpc (403, 429…), no conecta o llega vacío: otra vez con libcurl
+	if (r != DLF_OK || *code == 403 || *code == 429 || *code == 503 || (*code == 200 && !b->n)) {
 		if (!skip)
 			util_log("web: httpc no pudo con %.100s (%d, HTTP %ld): libcurl", url, r, *code);
 		free(b->p);
