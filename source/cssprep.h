@@ -32,5 +32,8 @@ void cssprep_vars(CssPrep *p, const char *css, size_t n);              /* 1.ª p
 char *cssprep_rewrite(CssPrep *p, const char *css, size_t n, size_t *out_n); /* 2.ª: malloc (o NULL) */
 char *cssprep_inline(CssPrep *p, const char *decls, size_t n, size_t *out_n); /* style="…" */
 
+/* modo oscuro: (prefers-color-scheme: dark) vale, y las webs que tienen tema oscuro lo usan */
+void cssprep_set_dark(bool dark);
+
 /* ¿vale esta lista de medios (atributo media o @media) en la consola? */
 bool cssprep_media_ok(const char *q, float width);

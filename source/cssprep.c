@@ -246,6 +246,13 @@ static bool has_ci(const char *s, size_t n, const char *needle)
 }
 
 /* ------------------------------------------------------------ @media */
+static bool G_DARK; /* modo oscuro: las webs con tema oscuro lo usan */
+
+void cssprep_set_dark(bool dark)
+{
+	G_DARK = dark;
+}
+
 static float len_px(const char *v)
 {
 	char *end;
@@ -280,7 +287,7 @@ static bool feature_ok(const char *f, float w)
 		if (!strcmp(k, "max-height"))
 			return H <= len_px(v);
 		if (!strcmp(k, "prefers-color-scheme"))
-			return !strcmp(v, "light");
+			return !strcmp(v, G_DARK ? "dark" : "light");
 		if (!strcmp(k, "prefers-reduced-motion"))
 			return !strcmp(v, "reduce"); // la 3DS va mejor sin animaciones (no las hay, pero sí sus estilos)
 		if (!strcmp(k, "hover") || !strcmp(k, "any-hover"))
@@ -970,6 +977,55 @@ static void grid_pos(Out *o, int start, int span)
 	decl_out(o, "z-index", b);
 }
 
+// el primer color de un degradado («linear-gradient(90deg, #123 0%, rgba(…) 100%)»)
+static bool grad_color(const char *v, char *out, size_t n)
+{
+	const char *g = strstr(v, "gradient(");
+	if (!g)
+		return false;
+	for (const char *q = g + 9; *q && *q != ';';) {
+		while (*q == ' ' || *q == ',')
+			q++;
+		if (*q == '#') {
+			size_t l = 1;
+			while (isxdigit((unsigned char)q[l]))
+				l++;
+			snprintf(out, n, "%.*s", (int)l, q);
+			return true;
+		}
+		if (!strncasecmp(q, "rgb", 3) || !strncasecmp(q, "hsl", 3)) {
+			const char *cl = strchr(q, ')');
+			if (!cl)
+				return false;
+			snprintf(out, n, "%.*s", (int)(cl + 1 - q), q);
+			return true;
+		}
+		static const char *const NAMED[] = {"transparent", "white", "black", "red", "blue", "green", "gray", "grey", "orange", "purple", "navy",
+		                                    "teal", "silver", "maroon", "olive", "yellow", "aqua", "fuchsia", "lime", NULL};
+		for (int i = 0; NAMED[i]; i++) {
+			size_t l = strlen(NAMED[i]);
+			if (!strncasecmp(q, NAMED[i], l) && !isalnum((unsigned char)q[l])) {
+				if (i == 0)
+					break; // transparente: la siguiente parada
+				snprintf(out, n, "%s", NAMED[i]);
+				return true;
+			}
+		}
+		// otra cosa (ángulo, «to right», posición): a la siguiente coma o paréntesis
+		int d = 0;
+		while (*q && (d || (*q != ',' && *q != ')'))) {
+			if (*q == '(')
+				d++;
+			else if (*q == ')')
+				d--;
+			q++;
+		}
+		if (*q == ')')
+			break;
+	}
+	return false;
+}
+
 static void decl_emit(Out *o, const char *name, const char *val)
 {
 	static const char *const MAP1[][2] = {
@@ -1255,7 +1311,12 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 					a.n = 0;
 					if (!b.bad && b.n) {
 						colors(b.p, b.n, &a);
-						if (!a.bad && a.n && !grid_emit(p, o, name, a.p))
+						char gc[48];
+						if (!a.bad && a.n && (!strcmp(name, "background") || !strcmp(name, "background-image")) && strstr(a.p, "gradient(")) {
+							// un degradado (libcss no los conoce): de fondo, el color de su primera parada
+							if (grad_color(a.p, gc, sizeof gc))
+								decl_emit(o, "background-color", gc);
+						} else if (!a.bad && a.n && !grid_emit(p, o, name, a.p))
 							decl_emit(o, name, a.p);
 					}
 				}
