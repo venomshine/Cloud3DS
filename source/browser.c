@@ -4725,9 +4725,14 @@ void br_bottom(void)
 	char zp[16];
 	snprintf(zp, sizeof zp, "%d %%", ready ? (int)(B.zoom * 100 + 0.5f) : 100);
 	text_draw(zp, 88, ty + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
-	bool tlight = tool_btn(BOT_W - 76, ty, 68, "Ligero", B.light);
+	// modo ligero: una pluma (la palabra, al lado de la luna, podía leerse como «claro»)
+	float lx0 = BOT_W - 42;
+	bool lgp = touch_in(lx0, ty, 30, 24);
+	draw_rrect(lx0, ty, 30, 24, 12, B.light ? col_lerp(T.bg, T.accent, 0.25f) : lgp ? T.surface2 : T.surface);
+	draw_icon(IC_FEATHER, lx0 + 15, ty + 12, 14, B.light ? T.accent : T.text);
+	bool tlight = tap(lx0, ty, 30, 24);
 	// modo oscuro: una luna (llena por dentro si está puesto)
-	float mx0 = BOT_W - 110;
+	float mx0 = BOT_W - 76;
 	bool mp = touch_in(mx0, ty, 30, 24);
 	u32 mbg = B.dark ? col_lerp(T.bg, T.accent, 0.25f) : mp ? T.surface2 : T.surface;
 	draw_rrect(mx0, ty, 30, 24, 12, mbg);
@@ -4737,7 +4742,7 @@ void br_bottom(void)
 	// favoritos: guardar esta página y abrir la lista
 	bm_load();
 	bool is_fav = B.url[0] && bm_find_fav(B.url) >= 0;
-	float fx = BOT_W - 182;
+	float fx = BOT_W - 144;
 	bool fp = touch_in(fx, ty, 30, 24), lp = touch_in(fx + 34, ty, 30, 24);
 	draw_rrect(fx, ty, 30, 24, 12, is_fav ? col_alpha(T.warn, 0.22f) : fp ? T.surface2 : T.surface);
 	draw_icon(IC_STAR, fx + 15, ty + 12, 13, is_fav ? T.warn : T.text);
@@ -4865,7 +4870,7 @@ void br_bottom(void)
 		if (tlight || (g_kdown & KEY_Y)) { // modo ligero: sin imágenes ni JavaScript (se recuerda)
 			B.light = !B.light;
 			light_save();
-			toast_icon(B.light ? "Modo ligero: sin imágenes ni JavaScript" : "Modo normal: con imágenes y JavaScript", IC_BOLT, T.accent);
+			toast_icon(B.light ? "Modo ligero: sin imágenes ni JavaScript" : "Modo normal: con imágenes y JavaScript", IC_FEATHER, T.accent);
 			char u2[1024];
 			util_strlcpy(u2, B.url, sizeof u2);
 			start_load(u2);

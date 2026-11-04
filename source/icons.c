@@ -291,6 +291,16 @@ void draw_icon(IconId id, float cx, float cy, float s, u32 c) {
         draw_rrect_outline(cx - 8 * k, cy - 4 * k, 11 * k, 13 * k, 2 * k, th, c);
         draw_rrect_outline(cx - 3 * k, cy - 9 * k, 11 * k, 13 * k, 2 * k, th, c);
         break;
+    case IC_FEATHER: { // pluma: el contorno de la hoja y el cañón que la atraviesa
+        static const float LX[] = {-4, -3, 0, 4, 8}, LY[] = {5, 0, -5, -8, -9};
+        static const float RX[] = {-4, 1, 5, 7, 8}, RY[] = {5, 3, -1, -5, -9};
+        for (int i = 0; i < 4; i++) {
+            L(LX[i], LY[i], LX[i + 1], LY[i + 1]);
+            L(RX[i], RY[i], RX[i + 1], RY[i + 1]);
+        }
+        L(-9, 10, 6, -7);
+        break;
+    }
     case IC_DOTS: // tres puntos en vertical
         for (int i = -1; i <= 1; i++)
             draw_circle(cx, cy + i * 6 * k, 1.9f * k, c);
