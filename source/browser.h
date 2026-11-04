@@ -20,3 +20,4 @@ bool br_is_open(void);
 void br_top(void);                        /* pantalla de arriba */
 void br_bottom(void);                     /* pantalla de abajo: la página, con su entrada */
 void br_exit(void);
+void br_poll(void);                       /* cada fotograma: lo pedido mientras cargaba */

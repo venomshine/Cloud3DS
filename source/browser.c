@@ -206,7 +206,13 @@ static struct {
 	bool light;            /* modo ligero: sin imágenes ni JavaScript (se guarda en la SD) */
 	bool dark;             /* modo oscuro (de serie; se guarda en la SD si se quita) */
 	bool dark_tx;          /* esta página se oscurece al pintarla (lo claro; lo oscuro se queda) */
-	bool click_wait;       /* un clic hecho mientras su JavaScript trabajaba: se hace al acabar */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
+	bool click_wait;       /* un clic hecho mientras su JavaScript trabajaba: se hace al acabar */
+	volatile bool thr_done; /* el hilo de B.thr ya acabó */
+	volatile bool abort;   /* lo que está cargando se deja: cortar cuanto antes */
+	int pend;              /* lo pedido mientras cargaba (se hace al soltar la carga) */
+	char pend_url[1024];
+	bool css_dark;         /* la página se pidió con tema oscuro */
+	bool lt_tx;            /* se pidió oscura y ahora es modo claro: se aclara al pintar */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
@@ -231,6 +237,8 @@ typedef struct {
 static size_t buf_cb(char *d, size_t s, size_t m, void *u)
 {
 	Buf *b = u;
+	if (B.abort) // la página se deja: se corta la descarga
+		return 0;
 	size_t k = s * m;
 	if (b->n + k > MAX_PAGE)
 		return 0;
@@ -334,6 +342,8 @@ static void nohc_add(const char *url)
 static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 {
 	*code = 0;
+	if (B.abort) // la página se deja: ni se pide
+		return DLF_FAIL;
 	if (!strncasecmp(url, "sdmc:", 5) || url[0] == '/') {
 		char sp[1100];
 		snprintf(sp, sizeof sp, "%s%s", url[0] == '/' ? "sdmc:" : "", url);
@@ -678,7 +688,14 @@ static int count_nodes(dom_node *n)
 	return k;
 }
 
+static void load_thread_run(void *arg);
 static void load_thread(void *arg)
+{
+	load_thread_run(arg);
+	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
+}
+
+static void load_thread_run(void *arg)
 {
 	(void)arg;
 	browser_thread_net();
@@ -713,9 +730,14 @@ static void load_thread(void *arg)
 		if (dl_last_url()[0] && strcmp(dl_last_url(), B.url)) // tras redirigir: los enlaces son relativos a la final
 			util_strlcpy(B.url, dl_last_url(), sizeof B.url);
 	}
+	if (B.abort) { // se dejó mientras se bajaba
+		free(b.p);
+		return;
+	}
 	B.bytes = b.n;
 	B.oom = OOM_NONE;
 	cssprep_set_dark(B.dark); // (prefers-color-scheme: dark): las webs con tema oscuro lo usan
+	B.css_dark = B.dark;
 	bool reader = !strcmp(B.reader_url, B.url);
 	// ¿cabe? el árbol ocupa unas 12 veces el HTML: si ni eso cabe, ni se intenta (el aviso)
 	if (!reader && (u64)b.n * MEM_PER_HTML + MEM_RESERVE > mem_free()) { // en modo lectura: lo que quepa
@@ -752,7 +774,7 @@ static void load_thread(void *arg)
 	for (size_t off = 0; off < b.n || !b.n; off += 32768) {
 		size_t k = b.n - off < 32768 ? b.n - off : 32768;
 		dom_hubbub_parser_parse_chunk(parser, (const uint8_t *)(b.p ? b.p + off : ""), k);
-		if (!b.n)
+		if (!b.n || B.abort)
 			break;
 		if (off + k < b.n && mem_free() < 2 * MEM_RESERVE) {
 			B.oom = OOM_PARSE;
@@ -774,7 +796,7 @@ static void load_thread(void *arg)
 		js_lim = 24u * 1024 * 1024;
 	if (doc && B.js && !reader && !B.light && !js_lim && B.oom == OOM_NONE)
 		B.oom = OOM_JS, B.oom_need = lay + 2u * 1024 * 1024;
-	if (doc && B.js && !reader && !B.light && js_lim) { // en modo ligero, sin JavaScript
+	if (doc && B.js && !reader && !B.light && js_lim && !B.abort) { // en modo ligero, sin JavaScript
 		JsHost h = {.mem_limit = js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
 		            .cookie_get = ck_get, .cookie_set = ck_set};
 		B.in_js = true;
@@ -810,8 +832,29 @@ static void load_thread(void *arg)
 	B.st = ST_PARSED;
 }
 
+enum { PEND_NONE, PEND_LOAD, PEND_CLOSE, PEND_HOME };
+static bool br_busy(void)
+{
+	return B.thr && !B.thr_done;
+}
+
+// dejar lo que está cargando (se corta en el próximo punto que lo mire) y hacer «p» al soltarse
+static void br_defer(int p, const char *url)
+{
+	B.abort = true;
+	B.cancel = true;
+	B.pend = p;
+	if (url)
+		util_strlcpy(B.pend_url, url, sizeof B.pend_url);
+}
+
 static void start_load(const char *url)
 {
+	if (br_busy()) { // cargando otra: no se espera (la pantalla no se para); se hace al soltarse
+		br_defer(PEND_LOAD, url);
+		return;
+	}
+	B.abort = false;
 	if (B.thr) {
 		threadJoin(B.thr, U64_MAX);
 		threadFree(B.thr);
@@ -838,7 +881,7 @@ static void start_load(const char *url)
 	B.t_load = 0;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.thr = threadCreate(load_thread, NULL, 512 * 1024, prio + 1, br_core(), false); // hubbub y libdom anidan mucho en páginas grandes
+	B.thr_done = false, B.thr = threadCreate(load_thread, NULL, 512 * 1024, prio + 1, br_core(), false); // hubbub y libdom anidan mucho en páginas grandes
 	if (!B.thr) {
 		snprintf(B.err, sizeof B.err, "No se pudo empezar a cargar");
 		B.st = ST_ERROR;
@@ -3168,6 +3211,7 @@ static void layout(void)
 	// modo oscuro: se oscurece al pintar lo que sea claro (lo que ya es oscuro no cambia, así que
 	// también vale en las webs oscuras o con tema oscuro propio: quedan islas blancas si no)
 	B.dark_tx = B.dark;
+	B.lt_tx = !B.dark && B.css_dark;
 	// alinear (text-align): cada línea se corre dentro de sus márgenes
 	for (int i = 0, f = 0; i < B.nl; i++) {
 		int f0 = f;
@@ -3440,6 +3484,10 @@ bool br_is_open(void)
 static void close_br(void)
 {
 	B.open = false;
+	if (br_busy()) { // se cierra ya; lo suyo se suelta al acabar el hilo (br_poll)
+		br_defer(PEND_CLOSE, NULL);
+		return;
+	}
 	if (B.thr) {
 		threadJoin(B.thr, U64_MAX);
 		threadFree(B.thr);
@@ -3461,7 +3509,30 @@ static void close_br(void)
 
 void br_exit(void)
 {
+	B.abort = B.cancel = true; // al salir de la app: se espera a que se corte
+	if (B.thr) {
+		threadJoin(B.thr, U64_MAX);
+		B.thr_done = true;
+	}
 	close_br();
+}
+
+static void home_enter(void);
+/* lo pedido mientras cargaba, en cuanto la carga se suelta (cada fotograma, aunque esté cerrado) */
+void br_poll(void)
+{
+	if (!B.pend || br_busy())
+		return;
+	int p = B.pend;
+	B.pend = PEND_NONE;
+	if (p == PEND_LOAD) {
+		char u[1024];
+		util_strlcpy(u, B.pend_url, sizeof u);
+		start_load(u);
+	} else if (p == PEND_CLOSE)
+		close_br();
+	else if (p == PEND_HOME)
+		home_enter();
 }
 
 static void home_enter(void);
@@ -3800,8 +3871,17 @@ static u32 dk_map(u32 c, bool fg)
 	}
 	return RGBA((u8)(rgb[0] * 255 + 0.5f), (u8)(rgb[1] * 255 + 0.5f), (u8)(rgb[2] * 255 + 0.5f), (u8)a);
 }
-#define DKB(c) (B.dark_tx ? dk_map((c), false) : (c))
-#define DKF(c) (B.dark_tx ? dk_map((c), true) : (c))
+/* al revés: la página se pidió con tema oscuro y se pasó a modo claro (sin volver a cargarla) */
+static u32 lt_map(u32 c, bool fg)
+{
+	// con el color invertido, oscurecer es aclarar: fondo oscuro → claro, texto claro → oscuro (el tono,
+	// invertido dos veces, se queda)
+	u32 inv = (c & 0xFF000000) | (~c & 0x00FFFFFF);
+	u32 r = dk_map(inv, fg);
+	return (r & 0xFF000000) | (~r & 0x00FFFFFF);
+}
+#define DKB(c) (B.dark_tx ? dk_map((c), false) : B.lt_tx ? lt_map((c), false) : (c))
+#define DKF(c) (B.dark_tx ? dk_map((c), true) : B.lt_tx ? lt_map((c), true) : (c))
 
 /* la página en un rectángulo de VW x VH desde (B.sx, B.sy): mode 0 todo, 1 sin resaltados (para la
  * caché), 2 solo los resaltados (el enlace del puntero, lo marcado), encima de la caché */
@@ -4105,7 +4185,14 @@ static void js_oom_check(const JsResult *r)
 		B.oom = OOM_JS, B.oom_need = (u32)(r->mem * 2);
 }
 
+static void layout_thread_run(void *arg);
 static void layout_thread(void *arg)
+{
+	layout_thread_run(arg);
+	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
+}
+
+static void layout_thread_run(void *arg)
 {
 	(void)arg;
 	layout();
@@ -4138,7 +4225,14 @@ static void layout_thread(void *arg)
 // un clic con el JavaScript de la página: sus eventos y, si cambió algo, se vuelve a colocar
 static dom_node *ACT_EL;
 static int ACT_LINK;
+static void act_thread_run(void *arg);
 static void act_thread(void *arg)
+{
+	act_thread_run(arg);
+	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
+}
+
+static void act_thread_run(void *arg)
 {
 	(void)arg;
 	browser_thread_net();
@@ -4173,7 +4267,14 @@ static void act_thread(void *arg)
 }
 
 // lo que la página dejó para después, con ella ya a la vista: un rato corto; si cambia, se recoloca
+static void idle_thread_run(void *arg);
 static void idle_thread(void *arg)
+{
+	idle_thread_run(arg);
+	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
+}
+
+static void idle_thread_run(void *arg)
 {
 	(void)arg;
 	browser_thread_net();
@@ -4226,7 +4327,7 @@ static void start_action(dom_node *el, int link)
 	B.st = ST_ACT;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.thr = threadCreate(act_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
+	B.thr_done = false, B.thr = threadCreate(act_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
 	if (!B.thr) { // sin hilo: el clic sigue como un enlace normal
 		B.st = ST_READY;
 		B.click_link = link;
@@ -4404,6 +4505,10 @@ static void hist_sub(const BmHist *h, char *out, size_t n, bool ago)
 // volver a la página de inicio (se suelta la página que hubiera, para tener la memoria libre)
 static void home_enter(void)
 {
+	if (br_busy()) {
+		br_defer(PEND_HOME, NULL);
+		return;
+	}
 	if (B.thr) {
 		threadJoin(B.thr, U64_MAX);
 		threadFree(B.thr);
@@ -4910,6 +5015,7 @@ static void home_top(void)
 
 void br_bottom(void)
 {
+	br_poll();
 	if (B.st == ST_PARSED) { // el árbol está listo (se guarda para cambiar PC / móvil sin volver a bajarla)
 		if (B.thr) {
 			threadJoin(B.thr, U64_MAX);
@@ -4919,7 +5025,7 @@ void br_bottom(void)
 		B.st = ST_LAYOUT;
 		s32 prio = 0x30;
 		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-		B.thr = threadCreate(layout_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
+		B.thr_done = false, B.thr = threadCreate(layout_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
 		if (!B.thr) {
 			snprintf(B.err, sizeof B.err, "Sin memoria para colocar la página");
 			B.st = ST_ERROR;
@@ -4942,7 +5048,7 @@ void br_bottom(void)
 		B.st = ST_ACT;
 		s32 prio = 0x30;
 		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-		B.thr = threadCreate(idle_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
+		B.thr_done = false, B.thr = threadCreate(idle_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
 		if (!B.thr)
 			B.st = ST_READY, B.idle_left = 0;
 	}
@@ -5155,22 +5261,23 @@ void br_bottom(void)
 			click = true, B.click_wait = false;
 	}
 	if (ready) {
-		if (tdark) { // modo oscuro: se vuelve a cargar (la web elige su tema oscuro, si lo tiene)
-			B.dark = !B.dark;
-			dark_save();
-			toast_icon(B.dark ? "Modo oscuro" : "Modo claro", IC_BULB, T.accent);
-			char u2[1024];
-			util_strlcpy(u2, B.url, sizeof u2);
-			start_load(u2);
-		}
-		if (tlight || (g_kdown & KEY_Y)) { // modo ligero: sin imágenes ni JavaScript (se recuerda)
-			B.light = !B.light;
-			light_save();
-			toast_icon(B.light ? "Modo ligero: sin imágenes ni JavaScript" : "Modo normal: con imágenes y JavaScript", IC_FEATHER, T.accent);
-			char u2[1024];
-			util_strlcpy(u2, B.url, sizeof u2);
-			start_load(u2);
-		}
+	}
+	// la luna y la pluma valen también mientras carga (la pluma corta la carga y la repite en su modo)
+	if (tdark) { // modo oscuro: al momento, al pintar (sin volver a cargar la página)
+		B.dark = !B.dark;
+		dark_save();
+		B.dark_tx = B.dark;
+		B.lt_tx = !B.dark && B.css_dark;
+		B.page_ver++;
+		toast_icon(B.dark ? "Modo oscuro" : "Modo claro", IC_BULB, T.accent);
+	}
+	if (tlight || (g_kdown & KEY_Y)) { // modo ligero: sin imágenes ni JavaScript (se recuerda)
+		B.light = !B.light;
+		light_save();
+		toast_icon(B.light ? "Modo ligero: sin imágenes ni JavaScript" : "Modo normal: con imágenes y JavaScript", IC_FEATHER, T.accent);
+		char u2[1024];
+		util_strlcpy(u2, B.url, sizeof u2);
+		start_load(u2);
 	}
 	// --- debajo: a dónde lleva el enlace del puntero, o cómo se usa
 	const char *tip = "Desliza para mover el puntero · toca para hacer clic";

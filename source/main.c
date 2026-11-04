@@ -8705,6 +8705,7 @@ static void update(void)
 	}
 	if (g_dialog.open)
 		return;
+	br_poll(); // el navegador cerrado a media carga: se suelta al acabar
 	if (br_is_open() || CLU.open) // el navegador y la nube usan todos los botones (L/R, START…)
 		return;
 	// en el editor de texto, L y R no cambian de pestaña: R edita varias líneas y B cierra
