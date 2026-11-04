@@ -609,6 +609,8 @@ static css_unit_ctx unit_ctx(float vw)
 	return u;
 }
 
+BrcssPseudo brcss_ps;
+
 css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style *parent, float vw)
 {
 	if (!c)
@@ -642,6 +644,32 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 		return NULL;
 	css_computed_style *s = res->styles[CSS_PSEUDO_ELEMENT_NONE];
 	res->styles[CSS_PSEUDO_ELEMENT_NONE] = NULL;
+	memset(&brcss_ps, 0, sizeof brcss_ps);
+	for (int k = 0; k < 2; k++) { // ::before y ::after: su texto (y si el de después cierra los flotantes)
+		const css_computed_style *ps = res->styles[k ? CSS_PSEUDO_ELEMENT_AFTER : CSS_PSEUDO_ELEMENT_BEFORE];
+		if (!ps || css_computed_display(ps, false) == CSS_DISPLAY_NONE)
+			continue;
+		const css_computed_content_item *ci = NULL;
+		if (css_computed_content(ps, &ci) != CSS_CONTENT_SET || !ci)
+			continue;
+		uint8_t cl = css_computed_clear(ps);
+		if (k && (cl == CSS_CLEAR_BOTH || cl == CSS_CLEAR_LEFT || cl == CSS_CLEAR_RIGHT))
+			brcss_ps.after_clear = true;
+		char *o = k ? brcss_ps.after : brcss_ps.before;
+		size_t on = 0;
+		for (; ci->type != CSS_COMPUTED_CONTENT_NONE; ci++)
+			if (ci->type == CSS_COMPUTED_CONTENT_STRING && ci->data.string) {
+				const char *t = lwc_string_data(ci->data.string);
+				size_t tl = lwc_string_length(ci->data.string);
+				bool pua = false; // iconos de fuentes propias (U+E000…U+F8FF): sin esa fuente, cuadros
+				for (size_t i = 0; i + 1 < tl; i++)
+					if ((unsigned char)t[i] == 0xEE || ((unsigned char)t[i] == 0xEF && (unsigned char)t[i + 1] < 0xA4))
+						pua = true;
+				if (!pua && on + tl < sizeof brcss_ps.after)
+					memcpy(o + on, t, tl), on += tl;
+			}
+		o[on] = 0;
+	}
 	css_select_results_destroy(res);
 	if (s && parent) { // lo que se hereda (color, letra…) y los tamaños relativos, del padre
 		css_computed_style *cs = NULL;
@@ -651,6 +679,21 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 		}
 	}
 	return s;
+}
+
+bool brcss_width_calc(const css_computed_style *s, float vw, float *px, float *pct)
+{
+	css_fixed v;
+	css_unit un;
+	if (css_computed_width(s, &v, &un) == CSS_WIDTH_SET) // (con calc() dice auto)
+		return false;
+	css_unit_ctx u = unit_ctx(vw);
+	int a = 0, b = 0; // es lineal en el ancho disponible: con 0 y con 10000, sus dos partes
+	if (css_computed_width_px(s, &u, 0, &a) != CSS_WIDTH_SET || css_computed_width_px(s, &u, 10000, &b) != CSS_WIDTH_SET)
+		return false;
+	*px = (float)a;
+	*pct = (float)(b - a) / 100;
+	return true;
 }
 
 float brcss_px(const css_computed_style *s, css_fixed len, css_unit unit, float vw)

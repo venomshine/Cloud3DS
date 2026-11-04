@@ -29,8 +29,19 @@ void   brcss_free(BrCss *c);
  * css_computed_style_destroy. vw: el ancho de la página, para vw/% de la ventana */
 css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style *parent, float vw);
 
+/* de la última llamada a brcss_style: el texto de ::before y ::after, y si ::after cierra los
+ * flotantes (el «clearfix» de siempre) */
+typedef struct {
+	bool after_clear;
+	char before[48], after[48];
+} BrcssPseudo;
+extern BrcssPseudo brcss_ps;
+
 /* una longitud del estilo, en px */
 float brcss_px(const css_computed_style *s, css_fixed len, css_unit unit, float vw);
+
+/* width: calc(…) con % (libcss lo deja sin resolver): sus px y su %; false si no es eso */
+bool brcss_width_calc(const css_computed_style *s, float vw, float *px, float *pct);
 
 /* olvidar los estilos que libcss guardó en el árbol (tras cambiarlo) */
 void brcss_forget(dom_node *root);
