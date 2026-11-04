@@ -962,6 +962,7 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 	JS_SetPropertyStr(ctx, nat, "url", JS_NewString(ctx, host->url));
 	JS_SetPropertyStr(ctx, nat, "ua", JS_NewString(ctx, host->ua));
 	JS_SetPropertyStr(ctx, nat, "width", JS_NewFloat64(ctx, host->width));
+	JS_SetPropertyStr(ctx, nat, "dark", JS_NewBool(ctx, host->dark));
 	JS_SetPropertyStr(ctx, g, "__n", nat);
 	JS_FreeValue(ctx, g);
 	bool ok = eval(ctx, prelude, pn, "dom.js");

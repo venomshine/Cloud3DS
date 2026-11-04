@@ -202,6 +202,8 @@ static struct {
 	bool page_bg_html;
 	volatile u32 page_ver; /* cambia con lo que se ve (colocación, imágenes, formularios): repintar la caché */
 	bool light;            /* modo ligero: sin imágenes ni JavaScript (se guarda en la SD) */
+	bool dark;             /* modo oscuro (de serie; se guarda en la SD si se quita) */
+	bool dark_tx;          /* esta página se oscurece al pintarla (lo claro; lo oscuro se queda) */
 	bool click_wait;       /* un clic hecho mientras su JavaScript trabajaba: se hace al acabar */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
@@ -711,6 +713,7 @@ static void load_thread(void *arg)
 	}
 	B.bytes = b.n;
 	B.oom = OOM_NONE;
+	cssprep_set_dark(B.dark); // (prefers-color-scheme: dark): las webs con tema oscuro lo usan
 	bool reader = !strcmp(B.reader_url, B.url);
 	// ¿cabe? el árbol ocupa unas 12 veces el HTML: si ni eso cabe, ni se intenta (el aviso)
 	if (!reader && (u64)b.n * MEM_PER_HTML + MEM_RESERVE > mem_free()) { // en modo lectura: lo que quepa
@@ -770,7 +773,7 @@ static void load_thread(void *arg)
 	if (doc && B.js && !reader && !B.light && !js_lim && B.oom == OOM_NONE)
 		B.oom = OOM_JS, B.oom_need = lay + 2u * 1024 * 1024;
 	if (doc && B.js && !reader && !B.light && js_lim) { // en modo ligero, sin JavaScript
-		JsHost h = {.mem_limit = js_lim, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
+		JsHost h = {.mem_limit = js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
 		            .cookie_get = ck_get, .cookie_set = ck_set};
 		B.in_js = true;
 		JsResult jr;
@@ -2386,6 +2389,16 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		st.right = x0 + w - pr;
 		if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c >> 24) > 0x20 && (c & 0xFFFFFF) != 0xFFFFFF && strcmp(tag, "body") && strcmp(tag, "html"))
 			bgc = css_col(c) | 0xFF000000;
+		// una imagen de fondo (no se pinta) con texto claro encima: un fondo oscuro, para que se lea
+		if (!bgc && strcmp(tag, "body") && strcmp(tag, "html")) {
+			lwc_string *bi = NULL;
+			css_color tcol;
+			if (css_computed_background_image(cs, &bi) == CSS_BACKGROUND_IMAGE_IMAGE && bi && css_computed_color(cs, &tcol) == CSS_COLOR_COLOR) {
+				float tl = (0.2126f * ((tcol >> 16) & 0xFF) + 0.7152f * ((tcol >> 8) & 0xFF) + 0.0722f * (tcol & 0xFF)) / 255;
+				if (tl > 0.6f)
+					bgc = col_hex(0x2B3038);
+			}
+		}
 		// el fondo de <html> (o si no tiene, el de <body>) pinta toda la página, como en los navegadores
 		if ((!strcmp(tag, "html") || (!strcmp(tag, "body") && !B.page_bg_html)) && css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR &&
 		    (c >> 24) > 0x20) {
@@ -2856,6 +2869,9 @@ static void layout(void)
 		line_new();
 	B.t_css = (u32)(util_ms() - t0);
 	B.page_ver++;
+	// modo oscuro: se oscurece al pintar lo que sea claro (lo que ya es oscuro no cambia, así que
+	// también vale en las webs oscuras o con tema oscuro propio: quedan islas blancas si no)
+	B.dark_tx = B.dark;
 	// alinear (text-align): cada línea se corre dentro de sus márgenes
 	for (int i = 0, f = 0; i < B.nl; i++) {
 		int f0 = f;
@@ -3066,12 +3082,27 @@ static void go(const char *url, bool push)
 }
 
 #define LIGHT_PATH APP_DIR "/navegador_ligero"
+#define CLARO_PATH APP_DIR "/navegador_claro"
 static void light_load(void)
 {
 	FILE *f = fopen(LIGHT_PATH, "r");
 	B.light = f != NULL;
 	if (f)
 		fclose(f);
+	f = fopen(CLARO_PATH, "r"); // el modo oscuro va de serie: se apunta si se quita
+	B.dark = f == NULL;
+	if (f)
+		fclose(f);
+}
+
+static void dark_save(void)
+{
+	if (!B.dark) {
+		FILE *f = fopen(CLARO_PATH, "w");
+		if (f)
+			fputs("1\n", f), fclose(f);
+	} else
+		remove(CLARO_PATH);
 }
 
 static void light_save(void)
@@ -3433,13 +3464,56 @@ static const char *host_of(const char *u, char *out, size_t n)
 	return out;
 }
 
+/* modo oscuro en páginas sin tema oscuro: se invierte la luminosidad (en HSL, sin tocar el tono):
+ * los fondos claros pasan a oscuros y el texto oscuro a claro; lo que ya va bien (fondos oscuros,
+ * texto claro) se queda. Las imágenes, tal cual */
+static u32 dk_map(u32 c, bool fg)
+{
+	float r = (c & 0xFF) / 255.0f, g = ((c >> 8) & 0xFF) / 255.0f, b = ((c >> 16) & 0xFF) / 255.0f;
+	u32 a = c >> 24;
+	float mx = fmaxf(r, fmaxf(g, b)), mn = fminf(r, fminf(g, b)), l = (mx + mn) / 2, h = 0, sat = 0, d = mx - mn;
+	if (d > 0.0001f) {
+		sat = l > 0.5f ? d / (2 - mx - mn) : d / (mx + mn);
+		if (mx == r)
+			h = (g - b) / d + (g < b ? 6 : 0);
+		else if (mx == g)
+			h = (b - r) / d + 2;
+		else
+			h = (r - g) / d + 4;
+		h /= 6;
+	}
+	if (fg) {
+		if (l >= 0.55f)
+			return c;
+		l = 0.95f - l * 0.55f; // negro → casi blanco; azul de enlace (0,5) → 0,67
+		sat = fminf(sat, 0.85f);
+	} else {
+		if (l <= 0.45f)
+			return c;
+		l = 0.07f + (1 - l) * 0.85f; // blanco → casi negro; gris claro → gris oscuro
+	}
+	float q = l < 0.5f ? l * (1 + sat) : l + sat - l * sat, p = 2 * l - q;
+	float rgb[3];
+	for (int i = 0; i < 3; i++) {
+		float t = h + (i == 0 ? 1.0f / 3 : i == 1 ? 0 : -1.0f / 3);
+		if (t < 0)
+			t += 1;
+		if (t > 1)
+			t -= 1;
+		rgb[i] = t < 1.0f / 6 ? p + (q - p) * 6 * t : t < 0.5f ? q : t < 2.0f / 3 ? p + (q - p) * (2.0f / 3 - t) * 6 : p;
+	}
+	return RGBA((u8)(rgb[0] * 255 + 0.5f), (u8)(rgb[1] * 255 + 0.5f), (u8)(rgb[2] * 255 + 0.5f), (u8)a);
+}
+#define DKB(c) (B.dark_tx ? dk_map((c), false) : (c))
+#define DKF(c) (B.dark_tx ? dk_map((c), true) : (c))
+
 /* la página en un rectángulo de VW x VH desde (B.sx, B.sy): mode 0 todo, 1 sin resaltados (para la
  * caché), 2 solo los resaltados (el enlace del puntero, lo marcado), encima de la caché */
 static void page_paint(float VW, float VH, int mode, int hov)
 {
 	const float z = B.zoom;
 	if (mode != 2) {
-	draw_rect(0, 0, VW, VH, B.page_bg ? B.page_bg : PG_BG);
+	draw_rect(0, 0, VW, VH, DKB(B.page_bg ? B.page_bg : PG_BG));
 	// reglas <hr>
 	for (int i = 0; i < B.nl; i++) {
 		const Line *l = &B.l[i];
@@ -3447,7 +3521,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			continue;
 		float y = (l->y + l->h / 2 - B.sy) * z;
 		if (y >= 0 && y < VH)
-			draw_rect((PAD_X - B.sx) * z, y, PAGE_W * z, fmaxf(1, z), PG_RULE);
+			draw_rect((PAD_X - B.sx) * z, y, PAGE_W * z, fmaxf(1, z), DKB(PG_RULE));
 	}
 	// fondos de color de los bloques
 	for (int i = 0; i < B.nbg; i++) {
@@ -3457,12 +3531,12 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			continue;
 		float X0 = (PAD_X + bb->x0 - B.sx) * z, Wb = (bb->x1 - bb->x0) * z;
 		if (bb->col)
-			draw_rect(X0, Y0, Wb, Y1 - Y0, bb->col);
+			draw_rect(X0, Y0, Wb, Y1 - Y0, DKB(bb->col));
 		float t;
-		if ((t = bb->bw[0] * z) > 0) draw_rect(X0, Y0, Wb, fmaxf(t, 1), bb->bc[0]);
-		if ((t = bb->bw[2] * z) > 0) draw_rect(X0, Y1 - fmaxf(t, 1), Wb, fmaxf(t, 1), bb->bc[2]);
-		if ((t = bb->bw[3] * z) > 0) draw_rect(X0, Y0, fmaxf(t, 1), Y1 - Y0, bb->bc[3]);
-		if ((t = bb->bw[1] * z) > 0) draw_rect(X0 + Wb - fmaxf(t, 1), Y0, fmaxf(t, 1), Y1 - Y0, bb->bc[1]);
+		if ((t = bb->bw[0] * z) > 0) draw_rect(X0, Y0, Wb, fmaxf(t, 1), DKB(bb->bc[0]));
+		if ((t = bb->bw[2] * z) > 0) draw_rect(X0, Y1 - fmaxf(t, 1), Wb, fmaxf(t, 1), DKB(bb->bc[2]));
+		if ((t = bb->bw[3] * z) > 0) draw_rect(X0, Y0, fmaxf(t, 1), Y1 - Y0, DKB(bb->bc[3]));
+		if ((t = bb->bw[1] * z) > 0) draw_rect(X0 + Wb - fmaxf(t, 1), Y0, fmaxf(t, 1), Y1 - Y0, DKB(bb->bc[1]));
 	}
 	}
 	for (int k = first_frag(B.sy); k < B.nf; k++) {
@@ -3482,7 +3556,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			const Line *l = &B.l[f->line];
 			float bh = (w->type == WG_CHECK || w->type == WG_RADIO) ? text_lineh(f->sc) : (w->type == WG_AREA ? l->h : text_lineh(f->sc) * 1.5f);
 			float by = (l->y + l->h - bh - B.sy) * z, BH = bh * z;
-			u32 border = col_hex(0xA2A9B1);
+			u32 border = DKB(col_hex(0xA2A9B1));
 			FVal *v = fv_get(w->node, false);
 			if (mode == 2) {
 			} else if (w->type == WG_CHECK || w->type == WG_RADIO) {
@@ -3490,13 +3564,13 @@ static void page_paint(float VW, float VH, int mode, int hov)
 				float r = BH / 2;
 				if (w->type == WG_RADIO) {
 					draw_circle(X + r, by + r, r, border);
-					draw_circle(X + r, by + r, r - fmaxf(1, z), col_hex(0xFFFFFF));
+					draw_circle(X + r, by + r, r - fmaxf(1, z), DKB(col_hex(0xFFFFFF)));
 					if (on)
 						draw_circle(X + r, by + r, r * 0.5f, PG_LINK);
 				} else {
 					draw_rect(X, by, BH, BH, on ? PG_LINK : border);
 					if (!on)
-						draw_rect(X + fmaxf(1, z), by + fmaxf(1, z), BH - 2 * fmaxf(1, z), BH - 2 * fmaxf(1, z), col_hex(0xFFFFFF));
+						draw_rect(X + fmaxf(1, z), by + fmaxf(1, z), BH - 2 * fmaxf(1, z), BH - 2 * fmaxf(1, z), DKB(col_hex(0xFFFFFF)));
 					else
 						draw_icon(IC_CHECK, X + r, by + r, BH * 0.8f, 0xFFFFFFFF);
 				}
@@ -3504,10 +3578,10 @@ static void page_paint(float VW, float VH, int mode, int hov)
 				bool btn = w->type == WG_BUTTON;
 				draw_rrect(X, by, Wd, BH, fminf(4 * z, BH / 2), border);
 				draw_rrect(X + fmaxf(1, z * 0.8f), by + fmaxf(1, z * 0.8f), Wd - 2 * fmaxf(1, z * 0.8f), BH - 2 * fmaxf(1, z * 0.8f), fminf(3 * z, BH / 2),
-				           btn ? col_hex(0xF8F9FA) : col_hex(0xFFFFFF));
+				           DKB(btn ? col_hex(0xF8F9FA) : col_hex(0xFFFFFF)));
 				char shown[96];
 				const char *t = w->label;
-				u32 tc = PG_TEXT;
+				u32 tc = DKF(PG_TEXT);
 				if (w->type == WG_PASS && t[0]) {
 					size_t n = strlen(t);
 					memset(shown, '*', n < 95 ? n : 95);
@@ -3516,7 +3590,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 				}
 				if (!t[0] && !btn && w->type != WG_SELECT) { // vacío: lo que la página sugiere
 					if (attr(w->node, "placeholder", shown, sizeof shown) || attr(w->node, "aria-label", shown, sizeof shown))
-						t = shown, tc = PG_MUTED;
+						t = shown, tc = DKF(PG_MUTED);
 				}
 				float sc = f->sc * z, pad = 4 * z;
 				if (sc >= 0.17f && t[0]) {
@@ -3543,7 +3617,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 				float k = fminf(bw / im->tw, bh / im->th), dw = im->tw * k, dh = im->th * k;
 				draw_texture(&im->tex, X + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh, 1);
 			} else
-				draw_rect(X, by, bw, bh, im->st == IM_FAIL ? col_hex(0xF2F2F2) : col_hex(0xEAECF0));
+				draw_rect(X, by, bw, bh, DKB(im->st == IM_FAIL ? col_hex(0xF2F2F2) : col_hex(0xEAECF0)));
 			if (mode != 1 && f->link >= 0 && (f->link == hov || i == B.focus))
 				draw_rect(X, by, bw, bh, col_alpha(PG_LINK, 0.25f));
 			continue;
@@ -3552,13 +3626,13 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			continue;
 		float sc = f->sc * z;
 		if (sc < 0.17f) // tan pequeño que no se leería: una raya del color del texto (como una vista previa)
-			draw_rect(X, Y + H * 0.35f, Wd, fmaxf(1, H * 0.35f), col_alpha(f->col, 0.55f));
+			draw_rect(X, Y + H * 0.35f, Wd, fmaxf(1, H * 0.35f), col_alpha(DKF(f->col), 0.55f));
 		else {
-			text_draw_n(B.text + f->off, f->n, X, Y, sc, f->col);
+			text_draw_n(B.text + f->off, f->n, X, Y, sc, DKF(f->col));
 			if (f->bold) // la fuente no tiene negrita: otra vez, un poco a la derecha
-				text_draw_n(B.text + f->off, f->n, X + fmaxf(0.5f, z * 0.6f), Y, sc, f->col);
+				text_draw_n(B.text + f->off, f->n, X + fmaxf(0.5f, z * 0.6f), Y, sc, DKF(f->col));
 			if (f->under)
-				draw_rect(X, Y + H - fmaxf(1, z * 0.8f), Wd, fmaxf(1, z * 0.6f), col_alpha(f->col, 0.5f));
+				draw_rect(X, Y + H - fmaxf(1, z * 0.8f), Wd, fmaxf(1, z * 0.6f), col_alpha(DKF(f->col), 0.5f));
 		}
 	}
 }
@@ -3595,7 +3669,7 @@ static void page_draw(int hov)
 		float sx = B.sx, sy = B.sy;
 		PCS.x0 = B.sx - floorf(mx) / z, PCS.y0 = B.sy - floorf(my) / z;
 		B.sx = PCS.x0, B.sy = PCS.y0;
-		gfx_rt_begin(&PC, B.page_bg ? B.page_bg : PG_BG);
+		gfx_rt_begin(&PC, DKB(B.page_bg ? B.page_bg : PG_BG));
 		bool ell = g_clip_ell;
 		g_clip_ell = true; // sin recortes (las tijeras van por pantalla, no por textura)
 		page_paint(PC_W, PC_H, 1, -1);
@@ -4651,7 +4725,15 @@ void br_bottom(void)
 	char zp[16];
 	snprintf(zp, sizeof zp, "%d %%", ready ? (int)(B.zoom * 100 + 0.5f) : 100);
 	text_draw(zp, 88, ty + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
-	bool tlight = tool_btn(BOT_W - 112, ty, 104, "Modo ligero", B.light);
+	bool tlight = tool_btn(BOT_W - 76, ty, 68, "Ligero", B.light);
+	// modo oscuro: una luna (llena por dentro si está puesto)
+	float mx0 = BOT_W - 110;
+	bool mp = touch_in(mx0, ty, 30, 24);
+	u32 mbg = B.dark ? col_lerp(T.bg, T.accent, 0.25f) : mp ? T.surface2 : T.surface;
+	draw_rrect(mx0, ty, 30, 24, 12, mbg);
+	draw_circle(mx0 + 15, ty + 12, 6.5f, B.dark ? T.accent : T.text);
+	draw_circle(mx0 + 18.5f, ty + 9.5f, 5.5f, mbg); // el mordisco: del color del botón
+	bool tdark = tap(mx0, ty, 30, 24);
 	// favoritos: guardar esta página y abrir la lista
 	bm_load();
 	bool is_fav = B.url[0] && bm_find_fav(B.url) >= 0;
@@ -4772,6 +4854,14 @@ void br_bottom(void)
 			click = true, B.click_wait = false;
 	}
 	if (ready) {
+		if (tdark) { // modo oscuro: se vuelve a cargar (la web elige su tema oscuro, si lo tiene)
+			B.dark = !B.dark;
+			dark_save();
+			toast_icon(B.dark ? "Modo oscuro" : "Modo claro", IC_BULB, T.accent);
+			char u2[1024];
+			util_strlcpy(u2, B.url, sizeof u2);
+			start_load(u2);
+		}
 		if (tlight || (g_kdown & KEY_Y)) { // modo ligero: sin imágenes ni JavaScript (se recuerda)
 			B.light = !B.light;
 			light_save();

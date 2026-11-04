@@ -549,7 +549,7 @@ G.alert = m => N.log('alert: ' + m); G.confirm = () => true; G.prompt = () => nu
 G.open = u => { if (u) N.navigate(resolveUrl(location.href, String(u))); return null; };
 G.close = () => {}; G.focus = () => {}; G.blur = () => {}; G.stop = () => {};
 G.getComputedStyle = el => { const s = el && el.style; return new Proxy({}, { get(t, p) { if (p === 'getPropertyValue') return k => (s ? s.getPropertyValue(k) : ''); if (p === 'display') return el && el.hidden ? 'none' : ((s && s.display) || 'block'); return (s && typeof p === 'string' && s[p]) || ''; } }); };
-G.matchMedia = q => ({ matches: /max-width/.test(q) ? N.width <= (+(/(\d+)/.exec(q) || [0, 0])[1]) : /prefers-color-scheme:\s*light/.test(q) || /min-width/.test(q) && N.width >= (+(/(\d+)/.exec(q) || [0, 0])[1]),
+G.matchMedia = q => ({ matches: /max-width/.test(q) ? N.width <= (+(/(\d+)/.exec(q) || [0, 0])[1]) : /prefers-color-scheme:\s*dark/.test(q) ? !!N.dark : /prefers-color-scheme:\s*light/.test(q) ? !N.dark : /min-width/.test(q) && N.width >= (+(/(\d+)/.exec(q) || [0, 0])[1]),
 	media: q, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
 G.history = { length: 1, state: null, pushState(s, t, u) { this.state = s; }, replaceState(s, t, u) { this.state = s; }, back() {}, forward() {}, go() {} };
 const store = () => { const m = new Map(); return { getItem: k => (m.has(String(k)) ? m.get(String(k)) : null), setItem: (k, v) => m.set(String(k), String(v)), removeItem: k => m.delete(String(k)), clear: () => m.clear(), key: i => [...m.keys()][i] ?? null, get length() { return m.size; } }; };

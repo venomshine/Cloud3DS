@@ -27,6 +27,7 @@ typedef struct {
 	size_t (*cookie_get)(const char *url, char *out, size_t n); /* document.cookie */
 	void (*cookie_set)(const char *url, const char *set_cookie);
 	size_t mem_limit;     /* memoria máxima para el JavaScript (0: la de siempre) */
+	bool dark;            /* (prefers-color-scheme: dark) */
 } JsHost;
 
 typedef struct {
