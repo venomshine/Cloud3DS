@@ -1151,40 +1151,72 @@ static void grid_pos(Out *o, int start, int span)
 }
 
 // el primer color de un degradado («linear-gradient(90deg, #123 0%, rgba(…) 100%)»)
+/* un degradado (libcss no los conoce) como un color: el de la parada más opaca; si alguna es
+ * transparente (el degradado que oscurece una foto para leer su texto), a medias */
 static bool grad_color(const char *v, char *out, size_t n)
 {
 	const char *g = strstr(v, "gradient(");
 	if (!g)
 		return false;
+	float br = 0, bgc = 0, bb = 0, ba = -1;
+	bool clear = false, named = false;
+	char bname[16] = "";
 	for (const char *q = g + 9; *q && *q != ';';) {
 		while (*q == ' ' || *q == ',')
 			q++;
+		float r = 0, gg = 0, b = 0, a = -1;
+		const char *nx = q;
 		if (*q == '#') {
 			size_t l = 1;
 			while (isxdigit((unsigned char)q[l]))
 				l++;
-			snprintf(out, n, "%.*s", (int)l, q);
-			return true;
-		}
-		if (!strncasecmp(q, "rgb", 3) || !strncasecmp(q, "hsl", 3)) {
-			const char *cl = strchr(q, ')');
+			unsigned x = (unsigned)strtoul(q + 1, NULL, 16);
+			if (l == 4)
+				r = ((x >> 8) & 15) * 17, gg = ((x >> 4) & 15) * 17, b = (x & 15) * 17, a = 1;
+			else if (l == 7)
+				r = (x >> 16) & 255, gg = (x >> 8) & 255, b = x & 255, a = 1;
+			else if (l == 9)
+				r = (x >> 24) & 255, gg = (x >> 16) & 255, b = (x >> 8) & 255, a = (x & 255) / 255.0f;
+			nx = q + l;
+		} else if (!strncasecmp(q, "rgb", 3)) {
+			const char *op = strchr(q, '('), *cl = op ? strchr(op, ')') : NULL;
 			if (!cl)
 				return false;
-			snprintf(out, n, "%.*s", (int)(cl + 1 - q), q);
-			return true;
-		}
-		static const char *const NAMED[] = {"transparent", "white", "black", "red", "blue", "green", "gray", "grey", "orange", "purple", "navy",
-		                                    "teal", "silver", "maroon", "olive", "yellow", "aqua", "fuchsia", "lime", NULL};
-		for (int i = 0; NAMED[i]; i++) {
-			size_t l = strlen(NAMED[i]);
-			if (!strncasecmp(q, NAMED[i], l) && !isalnum((unsigned char)q[l])) {
-				if (i == 0)
-					break; // transparente: la siguiente parada
-				snprintf(out, n, "%s", NAMED[i]);
-				return true;
+			float c[4] = {0, 0, 0, 1};
+			int k = 0;
+			for (const char *t = op + 1; t < cl && k < 4; k++) {
+				c[k] = strtof(t, (char **)&t);
+				if (*t == '%')
+					c[k] = k < 3 ? c[k] * 2.55f : c[k] / 100, t++;
+				while (t < cl && (*t == ',' || *t == ' ' || *t == '/'))
+					t++;
+			}
+			r = c[0], gg = c[1], b = c[2], a = k >= 4 ? c[3] : 1;
+			nx = cl + 1;
+		} else if (!strncasecmp(q, "transparent", 11)) {
+			clear = true;
+			nx = q + 11;
+		} else {
+			static const char *const NAMED[] = {"white", "black", "red", "blue", "green", "gray", "grey", "orange", "purple", "navy",
+			                                    "teal", "silver", "maroon", "olive", "yellow", "aqua", "fuchsia", "lime", NULL};
+			for (int i = 0; NAMED[i]; i++) {
+				size_t l = strlen(NAMED[i]);
+				if (!strncasecmp(q, NAMED[i], l) && !isalnum((unsigned char)q[l])) {
+					if (ba < 1)
+						util_copy(bname, NAMED[i], sizeof bname), named = true, ba = 1;
+					nx = q + l;
+					break;
+				}
 			}
 		}
-		// otra cosa (ángulo, «to right», posición): a la siguiente coma o paréntesis
+		if (a >= 0) {
+			if (a < 0.05f)
+				clear = true;
+			if (a > ba)
+				br = r, bgc = gg, bb = b, ba = a, named = false;
+		}
+		// a la siguiente coma (lo de detrás de la parada: su posición) o al final
+		q = nx;
 		int d = 0;
 		while (*q && (d || (*q != ',' && *q != ')'))) {
 			if (*q == '(')
@@ -1196,7 +1228,16 @@ static bool grad_color(const char *v, char *out, size_t n)
 		if (*q == ')')
 			break;
 	}
-	return false;
+	if (ba < 0)
+		return false;
+	if (named && !clear) {
+		snprintf(out, n, "%s", bname);
+		return true;
+	}
+	if (named) // (con nombre y algo transparente: negro o blanco a medias, lo habitual)
+		br = bgc = bb = !strcmp(bname, "white") ? 255 : 0;
+	snprintf(out, n, "rgba(%d,%d,%d,%.2f)", (int)br, (int)bgc, (int)bb, clear ? ba * 0.55f : ba);
+	return true;
 }
 
 static void decl_emit(Out *o, const char *name, const char *val)
