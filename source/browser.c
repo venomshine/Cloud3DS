@@ -1364,6 +1364,12 @@ static bool css_invisible(const css_computed_style *cs)
 		css_computed_clip_rect r;
 		if (css_computed_clip(cs, &r) == CSS_CLIP_RECT)
 			return true;
+		// fuera de la pantalla a propósito (left: -9999px, top: -1000px…): enlaces «saltar al
+		// contenido», menús que se deslizan…
+		if ((css_computed_left(cs, &v, &u) == CSS_LEFT_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) < -400) ||
+		    (css_computed_top(cs, &v, &u) == CSS_TOP_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) < -400) ||
+		    (css_computed_right(cs, &v, &u) == CSS_RIGHT_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) < -400))
+			return true;
 		if (css_computed_width(cs, &v, &u) == CSS_WIDTH_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) <= 2)
 			return true;
 		if (css_computed_height(cs, &v, &u) == CSS_HEIGHT_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, B.vw) <= 2)
