@@ -105,6 +105,8 @@ typedef struct {
 	u8 *rgba;
 	int tw, th, iw, ih;    /* textura y tamaño original */
 	Texture tex;
+	char *data;            /* un <svg> de la propia página: su texto (no se baja) */
+	size_t dn;
 } PImg;
 
 typedef struct {
@@ -1275,6 +1277,7 @@ static void img_free_all(void)
 	for (int i = 0; i < B.nimg; i++) {
 		free(B.img[i].url);
 		free(B.img[i].rgba);
+		free(B.img[i].data);
 		tex_free(&B.img[i].tex);
 	}
 	free(B.img);
@@ -1306,7 +1309,12 @@ static void img_thread(void *arg)
 		PImg *im = &B.img[best];
 		Buf b = {0};
 		long code = 0;
-		int r = blocked_host(im->url) ? DLF_FAIL : fetch_any(im->url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
+		int r;
+		if (im->data) { // un <svg> de la página: ya está aquí
+			b.p = im->data, b.n = im->dn, im->data = NULL;
+			r = DLF_OK, code = 200;
+		} else
+			r = blocked_host(im->url) ? DLF_FAIL : fetch_any(im->url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
 		int mw = (int)fminf(512, fmaxf(16, im->w * 1.5f)), mh = (int)fminf(512, fmaxf(16, im->h * 1.5f));
 		u8 *px = NULL;
 		int w = 0, h = 0;
@@ -1734,6 +1742,8 @@ static float head_scale(const char *tag)
 	return tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6' && !tag[2] ? K[tag[1] - '1'] : 1.0f;
 }
 
+static float sv_len(dom_node *n, const char *name, float em);
+
 /* lo que mide el contenido sin partir líneas (aproximado, sin CSS: para repartir el ancho de una fila) */
 static float measure(dom_node *n, float sc, float cap, int depth)
 {
@@ -1767,6 +1777,17 @@ static float measure(dom_node *n, float sc, float cap, int depth)
 		} else if (c->type == DOM_ELEMENT_NODE) {
 			char tag[16];
 			tag_of((dom_node *)c, tag, sizeof tag);
+			if (!strcmp(tag, "svg")) { // un dibujo de la página: su ancho (atributo, o alto × proporción)
+				char vb[96];
+				float w = sv_len((dom_node *)c, "width", 16), h = sv_len((dom_node *)c, "height", 16);
+				if (w <= 0 && attr((dom_node *)c, "viewbox", vb, sizeof vb)) {
+					float a[4] = {0};
+					sscanf(vb, "%f%*[ ,]%f%*[ ,]%f%*[ ,]%f", &a[0], &a[1], &a[2], &a[3]);
+					w = a[3] > 0 ? (h > 0 ? h : 16) * a[2] / a[3] : 16;
+				}
+				sum += w > 0 ? w : 16;
+				continue;
+			}
 			if (is(tag, NEVER_TAGS))
 				continue;
 			if (!strcmp(tag, "img")) { // su ancho; si no se va a ver (SVG), lo que ocupa su texto alternativo
@@ -2169,6 +2190,65 @@ static void row_children(dom_node *node, St st, bool wrap, float gapx)
 		walk((dom_node *)ch, st);
 }
 
+// hijos de un flex en columna con align-items: center: cada uno, a su ancho y centrado
+static void col_center(dom_node *node, St st)
+{
+	float avail = st.right - st.indent;
+	for (dom_node_internal *ch = NI(node)->first_child; ch; ch = ch->next) {
+		if (ch->type == DOM_TEXT_NODE) {
+			St s2 = st;
+			s2.align = 1;
+			walk((dom_node *)ch, s2);
+			continue;
+		}
+		if (ch->type != DOM_ELEMENT_NODE)
+			continue;
+		char tag[16];
+		tag_of((dom_node *)ch, tag, sizeof tag);
+		if (is(tag, NEVER_TAGS) && strcmp(tag, "svg"))
+			continue;
+		css_computed_style *cs = brcss_style(B.css, (dom_node *)ch, st.cs, B.vw);
+		if (!cs)
+			continue;
+		uint8_t d = css_computed_display(cs, false);
+		if (d == CSS_DISPLAY_NONE || css_computed_position(cs) == CSS_POSITION_FIXED || css_invisible(cs)) {
+			css_computed_style_destroy(cs);
+			continue;
+		}
+		css_fixed v;
+		css_unit u;
+		float w;
+		if (css_computed_width(cs, &v, &u) == CSS_WIDTH_SET)
+			w = len_px(cs, v, u, avail);
+		else {
+			css_computed_font_size(cs, &v, &u);
+			float sc = clampf(SC16 * brcss_px(cs, v, u, B.vw) / 16, 0.15f, 2.4f);
+			float ex = 0;
+			if (css_computed_padding_left(cs, &v, &u) == CSS_PADDING_SET)
+				ex += len_px(cs, v, u, avail);
+			if (css_computed_padding_right(cs, &v, &u) == CSS_PADDING_SET)
+				ex += len_px(cs, v, u, avail);
+			w = !strcmp(tag, "svg") ? avail : measure((dom_node *)ch, sc, avail, 0) * 1.12f + clampf(ex, 0, 80) + 8;
+		}
+		w = clampf(w, 16, avail);
+		float x = st.indent + (avail - w) / 2;
+		St s2 = st;
+		s2.indent = x, s2.right = x + w, s2.fixw = true, s2.cells = NULL;
+		if (!strcmp(tag, "svg")) { // el dibujo, solo y centrado
+			s2.align = 1, s2.indent = st.indent, s2.right = st.right;
+			line_at(cur_bottom());
+			L_align = 1;
+			walk((dom_node *)ch, s2);
+			line_new();
+			L_align = st.align;
+		} else {
+			line_at(cur_bottom());
+			walk_css((dom_node *)ch, tag, s2, cs, d);
+		}
+		css_computed_style_destroy(cs);
+	}
+}
+
 // un flotante: se coloca a su lado en su ancho y deja la zona ocupada para lo que siga
 static bool place_float(dom_node *node, const char *tag, St st, const css_computed_style *cs, uint8_t side)
 {
@@ -2495,6 +2575,8 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 	uint8_t fd = css_computed_flex_direction(cs);
 	bool row = blk && ((d == CSS_DISPLAY_FLEX && (fd == CSS_FLEX_DIRECTION_ROW || fd == CSS_FLEX_DIRECTION_ROW_REVERSE || fd == CSS_FLEX_DIRECTION_INHERIT)) ||
 	                   d == CSS_DISPLAY_TABLE_ROW || d == CSS_DISPLAY_GRID);
+	// flex en columna con align-items: center: cada hijo centrado a su ancho (el centrado típico)
+	bool colc = blk && !row && (d == CSS_DISPLAY_FLEX || d == CSS_DISPLAY_INLINE_FLEX) && css_computed_align_items(cs) == CSS_ALIGN_ITEMS_CENTER;
 	float gapx = 0;
 	if (row) {
 		css_fixed v;
@@ -2519,7 +2601,9 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		if (il > 0 && L_has)
 			L_x += il;
 	}
-	if (row) {
+	if (colc)
+		col_center(node, st);
+	else if (row) {
 		st.flexrow = d == CSS_DISPLAY_FLEX || d == CSS_DISPLAY_INLINE_FLEX;
 		row_children(node, st, d == CSS_DISPLAY_GRID || css_computed_flex_wrap(cs) == CSS_FLEX_WRAP_WRAP, gapx);
 		st.flexrow = false;
@@ -2551,9 +2635,209 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 	}
 }
 
+static u32 dk_map(u32 c, bool fg);
+
+/* ------------------------------------------------------------ <svg> de la propia página (logos, iconos) */
+static void sv_put(Buf *b, const char *s, size_t n)
+{
+	if (n && buf_cb((char *)s, 1, n, b) != n)
+		b->n = MAX_PAGE; // lleno: se deja
+}
+static void sv_puts(Buf *b, const char *s) { sv_put(b, s, strlen(s)); }
+
+static void sv_esc(Buf *b, const char *s, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		char ch = s[i];
+		if (ch == '&')
+			sv_puts(b, "&amp;");
+		else if (ch == '<')
+			sv_puts(b, "&lt;");
+		else if (ch == '"')
+			sv_puts(b, "&quot;");
+		else
+			sv_put(b, &ch, 1);
+	}
+}
+
+/* el árbol del <svg> otra vez como texto para NanoSVG: con los nombres en su forma (el lector de HTML
+ * los pasa a minúsculas: viewBox, linearGradient…) y currentColor con el color del texto */
+static void sv_write(Buf *b, dom_node *n, const char *color, int depth)
+{
+	if (depth > 40 || b->n >= MAX_PAGE)
+		return;
+	for (dom_node_internal *c = NI(n)->first_child; c && b->n < MAX_PAGE; c = c->next) {
+		if (c->type == DOM_TEXT_NODE) {
+			dom_string *d = NULL;
+			if (dom_characterdata_get_data((dom_characterdata *)c, &d) == DOM_NO_ERR && d) {
+				sv_esc(b, dom_string_data(d), dom_string_byte_length(d));
+				dom_string_unref(d);
+			}
+			continue;
+		}
+		if (c->type != DOM_ELEMENT_NODE)
+			continue;
+		char tag[24];
+		tag_of((dom_node *)c, tag, sizeof tag);
+		if (!strcmp(tag, "title") || !strcmp(tag, "desc") || !strcmp(tag, "script") || !strcmp(tag, "style") || !strcmp(tag, "foreignobject"))
+			continue;
+		static const char *const EL[][2] = {{"lineargradient", "linearGradient"}, {"radialgradient", "radialGradient"}, {"clippath", "clipPath"}};
+		const char *tn = tag;
+		for (size_t i = 0; i < sizeof EL / sizeof EL[0]; i++)
+			if (!strcmp(tag, EL[i][0]))
+				tn = EL[i][1];
+		sv_puts(b, "<");
+		sv_puts(b, tn);
+		dom_namednodemap *m = NULL;
+		if (dom_node_get_attributes((dom_node *)c, &m) == DOM_NO_ERR && m) {
+			uint32_t na = 0;
+			dom_namednodemap_get_length(m, &na);
+			for (uint32_t i = 0; i < na; i++) {
+				dom_node *a = NULL;
+				if (dom_namednodemap_item(m, i, &a) != DOM_NO_ERR || !a)
+					continue;
+				dom_string *k = NULL, *v = NULL;
+				dom_attr_get_name((dom_attr *)a, &k);
+				dom_attr_get_value((dom_attr *)a, &v);
+				if (k && v) {
+					char kn[40];
+					snprintf(kn, sizeof kn, "%.*s", (int)dom_string_byte_length(k), dom_string_data(k));
+					static const char *const AT[][2] = {{"viewbox", "viewBox"}, {"preserveaspectratio", "preserveAspectRatio"},
+					                                    {"gradientunits", "gradientUnits"}, {"gradienttransform", "gradientTransform"},
+					                                    {"spreadmethod", "spreadMethod"}};
+					const char *an = kn;
+					for (size_t j = 0; j < sizeof AT / sizeof AT[0]; j++)
+						if (!strcmp(kn, AT[j][0]))
+							an = AT[j][1];
+					sv_puts(b, " ");
+					sv_puts(b, an);
+					sv_puts(b, "=\"");
+					const char *vs = dom_string_data(v);
+					size_t vl = dom_string_byte_length(v);
+					if (vl == 12 && !strncasecmp(vs, "currentcolor", 12))
+						sv_puts(b, color);
+					else
+						sv_esc(b, vs, vl);
+					sv_puts(b, "\"");
+				}
+				if (k)
+					dom_string_unref(k);
+				if (v)
+					dom_string_unref(v);
+				dom_node_unref(a);
+			}
+			dom_namednodemap_unref(m);
+		}
+		sv_puts(b, ">");
+		sv_write(b, (dom_node *)c, color, depth + 1);
+		sv_puts(b, "</");
+		sv_puts(b, tn);
+		sv_puts(b, ">");
+	}
+}
+
+// un número de un atributo de tamaño («24», «24px», «1.5em»); -1 si no hay o es en %
+static float sv_len(dom_node *n, const char *name, float em)
+{
+	char v[32];
+	if (!attr(n, name, v, sizeof v) || strchr(v, '%'))
+		return -1;
+	char *u;
+	float x = strtof(v, &u);
+	if (u == v)
+		return -1;
+	return strstr(u, "em") ? x * em : x;
+}
+
+static void svg_inline(dom_node *node, St *st, const css_computed_style *cs)
+{
+	css_fixed v;
+	css_unit u;
+	css_computed_font_size(cs, &v, &u);
+	float em = brcss_px(cs, v, u, B.vw);
+	if (em <= 0)
+		em = 16;
+	float w = -1, h = -1, vbw = 0, vbh = 0;
+	if (css_computed_width(cs, &v, &u) == CSS_WIDTH_SET && u != CSS_UNIT_PCT)
+		w = brcss_px(cs, v, u, B.vw);
+	if (css_computed_height(cs, &v, &u) == CSS_HEIGHT_SET && u != CSS_UNIT_PCT)
+		h = brcss_px(cs, v, u, B.vw);
+	if (w <= 0)
+		w = sv_len(node, "width", em);
+	if (h <= 0)
+		h = sv_len(node, "height", em);
+	char vb[96];
+	if (attr(node, "viewbox", vb, sizeof vb)) {
+		float a[4] = {0};
+		sscanf(vb, "%f%*[ ,]%f%*[ ,]%f%*[ ,]%f", &a[0], &a[1], &a[2], &a[3]);
+		vbw = a[2], vbh = a[3];
+	}
+	float ar = vbw > 0 && vbh > 0 ? vbw / vbh : 1;
+	if (w <= 0 && h <= 0)
+		h = em, w = em * ar; // sin tamaño: como la letra (lo normal en iconos)
+	else if (w <= 0)
+		w = h * ar;
+	else if (h <= 0)
+		h = w / ar;
+	if (w < 3 || h < 3 || w > 1600 || h > 1600)
+		return;
+	// el color del texto (para currentColor y lo que no diga su color), en modo oscuro aclarado
+	css_color tc = 0xFF000000;
+	css_computed_color(cs, &tc);
+	u32 col = css_col(tc) | 0xFF000000;
+	if (B.dark)
+		col = dk_map(col, true);
+	char hex[16];
+	snprintf(hex, sizeof hex, "#%02x%02x%02x", (unsigned)(col & 0xFF), (unsigned)((col >> 8) & 0xFF), (unsigned)((col >> 16) & 0xFF));
+	Buf b = {0};
+	sv_puts(&b, "<svg xmlns=\"http://www.w3.org/2000/svg\"");
+	if (vbw > 0 && vbh > 0) {
+		char t[160];
+		snprintf(t, sizeof t, " viewBox=\"%s\"", vb);
+		sv_puts(&b, t);
+	}
+	char fill[16] = "";
+	if (!attr(node, "fill", fill, sizeof fill) || !strcasecmp(fill, "currentcolor")) {
+		sv_puts(&b, " fill=\"");
+		sv_puts(&b, hex);
+		sv_puts(&b, "\"");
+	} else {
+		sv_puts(&b, " fill=\"");
+		sv_puts(&b, fill);
+		sv_puts(&b, "\"");
+	}
+	char wh[64];
+	snprintf(wh, sizeof wh, " width=\"%g\" height=\"%g\">", w, h);
+	sv_puts(&b, wh);
+	sv_write(&b, node, hex, 0);
+	sv_puts(&b, "</svg>");
+	if (b.n >= MAX_PAGE || b.n < 40) {
+		free(b.p);
+		return;
+	}
+	// clave: el mismo icono repetido se pinta una vez
+	uint32_t hsh = 2166136261u;
+	for (size_t i = 0; i < b.n; i++)
+		hsh = (hsh ^ (unsigned char)b.p[i]) * 16777619u;
+	char key[48];
+	snprintf(key, sizeof key, "svg:%08lx:%zu", (unsigned long)hsh, b.n);
+	int k = img_find_or_add(key);
+	if (k < 0) {
+		free(b.p);
+		return;
+	}
+	PImg *im = &B.img[k];
+	if (im->st == IM_WAIT && !im->data && !im->rgba && !im->tex.ok)
+		im->data = b.p, im->dn = b.n;
+	else
+		free(b.p);
+	im->w = w, im->h = h, im->sized = true;
+	put_box(w, h, st, k);
+}
+
 static void walk(dom_node *node, St st)
 {
-	if (B.lay_oom)
+	if (B.lay_oom || B.abort) // sin memoria, o la página se deja
 		return;
 	if ((++B.nel_done & 127) == 0 && mem_free() < MEM_RESERVE) { // la memoria se acaba: hasta aquí
 		B.lay_oom = true;
@@ -2601,6 +2885,18 @@ static void walk(dom_node *node, St st)
 	}
 	if (B.css) { // con CSS: lo decide el estilo de la página
 		static const char *const NEVER[] = {"script", "style", "noscript", "template", "svg", "iframe", "object", "embed", "canvas", "video", "audio", NULL};
+		if (!strcmp(tag, "svg")) { // un dibujo de la página (logo, icono): como una imagen
+			if (B.light || !strcmp(B.reader_url, B.url))
+				return;
+			css_computed_style *cs = brcss_style(B.css, node, st.cs, B.vw);
+			if (cs) {
+				if (css_computed_display(cs, false) != CSS_DISPLAY_NONE && css_computed_position(cs) != CSS_POSITION_FIXED && !css_invisible(cs) &&
+				    css_computed_visibility(cs) != CSS_VISIBILITY_HIDDEN)
+					svg_inline(node, &st, cs);
+				css_computed_style_destroy(cs);
+			}
+			return;
+		}
 		if (is(tag, NEVER))
 			return;
 		css_computed_style *cs = brcss_style(B.css, node, st.cs, B.vw);

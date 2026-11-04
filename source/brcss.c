@@ -43,7 +43,8 @@ static const char UA_CSS[] =
     "hgroup,legend,search{display:block}"
     "li{display:list-item}"
     "head,script,style,noscript,template,title,meta,link,base,datalist,param,source,track,area,map,"
-    "svg,canvas,iframe,video,audio,object,embed,dialog,input[type=hidden]{display:none}"
+    "canvas,iframe,video,audio,object,embed,dialog,input[type=hidden]{display:none}"
+    "svg{display:inline}" /* los dibujos de la página se pintan (como imagen) */
     "input,button,select,textarea{display:inline-block}button{text-align:center}"
     "[hidden]{display:none}"
     "table{display:table;border-spacing:2px}tr{display:table-row}thead{display:table-header-group}"
