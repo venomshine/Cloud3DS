@@ -244,6 +244,24 @@ hubbub_error process_character(hubbub_treebuilder *treebuilder,
  *         HUBBUB_REPROCESS to reprocess the token,
  *         appropriate error otherwise.
  */
+/* Cloud3DS: elementos vacíos de HTML5 que esta versión no conoce (<source> de <picture>, <track>):
+ * sin esto, lo de después (la <img>) quedaba dentro de ellos */
+static bool void_unknown(const hubbub_string *n)
+{
+	static const char *const V[] = {"source", "track", "keygen"};
+	for (size_t i = 0; i < sizeof V / sizeof V[0]; i++) {
+		size_t l = strlen(V[i]);
+		if (n->len == l) {
+			size_t k = 0;
+			while (k < l && (n->ptr[k] | 0x20) == V[i][k])
+				k++;
+			if (k == l)
+				return true;
+		}
+	}
+	return false;
+}
+
 hubbub_error process_start_tag(hubbub_treebuilder *treebuilder,
 		const hubbub_token *token)
 {
@@ -325,7 +343,8 @@ hubbub_error process_start_tag(hubbub_treebuilder *treebuilder,
 	} else if (type == AREA || type == BASEFONT || 
 			type == BGSOUND || type == BR || 
 			type == EMBED || type == IMG || type == INPUT ||
-			type == PARAM || type == SPACER || type == WBR) {
+			type == PARAM || type == SPACER || type == WBR ||
+			(type == UNKNOWN && void_unknown(&token->data.tag.name))) {
 		err = reconstruct_active_formatting_list(treebuilder);
 		if (err != HUBBUB_OK)
 			return err;
