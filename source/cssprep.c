@@ -121,9 +121,12 @@ static void map_set(Map *m, const char *k, size_t kn, const char *v, size_t vn)
 struct CssPrep {
 	float w;
 	Map root, any;     /* las de :root/html/body (las de la página) y todas */
-	Map areas;         /* rejilla: nombre de zona -> «orden,ocupa-toda-la-fila» */
+	Map areas;         /* rejilla: nombre de zona -> «orden,toda-la-fila,columna,cuántas,fila,cuántas» */
 	char *html, *body; /* sus atributos, «nombre=valor\n» */
 };
+
+static float G_W = 1024; /* el ancho de la página (para vw) */
+static bool G_KEEP_CALC; /* width: calc(… % …) lo resuelve libcss (sabe el ancho de verdad) */
 
 CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs)
 {
@@ -131,6 +134,7 @@ CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs
 	if (!p)
 		return NULL;
 	p->w = width;
+	G_W = width;
 	p->html = strdup(html_attrs ? html_attrs : "");
 	p->body = strdup(body_attrs ? body_attrs : "");
 	return p;
@@ -253,8 +257,21 @@ void cssprep_set_dark(bool dark)
 	G_DARK = dark;
 }
 
+typedef struct {
+	float px, pc;
+	bool num; /* un número sin unidad */
+} CV;
+static bool cv_expr(const char **q, const char *e, CV *r);
+
 static float len_px(const char *v)
 {
+	if (!strncasecmp(v, "calc(", 5)) { // @media (width >= calc(…))
+		const char *q = v, *e = v + strlen(v);
+		CV r;
+		if (cv_expr(&q, e, &r) && r.pc == 0)
+			return r.px;
+		return -1;
+	}
 	char *end;
 	float x = strtof(v, &end);
 	if (end == v)
@@ -617,6 +634,96 @@ static bool subst(CssPrep *p, const Map *local, const char *v, size_t vn, Out *o
 
 /* ------------------------------------------------------------ valores */
 // clamp(a, b, c) → b; min(a, b) / max(a, b): el de px más pequeño / grande (o el primero / último)
+/* calc(): px, em, rem, vw, vh y % con + - * /; lo que mezcla % y px se queda en el % (los px suelen ser un
+ * margen pequeño). Devuelve false si no lo entiende */
+static void cv_ws(const char **q, const char *e)
+{
+	while (*q < e && isspace((unsigned char)**q))
+		(*q)++;
+}
+static bool cv_atom(const char **q, const char *e, CV *r)
+{
+	cv_ws(q, e);
+	if (*q >= e)
+		return false;
+	if (**q == '(' || !strncasecmp(*q, "calc(", 5)) {
+		*q += **q == '(' ? 1 : 5;
+		if (!cv_expr(q, e, r))
+			return false;
+		cv_ws(q, e);
+		if (*q >= e || **q != ')')
+			return false;
+		(*q)++;
+		return true;
+	}
+	char *u;
+	float x = strtof(*q, &u);
+	if (u == *q)
+		return false;
+	*q = u;
+	r->px = r->pc = 0, r->num = false;
+	if (*q < e && **q == '%')
+		r->pc = x, (*q)++;
+	else if (e - *q >= 3 && !strncasecmp(*q, "rem", 3))
+		r->px = x * 16, *q += 3;
+	else if (e - *q >= 2 && !strncasecmp(*q, "em", 2))
+		r->px = x * 16, *q += 2;
+	else if (e - *q >= 2 && !strncasecmp(*q, "px", 2))
+		r->px = x, *q += 2;
+	else if (e - *q >= 2 && !strncasecmp(*q, "vw", 2))
+		r->px = x * G_W / 100, *q += 2;
+	else if (e - *q >= 2 && !strncasecmp(*q, "vh", 2))
+		r->px = x * 6, *q += 2;
+	else if (*q < e && isalpha((unsigned char)**q))
+		return false;
+	else
+		r->px = x, r->num = true;
+	return true;
+}
+static bool cv_term(const char **q, const char *e, CV *r)
+{
+	if (!cv_atom(q, e, r))
+		return false;
+	for (;;) {
+		cv_ws(q, e);
+		if (*q >= e || (**q != '*' && **q != '/'))
+			return true;
+		char op = *(*q)++;
+		CV b;
+		if (!cv_atom(q, e, &b))
+			return false;
+		if (op == '*') {
+			if (b.num)
+				r->px *= b.px, r->pc *= b.px;
+			else if (r->num)
+				b.px *= r->px, b.pc *= r->px, *r = b;
+			else
+				return false;
+		} else {
+			if (!b.num || b.px == 0)
+				return false;
+			r->px /= b.px, r->pc /= b.px;
+		}
+	}
+}
+static bool cv_expr(const char **q, const char *e, CV *r)
+{
+	if (!cv_term(q, e, r))
+		return false;
+	for (;;) {
+		cv_ws(q, e);
+		if (*q >= e || (**q != '+' && **q != '-'))
+			return true;
+		char op = *(*q)++;
+		CV b;
+		if (!cv_term(q, e, &b))
+			return false;
+		float k = op == '+' ? 1 : -1;
+		r->px += k * b.px, r->pc += k * b.pc;
+		r->num = r->num && b.num;
+	}
+}
+
 static void funcs(const char *v, size_t vn, Out *o)
 {
 	const char *s = v, *e = v + vn;
@@ -632,6 +739,12 @@ static void funcs(const char *v, size_t vn, Out *o)
 				f = q, kind = 2;
 			else if (!strncasecmp(q, "max(", 4))
 				f = q, kind = 3;
+			else if (!strncasecmp(q, "light-dark(", 11))
+				f = q, kind = 4;
+			else if (!strncasecmp(q, "color-mix(", 10))
+				f = q, kind = 5;
+			else if (!strncasecmp(q, "calc(", 5) && !G_KEEP_CALC)
+				f = q, kind = 6;
 			if (f)
 				break;
 		}
@@ -640,7 +753,7 @@ static void funcs(const char *v, size_t vn, Out *o)
 			return;
 		}
 		put(o, s, (size_t)(f - s));
-		const char *a = f + (kind == 1 ? 6 : 4), *cl = a;
+		const char *a = f + (kind == 1 ? 6 : kind == 4 ? 11 : kind == 5 ? 10 : kind == 6 ? 5 : 4), *cl = a;
 		int d = 1;
 		for (; cl < e; cl++) {
 			if (*cl == '(')
@@ -652,6 +765,26 @@ static void funcs(const char *v, size_t vn, Out *o)
 			put(o, f, (size_t)(e - f));
 			return;
 		}
+		if (kind == 6) { // calc(): su valor
+			Out t = {0};
+			funcs(a, (size_t)(cl - a), &t); // (min(), var… de dentro, primero)
+			const char *q = t.p ? t.p : a, *qe = t.p ? t.p + t.n : cl;
+			CV r;
+			char b[32];
+			if (cv_expr(&q, qe, &r) && (cv_ws(&q, qe), q == qe)) {
+				if (r.pc != 0)
+					snprintf(b, sizeof b, "%.3g%%", r.pc);
+				else if (r.num)
+					snprintf(b, sizeof b, "%.4g", r.px);
+				else
+					snprintf(b, sizeof b, "%.4gpx", r.px);
+				puts_(o, b);
+			} else
+				put(o, f, (size_t)(cl + 1 - f));
+			free(t.p);
+			s = cl + 1;
+			continue;
+		}
 		const char *args[8], *ends[8];
 		int na = 0;
 		for (const char *q = a; q <= cl && na < 8;) {
@@ -662,7 +795,29 @@ static void funcs(const char *v, size_t vn, Out *o)
 			q = c + 1;
 		}
 		int pick = 0;
-		if (kind == 1)
+		if (kind == 4) // light-dark(claro, oscuro): el del tema
+			pick = G_DARK && na > 1 ? 1 : 0;
+		else if (kind == 5 && na >= 2) { // color-mix(in srgb, a 40%, b): el primer color, sin su %
+			const char *q = args[1], *z = ends[1];
+			while (z > q && z[-1] != ' ' && memchr(z - 1, '%', 1) == NULL)
+				z--;
+			const char *sp2 = z;
+			while (sp2 > q && sp2[-1] != ' ')
+				sp2--;
+			const char *pc = memchr(q, '%', (size_t)(ends[1] - q));
+			const char *stop = ends[1];
+			if (pc) { // quita « 40%»
+				stop = pc;
+				while (stop > q && stop[-1] != ' ')
+					stop--;
+				while (stop > q && stop[-1] == ' ')
+					stop--;
+			}
+			(void)sp2;
+			funcs(q, (size_t)(stop - q), o);
+			s = cl + 1;
+			continue;
+		} else if (kind == 1)
 			pick = na >= 3 ? 1 : 0;
 		else {
 			float best = 0;
@@ -753,6 +908,7 @@ static void decl_out(Out *o, const char *name, const char *val)
 // las propiedades lógicas, a las físicas (de izquierda a derecha, horizontal)
 static void decl_out(Out *o, const char *name, const char *val);
 static void grid_pos(Out *o, int start, int span);
+static int grid_areas_n(const char *s, const char *e, char names[24][48], int pos[24][4], bool full[24], int *ncols);
 
 static float px_of(const char *v)
 {
@@ -874,6 +1030,18 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 		decl_out(o, "counter-reset", cr);
 		return true;
 	}
+	if (!strcmp(name, "grid-template-areas")) { // cuántas columnas (si no lo dice grid-template-columns)
+		char names[24][48];
+		int pos[24][4], nc = 0;
+		bool full[24];
+		grid_areas_n(val, val + strlen(val), names, pos, full, &nc);
+		if (nc > 0) {
+			char b2[16];
+			snprintf(b2, sizeof b2, "%d", nc);
+			decl_out(o, "column-count", b2);
+		}
+		return true;
+	}
 	if (!strcmp(name, "grid-area") && (isdigit((unsigned char)val[0]) || !strncmp(val, "span", 4))) { // «fila / col / fila-fin / col-fin»
 		int a[4] = {0}, k = 0;
 		for (const char *q = val; *q && k < 4; k++) {
@@ -903,10 +1071,15 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 			return true;
 		}
 		if (a) {
-			char b[16];
-			snprintf(b, sizeof b, "%d", atoi(a));
+			int v[6] = {0};
+			sscanf(a, "%d,%d,%d,%d,%d,%d", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]);
+			char b[96];
+			snprintf(b, sizeof b, "%d", v[0]);
 			decl_out(o, "order", b);
-			if (strchr(a, ',')[1] == '1')
+			if (v[2] > 0) { // su sitio: columna y fila (en counter-increment, que el navegador lee)
+				snprintf(b, sizeof b, "gc %d gp %d gr %d gq %d", v[2], v[3], v[4], v[5]);
+				decl_out(o, "counter-increment", b);
+			} else if (v[1])
 				decl_out(o, "column-span", "all");
 		}
 		return true;
@@ -1028,6 +1201,24 @@ static bool grad_color(const char *v, char *out, size_t n)
 
 static void decl_emit(Out *o, const char *name, const char *val)
 {
+	if (!strcmp(name, "display")) { // lo que libcss no conoce: contents (marcado con column-fill: auto), flow-root, dos palabras
+		const char *imp = strstr(val, "!important");
+		char v[48];
+		snprintf(v, sizeof v, "%.*s", (int)(imp ? (size_t)(imp - val) : strlen(val)), val);
+		for (size_t l = strlen(v); l && v[l - 1] == ' '; l--)
+			v[l - 1] = 0;
+		static const char *const DM[][2] = {{"contents", "block"}, {"flow-root", "block"}, {"block flow-root", "block"}, {"inline flow-root", "inline-block"},
+		                                    {"inline flex", "inline-flex"}, {"block flex", "flex"}, {"inline grid", "inline-grid"}, {"block grid", "grid"},
+		                                    {"block flow", "block"}, {"inline flow", "inline"}, {"inline flow-root", "inline-block"}, {"list-item block", "list-item"}};
+		for (size_t i = 0; i < sizeof DM / sizeof DM[0]; i++)
+			if (!strcasecmp(v, DM[i][0])) {
+				char b2[64];
+				snprintf(b2, sizeof b2, "%s%s", DM[i][1], imp ? " !important" : "");
+				decl_out(o, "display", b2);
+				decl_out(o, "column-fill", !strcmp(DM[i][0], "contents") ? (imp ? "auto !important" : "auto") : "balance");
+				return;
+			}
+	}
 	static const char *const MAP1[][2] = {
 	    {"margin-inline-start", "margin-left"}, {"margin-inline-end", "margin-right"}, {"margin-block-start", "margin-top"},
 	    {"margin-block-end", "margin-bottom"}, {"padding-inline-start", "padding-left"}, {"padding-inline-end", "padding-right"},
@@ -1137,12 +1328,12 @@ static void grid_lines(CssPrep *p, const char *q, const char *e)
 	}
 }
 
-/* grid-template-areas: «'a a' 'b c' 'd d'»: cada zona, su orden (por filas) y si ocupa toda su fila */
-static void grid_areas(CssPrep *p, const char *s, const char *e)
+/* grid-template-areas: «'a a' 'b c' 'd d'»: cada zona, su orden (por filas), si ocupa toda su fila, y su
+ * columna y fila (de inicio y cuántas) */
+static int grid_areas_n(const char *s, const char *e, char names[24][48], int pos[24][4], bool full[24], int *ncols)
 {
-	char names[24][48];
-	int nn = 0;
-	bool full[24] = {0};
+	int nn = 0, row = 0;
+	*ncols = 0;
 	while (s < e) {
 		while (s < e && *s != '"' && *s != '\'')
 			s++;
@@ -1152,9 +1343,9 @@ static void grid_areas(CssPrep *p, const char *s, const char *e)
 		const char *re = memchr(s, q, (size_t)(e - s));
 		if (!re)
 			break;
-		char tok[12][48];
+		char tok[16][48];
 		int nt = 0;
-		for (const char *t = s; t < re && nt < 12;) {
+		for (const char *t = s; t < re && nt < 16;) {
 			while (t < re && isspace((unsigned char)*t))
 				t++;
 			const char *t0 = t;
@@ -1163,23 +1354,47 @@ static void grid_areas(CssPrep *p, const char *s, const char *e)
 			if (t > t0)
 				snprintf(tok[nt++], sizeof tok[0], "%.*s", (int)(t - t0), t0);
 		}
+		if (nt > *ncols)
+			*ncols = nt;
 		bool all_same = nt > 0;
 		for (int i = 1; i < nt; i++)
 			all_same &= !strcmp(tok[i], tok[0]);
 		for (int i = 0; i < nt; i++) {
-			if (!strcmp(tok[i], "."))
+			if (tok[i][0] == '.')
 				continue;
 			int k;
 			for (k = 0; k < nn && strcmp(names[k], tok[i]); k++)
 				;
-			if (k == nn && nn < 24)
-				util_copy(names[nn], tok[i], sizeof names[0]), full[nn] = all_same, nn++;
+			if (k == nn) {
+				if (nn == 24)
+					continue;
+				util_copy(names[nn], tok[i], sizeof names[0]), full[nn] = all_same;
+				pos[nn][0] = i, pos[nn][1] = i, pos[nn][2] = row, pos[nn][3] = row;
+				nn++;
+			} else {
+				if (i < pos[k][0])
+					pos[k][0] = i;
+				if (i > pos[k][1])
+					pos[k][1] = i;
+				if (row > pos[k][3])
+					pos[k][3] = row;
+			}
 		}
+		row++;
 		s = re + 1;
 	}
+	return nn;
+}
+
+static void grid_areas(CssPrep *p, const char *s, const char *e)
+{
+	char names[24][48];
+	int pos[24][4], nc;
+	bool full[24] = {0};
+	int nn = grid_areas_n(s, e, names, pos, full, &nc);
 	for (int k = 0; k < nn; k++) {
-		char v[16];
-		snprintf(v, sizeof v, "%d,%d", k + 1, full[k] ? 1 : 0);
+		char v[48];
+		snprintf(v, sizeof v, "%d,%d,%d,%d,%d,%d", k + 1, full[k] ? 1 : 0, pos[k][0] + 1, pos[k][1] - pos[k][0] + 1, pos[k][2] + 1, pos[k][3] - pos[k][2] + 1);
 		map_set(&p->areas, names[k], strlen(names[k]), v, strlen(v));
 	}
 }
@@ -1199,7 +1414,9 @@ static void decls(CssPrep *p, const char *s, const char *e, bool root, Map *loca
 			const char *n0 = s, *n1 = colon, *v0 = colon + 1, *v1 = c;
 			trim(&n0, &n1);
 			trim(&v0, &v1);
-			if (!o && n1 - n0 == 19 && !strncasecmp(n0, "grid-template-areas", 19))
+			if (!o && ((n1 - n0 == 19 && !strncasecmp(n0, "grid-template-areas", 19)) ||
+			           (((n1 - n0 == 13 && !strncasecmp(n0, "grid-template", 13)) || (n1 - n0 == 4 && !strncasecmp(n0, "grid", 4))) &&
+			            (memchr(v0, '"', (size_t)(v1 - v0)) || memchr(v0, '\'', (size_t)(v1 - v0))))))
 				grid_areas(p, v0, v1);
 			if (!o && memchr(v0, '[', (size_t)(v1 - v0)) &&
 			    ((n1 - n0 > 2 && n0[0] == '-' && n0[1] == '-') || (n1 - n0 >= 13 && !strncasecmp(n0, "grid-template", 13))))
@@ -1307,7 +1524,9 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 					put(&a, v0, (size_t)(v1 - v0));
 				if (ok && !a.bad && a.n) {
 					b.n = 0, b.bad = false;
+					G_KEEP_CALC = !strcmp(name, "width") && memchr(a.p, '%', a.n) && has_ci(a.p, a.n, "calc(");
 					funcs(a.p, a.n, &b);
+					G_KEEP_CALC = false;
 					a.n = 0;
 					if (!b.bad && b.n) {
 						colors(b.p, b.n, &a);
