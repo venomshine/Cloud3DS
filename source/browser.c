@@ -46,7 +46,7 @@
 #define UA_PC  "Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0 Cloud3DS"
 /* Google solo busca con navegadores que conoce: al de la 3DS le dice que se actualice */
 #define UA_GOOGLE_MOB "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0"
-#define VW_PC     980.0f   /* ancho de la página «de PC» (como un portátil) */
+#define VW_PC     1024.0f  /* ancho de la página: siempre de PC (muchas webs pasan a escritorio en 1012-1024) */
 #define VW_MOB    400.0f   /* ancho «de móvil» (las webs que lo piden con <meta viewport>) */
 #define ZOOM_MAX  2.0f
 /* el ancho de la página y su margen (cambian con PC / móvil) */
@@ -198,7 +198,10 @@ static struct {
 	u32 oom_need;        /* lo que hacía falta (aproximado, bytes) */
 	char reader_url[1024]; /* esta dirección, en modo lectura (sin JavaScript, CSS ni imágenes) */
 	volatile bool lay_oom; /* la colocación se paró por memoria */
+	u32 page_bg;           /* el fondo de la página (de <html> o <body>; 0 = blanco) */
+	bool page_bg_html;
 	volatile u32 page_ver; /* cambia con lo que se ve (colocación, imágenes, formularios): repintar la caché */
+	bool light;            /* modo ligero: sin imágenes ni JavaScript (se guarda en la SD) */
 	bool click_wait;       /* un clic hecho mientras su JavaScript trabajaba: se hace al acabar */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
@@ -592,10 +595,7 @@ static void browser_thread_net(void) // cada hilo del navegador: su User-Agent y
 		LightLock_Init(&CK_LOCK);
 		CK_INIT = true;
 	}
-	const char *ua = B.force == 1 ? UA_PC : UA_MOB;
-	if (B.force != 1 && is_google(B.url))
-		ua = UA_GOOGLE_MOB;
-	dl_set_thread_ua(ua);
+	dl_set_thread_ua(UA_PC);
 	dl_set_thread_cookies(ck_get, ck_set);
 }
 
@@ -767,10 +767,10 @@ static void load_thread(void *arg)
 	size_t js_lim = fr > lay + 2u * 1024 * 1024 ? fr - lay : 0;
 	if (js_lim > 24u * 1024 * 1024)
 		js_lim = 24u * 1024 * 1024;
-	if (doc && B.js && !reader && !js_lim && B.oom == OOM_NONE)
+	if (doc && B.js && !reader && !B.light && !js_lim && B.oom == OOM_NONE)
 		B.oom = OOM_JS, B.oom_need = lay + 2u * 1024 * 1024;
-	if (doc && B.js && !reader && js_lim) {
-		JsHost h = {.mem_limit = js_lim, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = B.force == 1 ? UA_PC : UA_MOB, .width = B.force == 1 ? VW_PC : VW_MOB, .budget_ms = 20000, .cancel = &B.cancel,
+	if (doc && B.js && !reader && !B.light && js_lim) { // en modo ligero, sin JavaScript
+		JsHost h = {.mem_limit = js_lim, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
 		            .cookie_get = ck_get, .cookie_set = ck_set};
 		B.in_js = true;
 		JsResult jr;
@@ -1324,7 +1324,7 @@ static void img_thread(void *arg)
 static void img_start(void)
 {
 	img_stop();
-	if (!strcmp(B.reader_url, B.url)) // modo lectura: sin imágenes
+	if (!strcmp(B.reader_url, B.url) || B.light) // modo lectura o ligero: sin imágenes
 		return;
 	bool any = false;
 	for (int i = 0; i < B.nimg; i++)
@@ -2087,6 +2087,12 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		widget(node, tag, &st, cs);
 		return;
 	}
+	if (!strcmp(tag, "img") && B.light) { // modo ligero: la imagen no ocupa sitio; si dice qué es, su texto
+		char alt[160];
+		if (attr(node, "alt", alt, sizeof alt) && alt[0] && st.link >= 0)
+			text_run(alt, strlen(alt), &st);
+		return;
+	}
 	if (!strcmp(tag, "img")) {
 		char src[1024], abs[1024], v[32];
 		bool ok = attr(node, "src", src, sizeof src) && src[0] && strncmp(src, "data:", 5);
@@ -2200,6 +2206,12 @@ static void walk_css(dom_node *node, const char *tag, St st, const css_computed_
 		st.right = x0 + w - pr;
 		if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c >> 24) > 0x20 && (c & 0xFFFFFF) != 0xFFFFFF && strcmp(tag, "body") && strcmp(tag, "html"))
 			bgc = css_col(c) | 0xFF000000;
+		// el fondo de <html> (o si no tiene, el de <body>) pinta toda la página, como en los navegadores
+		if ((!strcmp(tag, "html") || (!strcmp(tag, "body") && !B.page_bg_html)) && css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR &&
+		    (c >> 24) > 0x20) {
+			B.page_bg = css_col(c) | 0xFF000000;
+			B.page_bg_html |= !strcmp(tag, "html");
+		}
 		// bordes: ancho y color de cada lado
 		{
 			uint8_t (*wf[4])(const css_computed_style *, css_fixed *, css_unit *) = {css_computed_border_top_width, css_computed_border_right_width,
@@ -2625,7 +2637,7 @@ static void layout(void)
 {
 	img_stop(); // su hilo lee la lista de imágenes, que aquí puede crecer
 	layout_free();
-	bool mob = B.force ? B.force == 2 : B.page_mobile;
+	bool mob = false; // siempre de PC: las versiones de móvil a 400 px se veían peor
 	B.vw = mob ? VW_MOB : VW_PC;
 	PADP = mob ? 8 : 16;
 	PW = B.vw - 2 * PADP;
@@ -2641,6 +2653,7 @@ static void layout(void)
 	u64 t0 = util_ms();
 	B.nel_done = 0;
 	B.lay_oom = false;
+	B.page_bg = 0, B.page_bg_html = false;
 	// modo lectura: si la página marca su contenido (<main> o <article>), solo eso (más el <title>)
 	// sin CSS, modo lectura: si la página marca su contenido (<main> o <article>), solo eso
 	dom_node *content = B.css ? NULL : find_tag((dom_node *)B.doc, "main", 0);
@@ -2869,8 +2882,28 @@ static void go(const char *url, bool push)
 	start_load(url);
 }
 
+#define LIGHT_PATH APP_DIR "/navegador_ligero"
+static void light_load(void)
+{
+	FILE *f = fopen(LIGHT_PATH, "r");
+	B.light = f != NULL;
+	if (f)
+		fclose(f);
+}
+
+static void light_save(void)
+{
+	if (B.light) {
+		FILE *f = fopen(LIGHT_PATH, "w");
+		if (f)
+			fputs("1\n", f), fclose(f);
+	} else
+		remove(LIGHT_PATH);
+}
+
 void br_open_url(const char *url)
 {
+	light_load();
 	nohc_init();
 	B.js = true;
 	B.open = true;
@@ -3223,7 +3256,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 {
 	const float z = B.zoom;
 	if (mode != 2) {
-	draw_rect(0, 0, VW, VH, PG_BG);
+	draw_rect(0, 0, VW, VH, B.page_bg ? B.page_bg : PG_BG);
 	// reglas <hr>
 	for (int i = 0; i < B.nl; i++) {
 		const Line *l = &B.l[i];
@@ -3360,10 +3393,6 @@ static struct {
 	u32 ver;
 } PCS;
 
-static void page_cache_drop(void)
-{
-	PCS.valid = false;
-}
 
 static void page_draw(int hov)
 {
@@ -3383,7 +3412,7 @@ static void page_draw(int hov)
 		float sx = B.sx, sy = B.sy;
 		PCS.x0 = B.sx - floorf(mx) / z, PCS.y0 = B.sy - floorf(my) / z;
 		B.sx = PCS.x0, B.sy = PCS.y0;
-		gfx_rt_begin(&PC, PG_BG);
+		gfx_rt_begin(&PC, B.page_bg ? B.page_bg : PG_BG);
 		bool ell = g_clip_ell;
 		g_clip_ell = true; // sin recortes (las tijeras van por pantalla, no por textura)
 		page_paint(PC_W, PC_H, 1, -1);
@@ -3457,7 +3486,7 @@ void br_top(void)
 	// arriba: la web, PC / móvil y el zoom (un momento, al cambiar)
 	char host[96], chip[160];
 	host_of(B.url, host, sizeof host);
-	snprintf(chip, sizeof chip, "%s   %s · %d %%", host, B.vw == VW_MOB ? "Móvil" : "PC", (int)(z * 100 + 0.5f));
+	snprintf(chip, sizeof chip, "%s%s · %d %%", host, B.light ? "   Ligero" : "", (int)(z * 100 + 0.5f));
 	float cw = fminf(TOP_W - 16, text_width(chip, 0.40f) + 20);
 	B.tip = fmaxf(0, B.tip - 1.0f / 60);
 	float ca = clampf(B.tip / 0.4f, 0, 1); // se ve al abrir y al hacer zoom, y se va sola para no tapar la página
@@ -3853,6 +3882,7 @@ static void home_enter(void)
 
 void br_open_home(void)
 {
+	light_load();
 	nohc_init();
 	B.js = true;
 	B.open = true;
@@ -4438,8 +4468,7 @@ void br_bottom(void)
 	char zp[16];
 	snprintf(zp, sizeof zp, "%d %%", ready ? (int)(B.zoom * 100 + 0.5f) : 100);
 	text_draw(zp, 88, ty + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
-	bool mob = ready && B.vw == VW_MOB;
-	bool tpc = tool_btn(BOT_W - 112, ty, 52, "PC", ready && !mob), tmob = tool_btn(BOT_W - 58, ty, 50, "Móvil", mob);
+	bool tlight = tool_btn(BOT_W - 112, ty, 104, "Modo ligero", B.light);
 	// favoritos: guardar esta página y abrir la lista
 	bm_load();
 	bool is_fav = B.url[0] && bm_find_fav(B.url) >= 0;
@@ -4560,14 +4589,13 @@ void br_bottom(void)
 			click = true, B.click_wait = false;
 	}
 	if (ready) {
-		if ((tpc && B.force != 1) || (tmob && B.force != 2) || (g_kdown & KEY_Y)) {
-			B.force = (g_kdown & KEY_Y) ? (mob ? 1 : 2) : tpc ? 1 : 2;
-			if (strstr(B.url, "://")) { // de Internet: se vuelve a pedir, presentándose como PC o como móvil
-				char u2[1024];
-				util_strlcpy(u2, B.url, sizeof u2);
-				start_load(u2);
-			} else if (B.doc)
-				B.st = ST_PARSED; // de la SD: se vuelve a colocar (en su hilo)
+		if (tlight || (g_kdown & KEY_Y)) { // modo ligero: sin imágenes ni JavaScript (se recuerda)
+			B.light = !B.light;
+			light_save();
+			toast_icon(B.light ? "Modo ligero: sin imágenes ni JavaScript" : "Modo normal: con imágenes y JavaScript", IC_BOLT, T.accent);
+			char u2[1024];
+			util_strlcpy(u2, B.url, sizeof u2);
+			start_load(u2);
 		}
 	}
 	// --- debajo: a dónde lleva el enlace del puntero, o cómo se usa
@@ -4586,7 +4614,7 @@ void br_bottom(void)
 	text_draw_center_clip(tip, BOT_W / 2, TP_B + 4, BOT_W - 20, 0.40f, tc);
 	static char keys[160];
 	if (!keys[0])
-		snprintf(keys, sizeof keys, "%s Clic · %s Enlaces · L R Zoom · %s PC/Móvil · %s Atrás", GLYPH_A, GLYPH_DPAD, GLYPH_Y, GLYPH_B);
+		snprintf(keys, sizeof keys, "%s Clic · %s Enlaces · L R Zoom · %s Ligero · %s Atrás", GLYPH_A, GLYPH_DPAD, GLYPH_Y, GLYPH_B);
 	text_draw_center_clip(keys, BOT_W / 2, TP_B + 18, BOT_W - 20, 0.36f, T.text3);
 	g_clip_ell = false;
 	// --- acciones
