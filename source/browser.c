@@ -13,6 +13,7 @@
  *  3. Se dibujan solo las líneas que se ven; tocar un trozo con enlace abre esa página. */
 #include "browser.h"
 #include "brcss.h"
+#include "cssprep.h"
 #include "brfav.h"
 #include "core/node.h" /* libdom por dentro: hijos y hermanos sin referencias */
 #include "dl.h"
@@ -365,15 +366,17 @@ static bool ci_has(const char *h, const char *nd)
 }
 
 /* las hojas de estilo de la página, en su orden: <style> y <link rel="stylesheet"> (se bajan aquí) */
-#define CSS_MAX_LINKS 10
-#define CSS_MAX_BYTES (1536 * 1024)
+#define CSS_MAX_LINKS 24
+#define CSS_MAX_BYTES (2560 * 1024) /* lo que se baja; traducido (cssprep) ocupa bastante menos */
+static char CSS_SEEN[CSS_MAX_LINKS][96]; /* las ya bajadas (una web enlaza la misma varias veces) */
+static int CSS_NSEEN;
 // un <style> o un <link rel="stylesheet">; aparte, para que la recursión de css_collect no lleve
 // estos búferes en cada nivel (con páginas profundas desbordaban la pila del hilo)
 static __attribute__((noinline)) void css_one(BrCss *c, dom_node *el, bool is_style, int *links, size_t *bytes)
 {
 	char a[256];
 	if (is_style) {
-		if (attr(el, "media", a, sizeof a) && strstr(a, "print") && !strstr(a, "screen"))
+		if (attr(el, "media", a, sizeof a) && !cssprep_media_ok(a, VW_PC))
 			return;
 		dom_string *tx = NULL;
 		if (dom_node_get_text_content(el, &tx) == DOM_NO_ERR && tx) {
@@ -388,13 +391,21 @@ static __attribute__((noinline)) void css_one(BrCss *c, dom_node *el, bool is_st
 	}
 	if (*links >= CSS_MAX_LINKS || !attr(el, "rel", a, sizeof a) || !ci_has(a, "stylesheet") || ci_has(a, "alternate"))
 		return;
-	if (attr(el, "media", a, sizeof a) && strstr(a, "print") && !strstr(a, "screen"))
+	if (attr(el, "media", a, sizeof a) && !cssprep_media_ok(a, VW_PC)) // print, tema oscuro…
 		return;
 	char *href = malloc(2048), *abs = href ? href + 1024 : NULL;
 	if (!href)
 		return;
 	if (attr(el, "href", href, 1024) && href[0]) {
 		resolve(B.url, href, abs, 1024);
+		const char *key = strlen(abs) > 95 ? abs + strlen(abs) - 95 : abs; // el final: el nombre con su huella
+		for (int i = 0; i < CSS_NSEEN; i++)
+			if (!strcmp(CSS_SEEN[i], key)) {
+				free(href);
+				return;
+			}
+		if (CSS_NSEEN < CSS_MAX_LINKS)
+			util_strlcpy(CSS_SEEN[CSS_NSEEN++], key, sizeof CSS_SEEN[0]);
 		Buf cb = {0};
 		long code;
 		(*links)++;
@@ -782,7 +793,9 @@ static void load_thread(void *arg)
 	if (css) {
 		int links = 0;
 		size_t bytes = 0;
+		CSS_NSEEN = 0;
 		css_collect(css, (dom_node *)doc, 0, &links, &bytes);
+		brcss_finish(css, doc, VW_PC); // su CSS moderno, traducido para libcss
 		B.ncss = brcss_sheets(css);
 		util_log("web: %d hojas CSS, %u bytes", B.ncss, (unsigned)bytes);
 	}

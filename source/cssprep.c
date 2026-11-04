@@ -1,0 +1,1122 @@
+/*
+ * Cloud3DS - tu nube local para Nintendo 3DS
+ * Copyright (C) 2026 VENOMSHiNE - https://github.com/venomshine/Cloud3DS
+ *
+ * Software libre bajo la GNU General Public License v3 con términos adicionales
+ * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
+ */
+#include "cssprep.h"
+
+#include <ctype.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+
+/* ------------------------------------------------------------ texto de salida */
+typedef struct {
+	char *p;
+	size_t n, cap;
+	bool bad;
+} Out;
+
+static void put(Out *o, const char *s, size_t n)
+{
+	if (!o || o->bad || !n)
+		return;
+	if (o->n + n + 1 > o->cap) {
+		size_t c = o->cap ? o->cap : 4096;
+		while (c < o->n + n + 1)
+			c *= 2;
+		char *np = realloc(o->p, c);
+		if (!np) {
+			o->bad = true;
+			return;
+		}
+		o->p = np, o->cap = c;
+	}
+	memcpy(o->p + o->n, s, n);
+	o->n += n;
+	o->p[o->n] = 0;
+}
+static void puts_(Out *o, const char *s) { put(o, s, strlen(s)); }
+
+/* ------------------------------------------------------------ variables: nombre -> valor */
+typedef struct {
+	char **k, **v;
+	size_t cap, n;
+} Map;
+
+static uint32_t hash(const char *s, size_t n)
+{
+	uint32_t h = 2166136261u;
+	for (size_t i = 0; i < n; i++)
+		h = (h ^ (unsigned char)s[i]) * 16777619u;
+	return h;
+}
+
+static void map_free(Map *m)
+{
+	for (size_t i = 0; i < m->cap; i++)
+		free(m->k[i]), free(m->v[i]);
+	free(m->k), free(m->v);
+	memset(m, 0, sizeof *m);
+}
+
+static const char *map_get(const Map *m, const char *k, size_t kn)
+{
+	if (!m->cap)
+		return NULL;
+	for (size_t i = hash(k, kn) & (m->cap - 1);; i = (i + 1) & (m->cap - 1)) {
+		if (!m->k[i])
+			return NULL;
+		if (strlen(m->k[i]) == kn && !memcmp(m->k[i], k, kn))
+			return m->v[i];
+	}
+}
+
+static void map_set(Map *m, const char *k, size_t kn, const char *v, size_t vn)
+{
+	if ((m->n + 1) * 2 > m->cap) { // crecer (y recolocar)
+		size_t nc = m->cap ? m->cap * 2 : 256;
+		char **nk = calloc(nc, sizeof *nk), **nv = calloc(nc, sizeof *nv);
+		if (!nk || !nv) {
+			free(nk), free(nv);
+			return;
+		}
+		for (size_t i = 0; i < m->cap; i++)
+			if (m->k[i]) {
+				size_t j = hash(m->k[i], strlen(m->k[i])) & (nc - 1);
+				while (nk[j])
+					j = (j + 1) & (nc - 1);
+				nk[j] = m->k[i], nv[j] = m->v[i];
+			}
+		free(m->k), free(m->v);
+		m->k = nk, m->v = nv, m->cap = nc;
+	}
+	size_t i = hash(k, kn) & (m->cap - 1);
+	for (; m->k[i]; i = (i + 1) & (m->cap - 1))
+		if (strlen(m->k[i]) == kn && !memcmp(m->k[i], k, kn))
+			break;
+	char *nv = malloc(vn + 1);
+	if (!nv)
+		return;
+	memcpy(nv, v, vn);
+	nv[vn] = 0;
+	if (!m->k[i]) {
+		m->k[i] = malloc(kn + 1);
+		if (!m->k[i]) {
+			free(nv);
+			return;
+		}
+		memcpy(m->k[i], k, kn);
+		m->k[i][kn] = 0;
+		m->n++;
+	} else
+		free(m->v[i]);
+	m->v[i] = nv;
+}
+
+struct CssPrep {
+	float w;
+	Map root, any;     /* las de :root/html/body (las de la página) y todas */
+	char *html, *body; /* sus atributos, «nombre=valor\n» */
+};
+
+CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs)
+{
+	CssPrep *p = calloc(1, sizeof *p);
+	if (!p)
+		return NULL;
+	p->w = width;
+	p->html = strdup(html_attrs ? html_attrs : "");
+	p->body = strdup(body_attrs ? body_attrs : "");
+	return p;
+}
+
+void cssprep_free(CssPrep *p)
+{
+	if (!p)
+		return;
+	map_free(&p->root);
+	map_free(&p->any);
+	free(p->html), free(p->body);
+	free(p);
+}
+
+/* ------------------------------------------------------------ recorrer el texto */
+static const char *skip_ws(const char *s, const char *e)
+{
+	for (;;) {
+		while (s < e && isspace((unsigned char)*s))
+			s++;
+		if (s + 1 < e && s[0] == '/' && s[1] == '*') {
+			const char *c = s + 2;
+			while (c + 1 < e && !(c[0] == '*' && c[1] == '/'))
+				c++;
+			s = c + 1 < e ? c + 2 : e;
+			continue;
+		}
+		return s;
+	}
+}
+
+static const char *skip_str(const char *s, const char *e) // s en la comilla
+{
+	char q = *s++;
+	while (s < e && *s != q) {
+		if (*s == '\\' && s + 1 < e)
+			s++;
+		s++;
+	}
+	return s < e ? s + 1 : e;
+}
+
+/* el primer carácter de set fuera de paréntesis, corchetes, comillas y comentarios (o e) */
+static const char *find_top(const char *s, const char *e, const char *set)
+{
+	int d = 0;
+	while (s < e) {
+		char c = *s;
+		if (c == '"' || c == '\'') {
+			s = skip_str(s, e);
+			continue;
+		}
+		if (c == '/' && s + 1 < e && s[1] == '*') {
+			s = skip_ws(s, e);
+			continue;
+		}
+		if (c == '(' || c == '[')
+			d++;
+		else if ((c == ')' || c == ']') && d > 0)
+			d--;
+		else if (!d && strchr(set, c))
+			return s;
+		s++;
+	}
+	return e;
+}
+
+/* s justo después de «{»: el «}» que lo cierra (o e) */
+static const char *block_end(const char *s, const char *e)
+{
+	int d = 1;
+	while (s < e) {
+		char c = *s;
+		if (c == '"' || c == '\'') {
+			s = skip_str(s, e);
+			continue;
+		}
+		if (c == '/' && s + 1 < e && s[1] == '*') {
+			s = skip_ws(s, e);
+			continue;
+		}
+		if (c == '{')
+			d++;
+		else if (c == '}' && --d == 0)
+			return s;
+		s++;
+	}
+	return e;
+}
+
+static void trim(const char **s, const char **e)
+{
+	while (*s < *e && isspace((unsigned char)**s))
+		(*s)++;
+	while (*e > *s && isspace((unsigned char)(*e)[-1]))
+		(*e)--;
+}
+
+static bool has_ci(const char *s, size_t n, const char *needle)
+{
+	size_t l = strlen(needle);
+	for (size_t i = 0; i + l <= n; i++)
+		if (!strncasecmp(s + i, needle, l))
+			return true;
+	return false;
+}
+
+/* ------------------------------------------------------------ @media */
+static float len_px(const char *v)
+{
+	char *end;
+	float x = strtof(v, &end);
+	if (end == v)
+		return -1;
+	if (!strncasecmp(end, "em", 2) || !strncasecmp(end, "rem", 3))
+		return x * 16;
+	return x; // px o sin unidad
+}
+
+// una condición entre paréntesis («min-width: 768px», «width >= 768px», «prefers-color-scheme: dark»)
+static bool feature_ok(const char *f, float w)
+{
+	char b[160];
+	size_t j = 0;
+	for (; *f && j + 1 < sizeof b; f++)
+		if (!isspace((unsigned char)*f))
+			b[j++] = (char)tolower((unsigned char)*f);
+	b[j] = 0;
+	const float H = 768;
+	char *c = strchr(b, ':');
+	if (c) {
+		*c = 0;
+		const char *k = b, *v = c + 1;
+		if (!strcmp(k, "min-width"))
+			return w >= len_px(v);
+		if (!strcmp(k, "max-width"))
+			return w <= len_px(v);
+		if (!strcmp(k, "min-height"))
+			return H >= len_px(v);
+		if (!strcmp(k, "max-height"))
+			return H <= len_px(v);
+		if (!strcmp(k, "prefers-color-scheme"))
+			return !strcmp(v, "light");
+		if (!strcmp(k, "prefers-reduced-motion"))
+			return !strcmp(v, "reduce"); // la 3DS va mejor sin animaciones (no las hay, pero sí sus estilos)
+		if (!strcmp(k, "hover") || !strcmp(k, "any-hover"))
+			return !strcmp(v, "hover");
+		if (!strcmp(k, "pointer") || !strcmp(k, "any-pointer"))
+			return !strcmp(v, "fine");
+		if (!strcmp(k, "orientation"))
+			return !strcmp(v, "landscape");
+		if (!strcmp(k, "forced-colors") || !strcmp(k, "inverted-colors"))
+			return !strcmp(v, "none");
+		if (!strcmp(k, "prefers-contrast") || !strcmp(k, "prefers-reduced-transparency") || !strcmp(k, "prefers-reduced-data"))
+			return !strcmp(v, "no-preference");
+		if (strstr(k, "device-pixel-ratio") || strstr(k, "resolution"))
+			return strstr(k, "max") != NULL;
+		if (!strcmp(k, "display-mode"))
+			return !strcmp(v, "browser");
+		if (!strcmp(k, "scripting"))
+			return !strcmp(v, "enabled");
+		if (!strcmp(k, "color") || !strcmp(k, "min-color"))
+			return true;
+		return false;
+	}
+	if (!strcmp(b, "color") || !strcmp(b, "hover") || !strcmp(b, "pointer"))
+		return true;
+	// rango: «width>=768px», «768px<=width», «400px<width<=900px»
+	const char *dim = strstr(b, "width") ? "width" : strstr(b, "height") ? "height" : NULL;
+	if (!dim)
+		return false;
+	float val = !strcmp(dim, "width") ? w : H;
+	char *p = strstr(b, dim);
+	bool ok = true;
+	// lo que va antes: «X<» o «X<=» (o «>»)
+	if (p > b) {
+		char *q = p;
+		bool eq = q[-1] == '=';
+		if (eq)
+			q--;
+		char op = q > b ? q[-1] : 0;
+		*(q - (q > b)) = 0;
+		float x = len_px(b);
+		if (op == '<')
+			ok &= eq ? x <= val : x < val;
+		else if (op == '>')
+			ok &= eq ? x >= val : x > val;
+	}
+	char *r = p + strlen(dim);
+	if (*r) {
+		char op = *r++;
+		bool eq = *r == '=';
+		if (eq)
+			r++;
+		float x = len_px(r);
+		if (op == '<')
+			ok &= eq ? val <= x : val < x;
+		else if (op == '>')
+			ok &= eq ? val >= x : val > x;
+		else if (op == '=')
+			ok &= val == x;
+	}
+	return ok;
+}
+
+static bool query_ok(const char *s, const char *e, float w)
+{
+	trim(&s, &e);
+	bool neg = false;
+	if (e - s > 4 && !strncasecmp(s, "not ", 4))
+		neg = true, s += 4;
+	else if (e - s > 5 && !strncasecmp(s, "only ", 5))
+		s += 5;
+	bool ok = true;
+	while (s < e && ok) {
+		s = skip_ws(s, e);
+		if (s >= e)
+			break;
+		if (*s == '(') {
+			const char *c = find_top(s + 1, e, ")"); // el «)» de este paréntesis
+			int d = 0;
+			for (c = s; c < e; c++) {
+				if (*c == '(')
+					d++;
+				else if (*c == ')' && --d == 0)
+					break;
+			}
+			char f[200];
+			size_t l = (size_t)(c - s - 1) < sizeof f - 1 ? (size_t)(c - s - 1) : sizeof f - 1;
+			memcpy(f, s + 1, l);
+			f[l] = 0;
+			if (f[0] == '(') // anidado: ((a) or (b)) → se mira dentro
+				ok = query_ok(f, f + l, w) || has_ci(f, l, " or ");
+			else
+				ok = feature_ok(f, w);
+			s = c < e ? c + 1 : e;
+			continue;
+		}
+		const char *t = s;
+		while (s < e && !isspace((unsigned char)*s) && *s != '(')
+			s++;
+		size_t tl = (size_t)(s - t);
+		if ((tl == 3 && !strncasecmp(t, "and", 3)) || (tl == 3 && !strncasecmp(t, "all", 3)) || (tl == 6 && !strncasecmp(t, "screen", 6)))
+			continue;
+		if (tl == 2 && !strncasecmp(t, "or", 2))
+			continue;
+		ok = false; // print, speech, tv… o algo que no se entiende
+	}
+	return neg ? !ok : ok;
+}
+
+bool cssprep_media_ok(const char *q, float w)
+{
+	if (!q)
+		return true;
+	const char *s = q, *e = q + strlen(q);
+	if (skip_ws(s, e) >= e)
+		return true;
+	while (s < e) {
+		const char *c = find_top(s, e, ",");
+		if (query_ok(s, c, w))
+			return true;
+		s = c + 1;
+	}
+	return false;
+}
+
+/* ------------------------------------------------------------ ¿es una regla de la raíz? */
+static bool attr_val(const char *attrs, const char *name, size_t nl, char *out, size_t on)
+{
+	for (const char *p = attrs; *p;) {
+		const char *eq = strchr(p, '='), *nlp = strchr(p, '\n');
+		if (!nlp)
+			nlp = p + strlen(p);
+		if (eq && eq < nlp && (size_t)(eq - p) == nl && !strncasecmp(p, name, nl)) {
+			size_t l = (size_t)(nlp - eq - 1) < on - 1 ? (size_t)(nlp - eq - 1) : on - 1;
+			memcpy(out, eq + 1, l);
+			out[l] = 0;
+			return true;
+		}
+		p = *nlp ? nlp + 1 : nlp;
+	}
+	return false;
+}
+
+static bool word_in(const char *list, const char *w, size_t wl)
+{
+	for (const char *p = list; *p;) {
+		while (*p && isspace((unsigned char)*p))
+			p++;
+		const char *q = p;
+		while (*q && !isspace((unsigned char)*q))
+			q++;
+		if ((size_t)(q - p) == wl && !strncmp(p, w, wl))
+			return true;
+		p = q;
+	}
+	return false;
+}
+
+// un selector simple compuesto («html[data-x=y].clase»), contra <html> (el) o <body>
+static bool compound_ok(const char *s, const char *e, const char *attrs, bool is_html)
+{
+	char v[512];
+	while (s < e) {
+		char c = *s;
+		if (c == '*') {
+			s++;
+		} else if (isalpha((unsigned char)c)) {
+			const char *t = s;
+			while (s < e && (isalnum((unsigned char)*s) || *s == '-'))
+				s++;
+			size_t l = (size_t)(s - t);
+			if (!(l == 4 && !strncasecmp(t, "html", 4) && is_html) && !(l == 4 && !strncasecmp(t, "body", 4) && !is_html))
+				return false;
+		} else if (c == '.' || c == '#') {
+			const char *t = ++s;
+			while (s < e && (isalnum((unsigned char)*s) || *s == '-' || *s == '_' || *s == '\\'))
+				s++;
+			if (!attr_val(attrs, c == '.' ? "class" : "id", c == '.' ? 5 : 2, v, sizeof v))
+				return false;
+			if (c == '.' ? !word_in(v, t, (size_t)(s - t)) : (strlen(v) != (size_t)(s - t) || strncmp(v, t, (size_t)(s - t))))
+				return false;
+		} else if (c == '[') {
+			const char *end = find_top(s + 1, e, "]");
+			const char *n0 = s + 1, *n1 = n0;
+			while (n1 < end && (isalnum((unsigned char)*n1) || *n1 == '-' || *n1 == '_' || *n1 == ':'))
+				n1++;
+			bool have = attr_val(attrs, n0, (size_t)(n1 - n0), v, sizeof v);
+			const char *op = skip_ws(n1, end);
+			if (op < end && *op != ']') {
+				char o = *op == '=' ? '=' : *op;
+				const char *q = op + (o == '=' ? 1 : 2);
+				q = skip_ws(q, end);
+				char want[256];
+				size_t wl = 0;
+				if (q < end && (*q == '"' || *q == '\'')) {
+					char qq = *q++;
+					while (q < end && *q != qq && wl + 1 < sizeof want)
+						want[wl++] = *q++;
+				} else
+					while (q < end && !isspace((unsigned char)*q) && wl + 1 < sizeof want)
+						want[wl++] = *q++;
+				want[wl] = 0;
+				if (!have)
+					return false;
+				size_t vl = strlen(v);
+				bool ok = o == '=' ? !strcmp(v, want) : o == '~' ? word_in(v, want, wl) : o == '^' ? !strncmp(v, want, wl)
+				        : o == '$' ? (vl >= wl && !strcmp(v + vl - wl, want)) : o == '*' ? strstr(v, want) != NULL
+				        : o == '|' ? (!strcmp(v, want) || (!strncmp(v, want, wl) && v[wl] == '-')) : false;
+				if (!ok)
+					return false;
+			} else if (!have)
+				return false;
+			s = end < e ? end + 1 : e;
+		} else if (c == ':') {
+			const char *t = s;
+			s++;
+			if (s < e && *s == ':')
+				return false; // un pseudoelemento no define variables de la raíz
+			while (s < e && (isalnum((unsigned char)*s) || *s == '-'))
+				s++;
+			size_t l = (size_t)(s - t);
+			if (s < e && *s == '(') { // :not(…), :is(…)…: no se mira dentro
+				int d = 0;
+				for (; s < e; s++) {
+					if (*s == '(')
+						d++;
+					else if (*s == ')' && --d == 0) {
+						s++;
+						break;
+					}
+				}
+				if (!(l == 4 && !strncasecmp(t, ":not", 4)) && !(l == 3 && !strncasecmp(t, ":is", 3)) && !(l == 6 && !strncasecmp(t, ":where", 6)))
+					return false;
+				continue;
+			}
+			if (l == 5 && !strncasecmp(t, ":root", 5)) {
+				if (!is_html)
+					return false;
+			} else if (!(l == 5 && !strncasecmp(t, ":host", 5)))
+				return false;
+		} else
+			return false;
+	}
+	return true;
+}
+
+static bool sel_is_root(CssPrep *p, const char *s, const char *e)
+{
+	while (s < e) {
+		const char *c = find_top(s, e, ",");
+		const char *a = s, *b = c;
+		trim(&a, &b);
+		// lo último tras un combinador (« », >, +, ~)
+		const char *last = a;
+		int d = 0;
+		for (const char *q = a; q < b; q++) {
+			if (*q == '(' || *q == '[')
+				d++;
+			else if ((*q == ')' || *q == ']') && d)
+				d--;
+			else if (!d && (isspace((unsigned char)*q) || *q == '>' || *q == '+' || *q == '~'))
+				last = q + 1;
+		}
+		last = skip_ws(last, b);
+		if (last < b && (compound_ok(last, b, p->html, true) || compound_ok(last, b, p->body, false)))
+			return true;
+		s = c + 1;
+	}
+	return false;
+}
+
+/* ------------------------------------------------------------ var() */
+static bool subst(CssPrep *p, const Map *local, const char *v, size_t vn, Out *o, int depth);
+
+static bool lookup(CssPrep *p, const Map *local, const char *k, size_t kn, const char *fb, size_t fbn, Out *o, int depth)
+{
+	const char *val = local ? map_get(local, k, kn) : NULL;
+	if (!val)
+		val = map_get(&p->root, k, kn);
+	if (!val && fb)
+		return subst(p, local, fb, fbn, o, depth + 1);
+	if (!val)
+		val = map_get(&p->any, k, kn);
+	if (!val)
+		return false;
+	return subst(p, local, val, strlen(val), o, depth + 1);
+}
+
+static bool subst(CssPrep *p, const Map *local, const char *v, size_t vn, Out *o, int depth)
+{
+	if (depth > 10)
+		return false;
+	const char *s = v, *e = v + vn;
+	while (s < e) {
+		const char *f = NULL;
+		for (const char *q = s; q + 4 <= e; q++)
+			if (!strncasecmp(q, "var(", 4) && (q == v || !(isalnum((unsigned char)q[-1]) || q[-1] == '-'))) {
+				f = q;
+				break;
+			}
+		if (!f) {
+			put(o, s, (size_t)(e - s));
+			return true;
+		}
+		put(o, s, (size_t)(f - s));
+		const char *a = f + 4, *cl = a;
+		int d = 1;
+		for (; cl < e; cl++) {
+			if (*cl == '(')
+				d++;
+			else if (*cl == ')' && --d == 0)
+				break;
+		}
+		if (cl >= e)
+			return false;
+		const char *comma = find_top(a, cl, ",");
+		const char *n0 = a, *n1 = comma;
+		trim(&n0, &n1);
+		const char *fb = comma < cl ? comma + 1 : NULL, *fe = cl;
+		if (fb)
+			trim(&fb, &fe);
+		if (!lookup(p, local, n0, (size_t)(n1 - n0), fb, fb ? (size_t)(fe - fb) : 0, o, depth))
+			return false;
+		s = cl + 1;
+	}
+	return true;
+}
+
+/* ------------------------------------------------------------ valores */
+// clamp(a, b, c) → b; min(a, b) / max(a, b): el de px más pequeño / grande (o el primero / último)
+static void funcs(const char *v, size_t vn, Out *o)
+{
+	const char *s = v, *e = v + vn;
+	while (s < e) {
+		const char *f = NULL;
+		int kind = 0;
+		for (const char *q = s; q < e; q++) {
+			if (q > v && (isalnum((unsigned char)q[-1]) || q[-1] == '-'))
+				continue;
+			if (!strncasecmp(q, "clamp(", 6))
+				f = q, kind = 1;
+			else if (!strncasecmp(q, "min(", 4))
+				f = q, kind = 2;
+			else if (!strncasecmp(q, "max(", 4))
+				f = q, kind = 3;
+			if (f)
+				break;
+		}
+		if (!f) {
+			put(o, s, (size_t)(e - s));
+			return;
+		}
+		put(o, s, (size_t)(f - s));
+		const char *a = f + (kind == 1 ? 6 : 4), *cl = a;
+		int d = 1;
+		for (; cl < e; cl++) {
+			if (*cl == '(')
+				d++;
+			else if (*cl == ')' && --d == 0)
+				break;
+		}
+		if (cl >= e) {
+			put(o, f, (size_t)(e - f));
+			return;
+		}
+		const char *args[8], *ends[8];
+		int na = 0;
+		for (const char *q = a; q <= cl && na < 8;) {
+			const char *c = find_top(q, cl, ",");
+			args[na] = q, ends[na] = c;
+			trim(&args[na], &ends[na]);
+			na++;
+			q = c + 1;
+		}
+		int pick = 0;
+		if (kind == 1)
+			pick = na >= 3 ? 1 : 0;
+		else {
+			float best = 0;
+			bool any = false;
+			pick = kind == 2 ? 0 : na - 1;
+			for (int i = 0; i < na; i++) {
+				char tmp[32];
+				size_t l = (size_t)(ends[i] - args[i]) < sizeof tmp - 1 ? (size_t)(ends[i] - args[i]) : sizeof tmp - 1;
+				memcpy(tmp, args[i], l);
+				tmp[l] = 0;
+				char *u;
+				float x = strtof(tmp, &u);
+				if (u != tmp && (!strcmp(u, "px") || !strcmp(u, "rem") || !strcmp(u, "em"))) {
+					if (strcmp(u, "px"))
+						x *= 16;
+					if (!any || (kind == 2 ? x < best : x > best))
+						best = x, pick = i, any = true;
+				}
+			}
+		}
+		funcs(args[pick], (size_t)(ends[pick] - args[pick]), o); // puede llevar otra dentro
+		s = cl + 1;
+	}
+}
+
+// rgb(1 2 3 / 50%) → rgba(1,2,3,.5): la sintaxis nueva, a la de siempre
+static void colors(const char *v, size_t vn, Out *o)
+{
+	const char *s = v, *e = v + vn;
+	while (s < e) {
+		const char *f = NULL;
+		for (const char *q = s; q + 4 < e; q++)
+			if ((!strncasecmp(q, "rgb(", 4) || !strncasecmp(q, "hsl(", 4) || !strncasecmp(q, "rgba(", 5) || !strncasecmp(q, "hsla(", 5)) &&
+			    (q == v || !isalnum((unsigned char)q[-1]))) {
+				f = q;
+				break;
+			}
+		if (!f) {
+			put(o, s, (size_t)(e - s));
+			return;
+		}
+		const char *a = strchr(f, '(') + 1, *cl = memchr(a, ')', (size_t)(e - a));
+		if (!cl || memchr(a, ',', (size_t)(cl - a))) { // ya con comas: tal cual
+			const char *nx = cl ? cl + 1 : e;
+			put(o, s, (size_t)(nx - s));
+			s = nx;
+			continue;
+		}
+		put(o, s, (size_t)(f - s));
+		char parts[4][24];
+		int np = 0;
+		for (const char *q = a; q < cl && np < 4;) {
+			while (q < cl && (isspace((unsigned char)*q) || *q == '/'))
+				q++;
+			const char *t = q;
+			while (q < cl && !isspace((unsigned char)*q) && *q != '/')
+				q++;
+			if (q > t) {
+				size_t l = (size_t)(q - t) < 23 ? (size_t)(q - t) : 23;
+				memcpy(parts[np], t, l);
+				parts[np++][l] = 0;
+			}
+		}
+		bool hsl = tolower((unsigned char)f[0]) == 'h';
+		if (np == 4 && strchr(parts[3], '%')) // alfa en %
+			snprintf(parts[3], sizeof parts[3], "%.3g", strtof(parts[3], NULL) / 100);
+		char b[128];
+		if (np == 4)
+			snprintf(b, sizeof b, "%s(%s,%s,%s,%s)", hsl ? "hsla" : "rgba", parts[0], parts[1], parts[2], parts[3]);
+		else if (np == 3)
+			snprintf(b, sizeof b, "%s(%s,%s,%s)", hsl ? "hsl" : "rgb", parts[0], parts[1], parts[2]);
+		else
+			snprintf(b, sizeof b, "%.*s", (int)(cl + 1 - f), f);
+		puts_(o, b);
+		s = cl + 1;
+	}
+}
+
+/* ------------------------------------------------------------ declaraciones */
+static void decl_out(Out *o, const char *name, const char *val)
+{
+	puts_(o, name);
+	put(o, ":", 1);
+	puts_(o, val);
+	put(o, ";", 1);
+}
+
+// las propiedades lógicas, a las físicas (de izquierda a derecha, horizontal)
+static void decl_emit(Out *o, const char *name, const char *val)
+{
+	static const char *const MAP1[][2] = {
+	    {"margin-inline-start", "margin-left"}, {"margin-inline-end", "margin-right"}, {"margin-block-start", "margin-top"},
+	    {"margin-block-end", "margin-bottom"}, {"padding-inline-start", "padding-left"}, {"padding-inline-end", "padding-right"},
+	    {"padding-block-start", "padding-top"}, {"padding-block-end", "padding-bottom"}, {"inset-inline-start", "left"},
+	    {"inset-inline-end", "right"}, {"inset-block-start", "top"}, {"inset-block-end", "bottom"}, {"inline-size", "width"},
+	    {"block-size", "height"}, {"min-inline-size", "min-width"}, {"max-inline-size", "max-width"}, {"min-block-size", "min-height"},
+	    {"max-block-size", "max-height"}, {"border-inline-start", "border-left"}, {"border-inline-end", "border-right"},
+	    {"border-block-start", "border-top"}, {"border-block-end", "border-bottom"}, {"border-start-start-radius", "border-top-left-radius"},
+	    {"border-start-end-radius", "border-top-right-radius"}, {"border-end-start-radius", "border-bottom-left-radius"},
+	    {"border-end-end-radius", "border-bottom-right-radius"}};
+	for (size_t i = 0; i < sizeof MAP1 / sizeof MAP1[0]; i++) {
+		size_t l = strlen(MAP1[i][0]);
+		if (!strncmp(name, MAP1[i][0], l) && (!name[l] || name[l] == '-')) { // también border-inline-start-color…
+			char nn[64];
+			snprintf(nn, sizeof nn, "%s%s", MAP1[i][1], name + l);
+			decl_out(o, nn, val);
+			return;
+		}
+	}
+	// dos lados: «margin-inline: a b», «inset: a b c d»
+	static const char *const MAP2[][3] = {{"margin-inline", "margin-left", "margin-right"}, {"margin-block", "margin-top", "margin-bottom"},
+	                                      {"padding-inline", "padding-left", "padding-right"}, {"padding-block", "padding-top", "padding-bottom"},
+	                                      {"inset-inline", "left", "right"}, {"inset-block", "top", "bottom"},
+	                                      {"border-inline", "border-left", "border-right"}, {"border-block", "border-top", "border-bottom"}};
+	for (size_t i = 0; i < sizeof MAP2 / sizeof MAP2[0]; i++)
+		if (!strcmp(name, MAP2[i][0]) || (!strncmp(name, MAP2[i][0], strlen(MAP2[i][0])) && name[strlen(MAP2[i][0])] == '-')) {
+			const char *suf = name + strlen(MAP2[i][0]);
+			char a[160], b[160], n1[64], n2[64];
+			snprintf(n1, sizeof n1, "%s%s", MAP2[i][1], suf);
+			snprintf(n2, sizeof n2, "%s%s", MAP2[i][2], suf);
+			const char *sp = !strncmp(name, "border", 6) ? NULL : strchr(val, ' ');
+			if (sp && !strchr(val, '(')) {
+				snprintf(a, sizeof a, "%.*s", (int)(sp - val), val);
+				snprintf(b, sizeof b, "%s", sp + 1);
+			} else {
+				snprintf(a, sizeof a, "%s", val);
+				snprintf(b, sizeof b, "%s", val);
+			}
+			decl_out(o, n1, a);
+			decl_out(o, n2, b);
+			return;
+		}
+	if (!strcmp(name, "inset")) {
+		char v[4][64];
+		int n = 0;
+		for (const char *q = val; *q && n < 4;) {
+			while (*q == ' ')
+				q++;
+			const char *t = q;
+			while (*q && *q != ' ')
+				q++;
+			if (q > t)
+				snprintf(v[n++], sizeof v[0], "%.*s", (int)(q - t), t);
+		}
+		if (!n)
+			return;
+		const char *t = v[0], *r = n > 1 ? v[1] : t, *bt = n > 2 ? v[2] : t, *l = n > 3 ? v[3] : r;
+		decl_out(o, "top", t), decl_out(o, "right", r), decl_out(o, "bottom", bt), decl_out(o, "left", l);
+		return;
+	}
+	decl_out(o, name, val);
+}
+
+// las de una regla: las variables (pasada 1) o las declaraciones ya traducidas (pasada 2)
+static void decls(CssPrep *p, const char *s, const char *e, bool root, Map *local, Out *o, bool inl)
+{
+	while (s < e) {
+		const char *c = find_top(s, e, ";{");
+		if (c < e && *c == '{') { // anidada (CSS nesting): se salta
+			const char *be = block_end(c + 1, e);
+			s = be < e ? be + 1 : e;
+			continue;
+		}
+		const char *colon = find_top(s, c, ":");
+		if (colon < c) {
+			const char *n0 = s, *n1 = colon, *v0 = colon + 1, *v1 = c;
+			trim(&n0, &n1);
+			trim(&v0, &v1);
+			if (n1 - n0 > 2 && n0[0] == '-' && n0[1] == '-') {
+				if (!o) { // pasada 1: guardarla
+					map_set(&p->any, n0, (size_t)(n1 - n0), v0, (size_t)(v1 - v0));
+					if (root)
+						map_set(&p->root, n0, (size_t)(n1 - n0), v0, (size_t)(v1 - v0));
+				} else if (local)
+					map_set(local, n0, (size_t)(n1 - n0), v0, (size_t)(v1 - v0));
+			}
+		}
+		s = c + 1;
+	}
+	(void)o, (void)inl;
+}
+
+static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local, Out *o)
+{
+	Out a = {0}, b = {0};
+	while (s < e) {
+		const char *c = find_top(s, e, ";{");
+		if (c < e && *c == '{') {
+			const char *be = block_end(c + 1, e);
+			s = be < e ? be + 1 : e;
+			continue;
+		}
+		const char *colon = find_top(s, c, ":");
+		if (colon < c) {
+			const char *n0 = s, *n1 = colon, *v0 = colon + 1, *v1 = c;
+			trim(&n0, &n1);
+			trim(&v0, &v1);
+			if (n1 > n0 && !(n1 - n0 > 1 && n0[0] == '-' && n0[1] == '-') && v1 > v0) {
+				char name[64];
+				size_t nl = (size_t)(n1 - n0) < sizeof name - 1 ? (size_t)(n1 - n0) : sizeof name - 1;
+				for (size_t i = 0; i < nl; i++)
+					name[i] = (char)tolower((unsigned char)n0[i]);
+				name[nl] = 0;
+				a.n = 0, a.bad = false;
+				bool ok = true;
+				if (has_ci(v0, (size_t)(v1 - v0), "var("))
+					ok = subst(p, local, v0, (size_t)(v1 - v0), &a, 0);
+				else
+					put(&a, v0, (size_t)(v1 - v0));
+				if (ok && !a.bad && a.n) {
+					b.n = 0, b.bad = false;
+					funcs(a.p, a.n, &b);
+					a.n = 0;
+					if (!b.bad && b.n) {
+						colors(b.p, b.n, &a);
+						if (!a.bad && a.n)
+							decl_emit(o, name, a.p);
+					}
+				}
+			}
+		}
+		s = c + 1;
+	}
+	free(a.p), free(b.p);
+}
+
+/* ------------------------------------------------------------ selectores */
+static bool sel_unsupported(const char *s, size_t n)
+{
+	static const char *const BAD[] = {":has(", "::-webkit-", "::-moz-", ":-moz-", ":-webkit-", "::-ms-", ":-ms-", ":host", "::slotted",
+	                                  "::part", ":focus-visible", ":focus-within", "::placeholder", "::selection", "::backdrop",
+	                                  "::marker", "::file-selector-button", ":popover-open", ":modal", ":state(", ":dir(",
+	                                  ":user-invalid", ":user-valid", ":autofill", ":defined", ":open", ":closed", "&", ":nth-child(odd of",
+	                                  "::view-transition", ":lang(", NULL};
+	for (int i = 0; BAD[i]; i++)
+		if (has_ci(s, n, BAD[i]))
+			return true;
+	return false;
+}
+
+// :is(a, b) / :where(…) / :matches(…): un selector por cada opción (como mucho 24 en total)
+static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget)
+{
+	static const char *const FN[] = {":is(", ":where(", ":matches(", ":-webkit-any(", ":any(", NULL};
+	const char *f = NULL;
+	size_t fl = 0;
+	for (size_t i = 0; i < n && !f; i++)
+		for (int k = 0; FN[k]; k++) {
+			size_t l = strlen(FN[k]);
+			if (i + l <= n && !strncasecmp(s + i, FN[k], l)) {
+				f = s + i, fl = l;
+				break;
+			}
+		}
+	if (!f) {
+		if (*budget <= 0 || sel_unsupported(s, n))
+			return;
+		(*budget)--;
+		if (!*first)
+			put(o, ",", 1);
+		*first = false;
+		// :not(a, b) → :not(a):not(b)
+		const char *nt = NULL;
+		for (size_t i = 0; i + 5 <= n; i++)
+			if (!strncasecmp(s + i, ":not(", 5)) {
+				nt = s + i;
+				break;
+			}
+		if (nt) {
+			const char *a = nt + 5, *cl = a;
+			int d = 1;
+			for (; cl < s + n; cl++) {
+				if (*cl == '(')
+					d++;
+				else if (*cl == ')' && --d == 0)
+					break;
+			}
+			if (cl < s + n && find_top(a, cl, ",") < cl) {
+				put(o, s, (size_t)(nt - s));
+				for (const char *q = a; q < cl;) {
+					const char *c = find_top(q, cl, ",");
+					const char *x = q, *y = c;
+					trim(&x, &y);
+					puts_(o, ":not(");
+					put(o, x, (size_t)(y - x));
+					puts_(o, ")");
+					q = c + 1;
+				}
+				put(o, cl + 1, (size_t)(s + n - cl - 1));
+				return;
+			}
+		}
+		put(o, s, n);
+		return;
+	}
+	const char *a = f + fl, *cl = a, *e = s + n;
+	int d = 1;
+	for (; cl < e; cl++) {
+		if (*cl == '(')
+			d++;
+		else if (*cl == ')' && --d == 0)
+			break;
+	}
+	if (cl >= e)
+		return;
+	for (const char *q = a; q < cl;) {
+		const char *c = find_top(q, cl, ",");
+		const char *x = q, *y = c;
+		trim(&x, &y);
+		char *tmp = malloc(n + 1);
+		if (!tmp)
+			return;
+		size_t tn = 0;
+		memcpy(tmp, s, (size_t)(f - s)), tn = (size_t)(f - s);
+		memcpy(tmp + tn, x, (size_t)(y - x)), tn += (size_t)(y - x);
+		memcpy(tmp + tn, cl + 1, (size_t)(e - cl - 1)), tn += (size_t)(e - cl - 1);
+		sel_expand(tmp, tn, o, first, budget);
+		free(tmp);
+		q = c + 1;
+	}
+}
+
+/* ------------------------------------------------------------ las reglas */
+static void rules(CssPrep *p, const char *s, const char *e, Out *o)
+{
+	while (s < e) {
+		s = skip_ws(s, e);
+		if (s >= e)
+			break;
+		if (*s == '}' || *s == ';') {
+			s++;
+			continue;
+		}
+		if (*s == '<' && e - s >= 4 && !strncmp(s, "<!--", 4)) {
+			s += 4;
+			continue;
+		}
+		if (*s == '-' && e - s >= 3 && !strncmp(s, "-->", 3)) {
+			s += 3;
+			continue;
+		}
+		if (*s == '@') {
+			const char *n0 = s + 1, *n1 = n0;
+			while (n1 < e && (isalnum((unsigned char)*n1) || *n1 == '-'))
+				n1++;
+			const char *pe = find_top(n1, e, "{;");
+			if (pe >= e)
+				break;
+			size_t nl = (size_t)(n1 - n0);
+			if (*pe == ';') { // @import, @charset, @layer a, b;…: nada que hacer
+				s = pe + 1;
+				continue;
+			}
+			const char *b0 = pe + 1, *b1 = block_end(b0, e);
+			char pre[512];
+			const char *p0 = n1, *p1 = pe;
+			trim(&p0, &p1);
+			size_t pl = (size_t)(p1 - p0) < sizeof pre - 1 ? (size_t)(p1 - p0) : sizeof pre - 1;
+			memcpy(pre, p0, pl);
+			pre[pl] = 0;
+#define IS(x) (nl == strlen(x) && !strncasecmp(n0, x, nl))
+			if (IS("media")) {
+				if (cssprep_media_ok(pre, p->w))
+					rules(p, b0, b1, o);
+			} else if (IS("supports")) {
+				// lo que se pide con «not» suele ser lo de respaldo para navegadores viejos, y lo demás,
+				// mejoras: se aplican las mejoras (sin selector(), que es para :has() y parecidos)
+				if (strncasecmp(pre, "not", 3) && !has_ci(pre, pl, "selector("))
+					rules(p, b0, b1, o);
+			} else if (IS("layer") || IS("scope") || IS("starting-style")) {
+				if (!IS("starting-style"))
+					rules(p, b0, b1, o);
+			}
+			// @font-face, @keyframes, @container, @page, @property…: fuera
+#undef IS
+			s = b1 < e ? b1 + 1 : e;
+			continue;
+		}
+		const char *se = find_top(s, e, "{;");
+		if (se >= e)
+			break;
+		if (*se == ';') {
+			s = se + 1;
+			continue;
+		}
+		const char *b0 = se + 1, *b1 = block_end(b0, e);
+		const char *s0 = s, *s1 = se;
+		trim(&s0, &s1);
+		if (!o) { // pasada 1: las variables
+			if (has_ci(b0, (size_t)(b1 - b0), "--"))
+				decls(p, b0, b1, sel_is_root(p, s0, s1), NULL, NULL, false);
+		} else {
+			Out sel = {0};
+			bool first = true;
+			int budget = 24;
+			for (const char *q = s0; q < s1;) {
+				const char *c = find_top(q, s1, ",");
+				const char *x = q, *y = c;
+				trim(&x, &y);
+				if (y > x)
+					sel_expand(x, (size_t)(y - x), &sel, &first, &budget);
+				q = c + 1;
+			}
+			if (!first && !sel.bad) {
+				Map local = {0};
+				if (has_ci(b0, (size_t)(b1 - b0), "--"))
+					decls(p, b0, b1, false, &local, o, false);
+				size_t mark = o->n;
+				put(o, sel.p, sel.n);
+				put(o, "{", 1);
+				size_t inner = o->n;
+				decls_out(p, b0, b1, local.cap ? &local : NULL, o);
+				if (o->n == inner) // sin nada: fuera la regla
+					o->n = mark, o->p[mark] = 0;
+				else
+					put(o, "}", 1);
+				map_free(&local);
+			}
+			free(sel.p);
+		}
+		s = b1 < e ? b1 + 1 : e;
+	}
+}
+
+void cssprep_vars(CssPrep *p, const char *css, size_t n)
+{
+	if (p && css && n)
+		rules(p, css, css + n, NULL);
+}
+
+char *cssprep_rewrite(CssPrep *p, const char *css, size_t n, size_t *out_n)
+{
+	Out o = {0};
+	if (!p || !css)
+		return NULL;
+	o.cap = n + 64;
+	o.p = malloc(o.cap);
+	if (!o.p)
+		return NULL;
+	o.p[0] = 0;
+	rules(p, css, css + n, &o);
+	if (o.bad) {
+		free(o.p);
+		return NULL;
+	}
+	*out_n = o.n;
+	return o.p;
+}
+
+char *cssprep_inline(CssPrep *p, const char *d, size_t n, size_t *out_n)
+{
+	Out o = {0};
+	if (!p || !d)
+		return NULL;
+	Map local = {0};
+	if (has_ci(d, n, "--"))
+		decls(p, d, d + n, false, &local, &o, true);
+	decls_out(p, d, d + n, local.cap ? &local : NULL, &o);
+	map_free(&local);
+	if (o.bad) {
+		free(o.p);
+		return NULL;
+	}
+	*out_n = o.n;
+	if (!o.p) {
+		o.p = malloc(1);
+		if (o.p)
+			o.p[0] = 0;
+	}
+	return o.p;
+}

@@ -9,6 +9,7 @@
  * cada elemento; para eso pregunta por el árbol (nombre, clases, id, padres, hermanos,
  * atributos) a este «manejador», que lo mira en el DOM de libdom. */
 #include "brcss.h"
+#include "cssprep.h"
 #include "core/node.h" /* la estructura interna de libdom: padre y hermanos sin tocar referencias */
 
 #include <ctype.h>
@@ -24,6 +25,14 @@ struct BrCss {
 	css_stylesheet *sheets[MAX_SHEETS];
 	int n;          /* todas, con la del navegador */
 	char base[1024];
+	/* las de la página, en crudo hasta brcss_finish (las variables pueden venir de otra hoja) */
+	struct {
+		char *css, *url;
+		size_t n;
+	} raw[MAX_SHEETS];
+	int nraw;
+	CssPrep *prep;  /* para los style="…" */
+	float width;
 };
 
 /* la hoja del navegador: lo que hace cada etiqueta si la página no dice otra cosa (como el anexo D
@@ -480,15 +489,93 @@ BrCss *brcss_new(const char *base_url)
 
 void brcss_add(BrCss *c, const char *css, size_t n, const char *url)
 {
-	if (!c || c->n >= MAX_SHEETS || !n)
+	if (!c || c->n + c->nraw >= MAX_SHEETS || !n)
 		return;
-	css_stylesheet *s = sheet_parse(css, n, url ? url : c->base, false);
-	if (!s)
+	char *cp = malloc(n + 1), *u = strdup(url ? url : c->base);
+	if (!cp || !u) {
+		free(cp), free(u);
 		return;
-	if (css_select_ctx_append_sheet(c->ctx, s, CSS_ORIGIN_AUTHOR, NULL) == CSS_OK)
-		c->sheets[c->n++] = s;
-	else
-		css_stylesheet_destroy(s);
+	}
+	memcpy(cp, css, n);
+	cp[n] = 0;
+	c->raw[c->nraw].css = cp, c->raw[c->nraw].url = u, c->raw[c->nraw].n = n;
+	c->nraw++;
+}
+
+// los atributos de un elemento, «nombre=valor\n…»
+static void attrs_of(dom_node *el, char *out, size_t on)
+{
+	out[0] = 0;
+	dom_namednodemap *m = NULL;
+	if (!el || dom_node_get_attributes(el, &m) != DOM_NO_ERR || !m)
+		return;
+	uint32_t n = 0;
+	dom_namednodemap_get_length(m, &n);
+	size_t used = 0;
+	for (uint32_t i = 0; i < n; i++) {
+		dom_node *a = NULL;
+		if (dom_namednodemap_item(m, i, &a) != DOM_NO_ERR || !a)
+			continue;
+		dom_string *k = NULL, *v = NULL;
+		dom_attr_get_name((dom_attr *)a, &k);
+		dom_attr_get_value((dom_attr *)a, &v);
+		if (k) {
+			int w = snprintf(out + used, on - used, "%.*s=%.*s\n", (int)dom_string_byte_length(k), dom_string_data(k), v ? (int)dom_string_byte_length(v) : 0,
+			                 v ? dom_string_data(v) : "");
+			if (w > 0 && used + (size_t)w < on)
+				used += (size_t)w;
+			else
+				out[used] = 0;
+		}
+		if (k)
+			dom_string_unref(k);
+		if (v)
+			dom_string_unref(v);
+		dom_node_unref(a);
+	}
+	dom_namednodemap_unref(m);
+}
+
+void brcss_finish(BrCss *c, dom_document *doc, float width)
+{
+	if (!c)
+		return;
+	char *ha = malloc(4096), *ba = malloc(4096);
+	if (ha && ba) {
+		ha[0] = ba[0] = 0;
+		dom_element *root = NULL;
+		if (doc && dom_document_get_document_element(doc, &root) == DOM_NO_ERR && root) {
+			attrs_of((dom_node *)root, ha, 4096);
+			for (dom_node_internal *ch = NI(root)->first_child; ch; ch = ch->next)
+				if (ch->type == DOM_ELEMENT_NODE && ch->name && dom_string_byte_length(ch->name) == 4 &&
+				    !strncasecmp(dom_string_data(ch->name), "body", 4)) {
+					attrs_of((dom_node *)ch, ba, 4096);
+					break;
+				}
+			dom_node_unref(root);
+		}
+		c->width = width;
+		c->prep = cssprep_new(width, ha, ba);
+	}
+	free(ha), free(ba);
+	for (int i = 0; i < c->nraw && c->prep; i++)
+		cssprep_vars(c->prep, c->raw[i].css, c->raw[i].n);
+	for (int i = 0; i < c->nraw; i++) {
+		size_t on = 0;
+		char *o = c->prep ? cssprep_rewrite(c->prep, c->raw[i].css, c->raw[i].n, &on) : NULL;
+		free(c->raw[i].css); // lo crudo ya no hace falta: menos memoria antes de que libcss lea
+		c->raw[i].css = NULL;
+		css_stylesheet *s = o && on ? sheet_parse(o, on, c->raw[i].url, false) : NULL;
+		free(o);
+		free(c->raw[i].url);
+		if (!s)
+			continue;
+		if (c->n < MAX_SHEETS && css_select_ctx_append_sheet(c->ctx, s, CSS_ORIGIN_AUTHOR, NULL) == CSS_OK)
+			c->sheets[c->n++] = s;
+		else
+			css_stylesheet_destroy(s);
+	}
+	c->nraw = 0;
 }
 
 int brcss_sheets(const BrCss *c)
@@ -503,6 +590,9 @@ void brcss_free(BrCss *c)
 	css_select_ctx_destroy(c->ctx);
 	for (int i = 0; i < c->n; i++)
 		css_stylesheet_destroy(c->sheets[i]);
+	for (int i = 0; i < c->nraw; i++)
+		free(c->raw[i].css), free(c->raw[i].url);
+	cssprep_free(c->prep);
 	free(c);
 }
 
@@ -531,8 +621,15 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 		dom_string *v = get_attr(el, k);
 		lwc_string_unref(k);
 		if (v) {
-			if (dom_string_byte_length(v))
-				inl = sheet_parse(dom_string_data(v), dom_string_byte_length(v), c->base, true);
+			if (dom_string_byte_length(v)) {
+				size_t on = 0;
+				char *o = c->prep ? cssprep_inline(c->prep, dom_string_data(v), dom_string_byte_length(v), &on) : NULL;
+				if (o)
+					inl = on ? sheet_parse(o, on, c->base, true) : NULL;
+				else
+					inl = sheet_parse(dom_string_data(v), dom_string_byte_length(v), c->base, true);
+				free(o);
+			}
 			dom_string_unref(v);
 		}
 	}

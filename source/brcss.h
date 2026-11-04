@@ -19,6 +19,9 @@ typedef struct BrCss BrCss;
 
 BrCss *brcss_new(const char *base_url);                       /* con la hoja por defecto */
 void   brcss_add(BrCss *c, const char *css, size_t n, const char *url); /* una hoja de la página */
+/* cuando ya están todas: se traduce su CSS moderno (cssprep) y libcss las lee. width: el ancho de
+ * la página, para @media */
+void   brcss_finish(BrCss *c, dom_document *doc, float width);
 int    brcss_sheets(const BrCss *c);                          /* cuántas de la página */
 void   brcss_free(BrCss *c);
 
