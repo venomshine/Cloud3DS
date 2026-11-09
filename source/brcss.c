@@ -31,7 +31,8 @@ struct BrCss {
 		size_t n;
 	} raw[MAX_SHEETS];
 	int nraw;
-	CssPrep *prep;  /* para los style="…" */
+	CssPrep *prep;  /* para los style="…" y los temas por ámbitos */
+	int nscope;     /* ámbitos de tema que cambian colores */
 	float width;
 };
 
@@ -640,6 +641,7 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 		free(buf);
 		lwc_string_unref(ks);
 	}
+	c->nscope = c->prep ? cssprep_scopes(c->prep) : 0; // los temas por ámbitos («[data-color-mode=dark]»…)
 	for (int i = 0; i < c->nraw; i++) {
 		size_t on = 0;
 		char *o = c->prep ? cssprep_rewrite(c->prep, c->raw[i].css, c->raw[i].n, &on) : NULL;
@@ -656,6 +658,28 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 			css_stylesheet_destroy(s);
 	}
 	c->nraw = 0;
+}
+
+int brcss_scope_of(BrCss *c, dom_node *el, int parent)
+{
+	static char a[2048];
+	if (!c || !c->prep || !c->nscope)
+		return parent;
+	attrs_of(el, a, sizeof a);
+	return cssprep_scope_match(c->prep, a, parent);
+}
+
+uint32_t brcss_scope_col(const BrCss *c, int scope, const css_computed_style *cs, uint32_t col, int kind)
+{
+	if (!c || scope < 0)
+		return col;
+	int32_t vid = 0;
+	if (kind == 1 && css_computed_widows(cs, &vid) != CSS_WIDOWS_SET)
+		vid = 0;
+	else if (kind == 2 && css_computed_orphans(cs, &vid) != CSS_ORPHANS_SET)
+		vid = 0;
+	cssprep_scope_col(c->prep, scope, &col, kind, kind == 3 ? 0 : FIXTOINT(vid)); // (css_fixed; lo de serie, 2, da 0)
+	return col;
 }
 
 int brcss_sheets(const BrCss *c)

@@ -45,3 +45,9 @@ bool brcss_width_calc(const css_computed_style *s, float vw, float *px, float *p
 
 /* olvidar los estilos que libcss guardó en el árbol (tras cambiarlo) */
 void brcss_forget(dom_node *root);
+
+/* temas por ámbitos («[data-color-mode=dark]», «.dark»…): en cuál está un elemento (el de su padre si sus
+ * atributos no lo cambian; -1: ninguno) y el color que toma ahí uno de la página (css_color; tipo: 1 fondo,
+ * 2 texto, 3 borde) */
+int brcss_scope_of(BrCss *c, dom_node *el, int parent);
+uint32_t brcss_scope_col(const BrCss *c, int scope, const css_computed_style *cs, uint32_t col, int kind);

@@ -58,7 +58,7 @@ struct Sty {
 	uint32_t bc[4], bg, col;
 	float fpx, lh, grow, shrink, bsh, bsv, vash, spw, iw, ih, wcalc; /* wcalc: los px de width: calc(% + px) */
 	int32_t order;
-	int16_t link, clk, img, wdg, colspan, lnum;
+	int16_t link, clk, img, wdg, colspan, lnum, scope; /* scope: el tema por ámbitos (-1 ninguno) */
 	int16_t gcs, gsp, gr, grs;   /* rejilla: columna (1…, 0 auto) y cuántas; fila y cuántas */
 	int16_t tw[16];              /* rejilla: ancho de las pistas (px; -1 auto; -10·fr) */
 	uint8_t outer, inner, li, pos, flt, clr, ws, ta, va, ovx, ovy, bbox, vis, fdir, fwrap, jc, ai, as, lst, lstin;
@@ -316,6 +316,7 @@ static Sty *sty_new(Ctx *C, const Sty *parent)
 	s->all = C->all, C->all = s;
 	s->link = parent ? parent->link : -1;
 	s->clk = parent ? parent->clk : -1;
+	s->scope = parent ? parent->scope : -1;
 	s->img = s->wdg = -1;
 	s->colspan = 1;
 	s->spw = -1;
@@ -375,7 +376,8 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 	uint8_t fw = css_computed_font_weight(cs);
 	s->bold = fw == CSS_FONT_WEIGHT_BOLD || fw == CSS_FONT_WEIGHT_BOLDER || fw >= CSS_FONT_WEIGHT_600;
 	s->under = (css_computed_text_decoration(cs) & CSS_TEXT_DECORATION_UNDERLINE) != 0;
-	s->col = css_computed_color(cs, &c) == CSS_COLOR_COLOR ? css_col(c) | 0xFF000000 : 0xFF222120;
+	int scope = s->scope; // dentro de un tema («[data-color-mode=dark]»…): sus colores
+	s->col = css_computed_color(cs, &c) == CSS_COLOR_COLOR ? css_col(brcss_scope_col(C->L->css, scope, cs, c, 2)) | 0xFF000000 : 0xFF222120;
 	s->ws = css_computed_white_space(cs);
 	uint8_t ta = css_computed_text_align(cs);
 	s->ta = (ta == CSS_TEXT_ALIGN_CENTER || ta == CSS_TEXT_ALIGN_LIBCSS_CENTER) ? 1 : (ta == CSS_TEXT_ALIGN_RIGHT || ta == CSS_TEXT_ALIGN_LIBCSS_RIGHT) ? 2 : 0;
@@ -392,7 +394,7 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 	s->ovx = css_computed_overflow_x(cs);
 	s->ovy = css_computed_overflow_y(cs);
 	s->bbox = css_computed_box_sizing(cs) == CSS_BOX_SIZING_BORDER_BOX;
-	if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c >> 24) > 0x10)
+	if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c = brcss_scope_col(C->L->css, scope, cs, c, 1)) >> 24 > 0x10)
 		s->bg = css_col(c);
 	{ // imagen de fondo, con su tamaño (de cssprep, en outline), posición y repetición
 		lwc_string *bi = NULL;
@@ -430,7 +432,7 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 		uint8_t wt = wf[k](cs, &v, &u);
 		s->bw[k] = wt == CSS_BORDER_WIDTH_THIN ? 1 : wt == CSS_BORDER_WIDTH_THICK ? 5 : wt == CSS_BORDER_WIDTH_WIDTH ? fminf(fmaxf(0, brcss_px(cs, v, u, C->vw)), 40) : 3;
 		css_color bcol;
-		s->bc[k] = cf[k](cs, &bcol) == CSS_BORDER_COLOR_COLOR ? css_col(bcol) : s->col;
+		s->bc[k] = cf[k](cs, &bcol) == CSS_BORDER_COLOR_COLOR ? css_col(brcss_scope_col(C->L->css, scope, cs, bcol, 3)) : s->col;
 	}
 	// flex
 	s->fdir = css_computed_flex_direction(cs);
@@ -878,6 +880,7 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 		return;
 	}
 	s->node = n;
+	s->scope = (int16_t)brcss_scope_of(C->L->css, n, s->scope);
 	sty_fill(C, s, cs, d);
 	if (css_computed_text_transform(cs) == CSS_TEXT_TRANSFORM_UPPERCASE)
 		s->upper = 1;
@@ -2933,8 +2936,8 @@ static void dump(Box *b, int d, float ax, float ay)
 	if (b->kind == K_TEXT)
 		fprintf(stderr, "%*s\"%.*s\"\n", d, "", (int)(b->tn < 30 ? b->tn : 30), b->t);
 	else
-		fprintf(stderr, "%*s%s <%s.%s> in=%d out=%d oof=%d ifc=%d x=%.0f y=%.0f w=%.0f h=%.0f nfr=%d ov=%d,%d aut=%x pct=%x W=%.1f MW=%.1f H=%.1f MH=%.1f m=%.0f,%.0f,%.0f,%.0f p=%.0f,%.0f\n", d, "", K[b->kind], tag, cls, b->s->inner, b->s->outer, b->oof,
-		        b->s->ifc, ax + b->x, ay + b->y, b->w, b->h, b->s->nfr, b->s->ovx, b->s->ovy, b->s->aut, b->s->pct, b->s->lv[LW], b->s->lv[LMAXW], b->s->lv[LH], b->s->lv[LMINH], b->s->um[0], b->s->um[1], b->s->um[2], b->s->um[3], b->s->up[1], b->s->up[3]);
+		fprintf(stderr, "%*s%s <%s.%s> in=%d out=%d oof=%d ifc=%d x=%.0f y=%.0f w=%.0f h=%.0f nfr=%d ov=%d,%d aut=%x pct=%x W=%.1f MW=%.1f H=%.1f MH=%.1f m=%.0f,%.0f,%.0f,%.0f p=%.0f,%.0f bg=%08x col=%08x\n", d, "", K[b->kind], tag, cls, b->s->inner, b->s->outer, b->oof,
+		        b->s->ifc, ax + b->x, ay + b->y, b->w, b->h, b->s->nfr, b->s->ovx, b->s->ovy, b->s->aut, b->s->pct, b->s->lv[LW], b->s->lv[LMAXW], b->s->lv[LH], b->s->lv[LMINH], b->s->um[0], b->s->um[1], b->s->um[2], b->s->um[3], b->s->up[1], b->s->up[3], b->s->bg, b->s->col);
 	if (b->kind == K_TEXT)
 		return;
 	for (Box *c = b->first; c; c = c->next)

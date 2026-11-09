@@ -20,6 +20,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct CssPrep CssPrep;
 
@@ -31,6 +32,14 @@ void cssprep_free(CssPrep *p);
 void cssprep_vars(CssPrep *p, const char *css, size_t n);              /* 1.ª pasada: las variables */
 char *cssprep_rewrite(CssPrep *p, const char *css, size_t n, size_t *out_n); /* 2.ª: malloc (o NULL) */
 char *cssprep_inline(CssPrep *p, const char *decls, size_t n, size_t *out_n); /* style="…" */
+
+/* los ámbitos de tema (tras la 1.ª pasada; cuántos cambian colores): cuáles tocan a un elemento por sus
+ * atributos («nombre=valor
+»; -1: ninguno) y el color que toma ahí uno de la página (tipo: 0 cualquiera,
+ * 1 fondo, 2 texto, 3 borde; col en ARGB) */
+int cssprep_scopes(CssPrep *p);
+int cssprep_scope_match(CssPrep *p, const char *attrs, int parent);
+bool cssprep_scope_col(CssPrep *p, int combo, uint32_t *col, int kind, int vid); /* vid: de orphans/widows */
 
 /* modo oscuro: (prefers-color-scheme: dark) vale, y las webs que tienen tema oscuro lo usan */
 void cssprep_set_dark(bool dark);

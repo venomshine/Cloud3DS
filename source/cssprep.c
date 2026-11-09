@@ -118,8 +118,34 @@ static void map_set(Map *m, const char *k, size_t kn, const char *v, size_t vn)
 	m->v[i] = nv;
 }
 
+/* un ámbito de tema: una regla como «[data-color-mode=dark]» o «.dark» que cambia variables de color para lo
+ * de dentro. Como las variables se ponen una vez (con los valores de la página), lo de dentro cambia luego sus
+ * colores: los de la página → los del ámbito (pr: de, a, tipo, de 3 en 3) */
+#define MAX_SCOPES 64
+typedef struct {
+	char sel[192];
+	Map vars;
+	uint32_t *pr;
+	int npr;
+} Scope;
+
+#define MAX_COMBOS 64
+typedef struct {
+	uint8_t n, id[7]; /* los ámbitos que tocan a un elemento, del que más manda al que menos */
+	Map *vars;        /* las de todos ellos juntas (al usarlo) */
+	uint32_t *val;    /* lo que da ahí cada variable marcada (val[id]; st: 0 sin mirar, 1 color, 2 no) */
+	uint8_t *st;
+} Combo;
+
 struct CssPrep {
 	float w;
+	Scope *sc;
+	int nsc, nact; /* nact: los que cambian algún color */
+	Combo combo[MAX_COMBOS];
+	int ncombo;
+	Map vid;      /* variables marcadas en color y background-color: nombre -> número (1…) */
+	char **vname; /* y al revés */
+	int nvid, cvid;
 	Map root, any;     /* las de :root/html/body (las de la página) y todas */
 	Map areas;         /* rejilla: nombre de zona -> «orden,toda-la-fila,columna,cuántas,fila,cuántas» */
 	char *html, *body; /* sus atributos, «nombre=valor\n» */
@@ -147,6 +173,18 @@ void cssprep_free(CssPrep *p)
 	map_free(&p->root);
 	map_free(&p->any);
 	map_free(&p->areas);
+	for (int i = 0; i < p->nsc; i++)
+		map_free(&p->sc[i].vars), free(p->sc[i].pr);
+	free(p->sc);
+	for (int i = 0; i < p->ncombo; i++) {
+		if (p->combo[i].vars)
+			map_free(p->combo[i].vars), free(p->combo[i].vars);
+		free(p->combo[i].val), free(p->combo[i].st);
+	}
+	map_free(&p->vid);
+	for (int i = 0; i < p->nvid; i++)
+		free(p->vname[i]);
+	free(p->vname);
 	free(p->html), free(p->body);
 	free(p);
 }
@@ -1799,6 +1837,48 @@ static void grid_start_end(const char *s, const char *e, Out *o)
 	grid_pos(o, start, span);
 }
 
+
+/* con temas por ámbitos: color y background-color llevan al lado (en orphans y widows) qué variable los da,
+ * para tomar luego la del tema; 0 si no salen de una */
+static void var_tag(CssPrep *p, Out *o, const char *name, const char *v0, const char *v1)
+{
+	int id = 0;
+	const char *f = NULL;
+	for (const char *q = v0; q + 6 < v1 && !f; q++)
+		if (!strncasecmp(q, "var(", 4))
+			f = q + 4;
+	if (f) {
+		const char *a = skip_ws(f, v1), *b = a;
+		while (b < v1 && *b != ',' && *b != ')' && !isspace((unsigned char)*b))
+			b++;
+		const char *got = map_get(&p->vid, a, (size_t)(b - a));
+		if (got)
+			id = atoi(got);
+		else if (b > a && p->nvid < 30000) {
+			if (p->nvid + 1 >= p->cvid) {
+				int nc = p->cvid ? p->cvid * 2 : 256;
+				char **nn = realloc(p->vname, sizeof *nn * (size_t)nc);
+				if (!nn)
+					return;
+				p->vname = nn, p->cvid = nc;
+			}
+			char *nm = malloc((size_t)(b - a) + 1);
+			if (!nm)
+				return;
+			memcpy(nm, a, (size_t)(b - a));
+			nm[b - a] = 0;
+			p->vname[p->nvid++] = nm;
+			id = p->nvid;
+			char num[16];
+			snprintf(num, sizeof num, "%d", id);
+			map_set(&p->vid, a, (size_t)(b - a), num, strlen(num));
+		}
+	}
+	char d[48];
+	snprintf(d, sizeof d, "%d%s", id, has_ci(v0, (size_t)(v1 - v0), "!important") ? " !important" : "");
+	decl_out(o, name[0] == 'c' ? "orphans" : "widows", d);
+}
+
 static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local, Out *o)
 {
 	// ¿la regla ya dice su color de fondo? (entonces un degradado en background-image no lo pisa)
@@ -1844,6 +1924,8 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 					if (b.p)
 						v0 = b.p, v1 = b.p + b.n;
 				}
+				if (p->nact && (!strcmp(name, "color") || !strcmp(name, "background-color") || !strcmp(name, "background")))
+					var_tag(p, o, name, v0, v1);
 				if (has_ci(v0, (size_t)(v1 - v0), "var("))
 					ok = subst(p, local, v0, (size_t)(v1 - v0), &a, 0);
 				else
@@ -2001,6 +2083,286 @@ static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget
 }
 
 /* ------------------------------------------------------------ las reglas */
+
+/* ------------------------------------------------------------ ámbitos de tema */
+// «[a=b][c].clase»: solo atributos y clases (sin etiqueta, combinadores ni pseudoclases)
+static bool scope_like(const char *a, const char *b)
+{
+	if (a >= b || (size_t)(b - a) >= sizeof(((Scope *)0)->sel) || (*a != '[' && *a != '.'))
+		return false;
+	while (a < b) {
+		if (*a == '[') {
+			const char *z = find_top(a + 1, b, "]");
+			if (z >= b)
+				return false;
+			a = z + 1;
+		} else if (*a == '.') {
+			const char *t = ++a;
+			while (a < b && (isalnum((unsigned char)*a) || *a == '-' || *a == '_'))
+				a++;
+			if (a == t)
+				return false;
+		} else
+			return false;
+	}
+	return true;
+}
+
+static int scope_parts(const char *s)
+{
+	int n = 0;
+	for (; *s; s++)
+		n += *s == '[' || *s == '.';
+	return n;
+}
+
+// las partes de t están todas en s (t es igual o más general)
+static bool scope_in(const char *t, const char *s)
+{
+	while (*t) {
+		const char *e = t + 1;
+		if (*t == '[') {
+			while (*e && *e != ']')
+				e++;
+			if (*e)
+				e++;
+		} else
+			while (*e && *e != '[' && *e != '.')
+				e++;
+		size_t l = (size_t)(e - t);
+		bool ok = false;
+		for (const char *f = s; *f; f++)
+			if (!strncmp(f, t, l) && (!f[l] || f[l] == '[' || f[l] == '.')) {
+				ok = true;
+				break;
+			}
+		if (!ok)
+			return false;
+		t = e;
+	}
+	return true;
+}
+
+static int var_kind(const char *k);
+
+static void scope_add(CssPrep *p, const char *s0, const char *s1, const char *b0, const char *b1)
+{
+	Map v = {0}; // las que define (las que solo usa var(--x), no)
+	Out dummy = {0};
+	decls(p, b0, b1, false, &v, &dummy, false);
+	int ncol = 0; // de color (por el valor o por el nombre): si no, es de un componente (medidas…)
+	for (size_t m = 0; m < v.cap; m++)
+		if (v.k[m]) {
+			const char *x = v.v[m];
+			ncol += *x == '#' || !strncasecmp(x, "rgb", 3) || !strncasecmp(x, "hsl", 3) || var_kind(v.k[m]) || strstr(v.k[m], "olor");
+		}
+	if (ncol < 2) {
+		map_free(&v);
+		return;
+	}
+	for (const char *q = s0; q < s1;) {
+		const char *c = find_top(q, s1, ",");
+		const char *a = q, *b = c;
+		trim(&a, &b);
+		q = c + 1;
+		if (!scope_like(a, b) || compound_ok(a, b, p->html, true) || compound_ok(a, b, p->body, false))
+			continue;
+		size_t l = (size_t)(b - a);
+		int i = 0;
+		while (i < p->nsc && (strlen(p->sc[i].sel) != l || strncmp(p->sc[i].sel, a, l)))
+			i++;
+		if (i == p->nsc) {
+			if (p->nsc >= MAX_SCOPES)
+				continue;
+			if (!p->sc && !(p->sc = calloc(MAX_SCOPES, sizeof *p->sc)))
+				return;
+			memcpy(p->sc[i].sel, a, l);
+			p->sc[i].sel[l] = 0;
+			p->nsc++;
+		}
+		for (size_t m = 0; m < v.cap; m++)
+			if (v.k[m])
+				map_set(&p->sc[i].vars, v.k[m], strlen(v.k[m]), v.v[m], strlen(v.v[m]));
+	}
+	map_free(&v);
+}
+
+static uint32_t argb(const float c[4])
+{
+	int a = (int)(c[3] * 255 + 0.5f);
+	return (uint32_t)(a < 0 ? 0 : a > 255 ? 255 : a) << 24 | ((uint32_t)c[0] & 255) << 16 | ((uint32_t)c[1] & 255) << 8 | ((uint32_t)c[2] & 255);
+}
+
+static int var_kind(const char *k)
+{
+	char l[96];
+	size_t n = 0;
+	for (; k[n] && n < sizeof l - 1; n++)
+		l[n] = (char)tolower((unsigned char)k[n]);
+	l[n] = 0;
+	if (strstr(l, "border") || strstr(l, "outline") || strstr(l, "divider"))
+		return 3;
+	if (strstr(l, "bg") || strstr(l, "background") || strstr(l, "canvas") || strstr(l, "surface") || strstr(l, "backdrop") || strstr(l, "overlay"))
+		return 1;
+	if (strstr(l, "fg") || strstr(l, "text") || strstr(l, "foreground") || strstr(l, "ink") || strstr(l, "title") || strstr(l, "link"))
+		return 2;
+	return 0;
+}
+
+int cssprep_scopes(CssPrep *p)
+{
+	for (int i = 0; p && i < p->nsc; i++) {
+		Scope *S = &p->sc[i];
+		Map eff = {0}; // las suyas y las de los ámbitos más generales que lo contienen, de menos a más
+		int np = scope_parts(S->sel);
+		for (int k = 1; k <= np; k++)
+			for (int j = 0; j < p->nsc; j++)
+				if (scope_parts(p->sc[j].sel) == k && scope_in(p->sc[j].sel, S->sel))
+					for (size_t m = 0; m < p->sc[j].vars.cap; m++)
+						if (p->sc[j].vars.k[m])
+							map_set(&eff, p->sc[j].vars.k[m], strlen(p->sc[j].vars.k[m]), p->sc[j].vars.v[m], strlen(p->sc[j].vars.v[m]));
+		int cap = 0;
+		for (size_t m = 0; m < eff.cap && S->npr < 3000; m++) {
+			if (!eff.k[m])
+				continue;
+			Out a = {0}, b = {0};
+			float ca[4], cb[4];
+			if (subst(p, &eff, eff.v[m], strlen(eff.v[m]), &a, 0) && a.p &&
+			    lookup(p, NULL, eff.k[m], strlen(eff.k[m]), NULL, 0, &b, 0) && b.p &&
+			    simple_color(b.p, b.p + b.n, cb) && simple_color(a.p, a.p + a.n, ca)) {
+				uint32_t f = argb(cb), t = argb(ca), kd = (uint32_t)var_kind(eff.k[m]);
+				bool dup = false;
+				for (int r = 0; r < S->npr && !dup; r++)
+					dup = S->pr[r * 3] == f && S->pr[r * 3 + 1] == t && S->pr[r * 3 + 2] == kd;
+				if (!dup) {
+					if (S->npr == cap) {
+						cap = cap ? cap * 2 : 64;
+						uint32_t *np2 = realloc(S->pr, sizeof *np2 * 3 * (size_t)cap);
+						if (!np2) {
+							free(a.p), free(b.p);
+							break;
+						}
+						S->pr = np2;
+					}
+					S->pr[S->npr * 3] = f, S->pr[S->npr * 3 + 1] = t, S->pr[S->npr * 3 + 2] = kd;
+					S->npr++;
+				}
+			}
+			free(a.p), free(b.p);
+		}
+#ifdef BRL_DEBUG
+		if (getenv("BRL_SC")) {
+			fprintf(stderr, "ámbito %s: %zu variables, %d colores\n", S->sel, eff.n, S->npr);
+			for (int r = 0; r < S->npr; r++)
+				if (getenv("BRL_SC")[0] == 'v' || (S->pr[r * 3] & 0xFFFFFF) == strtoul(getenv("BRL_SC"), NULL, 16))
+					fprintf(stderr, "   %08x -> %08x (%u)\n", S->pr[r * 3], S->pr[r * 3 + 1], S->pr[r * 3 + 2]);
+		}
+#endif
+		map_free(&eff);
+		bool change = false;
+		for (int r = 0; r < S->npr && !change; r++)
+			change = S->pr[r * 3] != S->pr[r * 3 + 1];
+		if (S->npr >= 3 && change) // pocos colores: no es un tema (las variables de un componente)
+			p->nact++;
+		else
+			free(S->pr), S->pr = NULL, S->npr = 0;
+	}
+	return p ? p->nact : 0;
+}
+
+int cssprep_scope_match(CssPrep *p, const char *attrs, int parent)
+{
+	if (!p || !p->nact || !attrs || !*attrs)
+		return parent;
+	int ids[7], n = 0;
+	for (int i = 0; i < p->nsc; i++) {
+		const Scope *S = &p->sc[i];
+		if (!S->npr || !compound_ok(S->sel, S->sel + strlen(S->sel), attrs, false))
+			continue;
+		if (n == 7) // lleno: fuera el que menos manda (el último)
+			n--;
+		int k = n++, sp = scope_parts(S->sel); // más partes (o más tarde, a igualdad): manda más
+		while (k > 0 && scope_parts(p->sc[ids[k - 1]].sel) <= sp)
+			ids[k] = ids[k - 1], k--;
+		ids[k] = i;
+	}
+	if (!n)
+		return parent;
+	if (parent >= 0 && parent < p->ncombo) // y los de fuera (detrás: mandan menos)
+		for (int k = 0; k < p->combo[parent].n && n < 7; k++) {
+			bool have = false;
+			for (int j = 0; j < n; j++)
+				have = have || ids[j] == p->combo[parent].id[k];
+			if (!have)
+				ids[n++] = p->combo[parent].id[k];
+		}
+	for (int c = 0; c < p->ncombo; c++) {
+		int k = 0;
+		while (k < n && p->combo[c].n == n && p->combo[c].id[k] == ids[k])
+			k++;
+		if (k == n && p->combo[c].n == n)
+			return c;
+	}
+	if (p->ncombo >= MAX_COMBOS)
+		return parent;
+	Combo *c = &p->combo[p->ncombo];
+	c->n = (uint8_t)n;
+	for (int k = 0; k < n; k++)
+		c->id[k] = (uint8_t)ids[k];
+	return p->ncombo++;
+}
+
+bool cssprep_scope_col(CssPrep *p, int combo, uint32_t *col, int kind, int vid)
+{
+	if (!p || combo < 0 || combo >= p->ncombo)
+		return false;
+	Combo *c = &p->combo[combo];
+	if (vid > 0 && vid <= p->nvid) { // de una variable: la del tema
+		if (!c->vars && (c->vars = calloc(1, sizeof *c->vars)))
+			for (int k = c->n - 1; k >= 0; k--) { // del que menos manda al que más
+				const Map *m = &p->sc[c->id[k]].vars;
+				for (size_t i = 0; i < m->cap; i++)
+					if (m->k[i])
+						map_set(c->vars, m->k[i], strlen(m->k[i]), m->v[i], strlen(m->v[i]));
+			}
+		if (!c->st) {
+			c->st = calloc((size_t)p->nvid + 1, 1);
+			c->val = calloc((size_t)p->nvid + 1, sizeof *c->val);
+			if (!c->st || !c->val)
+				free(c->st), free(c->val), c->st = NULL, c->val = NULL;
+		}
+		if (c->st && c->vars) {
+			if (!c->st[vid]) {
+				Out a = {0}, b = {0}, d = {0};
+				float f[4];
+				c->st[vid] = 2;
+				if (lookup(p, c->vars, p->vname[vid - 1], strlen(p->vname[vid - 1]), NULL, 0, &a, 0) && a.p) {
+					funcs(a.p, a.n, &b);
+					if (b.p)
+						colors(b.p, b.n, &d);
+					if (d.p && simple_color(d.p, d.p + d.n, f))
+						c->val[vid] = argb(f), c->st[vid] = 1;
+				}
+				free(a.p), free(b.p), free(d.p);
+			}
+			if (c->st[vid] == 1) {
+				*col = c->val[vid];
+				return true;
+			}
+		}
+	}
+	for (int pass = 0; pass < 3; pass++) // por el color: el de su tipo; uno general; cualquiera
+		for (int k = 0; k < c->n; k++) {
+			const Scope *S = &p->sc[c->id[k]];
+			for (int r = 0; r < S->npr; r++)
+				if (S->pr[r * 3] == *col && (pass == 2 || (int)S->pr[r * 3 + 2] == (pass ? 0 : kind))) {
+					*col = S->pr[r * 3 + 1];
+					return true;
+				}
+		}
+	return false;
+}
+
 static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 {
 	while (s < e) {
@@ -2070,6 +2432,8 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 			bool vars = has_ci(b0, (size_t)(b1 - b0), "--");
 			if (vars || has_ci(b0, (size_t)(b1 - b0), "grid-template"))
 				decls(p, b0, b1, vars && sel_is_root(p, s0, s1), NULL, NULL, false);
+			if (vars)
+				scope_add(p, s0, s1, b0, b1);
 		} else {
 			Out sel = {0};
 			bool first = true;
