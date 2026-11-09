@@ -1384,7 +1384,7 @@ static void fl_place(BFC *bf, float y, float w, float h, bool right, float L0, f
 	for (int guard = 0; guard < 200; guard++) {
 		float l, r;
 		fl_bounds(bf, y, fmaxf(h, 0.01f), L0, R0, &l, &r);
-		if (r - l >= w - 0.01f || (l <= L0 && r >= R0)) {
+		if (r - l >= w - 0.5f || (l <= L0 && r >= R0)) {
 			*ox = right ? r - w : l;
 			*oy = y;
 			break;
@@ -1564,7 +1564,7 @@ static float ifc(Ctx *C, Box *b, float cw, BFC *bf, float ox, float oy, float cx
 	float y = 0, tind = LV(s, LTIND, cw);
 	int i = 0;
 	uint32_t woff = 0; /* palabra partida: lo ya puesto */
-	bool first = true, sp = false;
+	bool first = true, sp = false, soft = false; /* soft: la línea de antes se partió por falta de sitio */
 	// los en línea abiertos (para pintar sus fondos por trozos de línea)
 	Box *open[32];
 	int nopen = 0;
@@ -1733,7 +1733,7 @@ static float ifc(Ctx *C, Box *b, float cw, BFC *bf, float ox, float oy, float cx
 				float W = ab->w + as->um[1] + as->um[3];
 				if (sp && any)
 					x += spw(C, s), sp = false;
-				if (any && x + W > avail + 0.01f && can_wrap(s))
+				if (any && x + W > avail + 0.5f && can_wrap(s))
 					break;
 				pl[m++] = (Pl){i, x, W, 0, 0};
 				x += W;
@@ -1947,7 +1947,7 @@ static float blocks(Ctx *C, Box *b, float cw, float dh, BFC *bf, float ox, float
 			c->y = cy0 + (fy - oy) + cs->um[0];
 #ifdef BRL_DEBUG
 			if (getenv("BRL_FL"))
-				fprintf(stderr, "float w=%.0f h=%.0f sy0=%.0f oy=%.0f fy=%.0f nfl=%d top=%.0f\n", W, H, sy0, oy, fy, bf ? bf->n : -1, fl_top(bf));
+				fprintf(stderr, "float w=%.3f x=%.3f h=%.0f sy0=%.0f oy=%.0f fy=%.0f nfl=%d top=%.0f\n", W, fx, H, sy0, oy, fy, bf ? bf->n : -1, fl_top(bf));
 #endif
 			continue;
 		}
@@ -2144,7 +2144,7 @@ static float flex(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 		int cnt = 0;
 		for (int i = 0; i < n; i++) {
 			float o = it[i].hyp + it[i].ext;
-			if (s->fwrap && cnt && avail < INF && sum + gmain + o > avail + 0.01f) {
+			if (s->fwrap && cnt && avail < INF && sum + gmain + o > avail + 0.5f) {
 				ls[nl++] = i;
 				sum = 0, cnt = 0;
 			}
