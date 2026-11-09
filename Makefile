@@ -12,9 +12,9 @@ include $(DEVKITARM)/3ds_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	Cloud3DS
 BUILD		:=	build
-SOURCES		:=	source lib
+SOURCES		:=	source lib lib/webp/src/dec lib/webp/src/dsp lib/webp/src/utils
 DATA		:=	data
-INCLUDES	:=	source lib nsweb/libdom/src
+INCLUDES	:=	source lib lib/webp nsweb/libdom/src
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 ROMFS		:=	romfs

@@ -19,6 +19,7 @@
 #define STBI_ONLY_TGA
 #define STBI_NO_STDIO_WARNINGS
 #include "stb_image.h"
+#include "src/webp/decode.h" /* libwebp (BSD): solo el decodificador, en lib/webp */
 
 /* la 3DS tiene poca memoria: una foto de más de 4 Mpx no se abre (14 MB en RGBA) */
 #define MAX_PIXELS (4 * 1024 * 1024)
@@ -50,10 +51,43 @@ ImgResult img_load_fit(const char *path, int maxw, int maxh, u8 **rgba, int *w, 
 	return fit(src, iw, ih, maxw, maxh, rgba, w, h);
 }
 
+bool img_mem_info(const u8 *data, size_t n, int *w, int *h)
+{
+	int c;
+	if (n > 12 && !memcmp(data, "RIFF", 4) && !memcmp(data + 8, "WEBP", 4))
+		return WebPGetInfo(data, n, w, h) != 0;
+	return stbi_info_from_memory(data, (int)n, w, h, &c) != 0;
+}
+
 ImgResult img_mem_fit(const u8 *data, size_t n, int maxw, int maxh, u8 **rgba, int *w, int *h)
 {
 	int iw, ih, c;
 	*rgba = NULL;
+	if (n > 12 && !memcmp(data, "RIFF", 4) && !memcmp(data + 8, "WEBP", 4)) { // WebP (lo mandan muchas webs aunque no se pida)
+		if (!WebPGetInfo(data, n, &iw, &ih) || iw <= 0 || ih <= 0)
+			return IMG_BAD;
+		// se reduce al decodificarla (una foto de 1920 px no pasa entera por la memoria)
+		float k = 1;
+		if (iw > maxw || ih > maxh)
+			k = iw * maxh > ih * maxw ? (float)maxw / iw : (float)maxh / ih;
+		int tw = (int)(iw * k + 0.5f), th = (int)(ih * k + 0.5f);
+		if (tw < 1)
+			tw = 1;
+		if (th < 1)
+			th = 1;
+		WebPDecoderConfig cfg;
+		if (!WebPInitDecoderConfig(&cfg))
+			return IMG_BAD;
+		cfg.output.colorspace = MODE_RGBA;
+		if (tw != iw || th != ih)
+			cfg.options.use_scaling = 1, cfg.options.scaled_width = tw, cfg.options.scaled_height = th;
+		if (WebPDecode(data, n, &cfg) != VP8_STATUS_OK)
+			return IMG_BAD;
+		*rgba = cfg.output.u.RGBA.rgba, *w = cfg.output.width, *h = cfg.output.height;
+		cfg.output.is_external_memory = 1; // (el búfer es nuestro: no se suelta aquí)
+		WebPFreeDecBuffer(&cfg.output);
+		return IMG_OK;
+	}
 	if (!stbi_info_from_memory(data, (int)n, &iw, &ih, &c))
 		return IMG_BAD;
 	if ((long long)iw * ih > MAX_PIXELS)
