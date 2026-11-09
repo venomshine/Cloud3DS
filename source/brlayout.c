@@ -59,6 +59,7 @@ struct Sty {
 	float fpx, lh, grow, shrink, bsh, bsv, vash, spw, iw, ih, wcalc; /* wcalc: los px de width: calc(% + px) */
 	int32_t order;
 	int16_t link, clk, img, wdg, colspan, lnum, scope; /* scope: el tema por ámbitos (-1 ninguno) */
+	const char *env;             /* las variables de los style="" de él y sus antepasados («--a:x;») */
 	int16_t gcs, gsp, gr, grs;   /* rejilla: columna (1…, 0 auto) y cuántas; fila y cuántas */
 	int16_t tw[16];              /* rejilla: ancho de las pistas (px; -1 auto; -10·fr) */
 	uint8_t outer, inner, li, pos, flt, clr, ws, ta, va, ovx, ovy, bbox, vis, fdir, fwrap, jc, ai, as, lst, lstin;
@@ -317,6 +318,7 @@ static Sty *sty_new(Ctx *C, const Sty *parent)
 	s->link = parent ? parent->link : -1;
 	s->clk = parent ? parent->clk : -1;
 	s->scope = parent ? parent->scope : -1;
+	s->env = parent ? parent->env : NULL;
 	s->img = s->wdg = -1;
 	s->colspan = 1;
 	s->spw = -1;
@@ -919,7 +921,16 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	tag_of(n, tag, sizeof tag);
 	if (in_list(tag, NEVER))
 		return;
-	css_computed_style *cs = brcss_style(C->L->css, n, pcs, C->vw);
+	char *env = NULL;
+	css_computed_style *cs = brcss_style_env(C->L->css, n, pcs, C->vw, parent ? parent->s->env : NULL, &env);
+	if (env) { // (al montón de la maqueta)
+		size_t el = strlen(env);
+		char *ea = arena(C, el + 1);
+		if (ea)
+			memcpy(ea, env, el + 1);
+		free(env);
+		env = ea;
+	}
 	BrcssPseudo ps __attribute__((cleanup(ps_free))) = brcss_ps; /* (lo pisan los hijos; se suelta al salir) */
 	brcss_ps.st[0] = brcss_ps.st[1] = NULL;
 	if (!cs)
@@ -947,6 +958,8 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	}
 	s->node = n;
 	s->scope = (int16_t)brcss_scope_of(C->L->css, n, s->scope);
+	if (env)
+		s->env = env;
 	sty_fill(C, s, cs, d);
 	if (css_computed_text_transform(cs) == CSS_TEXT_TRANSFORM_UPPERCASE)
 		s->upper = 1;

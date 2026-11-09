@@ -28,6 +28,9 @@ void   brcss_free(BrCss *c);
 /* el estilo de un elemento ya combinado con el de su padre (NULL en la raíz); se suelta con
  * css_computed_style_destroy. vw: el ancho de la página, para vw/% de la ventana */
 css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style *parent, float vw);
+/* lo mismo, con las variables de los style="" de sus antepasados (penv, «--a:x;»): env_out, las que pasan a
+ * sus hijos si su style="" pone alguna (malloc; NULL: las mismas) */
+css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_style *parent, float vw, const char *penv, char **env_out);
 
 /* de la última llamada a brcss_style: el texto de ::before y ::after, y si ::after cierra los
  * flotantes (el «clearfix» de siempre) */

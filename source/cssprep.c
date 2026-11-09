@@ -146,6 +146,13 @@ struct CssPrep {
 	Combo combo[MAX_COMBOS];
 	int ncombo;
 	Map vid;      /* variables marcadas en color y background-color: nombre -> número (1…) */
+	Map ivn;      /* las variables que algún style="" de la página pone */
+	struct Tpl {  /* declaraciones que usan una de esas: para resolverlas en cada elemento */
+		char *key;  /* el último selector simple compuesto de la regla («.prc-PageLayout-Content») */
+		char *dec;  /* «padding:var(--spacing);» */
+		char *loc;  /* las variables que pone la propia regla («--spacing:var(--x);») */
+	} *tpl;
+	int ntpl, ctpl;
 	char **vname; /* y al revés */
 	int nvid, cvid;
 	Map root, any;     /* las de :root/html/body (las de la página) y todas */
@@ -184,6 +191,10 @@ void cssprep_free(CssPrep *p)
 		free(p->combo[i].val), free(p->combo[i].st);
 	}
 	map_free(&p->vid);
+	map_free(&p->ivn);
+	for (int i = 0; i < p->ntpl; i++)
+		free(p->tpl[i].key), free(p->tpl[i].dec), free(p->tpl[i].loc);
+	free(p->tpl);
 	for (int i = 0; i < p->nvid; i++)
 		free(p->vname[i]);
 	free(p->vname);
@@ -2555,6 +2566,171 @@ bool cssprep_scope_col(CssPrep *p, int combo, uint32_t *col, int kind, int vid)
 	return false;
 }
 
+
+/* ------------------------------------------------------------ variables de los style="" */
+// «--a: x; --b: y» de un style="": se apuntan sus nombres
+void cssprep_inline_vars(CssPrep *p, const char *d, size_t n)
+{
+	if (!p || !d)
+		return;
+	for (const char *q = d, *e = d + n; q < e;) {
+		const char *c = find_top(q, e, ";");
+		const char *a = q, *col = find_top(q, c, ":");
+		if (col < c) {
+			const char *b = col;
+			trim(&a, &b);
+			if (b - a > 2 && a[0] == '-' && a[1] == '-')
+				map_set(&p->ivn, a, (size_t)(b - a), "1", 1);
+		}
+		q = c + 1;
+	}
+}
+
+static bool uses_ivar(CssPrep *p, const char *v0, const char *v1)
+{
+	for (const char *q = v0; q + 6 < v1; q++)
+		if (!strncasecmp(q, "var(", 4)) {
+			const char *a = skip_ws(q + 4, v1), *b = a;
+			while (b < v1 && *b != ',' && *b != ')' && !isspace((unsigned char)*b))
+				b++;
+			if (map_get(&p->ivn, a, (size_t)(b - a)))
+				return true;
+		}
+	return false;
+}
+
+// una regla con declaraciones que usan variables de los style="": su plantilla, por cada selector
+static void tpl_add(CssPrep *p, const char *s0, const char *s1, const char *b0, const char *b1)
+{
+	Out dec = {0}, loc = {0};
+	for (const char *q = b0; q < b1;) {
+		const char *c = find_top(q, b1, ";{");
+		if (c < b1 && *c == '{') {
+			const char *be = block_end(c + 1, b1);
+			q = be < b1 ? be + 1 : b1;
+			continue;
+		}
+		const char *col = find_top(q, c, ":");
+		if (col < c) {
+			const char *n0 = q, *n1 = col, *v0 = col + 1, *v1 = c;
+			trim(&n0, &n1);
+			trim(&v0, &v1);
+			bool var = n1 - n0 > 2 && n0[0] == '-' && n0[1] == '-';
+			if (n1 > n0 && v1 > v0 && (var || uses_ivar(p, v0, v1))) {
+				Out *o = var ? &loc : &dec;
+				put(o, n0, (size_t)(n1 - n0));
+				put(o, ":", 1);
+				put(o, v0, (size_t)(v1 - v0));
+				put(o, ";", 1);
+			}
+		}
+		q = c + 1;
+	}
+	if (dec.n && !dec.bad && p->ntpl < 4000)
+		for (const char *q = s0; q < s1;) {
+			const char *c = find_top(q, s1, ",");
+			const char *x = q, *y = c;
+			trim(&x, &y);
+			q = c + 1;
+			const char *last = x; // lo de tras el último combinador
+			int d = 0;
+			for (const char *t = x; t < y; t++) {
+				if (*t == '(' || *t == '[')
+					d++;
+				else if ((*t == ')' || *t == ']') && d)
+					d--;
+				else if (!d && (isspace((unsigned char)*t) || *t == '>' || *t == '+' || *t == '~'))
+					last = t + 1;
+			}
+			last = skip_ws(last, y);
+			if (last >= y || memchr(last, ':', (size_t)(y - last))) // (con pseudoclases: :hover… no)
+				continue;
+			// con una clase, atributo o id: «*» o una etiqueta suelta («* + *», «.prose img») dependen de lo de
+			// alrededor, que aquí no se mira
+			if (!memchr(last, '.', (size_t)(y - last)) && !memchr(last, '[', (size_t)(y - last)) && !memchr(last, '#', (size_t)(y - last)))
+				continue;
+			if (p->ntpl == p->ctpl) {
+				int nc = p->ctpl ? p->ctpl * 2 : 64;
+				struct Tpl *nt = realloc(p->tpl, sizeof *nt * (size_t)nc);
+				if (!nt)
+					break;
+				p->tpl = nt, p->ctpl = nc;
+			}
+			struct Tpl *T = &p->tpl[p->ntpl];
+			T->key = strndup(last, (size_t)(y - last));
+			T->dec = strdup(dec.p);
+			T->loc = loc.p ? strdup(loc.p) : NULL;
+			if (!T->key || !T->dec) {
+				free(T->key), free(T->dec), free(T->loc);
+				break;
+			}
+			p->ntpl++;
+		}
+	free(dec.p), free(loc.p);
+}
+
+static void env_parse(Map *m, const char *d)
+{
+	for (const char *q = d, *e = d + strlen(d); q < e;) {
+		const char *c = find_top(q, e, ";");
+		const char *a = q, *col = find_top(q, c, ":");
+		if (col < c) {
+			const char *b = col, *v0 = col + 1, *v1 = c;
+			trim(&a, &b);
+			trim(&v0, &v1);
+			if (b - a > 2 && a[0] == '-' && a[1] == '-')
+				map_set(m, a, (size_t)(b - a), v0, (size_t)(v1 - v0));
+		}
+		q = c + 1;
+	}
+}
+
+char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const char *penv, const char *own)
+{
+	if (!p || !p->ntpl || ((!penv || !*penv) && (!own || !*own)))
+		return NULL;
+	Out o = {0}, b = {0}, c = {0};
+	char cls[1024] = "";
+	attr_val(attrs, "class", 5, cls, sizeof cls);
+	for (int i = 0; i < p->ntpl; i++) {
+		const struct Tpl *T = &p->tpl[i];
+		const char *k = T->key, *ke = k + strlen(k);
+		// la etiqueta, si la dice («div.x»); lo demás, con sus clases y atributos
+		const char *t = k;
+		while (t < ke && (isalnum((unsigned char)*t) || *t == '-'))
+			t++;
+		if (t > k && !(strlen(tag) == (size_t)(t - k) && !strncasecmp(tag, k, (size_t)(t - k))))
+			continue;
+		if (*t == '.') { // (deprisa: su primera clase tiene que estar)
+			const char *z = t + 1;
+			while (z < ke && (isalnum((unsigned char)*z) || *z == '-' || *z == '_'))
+				z++;
+			if (!word_in(cls, t + 1, (size_t)(z - t - 1)))
+				continue;
+		}
+		if (t < ke && !compound_ok(t, ke, attrs, false))
+			continue;
+		if (t == ke && t == k)
+			continue;
+		Map m = {0}; // lo heredado; lo que pone la regla; lo del propio style=""
+		if (penv)
+			env_parse(&m, penv);
+		if (T->loc)
+			env_parse(&m, T->loc);
+		if (own)
+			env_parse(&m, own);
+		size_t o0 = o.n;
+		decls_out(p, T->dec, T->dec + strlen(T->dec), &m, &o);
+#ifdef BRL_DEBUG
+		if (getenv("BRL_ENV"))
+			fprintf(stderr, "env %s [%s] -> %.*s\n", T->key, T->dec, (int)(o.n - o0), o.p ? o.p + o0 : "");
+#endif
+		map_free(&m);
+	}
+	free(b.p), free(c.p);
+	return o.p;
+}
+
 static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 {
 	while (s < e) {
@@ -2641,6 +2817,8 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 				total += 24 - budget;
 				q = c + 1;
 			}
+			if (!first && !sel.bad && p->ivn.n)
+				tpl_add(p, s0, s1, b0, b1);
 			if (!first && !sel.bad) {
 				Map local = {0};
 				// las de la raíz (html, :root) ya están en su valor final (una regla de @media de después

@@ -637,6 +637,7 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 							int bl = snprintf(buf, 8192, "z{%.*s}", (int)l, d);
 							if (strstr(buf, "--")) {
 								cssprep_vars(c->prep, buf, (size_t)bl);
+								cssprep_inline_vars(c->prep, d, l);
 								found++;
 							}
 						}
@@ -732,6 +733,40 @@ BrcssPseudo brcss_ps;
 
 css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style *parent, float vw)
 {
+	return brcss_style_env(c, el, parent, vw, NULL, NULL);
+}
+
+// las «--x: …» de un style="", en «--x:…;»
+static void own_vars(const char *d, size_t n, char *out, size_t on)
+{
+	size_t k = 0;
+	out[0] = 0;
+	for (size_t i = 0; i < n;) {
+		while (i < n && (d[i] == ' ' || d[i] == ';' || d[i] == '\n' || d[i] == '\t'))
+			i++;
+		size_t j = i;
+		int dd = 0;
+		while (j < n && (dd || d[j] != ';')) {
+			if (d[j] == '(')
+				dd++;
+			else if (d[j] == ')' && dd)
+				dd--;
+			j++;
+		}
+		if (j - i > 2 && d[i] == '-' && d[i + 1] == '-' && k + (j - i) + 2 < on) {
+			memcpy(out + k, d + i, j - i);
+			k += j - i;
+			out[k++] = ';';
+			out[k] = 0;
+		}
+		i = j + 1;
+	}
+}
+
+css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_style *parent, float vw, const char *penv, char **env_out)
+{
+	if (env_out)
+		*env_out = NULL;
 	if (!c)
 		return NULL;
 	css_unit_ctx u = unit_ctx(vw);
@@ -739,22 +774,64 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 	// el atributo style="…": una hoja pequeña solo para este elemento
 	css_stylesheet *inl = NULL;
 	lwc_string *k;
+	static char own[2048];
+	own[0] = 0;
+	char *o = NULL;
+	size_t on = 0;
+	bool rawst = false;
+	dom_string *v = NULL;
 	if (lwc_intern_string("style", 5, &k) == lwc_error_ok) {
-		dom_string *v = get_attr(el, k);
+		v = get_attr(el, k);
 		lwc_string_unref(k);
-		if (v) {
-			if (dom_string_byte_length(v)) {
-				size_t on = 0;
-				char *o = c->prep ? cssprep_inline(c->prep, dom_string_data(v), dom_string_byte_length(v), &on) : NULL;
-				if (o)
-					inl = on ? sheet_parse(o, on, c->base, true) : NULL;
-				else
-					inl = sheet_parse(dom_string_data(v), dom_string_byte_length(v), c->base, true);
-				free(o);
-			}
-			dom_string_unref(v);
+		if (v && dom_string_byte_length(v)) {
+			o = c->prep ? cssprep_inline(c->prep, dom_string_data(v), dom_string_byte_length(v), &on) : NULL;
+			rawst = !o;
+			if (memchr(dom_string_data(v), '-', dom_string_byte_length(v)))
+				own_vars(dom_string_data(v), dom_string_byte_length(v), own, sizeof own);
 		}
 	}
+	// las variables de los style="" de él y de sus antepasados: lo de las reglas que las usan, resuelto
+	if (c->prep && ((penv && *penv) || own[0])) {
+		static char tag[16], at[2048];
+		dom_string *nm = NULL;
+		tag[0] = 0;
+		if (dom_node_get_node_name(el, &nm) == DOM_NO_ERR && nm) {
+			snprintf(tag, sizeof tag, "%.*s", (int)dom_string_byte_length(nm), dom_string_data(nm));
+			dom_string_unref(nm);
+		}
+		attrs_of(el, at, sizeof at);
+		char *ex = cssprep_env_decls(c->prep, tag, at, penv, own);
+		if (ex && !rawst) { // (detrás de lo del style="", que manda)
+			size_t xl = strlen(ex);
+			char *no = malloc(on + xl + 1);
+			if (no) {
+				memcpy(no, ex, xl);
+				if (o)
+					memcpy(no + xl, o, on);
+				no[xl + on] = 0;
+				free(o);
+				o = no, on += xl;
+			}
+		}
+		free(ex);
+		if (own[0] && env_out) {
+			size_t pl = penv ? strlen(penv) : 0, ol = strlen(own);
+			char *e = malloc(pl + ol + 1);
+			if (e) {
+				if (pl)
+					memcpy(e, penv, pl);
+				memcpy(e + pl, own, ol + 1);
+				*env_out = e;
+			}
+		}
+	}
+	if (o)
+		inl = on ? sheet_parse(o, on, c->base, true) : NULL;
+	else if (rawst && v)
+		inl = sheet_parse(dom_string_data(v), dom_string_byte_length(v), c->base, true);
+	free(o);
+	if (v)
+		dom_string_unref(v);
 	css_select_results *res = NULL;
 	css_error e = css_select_style(c->ctx, el, &u, &media, inl, &H, NULL, &res);
 	if (inl)

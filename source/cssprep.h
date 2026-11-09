@@ -41,6 +41,12 @@ int cssprep_scopes(CssPrep *p);
 int cssprep_scope_match(CssPrep *p, const char *attrs, int parent);
 bool cssprep_scope_col(CssPrep *p, int combo, uint32_t *col, int kind, int vid); /* vid: de orphans/widows */
 
+/* variables de los style="" (las que van por elemento y se heredan): sus nombres, antes de reescribir; y
+ * las declaraciones de las reglas de un elemento que las usan, ya resueltas con las suyas (penv: las de
+ * sus antepasados, own: las de su style=""; «--a:x;--b:y»). malloc o NULL */
+void cssprep_inline_vars(CssPrep *p, const char *decls, size_t n);
+char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const char *penv, const char *own);
+
 /* modo oscuro: (prefers-color-scheme: dark) vale, y las webs que tienen tema oscuro lo usan */
 void cssprep_set_dark(bool dark);
 
