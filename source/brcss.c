@@ -531,9 +531,25 @@ BrCss *brcss_new(const char *base_url)
 
 void brcss_add(BrCss *c, const char *css, size_t n, const char *url)
 {
-	if (!c || c->n + c->nraw >= MAX_SHEETS || !n)
+	if (!c || !n)
 		return;
-	char *cp = malloc(n + 1), *u = strdup(url ? url : c->base);
+	const char *uu = url ? url : c->base;
+	// seguida de otra con la misma dirección (los <style> de la página: Google tiene casi 40), o sin sitio para
+	// más: va detrás de la anterior, en la misma
+	if (c->nraw && (!strcmp(c->raw[c->nraw - 1].url, uu) || c->n + c->nraw >= MAX_SHEETS)) {
+		size_t on = c->raw[c->nraw - 1].n;
+		char *np = realloc(c->raw[c->nraw - 1].css, on + n + 2);
+		if (!np)
+			return;
+		np[on] = '\n';
+		memcpy(np + on + 1, css, n);
+		np[on + 1 + n] = 0;
+		c->raw[c->nraw - 1].css = np, c->raw[c->nraw - 1].n = on + 1 + n;
+		return;
+	}
+	if (c->n + c->nraw >= MAX_SHEETS)
+		return;
+	char *cp = malloc(n + 1), *u = strdup(uu);
 	if (!cp || !u) {
 		free(cp), free(u);
 		return;
