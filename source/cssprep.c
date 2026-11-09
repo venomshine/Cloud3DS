@@ -1405,6 +1405,18 @@ static bool translate_emit(Out *o, const char *v)
 
 static void decl_emit(Out *o, const char *name, const char *val)
 {
+	if (!strcmp(name, "float") || !strcmp(name, "clear") || !strcmp(name, "text-align")) { // valores lógicos (de izquierda a derecha)
+		static const char *const LV[][2] = {{"inline-start", "left"}, {"inline-end", "right"}, {"start", "left"}, {"end", "right"}, {"match-parent", "inherit"}};
+		for (size_t i = 0; i < sizeof LV / sizeof LV[0]; i++) {
+			size_t l = strlen(LV[i][0]);
+			if (!strncmp(val, LV[i][0], l) && (!val[l] || val[l] == ' ')) {
+				char b[48];
+				snprintf(b, sizeof b, "%s%s", LV[i][1], val + l);
+				decl_out(o, name, b);
+				return;
+			}
+		}
+	}
 	if (!strcmp(name, "overflow") && strchr(val, ' ') && strncmp(strchr(val, ' ') + 1, "!important", 10)) { // «hidden auto»: x e y
 		char a1[24], a2[24];
 		if (sscanf(val, "%23s %23s", a1, a2) == 2) {
