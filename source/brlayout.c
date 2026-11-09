@@ -1498,7 +1498,7 @@ static void atom_size_h(Ctx *C, Box *b, float cbw, float cbh)
 {
 	Sty *s = b->s;
 	resolve(s, cbw);
-	float w = s->iw, h = s->ih, ar = s->ih > 0 ? s->iw / s->ih : 0;
+	float w = s->iw, h = s->ih, ar = s->ih > 0 && s->wdg < 0 ? s->iw / s->ih : 0; // (un control no tiene proporción)
 	bool hw = !AUT(s, LW) && (!PCT(s, LW) || cbw > 0), hh = !AUT(s, LH) && (!PCT(s, LH) || cbh >= 0);
 	if (hw)
 		w = LV(s, LW, cbw) - (s->bbox ? hx(s) : 0);
