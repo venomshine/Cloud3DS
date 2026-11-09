@@ -2032,6 +2032,41 @@ static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget
 	if (!f) {
 		if (*budget <= 0 || sel_unsupported(s, n))
 			return;
+		// :not(.x a), con combinadores dentro (libcss no lo sabe y tira la regla): fuera ese :not (casi
+		// siempre es «menos dentro de tal sitio», que es lo raro)
+		for (size_t i = 0; i + 5 <= n; i++) {
+			if (strncasecmp(s + i, ":not(", 5))
+				continue;
+			const char *a = s + i + 5, *cl = a;
+			int d = 1, br = 0;
+			bool comb = false;
+			for (; cl < s + n; cl++) {
+				if (*cl == '(')
+					d++;
+				else if (*cl == ')' && --d == 0)
+					break;
+				else if (*cl == '[')
+					br++;
+				else if (*cl == ']' && br)
+					br--;
+				else if (d == 1 && !br && (*cl == ' ' || *cl == '>' || *cl == '+' || *cl == '~') && cl > a && cl + 1 < s + n && cl[1] != ')')
+					comb = true;
+			}
+			if (cl >= s + n || !comb)
+				continue;
+			char *tmp = malloc(n + 2);
+			if (!tmp)
+				return;
+			size_t tn = i;
+			memcpy(tmp, s, i);
+			if (!i || tmp[i - 1] == ' ' || tmp[i - 1] == '>' || tmp[i - 1] == '+' || tmp[i - 1] == '~')
+				tmp[tn++] = '*'; // no quedaba nada del selector: cualquiera
+			size_t rest = (size_t)(s + n - cl - 1);
+			memcpy(tmp + tn, cl + 1, rest), tn += rest;
+			sel_expand(tmp, tn, o, first, budget);
+			free(tmp);
+			return;
+		}
 		(*budget)--;
 		if (!*first)
 			put(o, ",", 1);
