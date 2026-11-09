@@ -779,6 +779,7 @@ int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size
 	if (SH)
 		curl_easy_setopt(c, CURLOPT_SHARE, SH);
 	curl_easy_setopt(c, CURLOPT_URL, url);
+	curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, ""); // gzip/deflate: baja menos y libcurl lo descomprime
 	char ck[2048];
 	if (t_ck_get && t_ck_get(url, ck, sizeof ck))
 		curl_easy_setopt(c, CURLOPT_COOKIE, ck);

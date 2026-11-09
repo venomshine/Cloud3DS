@@ -40,3 +40,6 @@ bool util_utf8_valid(const char *s);
 
 /* Registro de diagnóstico en la SD */
 void util_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+/* base64 (también la variante de URL) a bytes; out con sitio para n*3/4. Devuelve cuántos */
+size_t util_b64_decode(const char *in, size_t n, u8 *out);

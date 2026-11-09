@@ -364,3 +364,26 @@ void util_log(const char *fmt, ...)
 	}
 	LightLock_Unlock(&log_lock);
 }
+
+size_t util_b64_decode(const char *in, size_t n, u8 *out)
+{
+	size_t o = 0;
+	unsigned v = 0;
+	int bits = 0;
+	for (size_t i = 0; i < n; i++) {
+		char c = in[i];
+		int d = c >= 'A' && c <= 'Z' ? c - 'A' : c >= 'a' && c <= 'z' ? c - 'a' + 26 : c >= '0' && c <= '9' ? c - '0' + 52 : (c == '+' || c == '-') ? 62 : (c == '/' || c == '_') ? 63 : -1;
+		if (d < 0) {
+			if (c == '=')
+				break;
+			continue; // espacios, saltos de línea, %0A…
+		}
+		v = (v << 6) | (unsigned)d;
+		bits += 6;
+		if (bits >= 8) {
+			bits -= 8;
+			out[o++] = (u8)(v >> bits);
+		}
+	}
+	return o;
+}

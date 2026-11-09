@@ -36,6 +36,7 @@
 #include <strings.h>
 #include <time.h>
 #include <malloc.h>
+#include <zlib.h>
 
 #define MAX_PAGE  (6 * 1024 * 1024)
 #define HIST      16
@@ -44,7 +45,7 @@
 /* cómo se presenta: en Móvil, como el navegador de la 3DS (las webs dan su versión sencilla); en PC,
  * como uno de escritorio */
 #define UA_MOB "Mozilla/5.0 (Nintendo 3DS; U; ; es) Version/1.7630.EU Cloud3DS"
-#define UA_PC  "Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0 Cloud3DS"
+#define UA_PC  "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0 Cloud3DS"
 /* Google solo busca con navegadores que conoce: al de la 3DS le dice que se actualice */
 #define UA_GOOGLE_MOB "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0"
 #define VW_PC     1024.0f  /* ancho de la página: siempre de PC (muchas webs pasan a escritorio en 1012-1024) */
@@ -77,7 +78,14 @@ typedef struct {
 	s16 wdg;       /* control de formulario (-1 ninguno) */
 	dom_node *node; /* el elemento del que sale (para los clics del JavaScript) */
 	s16 clk;       /* se puede tocar por su JavaScript (onclick, role=button…): su número, o -1 */
+	s16 bgi;       /* una imagen de fondo: su forma en B.bgi (-1 no) */
 } Frag;
+
+/* cómo va una imagen de fondo en su caja (la caja es la del trozo) */
+typedef struct {
+	u8 size, rep, pxp, pyp; /* BRL_BG_*, repetición (x 1, y 2), posición en % */
+	float sw, px, py;
+} BgImg;
 
 /* controles de formulario: cuadros de texto, botones, casillas y listas */
 enum { WG_TEXT, WG_PASS, WG_AREA, WG_BUTTON, WG_CHECK, WG_RADIO, WG_SELECT };
@@ -102,6 +110,8 @@ typedef struct {
 	float w, h;            /* tamaño en la página (px) */
 	float y;               /* dónde está (para bajar antes lo que se ve) */
 	bool sized;            /* el tamaño venía de la página */
+	bool natural;          /* de fondo a su tamaño (sprites): se decodifica sin reducir (hasta 512) */
+	int ow, oh;            /* el tamaño original de la imagen */
 	volatile int st;
 	u8 *rgba;
 	int tw, th, iw, ih;    /* textura y tamaño original */
@@ -221,6 +231,8 @@ static struct {
 	volatile int click_link; /* tras un clic con JavaScript: el enlace a seguir (-1 ninguno, -2 esperando) */
 	PImg *img;
 	int nimg, cimg;
+	BgImg *bgi;
+	int nbgi, cbgi;
 	Thread img_thr;
 	volatile bool img_quit;
 	size_t img_px;       /* píxeles decodificados (límite de memoria) */
@@ -363,7 +375,7 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 	bool skip = nohc_has(url);
 	int r = skip ? DLF_NOCONN : dl_fetch(url, accept, buf_cb, NULL, b, code);
 	// algunas webs rechazan el TLS antiguo de httpc (403, 429…), no conecta o llega vacío: otra vez con libcurl
-	if (r != DLF_OK || *code == 403 || *code == 429 || *code == 503 || (*code == 200 && !b->n)) {
+	if (r != DLF_OK || *code == 403 || *code == 429 || *code == 503 || (*code < 400 && !b->n)) { // (vacío: 200, 3xx sin seguir…)
 		if (!skip)
 			util_log("web: httpc no pudo con %.100s (%d, HTTP %ld): libcurl", url, r, *code);
 		free(b->p);
@@ -371,6 +383,29 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 		r = dl_fetch_curl(url, accept, buf_cb, b, code);
 		if (r == DLF_OK && *code < 400 && !skip)
 			nohc_add(url);
+	}
+	// llegó comprimido sin pedirlo (gzip): se descomprime
+	if (r == DLF_OK && b->n > 18 && (u8)b->p[0] == 0x1f && (u8)b->p[1] == 0x8b) {
+		z_stream z = {0};
+		Buf o = {0};
+		if (inflateInit2(&z, 16 + MAX_WBITS) == Z_OK) {
+			z.next_in = (Bytef *)b->p, z.avail_in = (uInt)b->n;
+			char tmp[16384];
+			int zr;
+			do {
+				z.next_out = (Bytef *)tmp, z.avail_out = sizeof tmp;
+				zr = inflate(&z, Z_NO_FLUSH);
+				size_t got = sizeof tmp - z.avail_out;
+				if (got && buf_cb(tmp, 1, got, &o) != got)
+					zr = Z_MEM_ERROR;
+			} while (zr == Z_OK);
+			inflateEnd(&z);
+			if (zr == Z_STREAM_END && o.n) {
+				free(b->p);
+				*b = o;
+			} else
+				free(o.p);
+		}
 	}
 	return r;
 }
@@ -737,6 +772,8 @@ static void load_thread_run(void *arg)
 		return;
 	}
 	B.bytes = b.n;
+	if (!b.n)
+		util_log("web: %s vacía (HTTP %d)", B.url, B.http_code);
 	B.oom = OOM_NONE;
 	cssprep_set_dark(B.dark); // (prefers-color-scheme: dark): las webs con tema oscuro lo usan
 	B.css_dark = B.dark;
@@ -1102,6 +1139,7 @@ static void put(const char *s, int n, const St *st, float w)
 	f->off = B.nt, f->n = (u16)n;
 	f->sc = st->sc, f->col = st->col, f->link = (s16)st->link, f->under = st->under, f->bold = st->bold;
 	f->img = -1;
+	f->bgi = -1;
 	f->wdg = -1;
 	f->node = st->el;
 	f->clk = (s16)st->clk;
@@ -1358,9 +1396,22 @@ static void img_thread(void *arg)
 		if (im->data) { // un <svg> de la página: ya está aquí
 			b.p = im->data, b.n = im->dn, im->data = NULL;
 			r = DLF_OK, code = 200;
+		} else if (!strncmp(im->url, "data:", 5)) { // data:image/…;base64,…
+			const char *c = strstr(im->url, ";base64,");
+			r = DLF_FAIL;
+			if (c) {
+				size_t l = strlen(c + 8);
+				b.p = malloc(l * 3 / 4 + 4);
+				if (b.p) {
+					b.n = util_b64_decode(c + 8, l, (u8 *)b.p);
+					r = DLF_OK, code = 200;
+				}
+			}
 		} else
 			r = blocked_host(im->url) ? DLF_FAIL : fetch_any(im->url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
-		int mw = (int)fminf(512, fmaxf(16, im->w * 1.5f)), mh = (int)fminf(512, fmaxf(16, im->h * 1.5f));
+		int mw = im->natural ? 512 : (int)fminf(512, fmaxf(16, im->w * 1.5f)), mh = im->natural ? 512 : (int)fminf(512, fmaxf(16, im->h * 1.5f));
+		if (b.p && b.n)
+			img_mem_info((const u8 *)b.p, b.n, &im->ow, &im->oh);
 		u8 *px = NULL;
 		int w = 0, h = 0;
 		bool svg = false;
@@ -1373,8 +1424,11 @@ static void img_thread(void *arg)
 			im->rgba = px, im->tw = w, im->th = h, im->iw = w, im->ih = h;
 			B.img_px += (size_t)w * h;
 			im->st = IM_RGBA;
-		} else
+		} else {
 			im->st = IM_FAIL;
+			util_log("web: imagen %.120s -> %d, HTTP %ld, %u bytes, %.4s", strncmp(im->url, "data:", 5) ? im->url : "data:…", r, code, (unsigned)b.n,
+			         b.p && b.n >= 12 ? (!memcmp(b.p + 8, "WEBP", 4) ? "webp" : !memcmp(b.p + 4, "ftyp", 4) ? "avif" : b.p) : "-");
+		}
 		free(b.p);
 	}
 }
@@ -3175,6 +3229,7 @@ static void layout_free(void)
 	free(B.bg), B.bg = NULL, B.nbg = B.cbg = 0;
 	free(B.ord), B.ord = NULL;
 	free(B.wg), B.wg = NULL, B.nwg = B.cwg = 0;
+	free(B.bgi), B.bgi = NULL, B.nbgi = B.cbgi = 0;
 	for (int i = 0; i < B.nlinks; i++)
 		free(B.links[i]);
 	free(B.links), B.links = NULL, B.nlinks = B.clinks = 0;
@@ -3213,10 +3268,30 @@ static int bl_clk(void *u, dom_node *n)
 }
 static int bl_img(void *u, dom_node *n, const char *src, float *iw, float *ih)
 {
-	(void)u, (void)n;
+	(void)u;
 	char abs[1024];
-	resolve(B.url, src, abs, sizeof abs);
-	int k = img_find_or_add(abs);
+	int k;
+	if (!strncmp(src, "data:", 5)) { // la imagen va dentro de la página (base64): entera, del atributo
+		dom_string *kk = NULL, *v = NULL;
+		k = -1;
+		if (dom_string_create((const uint8_t *)"src", 3, &kk) == DOM_NO_ERR) {
+			if (dom_element_get_attribute((dom_element *)n, kk, &v) == DOM_NO_ERR && v) {
+				size_t l = dom_string_byte_length(v);
+				char *d = l < 512 * 1024 ? malloc(l + 1) : NULL;
+				if (d) {
+					memcpy(d, dom_string_data(v), l);
+					d[l] = 0;
+					k = img_find_or_add(d);
+					free(d);
+				}
+				dom_string_unref(v);
+			}
+			dom_string_unref(kk);
+		}
+	} else {
+		resolve(B.url, src, abs, sizeof abs);
+		k = img_find_or_add(abs);
+	}
 	if (k >= 0 && B.img[k].iw > 0)
 		*iw = B.img[k].iw, *ih = B.img[k].ih;
 	return k;
@@ -3277,7 +3352,7 @@ static Frag *bl_frag(float x, float y, float w, float h, const char *t, int n, c
 	f->line = li, f->x = x, f->w = w;
 	f->off = B.nt, f->n = (u16)n;
 	f->sc = px_sc(st->px), f->col = st->col, f->link = st->link, f->under = st->under, f->bold = st->bold;
-	f->img = -1, f->wdg = -1;
+	f->img = -1, f->wdg = -1, f->bgi = -1;
 	f->node = st->node, f->clk = st->clk;
 	B.nt += n;
 	return f;
@@ -3296,11 +3371,47 @@ static void bl_box(void *u, float x, float y, float w, float h, int img, int wdg
 	f->under = 0;
 	if (img >= 0 && img < B.nimg) {
 		f->img = (s16)img;
-		B.img[img].w = w, B.img[img].h = h;
+		if (w > B.img[img].w || !B.img[img].sized) // (la misma en dos tamaños: se baja para el mayor)
+			B.img[img].w = w, B.img[img].h = h;
+		B.img[img].sized = true;
 	}
 	if (wdg >= 0 && wdg < B.nwg)
 		f->wdg = (s16)wdg;
 }
+static void bl_bgimg(void *u, const BrlBg *g, const BrlText *st)
+{
+	(void)u;
+	char abs[1024];
+	if (strncmp(g->url, "data:", 5))
+		resolve(B.url, g->url, abs, sizeof abs);
+	else
+		util_strlcpy(abs, g->url, sizeof abs);
+	if (!strncmp(abs, "data:image/svg", 14) && !strstr(abs, "base64")) // (un svg escrito en la url: aún no)
+		return;
+	int k = img_find_or_add(abs);
+	if (k < 0)
+		return;
+	if (B.nbgi == B.cbgi) {
+		int nc = B.cbgi ? B.cbgi * 2 : 32;
+		BgImg *nb = realloc(B.bgi, nc * sizeof *nb);
+		if (!nb)
+			return;
+		B.bgi = nb, B.cbgi = nc;
+	}
+	Frag *f = bl_frag(g->x0, g->y0, g->x1 - g->x0, g->y1 - g->y0, "", 0, st);
+	if (!f)
+		return;
+	f->under = 0;
+	f->img = (s16)k;
+	f->bgi = (s16)B.nbgi;
+	B.bgi[B.nbgi++] = (BgImg){g->size, g->rep, g->pxp, g->pyp, g->sw, g->px, g->py};
+	PImg *im = &B.img[k];
+	if (g->size == BRL_BG_AUTO || g->size == BRL_BG_WIDTH)
+		im->natural = true;
+	else if (g->x1 - g->x0 > im->w)
+		im->w = g->x1 - g->x0, im->h = g->y1 - g->y0;
+}
+
 static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4])
 {
 	(void)u;
@@ -3358,7 +3469,7 @@ static float layout_boxes(void)
 	title_get();
 	BrLay L = {.css = B.css, .vw = B.vw, .vh = 600, .light = B.light || !strcmp(B.reader_url, B.url), .u = NULL,
 	           .text_w = bl_tw, .line_h = bl_lh, .link = bl_link, .clk = bl_clk, .img = bl_img, .svg = bl_svg, .wdg = bl_wdg,
-	           .bg = bl_bg, .text = bl_text, .box = bl_box, .stop = bl_stop};
+	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .stop = bl_stop};
 	uint32_t pbg = 0;
 	float h = brl_run(&L, B.doc, &pbg);
 	B.page_bg = pbg;
@@ -4086,6 +4197,58 @@ static u32 lt_map(u32 c, bool fg)
 #define DKB(c) (B.dark_tx ? dk_map((c), false) : B.lt_tx ? lt_map((c), false) : (c))
 #define DKF(c) (B.dark_tx ? dk_map((c), true) : B.lt_tx ? lt_map((c), true) : (c))
 
+// una imagen en r (rx, ry, rw × rh), pintada solo dentro de la caja c
+static void img_clip(Texture *t, float rx, float ry, float rw, float rh, float cx0, float cy0, float cx1, float cy1)
+{
+	float x0 = fmaxf(rx, cx0), y0 = fmaxf(ry, cy0), x1 = fminf(rx + rw, cx1), y1 = fminf(ry + rh, cy1);
+	if (x1 <= x0 || y1 <= y0 || rw <= 0 || rh <= 0)
+		return;
+	draw_texture_part(t, x0, y0, x1 - x0, y1 - y0, (x0 - rx) / rw, (y0 - ry) / rh, (x1 - rx) / rw, (y1 - ry) / rh);
+}
+
+static void bgimg_paint(PImg *im, const BgImg *g, float BX, float BY, float BW, float BH)
+{
+	const float z = B.zoom;
+	float nw = im->ow > 0 ? im->ow : im->tw, nh = im->oh > 0 ? im->oh : im->th, dw, dh;
+	if (nw <= 0 || nh <= 0)
+		return;
+	switch (g->size) {
+	case BRL_BG_COVER: {
+		float k = fmaxf(BW / nw, BH / nh);
+		dw = nw * k, dh = nh * k;
+		break;
+	}
+	case BRL_BG_CONTAIN: {
+		float k = fminf(BW / nw, BH / nh);
+		dw = nw * k, dh = nh * k;
+		break;
+	}
+	case BRL_BG_FILL: dw = BW, dh = BH; break;
+	case BRL_BG_WIDTH: dw = g->sw * z, dh = dw * nh / nw; break;
+	default: dw = nw * z, dh = nh * z; break;
+	}
+	float ox = g->pxp ? (BW - dw) * g->px / 100 : g->px * z, oy = g->pyp ? (BH - dh) * g->py / 100 : g->py * z;
+	int nx = 1, ny = 1;
+	float sx = BX + ox, sy = BY + oy;
+	if ((g->rep & 1) && dw >= 4 && dw < BW) { // repetida: en mosaico (como mucho 32 × 32)
+		sx = BX + fmodf(ox, dw);
+		if (sx > BX)
+			sx -= dw;
+		nx = (int)ceilf((BX + BW - sx) / dw);
+	}
+	if ((g->rep & 2) && dh >= 4 && dh < BH) {
+		sy = BY + fmodf(oy, dh);
+		if (sy > BY)
+			sy -= dh;
+		ny = (int)ceilf((BY + BH - sy) / dh);
+	}
+	if (nx > 32 || ny > 32)
+		nx = ny = 1, sx = BX + ox, sy = BY + oy;
+	for (int j = 0; j < ny; j++)
+		for (int i = 0; i < nx; i++)
+			img_clip(&im->tex, sx + i * dw, sy + j * dh, dw, dh, BX, BY, BX + BW, BY + BH);
+}
+
 static void bg_paint(float VH, bool over)
 {
 	const float z = B.zoom;
@@ -4205,6 +4368,11 @@ static void page_paint(float VW, float VH, int mode, int hov)
 		if (f->img >= 0 && f->img < B.nimg) { // imagen: encajada en su sitio sin deformarla
 			PImg *im = &B.img[f->img];
 			float bw = Wd, bh = im->h * z, by = (B.l[f->line].y + B.l[f->line].h - im->h - B.sy) * z;
+			if (f->bgi >= 0 && f->bgi < B.nbgi) { // de fondo: a su tamaño y posición, recortada a su caja
+				if (mode != 2 && im->st == IM_TEX && im->tex.ok)
+					bgimg_paint(im, &B.bgi[f->bgi], X, (B.l[f->line].y - B.sy) * z, Wd, B.l[f->line].h * z);
+				continue;
+			}
 			if (mode == 2) {
 			} else if (im->st == IM_TEX && im->tex.ok) {
 				// llena su caja (como object-fit: cover): lo que sobra de la imagen, recortado por igual

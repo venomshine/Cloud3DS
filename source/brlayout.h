@@ -29,6 +29,18 @@ typedef struct {
 	dom_node *node;     /* el elemento del que sale */
 } BrlText;
 
+/* una imagen de fondo (background-image) en la caja x0,y0-x1,y1 */
+enum { BRL_BG_AUTO, BRL_BG_COVER, BRL_BG_CONTAIN, BRL_BG_FILL, BRL_BG_WIDTH };
+typedef struct {
+	const char *url;     /* ya completa (respecto a su hoja) */
+	float x0, y0, x1, y1;
+	uint8_t size;        /* BRL_BG_* */
+	float sw;            /* BRL_BG_WIDTH: el ancho */
+	float px, py;        /* background-position: en px o en % (pxp/pyp) */
+	uint8_t pxp, pyp;
+	uint8_t rep;         /* se repite (x 1, y 2) */
+} BrlBg;
+
 typedef struct {
 	BrCss *css;
 	float vw, vh;       /* la ventana (px) */
@@ -50,6 +62,7 @@ typedef struct {
 	void (*bg)(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4]);
 	void (*text)(void *u, float x, float y, float w, float h, const char *s, int n, const BrlText *t);
 	void (*box)(void *u, float x, float y, float w, float h, int img, int wdg, const BrlText *t);
+	void (*bgimg)(void *u, const BrlBg *b, const BrlText *t); /* (puede ser NULL) */
 	/* parar: la página se deja o no queda memoria */
 	bool (*stop)(void *u);
 } BrLay;

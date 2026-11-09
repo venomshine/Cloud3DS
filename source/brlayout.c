@@ -62,7 +62,9 @@ struct Sty {
 	int16_t gcs, gsp, gr, grs;   /* rejilla: columna (1…, 0 auto) y cuántas; fila y cuántas */
 	int16_t tw[16];              /* rejilla: ancho de las pistas (px; -1 auto; -10·fr) */
 	uint8_t outer, inner, li, pos, flt, clr, ws, ta, va, ovx, ovy, bbox, vis, fdir, fwrap, jc, ai, as, lst, lstin;
-	uint8_t bold, under, gall, ncols, ifc, item, bcol, tag, upper, placed;
+	uint8_t bold, under, gall, ncols, ifc, item, bcol, tag, upper, placed, bgsz, bgrep, bgpxp, bgpyp;
+	const char *bgurl; /* background-image */
+	float bgsw, bgpx, bgpy;
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -392,6 +394,29 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 	s->bbox = css_computed_box_sizing(cs) == CSS_BOX_SIZING_BORDER_BOX;
 	if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c >> 24) > 0x10)
 		s->bg = css_col(c);
+	{ // imagen de fondo, con su tamaño (de cssprep, en outline), posición y repetición
+		lwc_string *bi = NULL;
+		if (css_computed_background_image(cs, &bi) == CSS_BACKGROUND_IMAGE_IMAGE && bi && lwc_string_length(bi) > 4 && !C->L->light) {
+			size_t l = lwc_string_length(bi);
+			char *uc = arena(C, l + 1);
+			if (uc) {
+				memcpy(uc, lwc_string_data(bi), l);
+				s->bgurl = uc;
+			}
+			uint8_t os = css_computed_outline_style(cs);
+			s->bgsz = os == CSS_OUTLINE_STYLE_DASHED ? BRL_BG_COVER : os == CSS_OUTLINE_STYLE_DOTTED ? BRL_BG_CONTAIN : os == CSS_OUTLINE_STYLE_GROOVE ? BRL_BG_FILL
+			          : os == CSS_OUTLINE_STYLE_DOUBLE ? BRL_BG_WIDTH : BRL_BG_AUTO;
+			if (s->bgsz == BRL_BG_WIDTH && css_computed_outline_width(cs, &v, &u) == CSS_OUTLINE_WIDTH_WIDTH)
+				s->bgsw = brcss_px(cs, v, u, C->vw);
+			uint8_t r = css_computed_background_repeat(cs);
+			s->bgrep = r == CSS_BACKGROUND_REPEAT_REPEAT ? 3 : r == CSS_BACKGROUND_REPEAT_REPEAT_X ? 1 : r == CSS_BACKGROUND_REPEAT_REPEAT_Y ? 2 : 0;
+			if (css_computed_background_position(cs, &v, &u, &v2, &u2) == CSS_BACKGROUND_POSITION_SET) {
+				s->bgpxp = u == CSS_UNIT_PCT, s->bgpyp = u2 == CSS_UNIT_PCT;
+				s->bgpx = u == CSS_UNIT_PCT ? FIXTOFLT(v) : brcss_px(cs, v, u, C->vw);
+				s->bgpy = u2 == CSS_UNIT_PCT ? FIXTOFLT(v2) : brcss_px(cs, v2, u2, C->vw);
+			}
+		}
+	}
 	uint8_t (*wf[4])(const css_computed_style *, css_fixed *, css_unit *) = {css_computed_border_top_width, css_computed_border_right_width,
 	                                                                            css_computed_border_bottom_width, css_computed_border_left_width};
 	uint8_t (*sf[4])(const css_computed_style *) = {css_computed_border_top_style, css_computed_border_right_style, css_computed_border_bottom_style,
@@ -759,6 +784,46 @@ static void build_text(Ctx *C, Box *parent, dom_node_internal *c)
 	dom_string_unref(d);
 }
 
+// la dirección de una imagen como la elegiría un navegador (y las «perezosas», que la guardan en data-*):
+// src si es de verdad; si no, data-src y compañía, o la primera de srcset; y si solo hay un data:, ese
+static bool src_first(const char *set, char *out, size_t n)
+{
+	while (*set == ' ')
+		set++;
+	size_t l = strcspn(set, " ,");
+	if (!l || l >= n)
+		return false;
+	memcpy(out, set, l);
+	out[l] = 0;
+	return true;
+}
+static bool img_src(dom_node *n, char *a, size_t an)
+{
+	static const char *const LAZY[] = {"data-src", "data-lazy-src", "data-original", "data-url", "data-hi-res-src", NULL};
+	char v[1024];
+	if (attr(n, "src", a, an) && a[0] && strncmp(a, "data:", 5))
+		return true;
+	for (int i = 0; LAZY[i]; i++)
+		if (attr(n, LAZY[i], v, sizeof v) && v[0] && strncmp(v, "data:", 5)) {
+			snprintf(a, an, "%s", v);
+			return true;
+		}
+	if ((attr(n, "srcset", v, sizeof v) || attr(n, "data-srcset", v, sizeof v)) && src_first(v, a, an))
+		return true;
+	// en un <picture>: el primer <source> con srcset
+	dom_node_internal *p = NI(n)->parent;
+	if (p)
+		for (dom_node_internal *c = p->first_child; c; c = c->next) {
+			if (c->type != DOM_ELEMENT_NODE)
+				continue;
+			char t[12];
+			tag_of((dom_node *)c, t, sizeof t);
+			if (!strcmp(t, "source") && (attr((dom_node *)c, "srcset", v, sizeof v) || attr((dom_node *)c, "data-srcset", v, sizeof v)) && src_first(v, a, an))
+				return true;
+		}
+	return attr(n, "src", a, an) && !strncmp(a, "data:image/", 11) && strstr(a, ";base64,") && strlen(a) > 100; // (las de 1 px no)
+}
+
 static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style *pcs, int *olc)
 {
 	if (C->stop)
@@ -848,9 +913,7 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	float iw = 0, ih = 0;
 	if (!strcmp(tag, "img")) {
 		replaced = true;
-		bool ok = attr(n, "src", a, sizeof a) && a[0] && strncmp(a, "data:", 5);
-		if (!ok)
-			ok = attr(n, "data-src", a, sizeof a) && a[0];
+		bool ok = img_src(n, a, sizeof a);
 		char v[32];
 		if (attr(n, "width", v, sizeof v) && atof(v) > 0)
 			iw = (float)atof(v);
@@ -2750,8 +2813,20 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 	Sty *s = b->s;
 	s->ax = ax, s->ay = ay;
 	float x1 = ax + b->w, y1 = ay + b->h;
-	if (s->vis && b->kind != K_INLINE && s->tag != T_HTML && s->tag != T_BODY)
+	if (s->vis && b->kind != K_INLINE && s->tag != T_HTML && s->tag != T_BODY) {
 		paint_bg(C, s, ax, ay, x1, y1, cl);
+		if (s->bgurl && C->L->bgimg && b->w > 1 && b->h > 1 && ay < cl.y1 && y1 > cl.y0) {
+			BrlBg g = {s->bgurl, fmaxf(ax, cl.x0), fmaxf(ay, cl.y0), fminf(x1, cl.x1), fminf(y1, cl.y1), s->bgsz, s->bgsw, s->bgpx, s->bgpy, s->bgpxp, s->bgpyp, s->bgrep};
+			// la posición va respecto a la caja entera (aunque se recorte)
+			if (!g.pxp)
+				g.px += ax - g.x0;
+			if (!g.pyp)
+				g.py += ay - g.y0;
+			BrlText t = {s->fpx, s->col, s->link, s->clk, 0, 0, s->node};
+			if (g.x1 > g.x0 && g.y1 > g.y0)
+				C->L->bgimg(C->L->u, &g, &t);
+		}
+	}
 	if (y1 > C->bottom && y1 < 200000 && ay > -1000 && s->vis)
 		C->bottom = y1;
 	if (b->kind == K_ATOM) {
