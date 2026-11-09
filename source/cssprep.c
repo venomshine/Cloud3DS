@@ -127,6 +127,8 @@ typedef struct {
 	Map vars;
 	uint32_t *pr;
 	int npr;
+	uint8_t scheme; /* color-scheme: 1 dark, 2 light (light-dark() toma ese lado dentro) */
+	bool act;       /* cambia algún color */
 } Scope;
 
 #define MAX_COMBOS 64
@@ -1847,10 +1849,23 @@ static void var_tag(CssPrep *p, Out *o, const char *name, const char *v0, const 
 	for (const char *q = v0; q + 6 < v1 && !f; q++)
 		if (!strncasecmp(q, "var(", 4))
 			f = q + 4;
+	char lit[160];
+	if (!f && has_ci(v0, (size_t)(v1 - v0), "light-dark(")) { // sin variable, light-dark(): el valor («=…»)
+		const char *imp = NULL;
+		for (const char *q = v0; q < v1 && !imp; q++)
+			if (*q == '!')
+				imp = q;
+		int l = snprintf(lit, sizeof lit, "=%.*s", (int)((imp ? imp : v1) - v0), v0);
+		if (l > 1 && l < (int)sizeof lit)
+			f = lit;
+	}
 	if (f) {
-		const char *a = skip_ws(f, v1), *b = a;
-		while (b < v1 && *b != ',' && *b != ')' && !isspace((unsigned char)*b))
-			b++;
+		const char *a = f == lit ? lit : skip_ws(f, v1), *b = a;
+		if (f == lit)
+			b = a + strlen(lit);
+		else
+			while (b < v1 && *b != ',' && *b != ')' && !isspace((unsigned char)*b))
+				b++;
 		const char *got = map_get(&p->vid, a, (size_t)(b - a));
 		if (got)
 			id = atoi(got);
@@ -2156,7 +2171,24 @@ static void scope_add(CssPrep *p, const char *s0, const char *s1, const char *b0
 			const char *x = v.v[m];
 			ncol += *x == '#' || !strncasecmp(x, "rgb", 3) || !strncasecmp(x, "hsl", 3) || var_kind(v.k[m]) || strstr(v.k[m], "olor");
 		}
-	if (ncol < 2) {
+	uint8_t scheme = 0; // color-scheme: dark / light (no «light dark», que es el de la página)
+	for (const char *q = b0; q < b1;) {
+		const char *c = find_top(q, b1, ";");
+		const char *col = find_top(q, c, ":");
+		const char *n0 = q, *n1 = col, *v0 = col + 1, *v1 = c;
+		if (col < c) {
+			trim(&n0, &n1);
+			trim(&v0, &v1);
+			if (n1 - n0 == 12 && !strncasecmp(n0, "color-scheme", 12)) {
+				if (v1 - v0 >= 4 && !strncasecmp(v1 - 4, "dark", 4) && !has_ci(v0, (size_t)(v1 - v0), "light"))
+					scheme = 1;
+				else if (v1 - v0 >= 5 && !strncasecmp(v1 - 5, "light", 5) && !has_ci(v0, (size_t)(v1 - v0), "dark"))
+					scheme = 2;
+			}
+		}
+		q = c + 1;
+	}
+	if (ncol < 2 && !scheme) {
 		map_free(&v);
 		return;
 	}
@@ -2183,6 +2215,8 @@ static void scope_add(CssPrep *p, const char *s0, const char *s1, const char *b0
 		for (size_t m = 0; m < v.cap; m++)
 			if (v.k[m])
 				map_set(&p->sc[i].vars, v.k[m], strlen(v.k[m]), v.v[m], strlen(v.v[m]));
+		if (scheme)
+			p->sc[i].scheme = scheme;
 	}
 	map_free(&v);
 }
@@ -2209,50 +2243,75 @@ static int var_kind(const char *k)
 	return 0;
 }
 
+// el color que da un valor (con sus var() de local, y light-dark() del lado dark)
+static bool value_color(CssPrep *p, const Map *local, const char *v, bool dark, uint32_t *out)
+{
+	bool save = G_DARK, ok = false;
+	G_DARK = dark;
+	Out a = {0}, b = {0}, d = {0};
+	float f[4];
+	if (subst(p, local, v, strlen(v), &a, 0) && a.p) {
+		funcs(a.p, a.n, &b);
+		if (b.p)
+			colors(b.p, b.n, &d);
+		if (d.p && simple_color(d.p, d.p + d.n, f))
+			*out = argb(f), ok = true;
+	}
+	free(a.p), free(b.p), free(d.p);
+	G_DARK = save;
+	return ok;
+}
+
+static void pair_add(Scope *S, int *cap, uint32_t f, uint32_t t, uint32_t kd)
+{
+	for (int r = 0; r < S->npr; r++)
+		if (S->pr[r * 3] == f && S->pr[r * 3 + 1] == t && S->pr[r * 3 + 2] == kd)
+			return;
+	if (S->npr == *cap) {
+		int nc = *cap ? *cap * 2 : 64;
+		uint32_t *np2 = realloc(S->pr, sizeof *np2 * 3 * (size_t)nc);
+		if (!np2)
+			return;
+		S->pr = np2, *cap = nc;
+	}
+	S->pr[S->npr * 3] = f, S->pr[S->npr * 3 + 1] = t, S->pr[S->npr * 3 + 2] = kd;
+	S->npr++;
+}
+
 int cssprep_scopes(CssPrep *p)
 {
 	for (int i = 0; p && i < p->nsc; i++) {
 		Scope *S = &p->sc[i];
 		Map eff = {0}; // las suyas y las de los ámbitos más generales que lo contienen, de menos a más
 		int np = scope_parts(S->sel);
+		uint8_t scheme = 0;
 		for (int k = 1; k <= np; k++)
 			for (int j = 0; j < p->nsc; j++)
-				if (scope_parts(p->sc[j].sel) == k && scope_in(p->sc[j].sel, S->sel))
+				if (scope_parts(p->sc[j].sel) == k && scope_in(p->sc[j].sel, S->sel)) {
 					for (size_t m = 0; m < p->sc[j].vars.cap; m++)
 						if (p->sc[j].vars.k[m])
 							map_set(&eff, p->sc[j].vars.k[m], strlen(p->sc[j].vars.k[m]), p->sc[j].vars.v[m], strlen(p->sc[j].vars.v[m]));
-		int cap = 0;
-		for (size_t m = 0; m < eff.cap && S->npr < 3000; m++) {
-			if (!eff.k[m])
-				continue;
-			Out a = {0}, b = {0};
-			float ca[4], cb[4];
-			if (subst(p, &eff, eff.v[m], strlen(eff.v[m]), &a, 0) && a.p &&
-			    lookup(p, NULL, eff.k[m], strlen(eff.k[m]), NULL, 0, &b, 0) && b.p &&
-			    simple_color(b.p, b.p + b.n, cb) && simple_color(a.p, a.p + a.n, ca)) {
-				uint32_t f = argb(cb), t = argb(ca), kd = (uint32_t)var_kind(eff.k[m]);
-				bool dup = false;
-				for (int r = 0; r < S->npr && !dup; r++)
-					dup = S->pr[r * 3] == f && S->pr[r * 3 + 1] == t && S->pr[r * 3 + 2] == kd;
-				if (!dup) {
-					if (S->npr == cap) {
-						cap = cap ? cap * 2 : 64;
-						uint32_t *np2 = realloc(S->pr, sizeof *np2 * 3 * (size_t)cap);
-						if (!np2) {
-							free(a.p), free(b.p);
-							break;
-						}
-						S->pr = np2;
-					}
-					S->pr[S->npr * 3] = f, S->pr[S->npr * 3 + 1] = t, S->pr[S->npr * 3 + 2] = kd;
-					S->npr++;
+					if (p->sc[j].scheme)
+						scheme = p->sc[j].scheme;
 				}
+		bool dark = scheme ? scheme == 1 : G_DARK;
+		int cap = 0;
+		// las suyas; y con color-scheme, todas (light-dark() cambia de lado)
+		for (int pass = 0; pass < (scheme ? 2 : 1); pass++) {
+			const Map *m = pass ? &p->any : &eff;
+			for (size_t k = 0; k < m->cap && S->npr < 3000; k++) {
+				if (!m->k[k] || (pass && map_get(&eff, m->k[k], strlen(m->k[k]))))
+					continue;
+				char vr[160];
+				snprintf(vr, sizeof vr, "var(%s)", m->k[k]);
+				uint32_t f, t;
+				if (value_color(p, NULL, vr, G_DARK, &f) && value_color(p, &eff, vr, dark, &t))
+					pair_add(S, &cap, f, t, (uint32_t)var_kind(m->k[k]));
 			}
-			free(a.p), free(b.p);
 		}
 #ifdef BRL_DEBUG
 		if (getenv("BRL_SC")) {
-			fprintf(stderr, "ámbito %s: %zu variables, %d colores\n", S->sel, eff.n, S->npr);
+			fprintf(stderr, "ámbito %s: %zu variables, %d colores, esquema %d\n", S->sel, eff.n, S->npr, scheme);
 			for (int r = 0; r < S->npr; r++)
 				if (getenv("BRL_SC")[0] == 'v' || (S->pr[r * 3] & 0xFFFFFF) == strtoul(getenv("BRL_SC"), NULL, 16))
 					fprintf(stderr, "   %08x -> %08x (%u)\n", S->pr[r * 3], S->pr[r * 3 + 1], S->pr[r * 3 + 2]);
@@ -2262,7 +2321,9 @@ int cssprep_scopes(CssPrep *p)
 		bool change = false;
 		for (int r = 0; r < S->npr && !change; r++)
 			change = S->pr[r * 3] != S->pr[r * 3 + 1];
-		if (S->npr >= 3 && change) // pocos colores: no es un tema (las variables de un componente)
+		S->scheme = scheme;
+		S->act = (S->npr >= 3 && change) || (scheme && (scheme == 1) != G_DARK); // pocos colores: no es un tema
+		if (S->act)
 			p->nact++;
 		else
 			free(S->pr), S->pr = NULL, S->npr = 0;
@@ -2277,7 +2338,7 @@ int cssprep_scope_match(CssPrep *p, const char *attrs, int parent)
 	int ids[7], n = 0;
 	for (int i = 0; i < p->nsc; i++) {
 		const Scope *S = &p->sc[i];
-		if (!S->npr || !compound_ok(S->sel, S->sel + strlen(S->sel), attrs, false))
+		if (!S->act || !compound_ok(S->sel, S->sel + strlen(S->sel), attrs, false))
 			continue;
 		if (n == 7) // lleno: fuera el que menos manda (el último)
 			n--;
@@ -2333,17 +2394,17 @@ bool cssprep_scope_col(CssPrep *p, int combo, uint32_t *col, int kind, int vid)
 		}
 		if (c->st && c->vars) {
 			if (!c->st[vid]) {
-				Out a = {0}, b = {0}, d = {0};
-				float f[4];
 				c->st[vid] = 2;
-				if (lookup(p, c->vars, p->vname[vid - 1], strlen(p->vname[vid - 1]), NULL, 0, &a, 0) && a.p) {
-					funcs(a.p, a.n, &b);
-					if (b.p)
-						colors(b.p, b.n, &d);
-					if (d.p && simple_color(d.p, d.p + d.n, f))
-						c->val[vid] = argb(f), c->st[vid] = 1;
-				}
-				free(a.p), free(b.p), free(d.p);
+				bool dark = G_DARK;
+				for (int k = c->n - 1; k >= 0; k--) // color-scheme: el del ámbito que más manda
+					if (p->sc[c->id[k]].scheme)
+						dark = p->sc[c->id[k]].scheme == 1;
+				const char *nm = p->vname[vid - 1];
+				char vr[200];
+				if (*nm != '=') // una variable; o (con «=») un valor con light-dark()
+					snprintf(vr, sizeof vr, "var(%s)", nm);
+				if (value_color(p, c->vars, *nm == '=' ? nm + 1 : vr, dark, &c->val[vid]))
+					c->st[vid] = 1;
 			}
 			if (c->st[vid] == 1) {
 				*col = c->val[vid];
