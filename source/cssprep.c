@@ -241,6 +241,10 @@ static const char *find_top(const char *s, const char *e, const char *set)
 	int d = 0;
 	while (s < e) {
 		char c = *s;
+		if (c == '\\' && s + 1 < e) {
+			s += 2;
+			continue;
+		}
 		if (c == '"' || c == '\'') {
 			s = skip_str(s, e);
 			continue;
@@ -266,6 +270,10 @@ static const char *block_end(const char *s, const char *e)
 	int d = 1;
 	while (s < e) {
 		char c = *s;
+		if (c == '\\' && s + 1 < e) { // lo escapado («.content-\[\"\"\]») no cuenta
+			s += 2;
+			continue;
+		}
 		if (c == '"' || c == '\'') {
 			s = skip_str(s, e);
 			continue;
