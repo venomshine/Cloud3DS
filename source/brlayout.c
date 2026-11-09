@@ -1120,7 +1120,9 @@ static void words(Ctx *C, Box *b)
 		sp = 0;
 		i = j;
 	}
-	if (sp && nw)
+	if (prew && sp && nw < cap) // pre-wrap: los espacios del final también ocupan (en una palabra vacía)
+		w[nw++] = (Word){.off = n, .n = 0, .sp = (uint8_t)(sp > 255 ? 255 : sp)};
+	else if (sp && nw)
 		w[nw - 1].tsp = 1;
 	b->tsp = sp > 0 || (n && (t[n - 1] == ' ' || t[n - 1] == '\n' || t[n - 1] == '\t'));
 	b->wd = w, b->nwd = nw;
@@ -1595,17 +1597,20 @@ static float ifc(Ctx *C, Box *b, float cw, BFC *bf, float ox, float oy, float cx
 					brk = true;
 					any = true;
 					sp = false;
+					soft = false;
 					break;
 				}
 				bool prew = ts->ws == CSS_WHITE_SPACE_PRE_WRAP;
-				bool space = (sp || w->sp) && (any || (prew && w->sp)); /* pre-wrap: también al empezar la línea */
+				bool space = (sp || w->sp) && (any || (prew && w->sp && !soft)); /* pre-wrap: también al empezar la línea (no tras partirla) */
 				float spx = space ? spw(C, ts) * (w->sp > 1 ? w->sp : 1) : 0;
 				const char *ws0 = t->b->t + w->off + woff;
 				int wn = w->n - (int)woff;
 				float ww = woff ? tw_(C, ws0, wn, ts) : w->w;
 				bool bok = any && (space || sp_open || w->bk || (m && v.v[pl[m - 1].it].t == IT_ATOM)) && can_wrap(ts);
-				if (bok && x + spx + ww > avail + 0.01f)
+				if (bok && x + spx + ww > avail + 0.01f) {
+					soft = true;
 					break;
+				}
 				if (!any && ww > avail + 0.01f && (l > 0.01f || r < cw - 0.01f) && fl_next(bf, oy + y, ox, ox + cw) < INF) {
 					// no cabe al lado de los flotantes: más abajo
 					y = fl_next(bf, oy + y, ox, ox + cw) - oy;
@@ -1632,6 +1637,7 @@ static float ifc(Ctx *C, Box *b, float cw, BFC *bf, float ox, float oy, float cx
 				last_end = x;
 				woff = 0;
 				any = true;
+				soft = false;
 				sp = w->tsp;
 				i++;
 				continue;
@@ -2896,7 +2902,7 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 			if (f->t == F_TEXT) {
 				Sty *ts = f->b->s;
 				float X = ax + f->x, Y = ay + cy + f->y;
-				if (!ts->vis || ts->fpx < 1.5f || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
+				if (!f->n || !ts->vis || ts->fpx < 1.5f || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
 					continue;
 				if (Y + f->h > C->bottom && Y < 200000)
 					C->bottom = Y + f->h;
