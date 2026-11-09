@@ -65,6 +65,8 @@ struct Sty {
 	uint8_t bold, under, gall, ncols, ifc, item, bcol, tag, upper, placed, bgsz, bgrep, bgpxp, bgpyp;
 	const char *bgurl; /* background-image */
 	float bgsw, bgpx, bgpy;
+	float ar, tx, ty, rad; /* aspect-ratio, translate (px o %: txp/typ), border-radius (px; <0: %) */
+	uint8_t txp, typ, fit;
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -512,8 +514,24 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 				s->gcs = (int16_t)val;
 			else if (!strcmp(nm, "gp"))
 				s->gsp = (int16_t)val;
+			else if (!strcmp(nm, "c3x") || !strcmp(nm, "c3xp"))
+				s->tx = val / 10.0f, s->txp = nm[3] == 'p';
+			else if (!strcmp(nm, "c3y") || !strcmp(nm, "c3yp"))
+				s->ty = val / 10.0f, s->typ = nm[3] == 'p';
 		}
 	s->gall = css_computed_column_span(cs) == CSS_COLUMN_SPAN_ALL;
+	// lo que cssprep pasa en propiedades que libcss sí guarda: aspect-ratio, object-fit, border-radius
+	if (css_computed_column_width(cs, &v, &u) == CSS_COLUMN_WIDTH_SET) {
+		float cw = brcss_px(cs, v, u, C->vw);
+		if (cw >= 1000000)
+			s->ar = (cw - 1000000) / 1000;
+	}
+	uint8_t crs = css_computed_column_rule_style(cs);
+	s->fit = crs == CSS_COLUMN_RULE_STYLE_DOTTED ? 1 : crs == CSS_COLUMN_RULE_STYLE_SOLID ? 2 : 0;
+	if (css_computed_column_rule_width(cs, &v, &u) == CSS_COLUMN_RULE_WIDTH_WIDTH) { // border-radius
+		float r = brcss_px(cs, v, u, C->vw);
+		s->rad = r >= 100000 ? -(r - 100000) : r;
+	}
 }
 
 static Box *box_new(Ctx *C, Box *parent, uint8_t kind, Sty *s)
@@ -1409,6 +1427,8 @@ static void atom_size_h(Ctx *C, Box *b, float cbw, float cbh)
 		w = LV(s, LW, cbw) - (s->bbox ? hx(s) : 0);
 	if (hh)
 		h = LV(s, LH, cbh) - (s->bbox ? vy(s) : 0);
+	if (s->ar > 0) // aspect-ratio manda sobre la proporción de la imagen
+		ar = s->ar;
 	if (hw && !hh && ar > 0)
 		h = w / ar;
 	else if (hh && !hw && ar > 0)
@@ -2682,6 +2702,8 @@ static void layout_box(Ctx *C, Box *b, float defh, BFC *bf, float ox, float oy)
 			ch = fb;
 	}
 	free(local.f);
+	if (!hh && s->ar > 0) // aspect-ratio: el alto sale del ancho (o el del contenido, si es más)
+		ch = fmaxf(ch, cw / s->ar);
 	float h = hh ? dh + vy(s) : clamp_h(s, ch + vy(s), defh);
 	b->h = h;
 }
@@ -2716,7 +2738,7 @@ static void marker(Ctx *C, Box *b, float ax, float ay, Clip cl)
 		x = ax + s->bw[3] + s->up[3] - mw - 2;
 	if (x < cl.x0)
 		return;
-	BrlText t = {s->fpx, s->col, -1, -1, 0, 0, s->node};
+	BrlText t = {s->fpx, s->col, -1, -1, 0, 0, 0, s->node};
 	C->L->text(C->L->u, x, y, mw, gh, mk, (int)strlen(mk), &t);
 }
 
@@ -2740,7 +2762,8 @@ static void paint_bg(Ctx *C, Sty *s, float x0, float y0, float x1, float y1, Cli
 		x0 = cl.x0, bw[3] = 0;
 	if (x1 > cl.x1)
 		x1 = cl.x1, bw[1] = 0;
-	C->L->bg(C->L->u, x0, y0, x1, y1, (s->bg >> 24) > 0x10 ? s->bg : 0, bw, bc);
+	float rad = s->rad < 0 ? fminf(x1 - x0, y1 - y0) * -s->rad / 100 : s->rad;
+	C->L->bg(C->L->u, x0, y0, x1, y1, (s->bg >> 24) > 0x10 ? s->bg : 0, bw, bc, fminf(rad, fminf(x1 - x0, y1 - y0) / 2));
 }
 
 static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth);
@@ -2803,6 +2826,10 @@ static void child(Ctx *C, Box *c, float pax, float pay, Clip cl, int depth)
 		else if (!AUT(s, LOB))
 			y -= LV(s, LOB, -1);
 	}
+	if (s->tx != 0) // transform: translate()
+		x += s->txp ? c->w * s->tx / 100 : s->tx;
+	if (s->ty != 0)
+		y += s->typ ? c->h * s->ty / 100 : s->ty;
 	emit(C, c, x, y, cl, depth + 1);
 }
 
@@ -2822,7 +2849,7 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 				g.px += ax - g.x0;
 			if (!g.pyp)
 				g.py += ay - g.y0;
-			BrlText t = {s->fpx, s->col, s->link, s->clk, 0, 0, s->node};
+			BrlText t = {s->fpx, s->col, s->link, s->clk, 0, 0, 0, s->node};
 			if (g.x1 > g.x0 && g.y1 > g.y0)
 				C->L->bgimg(C->L->u, &g, &t);
 		}
@@ -2831,7 +2858,7 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 		C->bottom = y1;
 	if (b->kind == K_ATOM) {
 		if (s->vis && ay < cl.y1 && y1 > cl.y0 && ax < cl.x1 && x1 > cl.x0) {
-			BrlText t = {s->fpx, s->col, s->link, s->clk, s->bold, 0, s->node};
+			BrlText t = {s->fpx, s->col, s->link, s->clk, s->bold, 0, s->fit, s->node};
 			C->L->box(C->L->u, ax + s->bw[3] + s->up[3], ay + s->bw[0] + s->up[0], b->w - hx(s), b->h - vy(s), s->img, s->wdg, &t);
 		}
 		return;
@@ -2861,7 +2888,7 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 					continue;
 				if (Y + f->h > C->bottom && Y < 200000)
 					C->bottom = Y + f->h;
-				BrlText t = {ts->fpx, ts->col, ts->link, ts->clk, ts->bold, ts->under, ts->node};
+				BrlText t = {ts->fpx, ts->col, ts->link, ts->clk, ts->bold, ts->under, 0, ts->node};
 				C->L->text(C->L->u, X, Y, f->w, f->h, f->s, f->n, &t);
 			} else if (f->t == F_BOX || f->t == F_OOF)
 				child(C, f->b, ax, ay + cy, in, depth);
@@ -2888,8 +2915,8 @@ static void dump(Box *b, int d, float ax, float ay)
 	if (b->kind == K_TEXT)
 		fprintf(stderr, "%*s\"%.*s\"\n", d, "", (int)(b->tn < 30 ? b->tn : 30), b->t);
 	else
-		fprintf(stderr, "%*s%s <%s.%s> in=%d out=%d oof=%d ifc=%d x=%.0f y=%.0f w=%.0f h=%.0f nfr=%d aut=%x pct=%x W=%.1f MW=%.1f H=%.1f MH=%.1f m=%.0f,%.0f,%.0f,%.0f p=%.0f,%.0f\n", d, "", K[b->kind], tag, cls, b->s->inner, b->s->outer, b->oof,
-		        b->s->ifc, ax + b->x, ay + b->y, b->w, b->h, b->s->nfr, b->s->aut, b->s->pct, b->s->lv[LW], b->s->lv[LMAXW], b->s->lv[LH], b->s->lv[LMINH], b->s->um[0], b->s->um[1], b->s->um[2], b->s->um[3], b->s->up[1], b->s->up[3]);
+		fprintf(stderr, "%*s%s <%s.%s> in=%d out=%d oof=%d ifc=%d x=%.0f y=%.0f w=%.0f h=%.0f nfr=%d ov=%d,%d aut=%x pct=%x W=%.1f MW=%.1f H=%.1f MH=%.1f m=%.0f,%.0f,%.0f,%.0f p=%.0f,%.0f\n", d, "", K[b->kind], tag, cls, b->s->inner, b->s->outer, b->oof,
+		        b->s->ifc, ax + b->x, ay + b->y, b->w, b->h, b->s->nfr, b->s->ovx, b->s->ovy, b->s->aut, b->s->pct, b->s->lv[LW], b->s->lv[LMAXW], b->s->lv[LH], b->s->lv[LMINH], b->s->um[0], b->s->um[1], b->s->um[2], b->s->um[3], b->s->up[1], b->s->up[3]);
 	if (b->kind == K_TEXT)
 		return;
 	for (Box *c = b->first; c; c = c->next)

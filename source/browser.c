@@ -79,6 +79,7 @@ typedef struct {
 	dom_node *node; /* el elemento del que sale (para los clics del JavaScript) */
 	s16 clk;       /* se puede tocar por su JavaScript (onclick, role=button…): su número, o -1 */
 	s16 bgi;       /* una imagen de fondo: su forma en B.bgi (-1 no) */
+	u8 fit;        /* imagen: object-fit (0 cover, 1 contain, 2 fill) */
 } Frag;
 
 /* cómo va una imagen de fondo en su caja (la caja es la del trozo) */
@@ -134,6 +135,7 @@ typedef struct {   /* fondo de color y bordes de un bloque */
 	float bw[4];   /* bordes arriba, derecha, abajo, izquierda */
 	u32 bc[4];
 	bool over;     /* va encima de una imagen (se pinta después de ellas) */
+	float rad;     /* border-radius (px) */
 } BgBox;
 
 enum { ST_IDLE, ST_LOADING, ST_PARSED, ST_LAYOUT, ST_READY, ST_ERROR, ST_ACT /* el JavaScript atiende un clic */, ST_OOM /* no cabe: el aviso */ };
@@ -1140,6 +1142,7 @@ static void put(const char *s, int n, const St *st, float w)
 	f->sc = st->sc, f->col = st->col, f->link = (s16)st->link, f->under = st->under, f->bold = st->bold;
 	f->img = -1;
 	f->bgi = -1;
+	f->fit = 0;
 	f->wdg = -1;
 	f->node = st->el;
 	f->clk = (s16)st->clk;
@@ -2768,6 +2771,24 @@ static void sv_esc(Buf *b, const char *s, size_t n)
 	}
 }
 
+// el elemento al que apunta un <use> (href o xlink:href con #id); hay que soltarlo con dom_node_unref
+static dom_node *use_target(dom_node *u)
+{
+	char h[160];
+	if (!attr(u, "href", h, sizeof h) && !attr(u, "xlink:href", h, sizeof h))
+		return NULL;
+	const char *id = strchr(h, '#');
+	if (!id || !id[1] || !B.doc)
+		return NULL;
+	dom_string *ds = NULL;
+	dom_element *e = NULL;
+	if (dom_string_create((const uint8_t *)id + 1, strlen(id + 1), &ds) != DOM_NO_ERR)
+		return NULL;
+	dom_document_get_element_by_id(B.doc, ds, &e);
+	dom_string_unref(ds);
+	return (dom_node *)e;
+}
+
 /* el árbol del <svg> otra vez como texto para NanoSVG: con los nombres en su forma (el lector de HTML
  * los pasa a minúsculas: viewBox, linearGradient…) y currentColor con el color del texto */
 static void sv_write(Buf *b, dom_node *n, const char *color, int depth)
@@ -2789,6 +2810,16 @@ static void sv_write(Buf *b, dom_node *n, const char *color, int depth)
 		tag_of((dom_node *)c, tag, sizeof tag);
 		if (!strcmp(tag, "title") || !strcmp(tag, "desc") || !strcmp(tag, "script") || !strcmp(tag, "style") || !strcmp(tag, "foreignobject"))
 			continue;
+		if (!strcmp(tag, "use")) { // <use href="#icono">: lo de dentro del <symbol> al que apunta
+			dom_node *ref = use_target((dom_node *)c);
+			if (ref) {
+				sv_puts(b, "<g>");
+				sv_write(b, ref, color, depth + 1);
+				sv_puts(b, "</g>");
+				dom_node_unref(ref);
+			}
+			continue;
+		}
 		static const char *const EL[][2] = {{"lineargradient", "linearGradient"}, {"radialgradient", "radialGradient"}, {"clippath", "clipPath"}};
 		const char *tn = tag;
 		for (size_t i = 0; i < sizeof EL / sizeof EL[0]; i++)
@@ -2876,7 +2907,22 @@ static int svg_make(dom_node *node, const css_computed_style *cs, float *ow, flo
 	if (h <= 0)
 		h = sv_len(node, "height", em);
 	char vb[96];
-	if (attr(node, "viewbox", vb, sizeof vb)) {
+	bool hvb = attr(node, "viewbox", vb, sizeof vb);
+	if (!hvb) // sin viewBox: el del <symbol> de su <use> (iconos de un sprite)
+		for (dom_node_internal *c = NI(node)->first_child; c && !hvb; c = c->next) {
+			if (c->type != DOM_ELEMENT_NODE)
+				continue;
+			char t[8];
+			tag_of((dom_node *)c, t, sizeof t);
+			if (!strcmp(t, "use")) {
+				dom_node *ref = use_target((dom_node *)c);
+				if (ref) {
+					hvb = attr(ref, "viewbox", vb, sizeof vb);
+					dom_node_unref(ref);
+				}
+			}
+		}
+	if (hvb) {
 		float a[4] = {0};
 		sscanf(vb, "%f%*[ ,]%f%*[ ,]%f%*[ ,]%f", &a[0], &a[1], &a[2], &a[3]);
 		vbw = a[2], vbh = a[3];
@@ -3369,6 +3415,7 @@ static void bl_box(void *u, float x, float y, float w, float h, int img, int wdg
 	if (!f)
 		return;
 	f->under = 0;
+	f->fit = st->fit;
 	if (img >= 0 && img < B.nimg) {
 		f->img = (s16)img;
 		if (w > B.img[img].w || !B.img[img].sized) // (la misma en dos tamaños: se baja para el mayor)
@@ -3412,7 +3459,7 @@ static void bl_bgimg(void *u, const BrlBg *g, const BrlText *st)
 		im->w = g->x1 - g->x0, im->h = g->y1 - g->y0;
 }
 
-static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4])
+static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4], float rad)
 {
 	(void)u;
 	if (B.nbg == B.cbg) {
@@ -3423,7 +3470,7 @@ static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col,
 		B.bg = nb, B.cbg = nc;
 	}
 	BgBox *b = &B.bg[B.nbg++];
-	*b = (BgBox){y0, y1, x0, x1, col, {0}, {0}, false}; /* (con su transparencia) */
+	*b = (BgBox){y0, y1, x0, x1, col, {0}, {0}, false, rad}; /* (con su transparencia) */
 	for (int i = B.nf - 1; i >= 0 && i >= B.nf - 400 && !b->over; i--) { // ¿tapa una imagen ya puesta?
 		const Frag *f = &B.f[i];
 		if (f->img < 0)
@@ -4260,6 +4307,15 @@ static void bg_paint(float VH, bool over)
 		if (Y1 < 0 || Y0 > VH)
 			continue;
 		float X0 = (PAD_X + bb->x0 - B.sx) * z, Wb = (bb->x1 - bb->x0) * z;
+		bool even = bb->bw[0] > 0 && bb->bw[1] == bb->bw[0] && bb->bw[2] == bb->bw[0] && bb->bw[3] == bb->bw[0];
+		if (bb->rad > 0.5f && (bb->col || even)) { // con esquinas redondeadas (botones, tarjetas…)
+			float r = bb->rad * z, t = fmaxf(bb->bw[0] * z, 1);
+			if (bb->col)
+				draw_rrect(X0, Y0, Wb, Y1 - Y0, r, DKB(bb->col));
+			if (even)
+				draw_rrect_outline(X0, Y0, Wb, Y1 - Y0, r, t, DKB(bb->bc[0]));
+			continue;
+		}
 		if (bb->col)
 			draw_rect(X0, Y0, Wb, Y1 - Y0, DKB(bb->col));
 		float t;
@@ -4375,9 +4431,15 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			}
 			if (mode == 2) {
 			} else if (im->st == IM_TEX && im->tex.ok) {
-				// llena su caja (como object-fit: cover): lo que sobra de la imagen, recortado por igual
-				float k = fmaxf(bw / im->tw, bh / im->th), fu = fminf(1, bw / (im->tw * k)), fv = fminf(1, bh / (im->th * k));
-				draw_texture_part(&im->tex, X, by, bw, bh, (1 - fu) / 2, (1 - fv) / 2, (1 + fu) / 2, (1 + fv) / 2);
+				if (f->fit == 2) // object-fit: fill: estirada
+					draw_texture(&im->tex, X, by, bw, bh, 1);
+				else if (f->fit == 1) { // contain: entera, centrada
+					float k = fminf(bw / im->tw, bh / im->th), dw = im->tw * k, dh = im->th * k;
+					draw_texture(&im->tex, X + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh, 1);
+				} else { // cover (y lo normal): llena su caja, lo que sobra recortado por igual
+					float k = fmaxf(bw / im->tw, bh / im->th), fu = fminf(1, bw / (im->tw * k)), fv = fminf(1, bh / (im->th * k));
+					draw_texture_part(&im->tex, X, by, bw, bh, (1 - fu) / 2, (1 - fv) / 2, (1 + fu) / 2, (1 + fv) / 2);
+				}
 			} else
 				draw_rect(X, by, bw, bh, DKB(im->st == IM_FAIL ? col_hex(0xF2F2F2) : col_hex(0xEAECF0)));
 			if (mode != 1 && f->link >= 0 && (f->link == hov || i == B.focus))

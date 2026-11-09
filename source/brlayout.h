@@ -26,6 +26,7 @@ typedef struct {
 	uint32_t col;       /* color (ABGR, como la interfaz) */
 	int16_t link, clk;  /* enlace y «se toca por JavaScript» (-1 no) */
 	uint8_t bold, under;
+	uint8_t fit;        /* imágenes: object-fit (0 cover, 1 contain, 2 fill) */
 	dom_node *node;     /* el elemento del que sale */
 } BrlText;
 
@@ -59,7 +60,7 @@ typedef struct {
 	/* un control de formulario: su número y su tamaño (o -1) */
 	int (*wdg)(void *u, dom_node *n, const char *tag, const css_computed_style *cs, float px, float *w, float *h);
 	/* lo que se pinta, en orden (lo de después, encima) */
-	void (*bg)(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4]);
+	void (*bg)(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4], float radius);
 	void (*text)(void *u, float x, float y, float w, float h, const char *s, int n, const BrlText *t);
 	void (*box)(void *u, float x, float y, float w, float h, int img, int wdg, const BrlText *t);
 	void (*bgimg)(void *u, const BrlBg *b, const BrlText *t); /* (puede ser NULL) */
