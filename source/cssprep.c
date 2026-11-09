@@ -1292,10 +1292,10 @@ static bool grad_color(const char *v, char *out, size_t n)
 	const char *g = strstr(v, "gradient(");
 	if (!g)
 		return false;
-	float br = 0, bgc = 0, bb = 0, ba = -1;
-	bool clear = false, named = false;
-	char bname[16] = "";
-	for (const char *q = g + 9; *q && *q != ';';) {
+	// las paradas (color y posición en %, -1 sin ella); el color: la media de lo que ocupa cada tramo
+	float st[16][5];
+	int ns = 0;
+	for (const char *q = g + 9; *q && *q != ';' && ns < 16;) {
 		while (*q == ' ' || *q == ',')
 			q++;
 		float r = 0, gg = 0, b = 0, a = -1;
@@ -1307,6 +1307,8 @@ static bool grad_color(const char *v, char *out, size_t n)
 			unsigned x = (unsigned)strtoul(q + 1, NULL, 16);
 			if (l == 4)
 				r = ((x >> 8) & 15) * 17, gg = ((x >> 4) & 15) * 17, b = (x & 15) * 17, a = 1;
+			else if (l == 5)
+				r = ((x >> 12) & 15) * 17, gg = ((x >> 8) & 15) * 17, b = ((x >> 4) & 15) * 17, a = (x & 15) / 15.0f;
 			else if (l == 7)
 				r = (x >> 16) & 255, gg = (x >> 8) & 255, b = x & 255, a = 1;
 			else if (l == 9)
@@ -1328,29 +1330,45 @@ static bool grad_color(const char *v, char *out, size_t n)
 			r = c[0], gg = c[1], b = c[2], a = k >= 4 ? c[3] : 1;
 			nx = cl + 1;
 		} else if (!strncasecmp(q, "transparent", 11)) {
-			clear = true;
+			a = 0;
 			nx = q + 11;
 		} else {
-			static const char *const NAMED[] = {"white", "black", "red", "blue", "green", "gray", "grey", "orange", "purple", "navy",
-			                                    "teal", "silver", "maroon", "olive", "yellow", "aqua", "fuchsia", "lime", NULL};
-			for (int i = 0; NAMED[i]; i++) {
-				size_t l = strlen(NAMED[i]);
-				if (!strncasecmp(q, NAMED[i], l) && !isalnum((unsigned char)q[l])) {
-					if (ba < 1)
-						util_copy(bname, NAMED[i], sizeof bname), named = true, ba = 1;
+			static const struct {
+				const char *n;
+				uint32_t c;
+			} NAMED[] = {{"white", 0xFFFFFF}, {"black", 0}, {"red", 0xFF0000}, {"blue", 0x0000FF}, {"green", 0x008000}, {"gray", 0x808080},
+			             {"grey", 0x808080}, {"orange", 0xFFA500}, {"purple", 0x800080}, {"navy", 0x000080}, {"teal", 0x008080},
+			             {"silver", 0xC0C0C0}, {"maroon", 0x800000}, {"olive", 0x808000}, {"yellow", 0xFFFF00}, {"aqua", 0x00FFFF},
+			             {"fuchsia", 0xFF00FF}, {"lime", 0x00FF00}};
+			for (size_t i = 0; i < sizeof NAMED / sizeof NAMED[0]; i++) {
+				size_t l = strlen(NAMED[i].n);
+				if (!strncasecmp(q, NAMED[i].n, l) && !isalnum((unsigned char)q[l]) && q[l] != '-') {
+					r = (NAMED[i].c >> 16) & 255, gg = (NAMED[i].c >> 8) & 255, b = NAMED[i].c & 255, a = 1;
 					nx = q + l;
 					break;
 				}
 			}
 		}
+		q = nx;
 		if (a >= 0) {
-			if (a < 0.05f)
-				clear = true;
-			if (a > ba)
-				br = r, bgc = gg, bb = b, ba = a, named = false;
+			float pos = -1;
+			const char *t = q;
+			while (*t == ' ')
+				t++;
+			char *z;
+			float pv = strtof(t, &z);
+			if (z != t) {
+				if (*z == '%')
+					pos = pv;
+				else if (!strncasecmp(z, "px", 2) || !strncasecmp(z, "em", 2) || !strncasecmp(z, "rem", 3))
+					pos = pv * (z[0] == 'p' ? 1 : 16) / 2; // (sin saber el tamaño: una caja de unos 200 px)
+				else if (pv == 0)
+					pos = 0;
+			}
+			st[ns][0] = r, st[ns][1] = gg, st[ns][2] = b, st[ns][3] = a, st[ns][4] = pos;
+			ns++;
 		}
 		// a la siguiente coma (lo de detrás de la parada: su posición) o al final
-		q = nx;
 		int d = 0;
 		while (*q && (d || (*q != ',' && *q != ')'))) {
 			if (*q == '(')
@@ -1362,15 +1380,41 @@ static bool grad_color(const char *v, char *out, size_t n)
 		if (*q == ')')
 			break;
 	}
-	if (ba < 0)
+	if (!ns)
 		return false;
-	if (named && !clear) {
-		snprintf(out, n, "%s", bname);
+	// posiciones que faltan: la primera 0, la última 100, las de en medio repartidas
+	if (st[0][4] < 0)
+		st[0][4] = 0;
+	if (st[ns - 1][4] < 0)
+		st[ns - 1][4] = 100;
+	for (int i = 1; i < ns; i++) {
+		if (st[i][4] >= 0) {
+			if (st[i][4] < st[i - 1][4])
+				st[i][4] = st[i - 1][4];
+			continue;
+		}
+		int j = i;
+		while (st[j][4] < 0)
+			j++;
+		for (int k = i; k < j; k++)
+			st[k][4] = st[i - 1][4] + (st[j][4] - st[i - 1][4]) * (float)(k - i + 1) / (float)(j - i + 1);
+	}
+	float sr = 0, sg = 0, sb = 0, sa = 0, tot = 0;
+	for (int i = 0; i < ns; i++) {
+		// lo que le toca: la mitad de cada tramo de al lado; antes de la primera y tras la última, todo
+		float L = (i ? (st[i][4] - st[i - 1][4]) / 2 : st[0][4]) + (i + 1 < ns ? (st[i + 1][4] - st[i][4]) / 2 : 100 - st[i][4]);
+		if (L < 0.01f && ns == 1)
+			L = 1;
+		sr += st[i][0] * st[i][3] * L, sg += st[i][1] * st[i][3] * L, sb += st[i][2] * st[i][3] * L;
+		sa += st[i][3] * L, tot += L;
+	}
+	if (tot <= 0)
+		return false;
+	if (sa <= 0.001f) {
+		snprintf(out, n, "transparent");
 		return true;
 	}
-	if (named) // (con nombre y algo transparente: negro o blanco a medias, lo habitual)
-		br = bgc = bb = !strcmp(bname, "white") ? 255 : 0;
-	snprintf(out, n, "rgba(%d,%d,%d,%.2f)", (int)br, (int)bgc, (int)bb, clear ? ba * 0.55f : ba);
+	snprintf(out, n, "rgba(%d,%d,%d,%.2f)", (int)(sr / sa + 0.5f), (int)(sg / sa + 0.5f), (int)(sb / sa + 0.5f), sa / tot);
 	return true;
 }
 
@@ -1898,6 +1942,27 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 {
 	// ¿la regla ya dice su color de fondo? (entonces un degradado en background-image no lo pisa)
 	bool has_bgc = has_ci(s, (size_t)(e - s), "background-color") || has_ci(s, (size_t)(e - s), "background:");
+	// un degradado de 1-3 px de ancho o alto (una raya, un borde con degradado): no tiñe la caja
+	bool thin = false;
+	for (const char *q = s; q < e && !thin; q++)
+		if (!strncasecmp(q, "background-size", 15)) {
+			const char *t = q + 15;
+			while (t < e && (*t == ' ' || *t == ':'))
+				t++;
+			for (int k = 0; k < 2 && t < e; k++) {
+				char *z;
+				float v = strtof(t, &z);
+				if (z == t)
+					break;
+				if (!strncasecmp(z, "px", 2) && v <= 3)
+					thin = true;
+				t = z;
+				while (t < e && *t != ' ' && *t != ';' && *t != '}')
+					t++;
+				while (t < e && *t == ' ')
+					t++;
+			}
+		}
 	if (has_ci(s, (size_t)(e - s), "grid-column-"))
 		grid_start_end(s, e, o);
 	Out a = {0}, b = {0};
@@ -1956,6 +2021,8 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 						char gc[48];
 						if (!a.bad && a.n && !strcmp(name, "background-image") && has_bgc && strstr(a.p, "gradient(")) {
 							// (un degradado sobre el color de la regla: se queda el color)
+						} else if (!a.bad && a.n && thin && (!strcmp(name, "background") || !strcmp(name, "background-image")) && strstr(a.p, "gradient(")) {
+							// (una raya: nada)
 						} else if (!a.bad && a.n && (!strcmp(name, "background") || !strcmp(name, "background-image")) && strstr(a.p, "gradient(")) {
 							// un degradado (libcss no los conoce): de fondo, un color. Con varias capas, el
 							// color base es el de la última («…gradient(…), url(…) #1b2838»)
