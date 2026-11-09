@@ -426,6 +426,80 @@ static bool ci_has(const char *h, const char *nd)
 #define CSS_MAX_BYTES (2560 * 1024) /* lo que se baja; traducido (cssprep) ocupa bastante menos */
 static char CSS_SEEN[CSS_MAX_LINKS][96]; /* las ya bajadas (una web enlaza la misma varias veces) */
 static int CSS_NSEEN;
+static void css_sheet(BrCss *c, const char *css, size_t n, const char *url, int *links, size_t *bytes, int depth);
+
+// una hoja de otra parte (un <link> o un @import): se baja (si no se bajó ya) y entra con las suyas
+static __attribute__((noinline)) void css_fetch(BrCss *c, const char *abs, int *links, size_t *bytes, int depth)
+{
+	const char *key = strlen(abs) > 95 ? abs + strlen(abs) - 95 : abs; // el final: el nombre con su huella
+	for (int i = 0; i < CSS_NSEEN; i++)
+		if (!strcmp(CSS_SEEN[i], key))
+			return;
+	if (*links >= CSS_MAX_LINKS)
+		return;
+	if (CSS_NSEEN < CSS_MAX_LINKS)
+		util_strlcpy(CSS_SEEN[CSS_NSEEN++], key, sizeof CSS_SEEN[0]);
+	Buf cb = {0};
+	long code;
+	(*links)++;
+	int r = fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code);
+	util_log("web: css %s -> %d, HTTP %ld, %u bytes", abs, r, code, (unsigned)cb.n);
+	if (r == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES)
+		css_sheet(c, cb.p, cb.n, abs, links, bytes, depth);
+	free(cb.p);
+}
+
+// una hoja: primero las de sus @import (van antes en la cascada), luego ella
+static void css_sheet(BrCss *c, const char *css, size_t n, const char *url, int *links, size_t *bytes, int depth)
+{
+	for (size_t i = 0; depth < 3 && i + 7 < n;) {
+		const char *q = css + i;
+		if (*q == '/' && q[1] == '*') { // comentario
+			const char *e = strstr(q + 2, "*/");
+			i = e ? (size_t)(e - css) + 2 : n;
+			continue;
+		}
+		if (*q == '@' && !strncasecmp(q, "@import", 7)) {
+			const char *e = memchr(q, ';', n - i);
+			if (!e)
+				break;
+			char rel[512] = "", med[160] = "";
+			const char *t = q + 7;
+			while (t < e && isspace((unsigned char)*t))
+				t++;
+			if (!strncasecmp(t, "url(", 4))
+				t += 4;
+			while (t < e && (isspace((unsigned char)*t) || *t == '"' || *t == '\''))
+				t++;
+			const char *u = t;
+			while (t < e && *t != '"' && *t != '\'' && *t != ')' && !isspace((unsigned char)*t))
+				t++;
+			snprintf(rel, sizeof rel, "%.*s", (int)(t - u), u);
+			while (t < e && (*t == '"' || *t == '\'' || *t == ')' || isspace((unsigned char)*t)))
+				t++;
+			snprintf(med, sizeof med, "%.*s", (int)(e - t), t);
+			if (rel[0] && (!med[0] || !strncasecmp(med, "layer", 5) || cssprep_media_ok(med, VW_PC))) {
+				char *abs = malloc(1024);
+				if (abs) {
+					resolve(url, rel, abs, 1024);
+					css_fetch(c, abs, links, bytes, depth + 1);
+					free(abs);
+				}
+			}
+			i = (size_t)(e - css) + 1;
+			continue;
+		}
+		// los @import van al principio (tras @charset): con la primera regla, se acabaron
+		if (*q == '{')
+			break;
+		i++;
+	}
+	if (*bytes + n <= CSS_MAX_BYTES) {
+		brcss_add(c, css, n, url);
+		*bytes += n;
+	}
+}
+
 // un <style> o un <link rel="stylesheet">; aparte, para que la recursión de css_collect no lleve
 // estos búferes en cada nivel (con páginas profundas desbordaban la pila del hilo)
 static __attribute__((noinline)) void css_one(BrCss *c, dom_node *el, bool is_style, int *links, size_t *bytes)
@@ -436,11 +510,7 @@ static __attribute__((noinline)) void css_one(BrCss *c, dom_node *el, bool is_st
 			return;
 		dom_string *tx = NULL;
 		if (dom_node_get_text_content(el, &tx) == DOM_NO_ERR && tx) {
-			size_t l = dom_string_byte_length(tx);
-			if (*bytes + l <= CSS_MAX_BYTES) {
-				brcss_add(c, dom_string_data(tx), l, B.url);
-				*bytes += l;
-			}
+			css_sheet(c, dom_string_data(tx), dom_string_byte_length(tx), B.url, links, bytes, 0);
 			dom_string_unref(tx);
 		}
 		return;
@@ -454,24 +524,7 @@ static __attribute__((noinline)) void css_one(BrCss *c, dom_node *el, bool is_st
 		return;
 	if (attr(el, "href", href, 1024) && href[0]) {
 		resolve(B.url, href, abs, 1024);
-		const char *key = strlen(abs) > 95 ? abs + strlen(abs) - 95 : abs; // el final: el nombre con su huella
-		for (int i = 0; i < CSS_NSEEN; i++)
-			if (!strcmp(CSS_SEEN[i], key)) {
-				free(href);
-				return;
-			}
-		if (CSS_NSEEN < CSS_MAX_LINKS)
-			util_strlcpy(CSS_SEEN[CSS_NSEEN++], key, sizeof CSS_SEEN[0]);
-		Buf cb = {0};
-		long code;
-		(*links)++;
-		int r = fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code);
-		util_log("web: css %s -> %d, HTTP %ld, %u bytes", abs, r, code, (unsigned)cb.n);
-		if (r == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES) {
-			brcss_add(c, cb.p, cb.n, abs);
-			*bytes += cb.n;
-		}
-		free(cb.p);
+		css_fetch(c, abs, links, bytes, 0);
 	}
 	free(href);
 }
