@@ -955,6 +955,8 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 		s->tag = T_HTML;
 	else if (!strcmp(tag, "body"))
 		s->tag = T_BODY;
+	if (s->tag == T_HTML || s->tag == T_BODY) // su overflow es el de la ventana (la que se desplaza): no recortan
+		s->ovx = s->ovy = CSS_OVERFLOW_VISIBLE;
 	if ((s->tag == T_HTML || (s->tag == T_BODY && !C->bg_html)) && s->bg) {
 		C->page_bg = s->bg | 0xFF000000;
 		C->bg_html |= s->tag == T_HTML;
@@ -2063,6 +2065,8 @@ static float blocks(Ctx *C, Box *b, float cw, float dh, BFC *bf, float ox, float
 		c->x = cx0 + L0 + cs->um[3];
 		c->y = cy0 + yc;
 		float cdh = dh;
+		if (cdh < 0 && cs->tag == T_HTML) // <html>: sus % de alto son de la ventana
+			cdh = C->vh;
 		if (c->kind != K_ATOM)
 			layout_box(C, c, cdh, own ? NULL : bf, ox + (c->x - cx0) + cs->up[3] + cs->bw[3], oy + yc + cs->up[0] + cs->bw[0]);
 		// el margen de arriba de su primer hijo se junta con el suyo
