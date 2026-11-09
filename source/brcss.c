@@ -747,7 +747,11 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 		return NULL;
 	css_computed_style *s = res->styles[CSS_PSEUDO_ELEMENT_NONE];
 	res->styles[CSS_PSEUDO_ELEMENT_NONE] = NULL;
+	for (int k = 0; k < 2; k++) // (los que nadie tomó)
+		if (brcss_ps.st[k])
+			css_computed_style_destroy(brcss_ps.st[k]);
 	memset(&brcss_ps, 0, sizeof brcss_ps);
+	css_computed_style *raw[2] = {NULL, NULL};
 	for (int k = 0; k < 2; k++) { // ::before y ::after: su texto (y si el de después cierra los flotantes)
 		const css_computed_style *ps = res->styles[k ? CSS_PSEUDO_ELEMENT_AFTER : CSS_PSEUDO_ELEMENT_BEFORE];
 		if (!ps || css_computed_display(ps, false) == CSS_DISPLAY_NONE)
@@ -768,10 +772,14 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 				for (size_t i = 0; i + 1 < tl; i++)
 					if ((unsigned char)t[i] == 0xEE || ((unsigned char)t[i] == 0xEF && (unsigned char)t[i + 1] < 0xA4))
 						pua = true;
-				if (!pua && on + tl < sizeof brcss_ps.after)
+				if (pua)
+					brcss_ps.icon[k] = true;
+				else if (on + tl < sizeof brcss_ps.after)
 					memcpy(o + on, t, tl), on += tl;
 			}
 		o[on] = 0;
+		raw[k] = res->styles[k ? CSS_PSEUDO_ELEMENT_AFTER : CSS_PSEUDO_ELEMENT_BEFORE];
+		res->styles[k ? CSS_PSEUDO_ELEMENT_AFTER : CSS_PSEUDO_ELEMENT_BEFORE] = NULL;
 	}
 	css_select_results_destroy(res);
 	if (s && parent) { // lo que se hereda (color, letra…) y los tamaños relativos, del padre
@@ -780,6 +788,13 @@ css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style
 			css_computed_style_destroy(s);
 			s = cs;
 		}
+	}
+	for (int k = 0; k < 2; k++) { // ::before y ::after heredan del elemento
+		css_computed_style *cs = NULL;
+		if (raw[k] && s && css_computed_style_compose(s, raw[k], &u, &cs) == CSS_OK && cs)
+			brcss_ps.st[k] = cs;
+		if (raw[k])
+			css_computed_style_destroy(raw[k]);
 	}
 	return s;
 }

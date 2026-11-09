@@ -774,8 +774,73 @@ static void pseudo_text(Ctx *C, Box *b, const char *txt)
 	char *p = t ? arena(C, l + 1) : NULL;
 	if (p) {
 		memcpy(p, txt, l);
+		if (b->s->upper)
+			for (size_t i = 0; i < l; i++)
+				p[i] = (char)toupper((unsigned char)p[i]);
 		t->t = p, t->tn = (uint32_t)l;
 	}
+}
+
+static void ps_free(BrcssPseudo *ps)
+{
+	for (int k = 0; k < 2; k++)
+		if (ps->st[k])
+			css_computed_style_destroy(ps->st[k]), ps->st[k] = NULL;
+}
+
+/* ::before / ::after: una caja con su estilo (fondo, borde, tamaño, posición…) y su texto */
+static void pseudo_box(Ctx *C, Box *b, const char *txt, const css_computed_style *st, bool icon)
+{
+	if (!st) {
+		if (txt[0])
+			pseudo_text(C, b, txt);
+		return;
+	}
+	uint8_t d = css_computed_display(st, false);
+	if (d == CSS_DISPLAY_NONE || css_computed_position(st) == CSS_POSITION_FIXED || invisible(C, st, false))
+		return;
+	Sty *s = sty_new(C, b->s);
+	if (!s)
+		return;
+	s->node = b->s->node;
+	sty_fill(C, s, st, d);
+	bool shows = txt[0] || s->bg || s->bgurl || icon;
+	for (int k = 0; k < 4; k++)
+		shows = shows || (s->bw[k] > 0 && (s->bc[k] >> 24) > 0x10);
+	if (!shows) // nada que pintar: ni caja (no empuja nada, como casi siempre en Chrome)
+		return;
+	if (css_computed_text_transform(st) == CSS_TEXT_TRANSFORM_UPPERCASE)
+		s->upper = 1;
+	if (s->flt == CSS_FLOAT_LEFT || s->flt == CSS_FLOAT_RIGHT) {
+		if (s->pos != CSS_POSITION_ABSOLUTE)
+			s->outer = 0;
+		else
+			s->flt = 0;
+	} else
+		s->flt = 0;
+	uint8_t oof = s->pos == CSS_POSITION_ABSOLUTE ? O_ABS : s->flt ? O_FLOAT : O_FLOW;
+	if (oof)
+		s->outer = 0;
+	bool inl = s->outer && s->inner == I_FLOW && d == CSS_DISPLAY_INLINE && !oof;
+	Box *p = box_new(C, b, inl ? K_INLINE : K_BLOCK, s);
+	if (!p)
+		return;
+	p->oof = oof;
+	if (icon && !txt[0]) { // el icono (sin su fuente): su sitio, un cuadro de 1em
+		Sty *is = sty_new(C, s);
+		if (is) {
+			is->node = s->node;
+			is->col = s->col, is->fpx = s->fpx, is->lh = s->fpx, is->vis = s->vis, is->scope = s->scope;
+			is->aut = AUTO_ALL & ~(1u << LW | 1u << LH);
+			is->lv[LW] = is->lv[LH] = s->fpx;
+			is->outer = 1, is->inner = I_FLOW, is->shrink = 1;
+			box_new(C, p, K_BLOCK, is);
+		}
+	}
+	if (txt[0])
+		pseudo_text(C, p, txt);
+	if (p->kind == K_BLOCK)
+		fixup(C, p);
 }
 
 static void build_text(Ctx *C, Box *parent, dom_node_internal *c)
@@ -855,6 +920,8 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	if (in_list(tag, NEVER))
 		return;
 	css_computed_style *cs = brcss_style(C->L->css, n, pcs, C->vw);
+	BrcssPseudo ps __attribute__((cleanup(ps_free))) = brcss_ps; /* (lo pisan los hijos; se suelta al salir) */
+	brcss_ps.st[0] = brcss_ps.st[1] = NULL;
 	if (!cs)
 		return;
 	uint8_t d = css_computed_display(cs, pcs == NULL);
@@ -873,7 +940,6 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 		css_computed_style_destroy(cs);
 		return;
 	}
-	BrcssPseudo ps = brcss_ps; /* (lo pisan los hijos) */
 	Sty *s = sty_new(C, parent ? parent->s : NULL);
 	if (!s) {
 		css_computed_style_destroy(cs);
@@ -1023,11 +1089,9 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	bool list = !strcmp(tag, "ol") || !strcmp(tag, "ul") || !strcmp(tag, "menu");
 	if (!strcmp(tag, "ol") && attr(n, "start", a, sizeof a) && a[0])
 		ol = atoi(a) - 1;
-	if (ps.before[0])
-		pseudo_text(C, b, ps.before);
+	pseudo_box(C, b, ps.before, ps.st[0], ps.icon[0]);
 	build_kids(C, b, n, cs, list ? &ol : olc);
-	if (ps.after[0])
-		pseudo_text(C, b, ps.after);
+	pseudo_box(C, b, ps.after, ps.st[1], ps.icon[1]);
 	if (ps.after_clear && b->kind == K_BLOCK) { // el «clearfix»: debajo de los flotantes de dentro
 		Sty *cl = sty_new(C, s);
 		if (cl) {
