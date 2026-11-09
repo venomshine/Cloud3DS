@@ -2727,7 +2727,9 @@ char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const ch
 			env_parse(&m, T->loc);
 		if (own)
 			env_parse(&m, own);
+#ifdef BRL_DEBUG
 		size_t o0 = o.n;
+#endif
 		decls_out(p, T->dec, T->dec + strlen(T->dec), &m, &o);
 #ifdef BRL_DEBUG
 		if (getenv("BRL_ENV"))
