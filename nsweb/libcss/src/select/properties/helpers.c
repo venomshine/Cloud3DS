@@ -453,7 +453,7 @@ css_error css__cascade_number(uint32_t opv, css_style *style,
 	if (hasFlagValue(opv) == false) {
 		switch (getValue(opv)) {
 		case ORPHANS_SET:
-			value = 0;
+			value = CSS_ORPHANS_SET; /* (Cloud3DS: era 0, que es «inherit», y se perdía el valor) */
 			length = *((css_fixed *) style->bytecode);
 			advance_bytecode(style, sizeof(length));
 			break;
