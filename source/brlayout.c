@@ -299,9 +299,7 @@ static bool invisible(Ctx *C, const css_computed_style *cs, bool replaced)
 		if (css_computed_height(cs, &v, &u) == CSS_HEIGHT_SET && u != CSS_UNIT_PCT && brcss_px(cs, v, u, C->vw) <= 2)
 			return true;
 	}
-	css_computed_font_size(cs, &v, &u);
-	if (!replaced && brcss_px(cs, v, u, C->vw) < 1) // (letra de tamaño 0: el texto no se ve; una imagen, sí)
-		return true;
+	(void)replaced; // (font-size: 0 no esconde: sus hijos suelen volver a poner su tamaño; su texto no se pinta)
 	css_fixed op;
 	if (css_computed_opacity(cs, &op) == CSS_OPACITY_SET && FIXTOFLT(op) < 0.05f)
 		return true;
@@ -667,8 +665,8 @@ static void fixup(Ctx *C, Box *b)
 		s->ifc = 0;
 		return;
 	}
-	if (!any_blk) { // todo en línea
-		s->ifc = any_inl;
+	if (!any_blk && any_inl) { // todo en línea
+		s->ifc = 1;
 		return;
 	}
 	if (!any_inl) { // todo bloques: fuera los espacios
@@ -1296,13 +1294,21 @@ static void intr(Ctx *C, Box *b, float *mn, float *mx)
 			a += sp * (nc + 1), z += sp * (nc + 1);
 			free(cm);
 		} else {
+			float run = 0; // flotantes seguidos: van en fila (su ancho máximo se suma)
 			for (Box *c = b->first; c; c = c->next) {
 				if (c->oof == O_ABS)
 					continue;
 				float ca, cz;
 				intr(C, c, &ca, &cz);
 				float m = mpx(c->s, LML) + mpx(c->s, LMR);
-				a = fmaxf(a, ca + m), z = fmaxf(z, cz + m);
+				a = fmaxf(a, ca + m);
+				if (c->oof == O_FLOAT && !c->s->clr) {
+					run += cz + m;
+					z = fmaxf(z, run);
+				} else {
+					run = c->oof == O_FLOAT ? cz + m : 0;
+					z = fmaxf(z, cz + m);
+				}
 			}
 		}
 		a += ex, z += ex;
@@ -1915,6 +1921,8 @@ static float blocks(Ctx *C, Box *b, float cw, float dh, BFC *bf, float ox, float
 	bool at_top = true;
 	for (Box *c = b->first; c && !C->stop; c = c->next) {
 		Sty *cs = c->s;
+		if (!c->oof && (c->kind == K_TEXT || c->kind == K_INLINE || c->kind == K_BR)) // (no deberían estar aquí)
+			continue;
 		if (c->oof == O_ABS) {
 			resolve(cs, cw);
 			cs->sx = cx0, cs->sy = cy0 + y + (at_top && through_top ? 0 : mc_val(&pend));
@@ -1937,6 +1945,10 @@ static float blocks(Ctx *C, Box *b, float cw, float dh, BFC *bf, float ox, float
 				fx = cs->flt == CSS_FLOAT_RIGHT ? ox + cw - W : ox, fy = sy0;
 			c->x = cx0 + (fx - ox) + cs->um[3];
 			c->y = cy0 + (fy - oy) + cs->um[0];
+#ifdef BRL_DEBUG
+			if (getenv("BRL_FL"))
+				fprintf(stderr, "float w=%.0f h=%.0f sy0=%.0f oy=%.0f fy=%.0f nfl=%d top=%.0f\n", W, H, sy0, oy, fy, bf ? bf->n : -1, fl_top(bf));
+#endif
 			continue;
 		}
 		resolve(cs, cw);
@@ -2884,7 +2896,7 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 			if (f->t == F_TEXT) {
 				Sty *ts = f->b->s;
 				float X = ax + f->x, Y = ay + cy + f->y;
-				if (!ts->vis || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
+				if (!ts->vis || ts->fpx < 1.5f || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
 					continue;
 				if (Y + f->h > C->bottom && Y < 200000)
 					C->bottom = Y + f->h;
