@@ -2082,6 +2082,8 @@ static bool sel_unsupported(const char *s, size_t n)
 	return false;
 }
 
+static const char *G_HTML_ATTRS = ""; /* los atributos de <html> (para los :where() de la raíz) */
+
 // :is(a, b) / :where(…) / :matches(…): un selector por cada opción (como mucho 24 en total)
 static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget)
 {
@@ -2182,6 +2184,29 @@ static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget
 	}
 	if (cl >= e)
 		return;
+	// :where() de la raíz («:where(html.x) div», «html:where(.x)»): no cuenta para la especificidad, y
+	// ya se sabe si <html> lo cumple: se queda en «html» (o en nada detrás de «html») o la regla no vale
+	bool after_html = f - s >= 4 && !strncasecmp(f - 4, "html", 4) && (f - s == 4 || strchr(" >+~", f[-5]));
+	if (fl == 7 && !strncasecmp(f, ":where(", 7)) {
+		const char *x = a, *y = cl;
+		trim(&x, &y);
+		bool root = after_html || (y - x >= 4 && !strncasecmp(x, "html", 4)) || (y - x >= 5 && !strncasecmp(x, ":root", 5));
+		if (root && find_top(x, y, ", >+~") >= y) {
+			if (!compound_ok(x, y, G_HTML_ATTRS, true))
+				return; // <html> no lo cumple: nada
+			char *tmp = malloc(n + 6);
+			if (!tmp)
+				return;
+			size_t tn = (size_t)(f - s);
+			memcpy(tmp, s, tn);
+			if (!after_html)
+				memcpy(tmp + tn, "html", 4), tn += 4;
+			memcpy(tmp + tn, cl + 1, (size_t)(e - cl - 1)), tn += (size_t)(e - cl - 1);
+			sel_expand(tmp, tn, o, first, budget);
+			free(tmp);
+			return;
+		}
+	}
 	for (const char *q = a; q < cl;) {
 		const char *c = find_top(q, cl, ",");
 		const char *x = q, *y = c;
@@ -2514,9 +2539,13 @@ bool cssprep_scope_col(CssPrep *p, int combo, uint32_t *col, int kind, int vid)
 			}
 		}
 	}
+	if (kind != 3) // fondo y texto: sin variable detrás, no cambian (los pares, solo para los bordes)
+		return false;
 	for (int pass = 0; pass < 3; pass++) // por el color: el de su tipo; uno general; cualquiera
 		for (int k = 0; k < c->n; k++) {
 			const Scope *S = &p->sc[c->id[k]];
+			if (S->npr < 8) // (en un tema de verdad: las clases sueltas de Tailwind cambian 2 o 3)
+				continue;
 			for (int r = 0; r < S->npr; r++)
 				if (S->pr[r * 3] == *col && (pass == 2 || (int)S->pr[r * 3 + 2] == (pass ? 0 : kind))) {
 					*col = S->pr[r * 3 + 1];
@@ -2600,6 +2629,7 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 		} else {
 			Out sel = {0};
 			bool first = true;
+			G_HTML_ATTRS = p->html;
 			int total = 0;
 			for (const char *q = s0; q < s1 && total < 400;) {
 				const char *c = find_top(q, s1, ",");

@@ -3000,8 +3000,8 @@ static void dump(Box *b, int d, float ax, float ay)
 	if (b->kind == K_TEXT)
 		fprintf(stderr, "%*s\"%.*s\"\n", d, "", (int)(b->tn < 30 ? b->tn : 30), b->t);
 	else
-		fprintf(stderr, "%*s%s <%s.%s> in=%d out=%d oof=%d ifc=%d x=%.0f y=%.0f w=%.0f h=%.0f nfr=%d ov=%d,%d aut=%x pct=%x W=%.1f MW=%.1f H=%.1f MH=%.1f m=%.0f,%.0f,%.0f,%.0f p=%.0f,%.0f bg=%08x col=%08x\n", d, "", K[b->kind], tag, cls, b->s->inner, b->s->outer, b->oof,
-		        b->s->ifc, ax + b->x, ay + b->y, b->w, b->h, b->s->nfr, b->s->ovx, b->s->ovy, b->s->aut, b->s->pct, b->s->lv[LW], b->s->lv[LMAXW], b->s->lv[LH], b->s->lv[LMINH], b->s->um[0], b->s->um[1], b->s->um[2], b->s->um[3], b->s->up[1], b->s->up[3], b->s->bg, b->s->col);
+		fprintf(stderr, "%*s%s <%s.%s> in=%d out=%d oof=%d ifc=%d x=%.0f y=%.0f w=%.0f h=%.0f nfr=%d ov=%d,%d aut=%x pct=%x W=%.1f MW=%.1f H=%.1f MH=%.1f m=%.0f,%.0f,%.0f,%.0f p=%.0f,%.0f bg=%08x col=%08x bw=%.0f bc=%08x sc=%d\n", d, "", K[b->kind], tag, cls, b->s->inner, b->s->outer, b->oof,
+		        b->s->ifc, ax + b->x, ay + b->y, b->w, b->h, b->s->nfr, b->s->ovx, b->s->ovy, b->s->aut, b->s->pct, b->s->lv[LW], b->s->lv[LMAXW], b->s->lv[LH], b->s->lv[LMINH], b->s->um[0], b->s->um[1], b->s->um[2], b->s->um[3], b->s->up[1], b->s->up[3], b->s->bg, b->s->col, b->s->bw[0], b->s->bc[0], b->s->scope);
 	if (b->kind == K_TEXT)
 		return;
 	for (Box *c = b->first; c; c = c->next)
