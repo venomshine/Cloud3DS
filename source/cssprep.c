@@ -1357,8 +1357,119 @@ static void bgsize_emit(Out *o, const char *v)
 	}
 }
 
+/* translate(x[, y]) / translateX / translateY / translate3d: en counter-increment (c3x/c3y en px·10,
+ * c3xp/c3yp en %·10), que el navegador aplica como un desplazamiento al pintar */
+static bool translate_emit(Out *o, const char *v)
+{
+	const char *t = strstr(v, "translate");
+	if (!t)
+		return false;
+	t += 9;
+	int axis = 0; // 0 los dos, 1 x, 2 y
+	if (*t == 'X' || *t == 'x')
+		axis = 1, t++;
+	else if (*t == 'Y' || *t == 'y')
+		axis = 2, t++;
+	else if (!strncmp(t, "3d", 2))
+		t += 2;
+	if (*t != '(')
+		return false;
+	t++;
+	char b[96];
+	size_t bl = 0;
+	for (int k = 0; k < 2; k++) {
+		while (*t == ' ')
+			t++;
+		char *z;
+		float x = strtof(t, &z);
+		if (z == t)
+			break;
+		bool pc = *z == '%';
+		float px = pc ? x : len_px(t);
+		if (!pc && px == -1 && x != -1)
+			break;
+		const char *nm = (axis == 2 || k == 1) ? (pc ? "c3yp" : "c3y") : (pc ? "c3xp" : "c3x");
+		bl += (size_t)snprintf(b + bl, sizeof b - bl, "%s%s %d", bl ? " " : "", nm, (int)(px * 10));
+		t = z + pc;
+		while (*t && *t != ',' && *t != ')')
+			t++;
+		if (*t != ',' || axis)
+			break;
+		t++;
+	}
+	if (!bl)
+		return false;
+	decl_out(o, "counter-increment", b);
+	return true;
+}
+
 static void decl_emit(Out *o, const char *name, const char *val)
 {
+	if (!strcmp(name, "overflow") && strchr(val, ' ') && strncmp(strchr(val, ' ') + 1, "!important", 10)) { // «hidden auto»: x e y
+		char a1[24], a2[24];
+		if (sscanf(val, "%23s %23s", a1, a2) == 2) {
+			const char *imp = strstr(val, "!important") ? " !important" : "";
+			char b[48];
+			for (int k = 0; k < 2; k++) {
+				const char *v = k ? a2 : a1;
+				if (!strcmp(v, "clip"))
+					v = "hidden";
+				snprintf(b, sizeof b, "%s%s", v, imp);
+				decl_out(o, k ? "overflow-y" : "overflow-x", b);
+			}
+			return;
+		}
+	}
+	if (!strcmp(name, "transform") || !strcmp(name, "translate")) {
+		if (!strcmp(name, "translate")) { // la propiedad suelta: «x y»
+			char b[96];
+			snprintf(b, sizeof b, "translate(%s)", val);
+			for (char *q = b + 10; *q; q++)
+				if (*q == ' ' && q[1] && q[1] != ')')
+					*q = ',';
+			translate_emit(o, b);
+		} else
+			translate_emit(o, val);
+		return;
+	}
+	if (!strcmp(name, "aspect-ratio")) { // en column-width: 1000000 + ancho/alto·1000, en px
+		char *z;
+		float a = strtof(val, &z), bq = 1;
+		while (*z == ' ')
+			z++;
+		if (*z == '/')
+			bq = strtof(z + 1, NULL);
+		if (a > 0 && bq > 0) {
+			char b[32];
+			snprintf(b, sizeof b, "%dpx", 1000000 + (int)(a / bq * 1000)); // (+1000000: no es un column-width de verdad)
+			decl_out(o, "column-width", b);
+		}
+		return;
+	}
+	if (!strcmp(name, "object-fit")) { // en column-rule-style
+		const char *m = !strncmp(val, "contain", 7) || !strncmp(val, "scale-down", 10) ? "dotted" : !strncmp(val, "fill", 4) ? "solid"
+		                : !strncmp(val, "cover", 5) ? "dashed" : NULL;
+		if (m)
+			decl_out(o, "column-rule-style", m);
+		return;
+	}
+	if (!strcmp(name, "border-radius")) { // en column-rule-width: px, o 100000 + % (50% → 100050px)
+		char *z;
+		float x = strtof(val, &z);
+		if (z != val && x > 0) {
+			char b[32];
+			if (*z == '%')
+				snprintf(b, sizeof b, "%dpx", 100000 + (int)(x > 50 ? 50 : x));
+			else {
+				float px = len_px(val);
+				if (px <= 0)
+					return;
+				snprintf(b, sizeof b, "%dpx", (int)(px > 9000 ? 9000 : px));
+			}
+			decl_out(o, "column-rule-width", b);
+		}
+		return;
+	}
 	if (!strcmp(name, "background-size")) {
 		bgsize_emit(o, val);
 		return;
@@ -1678,6 +1789,8 @@ static void grid_start_end(const char *s, const char *e, Out *o)
 
 static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local, Out *o)
 {
+	// ¿la regla ya dice su color de fondo? (entonces un degradado en background-image no lo pisa)
+	bool has_bgc = has_ci(s, (size_t)(e - s), "background-color") || has_ci(s, (size_t)(e - s), "background:");
 	if (has_ci(s, (size_t)(e - s), "grid-column-"))
 		grid_start_end(s, e, o);
 	Out a = {0}, b = {0};
@@ -1732,9 +1845,41 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 					if (!b.bad && b.n) {
 						colors(b.p, b.n, &a);
 						char gc[48];
-						if (!a.bad && a.n && (!strcmp(name, "background") || !strcmp(name, "background-image")) && strstr(a.p, "gradient(")) {
-							// un degradado (libcss no los conoce): de fondo, el color de su primera parada
-							if (grad_color(a.p, gc, sizeof gc))
+						if (!a.bad && a.n && !strcmp(name, "background-image") && has_bgc && strstr(a.p, "gradient(")) {
+							// (un degradado sobre el color de la regla: se queda el color)
+						} else if (!a.bad && a.n && (!strcmp(name, "background") || !strcmp(name, "background-image")) && strstr(a.p, "gradient(")) {
+							// un degradado (libcss no los conoce): de fondo, un color. Con varias capas, el
+							// color base es el de la última («…gradient(…), url(…) #1b2838»)
+							const char *lc = NULL;
+							int dd = 0;
+							for (const char *q = a.p; *q; q++) {
+								if (*q == '(')
+									dd++;
+								else if (*q == ')')
+									dd--;
+								else if (*q == ',' && !dd)
+									lc = q + 1;
+							}
+							const char *hx = NULL;
+							if (lc && !strstr(lc, "gradient(")) {
+								int d2 = 0;
+								for (const char *q = lc; *q && !hx; q++) {
+									if (*q == '(')
+										d2++;
+									else if (*q == ')')
+										d2--;
+									else if (!d2 && (*q == '#' || !strncasecmp(q, "rgb", 3)) && (q == lc || q[-1] == ' '))
+										hx = q;
+								}
+							}
+							size_t hl = 0;
+							if (hx)
+								hl = *hx == '#' ? strcspn(hx, " ;!") : (strchr(hx, ')') ? (size_t)(strchr(hx, ')') + 1 - hx) : 0);
+							if (hl && hl < sizeof gc) {
+								memcpy(gc, hx, hl);
+								gc[hl] = 0;
+								decl_emit(o, "background-color", gc);
+							} else if (grad_color(a.p, gc, sizeof gc))
 								decl_emit(o, "background-color", gc);
 						} else if (!a.bad && a.n && !grid_emit(p, o, name, a.p))
 							decl_emit(o, name, a.p);
