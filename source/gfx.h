@@ -39,6 +39,8 @@ void gfx_resume(C3D_RenderTarget *t);               // seguir dibujando en una p
 /* una textura en la que se dibuja (el navegador guarda ahí su página para no repintarla cada fotograma) */
 typedef struct { C3D_Tex tex; C3D_RenderTarget *rt; Tex3DS_SubTexture sub; C2D_Image img; int w, h; bool ok; } GfxRT;
 bool gfx_rt_init(GfxRT *r, int w, int h);
+/* el búfer de órdenes de la GPU va muy lleno en este fotograma: lo que no sea de la interfaz, mejor no */
+bool gfx_cmd_busy(void);
 void gfx_rt_free(GfxRT *r);
 void gfx_rt_begin(GfxRT *r, u32 clear);             // dibujar en ella (luego gfx_resume a la pantalla)
 void gfx_rt_draw(GfxRT *r, float x, float y);

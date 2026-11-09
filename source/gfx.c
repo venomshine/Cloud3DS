@@ -66,7 +66,7 @@ void theme_set(bool dark) {
 
 void gfx_init(void) {
     gfxInitDefault();
-    C3D_Init(C3D_DEFAULT_CMDBUF_SIZE * 2);
+    C3D_Init(C3D_DEFAULT_CMDBUF_SIZE * 4); // (1 MB: las páginas web con mucho texto piden muchas órdenes)
     C2D_Init(20000); // el navegador pinta su página (más grande que la pantalla) de una vez
     C2D_Prepare();
     g_top = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
@@ -193,7 +193,10 @@ u32 brand_grad(float t) {
 }
 
 // ---------------------------------------------------------------- formas
+static bool cmd_room(void);
+
 void draw_rect(float x, float y, float w, float h, u32 c) {
+    if (!cmd_room()) return;
     if (w <= 0 || h <= 0) return;
     C2D_DrawRectSolid(x, y, Z, w, h, c);
 }
@@ -211,6 +214,7 @@ static void corner_fan(float cx, float cy, float r, float a0, u32 c) {
 }
 
 void draw_rrect(float x, float y, float w, float h, float r, u32 c) {
+    if (!cmd_room()) return;
     if (w <= 0 || h <= 0) return;
     if (r > w / 2) r = w / 2;
     if (r > h / 2) r = h / 2;
@@ -489,7 +493,14 @@ float text_width_n(const char *s, int n, float scale) {
 }
 float text_width(const char *s, float scale) { return text_width_n(s, (int)strlen(s), scale); }
 
+// el búfer de órdenes de la GPU de este fotograma: una página web con mucho texto pide muchas (cada cambio
+// de hoja de letras es una). Lleno del todo, libctru para la consola: casi lleno, lo que falta no se pinta
+// (en el fotograma siguiente, con lo ya guardado, sí)
+static bool cmd_room(void) { return C3D_GetCmdBufUsage() < 0.95f; }
+bool gfx_cmd_busy(void) { return C3D_GetCmdBufUsage() > 0.85f; }
+
 static void text_draw_raw(const char *s, float x, float y, float scale, u32 c) {
+    if (!cmd_room()) return;
     C2D_Text t;
     const char *e = C2D_TextParse(&t, s_tbuf, s);
     if (e && *e) { // el búfer de glifos del fotograma se llenó (páginas web con mucho texto): lo ya
@@ -779,6 +790,7 @@ void draw_texture(Texture *t, float x, float y, float w, float h, float alpha) {
 }
 // un trozo de la textura (u0…u1, v0…v1: en fracción de la imagen) en w × h
 void draw_texture_part(Texture *t, float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
+    if (!cmd_room()) return;
     if (!t->ok || u1 <= u0 || v1 <= v0) return;
     const Tex3DS_SubTexture *st = t->img.subtex;
     Tex3DS_SubTexture sub = *st;

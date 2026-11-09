@@ -4296,6 +4296,8 @@ static void bgimg_paint(PImg *im, const BgImg *g, float BX, float BY, float BW, 
 			img_clip(&im->tex, sx + i * dw, sy + j * dh, dw, dh, BX, BY, BX + BW, BY + BH);
 }
 
+static float g_paint_cut = 1e9f; /* page_paint: dónde paró porque la GPU no daba para más (px) */
+
 static void bg_paint(float VH, bool over)
 {
 	const float z = B.zoom;
@@ -4306,6 +4308,10 @@ static void bg_paint(float VH, bool over)
 		float Y0 = (bb->y0 - B.sy) * z, Y1 = (bb->y1 - B.sy) * z;
 		if (Y1 < 0 || Y0 > VH)
 			continue;
+		if (gfx_cmd_busy()) { // la GPU no da para más en este fotograma
+			g_paint_cut = fminf(g_paint_cut, fmaxf(0, Y0));
+			break;
+		}
 		float X0 = (PAD_X + bb->x0 - B.sx) * z, Wb = (bb->x1 - bb->x0) * z;
 		bool even = bb->bw[0] > 0 && bb->bw[1] == bb->bw[0] && bb->bw[2] == bb->bw[0] && bb->bw[3] == bb->bw[0];
 		if (bb->rad > 0.5f && (bb->col || even)) { // con esquinas redondeadas (botones, tarjetas…)
@@ -4357,6 +4363,10 @@ static void page_paint(float VW, float VH, int mode, int hov)
 		float x, y, w, h;
 		frag_rect(f, &x, &y, &w, &h);
 		float X = (x - B.sx) * z, Y = (y - B.sy) * z, Wd = w * z, H = h * z;
+		if (Y + H > 0 && Y < VH && gfx_cmd_busy()) {
+			g_paint_cut = fminf(g_paint_cut, fmaxf(0, Y));
+			break;
+		}
 		if ((B.l[f->line].y - B.sy) * z > VH)
 			break;
 		if (X > VW || X + Wd < 0 || Y + H < 0)
@@ -4473,6 +4483,7 @@ static struct {
 	bool valid;
 	float x0, y0, zoom; /* origen en la página y zoom con que se pintó */
 	u32 ver;
+	float cut; /* hasta dónde (px de la textura) se pudo pintar (la GPU no daba para más) */
 } PCS;
 
 
@@ -4489,7 +4500,8 @@ static void page_draw(int hov)
 	}
 	float mx = (PC_W - TOP_W) / 2.0f, my = (PC_H - SCR_H) / 2.0f;
 	float dx = (B.sx - PCS.x0) * z, dy = (B.sy - PCS.y0) * z;
-	bool ok = PCS.valid && PCS.zoom == z && PCS.ver == B.page_ver && dx >= 0 && dy >= 0 && dx + TOP_W <= PC_W && dy + SCR_H <= PC_H;
+	bool ok = PCS.valid && PCS.zoom == z && PCS.ver == B.page_ver && dx >= 0 && dy >= 0 && dx + TOP_W <= PC_W && dy + SCR_H <= PC_H &&
+	          (dy + SCR_H <= PCS.cut || PCS.cut < my + SCR_H); // (cortada: desde más abajo, si así llega)
 	if (!ok) {
 		float sx = B.sx, sy = B.sy;
 		PCS.x0 = B.sx - floorf(mx) / z, PCS.y0 = B.sy - floorf(my) / z;
@@ -4497,7 +4509,9 @@ static void page_draw(int hov)
 		gfx_rt_begin(&PC, DKB(B.page_bg ? B.page_bg : PG_BG));
 		bool ell = g_clip_ell;
 		g_clip_ell = true; // sin recortes (las tijeras van por pantalla, no por textura)
+		g_paint_cut = 1e9f;
 		page_paint(PC_W, PC_H, 1, -1);
+		PCS.cut = g_paint_cut;
 		g_clip_ell = ell;
 		gfx_resume(g_top);
 		B.sx = sx, B.sy = sy;
