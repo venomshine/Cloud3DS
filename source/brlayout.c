@@ -67,7 +67,7 @@ struct Sty {
 	const char *bgurl; /* background-image */
 	float bgsw, bgpx, bgpy;
 	float ar, tx, ty, rad; /* aspect-ratio, translate (px o %: txp/typ), border-radius (px; <0: %) */
-	uint8_t txp, typ, fit, fixbg; /* fixbg: fija y detrás de todo, más estrecha que la página */
+	uint8_t txp, typ, fit, fixbg, bcen; /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -383,6 +383,7 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 	s->ws = css_computed_white_space(cs);
 	uint8_t ta = css_computed_text_align(cs);
 	s->ta = (ta == CSS_TEXT_ALIGN_CENTER || ta == CSS_TEXT_ALIGN_LIBCSS_CENTER) ? 1 : (ta == CSS_TEXT_ALIGN_RIGHT || ta == CSS_TEXT_ALIGN_LIBCSS_RIGHT) ? 2 : 0;
+	s->bcen = ta == CSS_TEXT_ALIGN_LIBCSS_CENTER ? 1 : ta == CSS_TEXT_ALIGN_LIBCSS_RIGHT ? 2 : 0;
 	s->va = css_computed_vertical_align(cs, &v, &u);
 	if (s->va == CSS_VERTICAL_ALIGN_SET)
 		s->vash = u == CSS_UNIT_PCT ? FIXTOFLT(v) * s->lh / 100 : brcss_px(cs, v, u, C->vw);
@@ -577,7 +578,7 @@ static Box *anon_wrap(Ctx *C, Box *b, Box *first, Box *last)
 		return NULL;
 	Sty *p = b->s;
 	s->node = p->node;
-	s->upper = p->upper, s->fpx = p->fpx, s->lh = p->lh, s->col = p->col, s->ws = p->ws, s->ta = p->ta, s->bold = p->bold, s->under = p->under, s->vis = p->vis;
+	s->upper = p->upper, s->fpx = p->fpx, s->lh = p->lh, s->col = p->col, s->ws = p->ws, s->ta = p->ta, s->bcen = p->bcen, s->bold = p->bold, s->under = p->under, s->vis = p->vis;
 	s->link = p->link, s->clk = p->clk;
 	s->aut = (1u << LW) | (1u << LH) | (1u << LMINW) | (1u << LMAXW) | (1u << LMINH) | (1u << LMAXH) | (1u << LBASIS) | (1u << LOT) | (1u << LOR) |
 	         (1u << LOB) | (1u << LOL) | (1u << LTIND) | (1u << LCGAP) | (1u << LRGAP);
@@ -2042,6 +2043,7 @@ static void size_block(Ctx *C, Box *c, float cbw, float avail)
 	}
 	float rest = avail - c->w - s->um[1] - s->um[3];
 	bool aml = AUT(s, LML), amr = AUT(s, LMR);
+	uint8_t pc = c->parent ? c->parent->s->bcen : 0; // dentro de <center> (o align="center")
 	if (rest > 0) {
 		if (aml && amr)
 			s->um[3] += rest / 2, s->um[1] += rest / 2;
@@ -2049,6 +2051,10 @@ static void size_block(Ctx *C, Box *c, float cbw, float avail)
 			s->um[3] += rest;
 		else if (amr)
 			s->um[1] += rest;
+		else if (pc == 1)
+			s->um[3] += rest / 2, s->um[1] += rest / 2;
+		else if (pc == 2)
+			s->um[3] += rest;
 	}
 }
 

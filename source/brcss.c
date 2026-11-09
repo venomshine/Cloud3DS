@@ -63,7 +63,7 @@ static const char UA_CSS[] =
     "ol,ul,dir,menu,dd{margin-left:40px}ol{list-style-type:decimal}ul ul,ol ul{list-style-type:circle}"
     "ol ol,ul ol,ol ul,ul ul{margin-top:0;margin-bottom:0}"
     "u,ins{text-decoration:underline}s,strike,del{text-decoration:line-through}"
-    "hr{margin:.5em 0}center{text-align:center}"
+    "hr{margin:.5em 0}center{text-align:-libcss-center}"
     "a[href]{color:#3366cc;text-decoration:underline}";
 
 /* ------------------------------------------------------------ ayudas sobre libdom */
@@ -766,6 +766,16 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 {
 	if (!c)
 		return;
+	dom_document_quirks_mode qm = DOM_DOCUMENT_QUIRKS_MODE_NONE;
+	if (doc && dom_document_get_quirks_mode(doc, &qm) == DOM_NO_ERR && qm == DOM_DOCUMENT_QUIRKS_MODE_FULL && c->n < MAX_SHEETS) {
+		// sin <!DOCTYPE> (modo «quirks»), como Chrome: una tabla no hereda text-align (Hacker News)
+		static const char Q[] = "table{text-align:left}";
+		css_stylesheet *q = sheet_parse(Q, sizeof Q - 1, c->base, false);
+		if (q && css_select_ctx_append_sheet(c->ctx, q, CSS_ORIGIN_UA, NULL) == CSS_OK)
+			c->sheets[c->n++] = q;
+		else if (q)
+			css_stylesheet_destroy(q);
+	}
 	char *ha = malloc(4096), *ba = malloc(4096);
 	if (ha && ba) {
 		ha[0] = ba[0] = 0;
