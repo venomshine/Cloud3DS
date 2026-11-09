@@ -67,7 +67,7 @@ struct Sty {
 	const char *bgurl; /* background-image */
 	float bgsw, bgpx, bgpy;
 	float ar, tx, ty, rad; /* aspect-ratio, translate (px o %: txp/typ), border-radius (px; <0: %) */
-	uint8_t txp, typ, fit;
+	uint8_t txp, typ, fit, fixbg; /* fixbg: fija y detrás de todo, más estrecha que la página */
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -106,7 +106,7 @@ typedef struct {
 	BrLay *L;
 	Chunk *ar;
 	Sty *all;
-	float vw, vh, bottom;
+	float vw, vh, bottom, doch; /* doch: el alto de la página (al pintar) */
 	bool stop;
 	int nel;
 	uint32_t page_bg;
@@ -909,6 +909,40 @@ static bool img_src(dom_node *n, char *a, size_t an)
 	return attr(n, "src", a, an) && !strncmp(a, "data:image/", 11) && strstr(a, ";base64,") && strlen(a) > 100; // (las de 1 px no)
 }
 
+/* una capa fija detrás de todo («position: fixed; inset: 0; z-index: -1», el fondo de Linktree): no se
+ * desplaza con la página, así que es su fondo. Su color y los de sus capas absolutas, mezclados en él */
+static void backdrop(Ctx *C, dom_node *n, const css_computed_style *cs)
+{
+	css_color c;
+	if (css_computed_background_color(cs, &c) == CSS_BACKGROUND_COLOR_COLOR && (c >> 24)) {
+		uint32_t s = css_col(c), d = C->page_bg ? C->page_bg : 0xFFFFFFFF;
+		float a = (float)(s >> 24) / 255;
+		uint32_t o = 0xFF000000;
+		for (int k = 0; k < 24; k += 8)
+			o |= (uint32_t)(((s >> k) & 255) * a + ((d >> k) & 255) * (1 - a) + 0.5f) << k;
+		C->page_bg = o;
+	}
+#ifdef BRL_DEBUG
+	if (getenv("BRL_BD"))
+		fprintf(stderr, "fondo fijo %08x -> página %08x hijos %p\n", (unsigned)c, C->page_bg, (void *)NI(n)->first_child);
+#endif
+	for (dom_node_internal *ch = NI(n)->first_child; ch; ch = ch->next) {
+		if (ch->type != DOM_ELEMENT_NODE)
+			continue;
+		css_computed_style *ccs = brcss_style(C->L->css, (dom_node *)ch, cs, C->vw);
+		if (!ccs)
+			continue;
+		uint8_t p = css_computed_position(ccs);
+#ifdef BRL_DEBUG
+		if (getenv("BRL_BD"))
+			fprintf(stderr, "  hijo pos=%d d=%d\n", p, css_computed_display(ccs, false));
+#endif
+		if (css_computed_display(ccs, false) != CSS_DISPLAY_NONE && (p == CSS_POSITION_ABSOLUTE || p == CSS_POSITION_FIXED))
+			backdrop(C, (dom_node *)ch, ccs);
+		css_computed_style_destroy(ccs);
+	}
+}
+
 static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style *pcs, int *olc)
 {
 	if (C->stop)
@@ -936,7 +970,23 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	if (!cs)
 		return;
 	uint8_t d = css_computed_display(cs, pcs == NULL);
-	if (d == CSS_DISPLAY_NONE || d == CSS_DISPLAY_TABLE_COLUMN || d == CSS_DISPLAY_TABLE_COLUMN_GROUP || css_computed_position(cs) == CSS_POSITION_FIXED ||
+	// fija y detrás de todo (z-index < 0): un fondo. Si ocupa todo el ancho, el de la página; si no (una columna
+	// centrada), una caja de arriba abajo de la página, en su sitio
+	bool fixbg = false;
+	if (d != CSS_DISPLAY_NONE && css_computed_position(cs) == CSS_POSITION_FIXED) {
+		int32_t z = 0;
+		css_fixed mv;
+		css_unit mu;
+		if (css_computed_z_index(cs, &z) == CSS_Z_INDEX_SET && z < 0) {
+			uint8_t mk = css_computed_max_width(cs, &mv, &mu);
+			float mx = mk == CSS_MAX_WIDTH_SET ? (mu == CSS_UNIT_PCT ? FIXTOFLT(mv) * C->vw / 100 : brcss_px(cs, mv, mu, C->vw)) : 1e9f;
+			if (mx >= C->vw - 1)
+				backdrop(C, n, cs);
+			else
+				fixbg = true;
+		}
+	}
+	if (d == CSS_DISPLAY_NONE || d == CSS_DISPLAY_TABLE_COLUMN || d == CSS_DISPLAY_TABLE_COLUMN_GROUP || (css_computed_position(cs) == CSS_POSITION_FIXED && !fixbg) ||
 	    invisible(C, cs, !strcmp(tag, "img") || !strcmp(tag, "svg") || !strcmp(tag, "input") || !strcmp(tag, "select") || !strcmp(tag, "textarea"))) {
 #ifdef BRL_DEBUG
 		if (getenv("BRL_SKIP") && !strcmp(tag, getenv("BRL_SKIP")))
@@ -961,6 +1011,8 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	if (env)
 		s->env = env;
 	sty_fill(C, s, cs, d);
+	if (fixbg)
+		s->fixbg = 1, s->pos = CSS_POSITION_ABSOLUTE;
 	if (css_computed_text_transform(cs) == CSS_TEXT_TRANSFORM_UPPERCASE)
 		s->upper = 1;
 	char a[512];
@@ -2884,8 +2936,8 @@ static void child(Ctx *C, Box *c, float pax, float pay, Clip cl, int depth)
 	Sty *s = c->s;
 	float x = pax + c->x, y = pay + c->y;
 	if (c->oof == O_ABS) {
-		Box *cb = abs_cb(c);
-		float cbx = 0, cby = 0, cbw = C->vw, cbh = C->vh;
+		Box *cb = s->fixbg ? NULL : abs_cb(c);
+		float cbx = 0, cby = 0, cbw = C->vw, cbh = s->fixbg && C->doch > 0 ? C->doch : C->vh;
 		if (cb) {
 			cbx = cb->s->ax + cb->s->bw[3], cby = cb->s->ay + cb->s->bw[0];
 			cbw = cb->w - cb->s->bw[1] - cb->s->bw[3], cbh = cb->h - cb->s->bw[0] - cb->s->bw[2];
@@ -2917,6 +2969,11 @@ static void child(Ctx *C, Box *c, float pax, float pay, Clip cl, int depth)
 		}
 		x = L ? cbx + lv + s->um[3] : R ? cbx + cbw - rv - s->um[1] - c->w : pax + s->sx + s->um[3];
 		y = T ? cby + tv + s->um[0] : B ? cby + cbh - bv - s->um[2] - c->h : pay + s->sy + s->um[0];
+		// left y right (o top y bottom) con margin: auto: en medio («inset: 0; margin: auto»)
+		if (L && R && AUT(s, LML) && AUT(s, LMR) && cbw - lv - rv - c->w > 0)
+			x = cbx + lv + (cbw - lv - rv - c->w) / 2;
+		if (T && B && AUT(s, LMT) && AUT(s, LMB) && cbh - tv - bv - c->h > 0)
+			y = cby + tv + (cbh - tv - bv - c->h) / 2;
 	} else if (s->pos == CSS_POSITION_RELATIVE) {
 		float cbw = c->parent ? c->parent->w : C->vw;
 		if (!AUT(s, LOL))
@@ -3048,6 +3105,7 @@ float brl_run(BrLay *L, dom_document *doc, uint32_t *page_bg)
 			C.stop = false; // lo que haya, se coloca y se pinta
 			root->w = C.vw;
 			layout_box(&C, root, C.vh, NULL, 0, 0);
+			C.doch = root->h;
 			Clip cl = {-1e9f, -1e9f, 1e9f, 1e9f};
 			cl.x0 = 0, cl.x1 = C.vw;
 			emit(&C, root, 0, 0, cl, 0);
