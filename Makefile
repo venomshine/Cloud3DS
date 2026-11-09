@@ -32,6 +32,9 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 			$(ARCH)
 
 CFLAGS	+=	$(INCLUDE) -D__3DS__ -DJS_NAN_BOXING=0
+ifneq ($(TEST_CA),)
+CFLAGS	+=	-DTEST_CA_SD
+endif
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 

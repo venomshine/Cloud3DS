@@ -23,7 +23,11 @@
 #include <string.h>
 #include <strings.h>
 
+#ifdef TEST_CA_SD /* solo en compilaciones de prueba (make TEST_CA=1): raíces de la SD, para probar tras un proxy */
+#define CA_BUNDLE "sdmc:/3ds/Cloud3DS/test_ca.pem"
+#else
 #define CA_BUNDLE "romfs:/certs/cacert.pem"
+#endif
 #define UA "Cloud3DS/" APP_VERSION " (Nintendo 3DS)"
 /* el navegador se presenta como un navegador (y elige móvil o escritorio) y quiere saber a dónde
  * acabó la petición tras las redirecciones: por hilo, para no mezclarse con las descargas */
