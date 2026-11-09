@@ -1600,6 +1600,57 @@ static void text_of(dom_node *n, char *out, size_t sz) // su texto, con los espa
 	dom_string_unref(t);
 }
 
+// el texto que se ve de un elemento (el de un <button>): sin lo que su CSS esconde (display: none,
+// visibility, y lo de «solo para lectores de pantalla»: absoluto de 1 px o recortado)
+static void vis_text(dom_node *n, const css_computed_style *cs, char *out, size_t sz, size_t *k, bool *sp)
+{
+	for (dom_node_internal *c = ((dom_node_internal *)n)->first_child; c && *k < sz - 1; c = c->next) {
+		if (c->type == DOM_TEXT_NODE) {
+			dom_string *t = NULL;
+			if (dom_characterdata_get_data((dom_characterdata *)c, &t) != DOM_NO_ERR || !t)
+				continue;
+			const char *p = dom_string_data(t);
+			for (size_t i = 0, l = dom_string_byte_length(t); i < l && *k < sz - 1; i++) {
+				bool w = isspace((unsigned char)p[i]);
+				if (w && !*sp)
+					out[(*k)++] = ' ';
+				else if (!w)
+					out[(*k)++] = p[i];
+				*sp = w;
+			}
+			dom_string_unref(t);
+		} else if (c->type == DOM_ELEMENT_NODE) {
+			css_computed_style *ccs = B.css ? brcss_style(B.css, (dom_node *)c, cs, PAGE_W) : NULL;
+			bool hide = false;
+			if (ccs) {
+				css_fixed v;
+				css_unit u;
+				css_computed_clip_rect r;
+				hide = css_computed_display(ccs, false) == CSS_DISPLAY_NONE || css_computed_visibility(ccs) != CSS_VISIBILITY_VISIBLE;
+				if (!hide && css_computed_position(ccs) == CSS_POSITION_ABSOLUTE)
+					hide = css_computed_clip(ccs, &r) == CSS_CLIP_RECT ||
+					       (css_computed_width(ccs, &v, &u) == CSS_WIDTH_SET && u != CSS_UNIT_PCT && brcss_px(ccs, v, u, PAGE_W) <= 2) ||
+					       (css_computed_height(ccs, &v, &u) == CSS_HEIGHT_SET && u != CSS_UNIT_PCT && brcss_px(ccs, v, u, PAGE_W) <= 2);
+			}
+			if (!hide)
+				vis_text((dom_node *)c, ccs ? ccs : cs, out, sz, k, sp);
+			if (ccs)
+				css_computed_style_destroy(ccs);
+		}
+	}
+}
+
+static void vis_text_of(dom_node *n, const css_computed_style *cs, char *out, size_t sz)
+{
+	size_t k = 0;
+	bool sp = true;
+	out[0] = 0;
+	vis_text(n, cs, out, sz, &k, &sp);
+	while (k && out[k - 1] == ' ')
+		k--;
+	out[k] = 0;
+}
+
 static bool has_attr(dom_node *n, const char *a)
 {
 	char v[8];
@@ -1774,8 +1825,12 @@ static int wdg_make(dom_node *node, const char *tag, float sc, const css_compute
 		w.type = WG_TEXT;
 	FVal *v = fv_get(node, false);
 	if (w.type == WG_BUTTON) {
-		if (!strcmp(tag, "button"))
-			text_of(node, w.label, sizeof w.label);
+		if (!strcmp(tag, "button")) {
+			if (cs)
+				vis_text_of(node, cs, w.label, sizeof w.label);
+			else
+				text_of(node, w.label, sizeof w.label);
+		}
 		else if (!attr(node, "value", w.label, sizeof w.label) && !attr(node, "alt", w.label, sizeof w.label))
 			util_strlcpy(w.label, !strcmp(type, "reset") ? "Borrar" : "Enviar", sizeof w.label);
 	} else if (w.type == WG_SELECT) {
