@@ -350,11 +350,179 @@ static css_error node_is_lang(void *pw, void *n, lwc_string *lang, bool *m)
 	return no(pw, n, m);
 }
 
+/* los atributos de presentación del HTML de siempre (bgcolor, width, align, cellpadding, <font color>…):
+ * como en un navegador, con la prioridad más baja del autor (cualquier regla CSS de la página manda) */
+static bool hattr(dom_node *n, const char *name, char *out, size_t on)
+{
+	dom_string *k = NULL, *v = NULL;
+	out[0] = 0;
+	if (dom_string_create((const uint8_t *)name, strlen(name), &k) != DOM_NO_ERR)
+		return false;
+	dom_element_get_attribute((dom_element *)n, k, &v);
+	dom_string_unref(k);
+	if (!v)
+		return false;
+	size_t l = dom_string_byte_length(v);
+	if (l >= on)
+		l = on - 1;
+	memcpy(out, dom_string_data(v), l);
+	out[l] = 0;
+	dom_string_unref(v);
+	while (*out == ' ')
+		memmove(out, out + 1, strlen(out));
+	return true;
+}
+
+// un color de atributo: «#ff6600», «ff6600», «red»…
+static bool hcolor(const char *v, css_color *c)
+{
+	static const struct {
+		const char *n;
+		uint32_t c;
+	} N[] = {{"black", 0}, {"white", 0xFFFFFF}, {"red", 0xFF0000}, {"green", 0x008000}, {"blue", 0x0000FF}, {"yellow", 0xFFFF00},
+	         {"gray", 0x808080}, {"grey", 0x808080}, {"silver", 0xC0C0C0}, {"navy", 0x000080}, {"maroon", 0x800000}, {"purple", 0x800080},
+	         {"teal", 0x008080}, {"olive", 0x808000}, {"lime", 0x00FF00}, {"aqua", 0x00FFFF}, {"fuchsia", 0xFF00FF}, {"orange", 0xFFA500}};
+	for (size_t i = 0; i < sizeof N / sizeof N[0]; i++)
+		if (!strcasecmp(v, N[i].n)) {
+			*c = 0xFF000000 | N[i].c;
+			return true;
+		}
+	const char *h = *v == '#' ? v + 1 : v;
+	size_t l = strlen(h);
+	if (l != 3 && l != 6)
+		return false;
+	for (size_t i = 0; i < l; i++)
+		if (!isxdigit((unsigned char)h[i]))
+			return false;
+	unsigned x = (unsigned)strtoul(h, NULL, 16);
+	if (l == 3)
+		x = ((x >> 8) & 15) * 0x110000 + ((x >> 4) & 15) * 0x1100 + (x & 15) * 0x11;
+	*c = 0xFF000000 | x;
+	return true;
+}
+
+// una medida de atributo: «85%», «200», «200px»
+static bool hlen(const char *v, css_hint_length *l)
+{
+	char *e;
+	double d = strtod(v, &e);
+	if (e == v || d < 0)
+		return false;
+	l->value = (css_fixed)(d * 1024);
+	l->unit = *e == '%' ? CSS_UNIT_PCT : CSS_UNIT_PX;
+	return true;
+}
+
+static css_hint HINTS[24];
+
 static css_error node_presentational_hint(void *pw, void *n, uint32_t *nh, css_hint **h)
 {
-	(void)pw, (void)n;
+	(void)pw;
 	*nh = 0;
 	*h = NULL;
+	dom_string *nm = NULL;
+	char tag[12] = "", v[64];
+	if (dom_node_get_node_name((dom_node *)n, &nm) == DOM_NO_ERR && nm) {
+		size_t l = dom_string_byte_length(nm);
+		if (l < sizeof tag)
+			for (size_t i = 0; i < l; i++)
+				tag[i] = (char)tolower((unsigned char)dom_string_data(nm)[i]);
+		dom_string_unref(nm);
+	}
+	if (!tag[0])
+		return CSS_OK;
+	int k = 0;
+#define HINT(p, st) (HINTS[k].prop = (p), HINTS[k].status = (st), &HINTS[k++])
+	bool tbl = !strcmp(tag, "table"), cell = !strcmp(tag, "td") || !strcmp(tag, "th");
+	bool row = !strcmp(tag, "tr") || !strcmp(tag, "tbody") || !strcmp(tag, "thead") || !strcmp(tag, "tfoot");
+	css_color c;
+	css_hint_length L;
+	if ((tbl || cell || row || !strcmp(tag, "body")) && hattr(n, "bgcolor", v, sizeof v) && hcolor(v, &c))
+		HINT(CSS_PROP_BACKGROUND_COLOR, CSS_BACKGROUND_COLOR_COLOR)->data.color = c;
+	bool media = !strcmp(tag, "img") || !strcmp(tag, "video") || !strcmp(tag, "canvas") || !strcmp(tag, "iframe") || !strcmp(tag, "embed") || !strcmp(tag, "object");
+	if ((tbl || cell || media || !strcmp(tag, "hr") || !strcmp(tag, "col")) && hattr(n, "width", v, sizeof v) && hlen(v, &L) && L.value > 0)
+		HINT(CSS_PROP_WIDTH, CSS_WIDTH_SET)->data.length = L;
+	if ((tbl || cell || row || media) && hattr(n, "height", v, sizeof v) && hlen(v, &L) && L.value > 0)
+		HINT(CSS_PROP_HEIGHT, CSS_HEIGHT_SET)->data.length = L;
+	if (hattr(n, "align", v, sizeof v)) {
+		if (tbl || media) {
+			if (!strcasecmp(v, "left") || !strcasecmp(v, "right"))
+				HINT(CSS_PROP_FLOAT, !strcasecmp(v, "left") ? CSS_FLOAT_LEFT : CSS_FLOAT_RIGHT);
+			else if (!strcasecmp(v, "center") && tbl) {
+				HINT(CSS_PROP_MARGIN_LEFT, CSS_MARGIN_AUTO);
+				HINT(CSS_PROP_MARGIN_RIGHT, CSS_MARGIN_AUTO);
+			}
+		} else if (cell || row || !strcmp(tag, "div") || !strcmp(tag, "p") || (tag[0] == 'h' && tag[1] >= '1' && tag[1] <= '6' && !tag[2]) ||
+		           !strcmp(tag, "caption")) {
+			uint8_t a = !strcasecmp(v, "center") || !strcasecmp(v, "middle") ? (cell || row || !strcmp(tag, "div") ? CSS_TEXT_ALIGN_LIBCSS_CENTER : CSS_TEXT_ALIGN_CENTER)
+			            : !strcasecmp(v, "right") ? (cell || row || !strcmp(tag, "div") ? CSS_TEXT_ALIGN_LIBCSS_RIGHT : CSS_TEXT_ALIGN_RIGHT)
+			            : !strcasecmp(v, "justify") ? CSS_TEXT_ALIGN_JUSTIFY : CSS_TEXT_ALIGN_LEFT;
+			HINT(CSS_PROP_TEXT_ALIGN, a);
+		}
+	}
+	if ((cell || row) && hattr(n, "valign", v, sizeof v))
+		HINT(CSS_PROP_VERTICAL_ALIGN, !strcasecmp(v, "top") ? CSS_VERTICAL_ALIGN_TOP : !strcasecmp(v, "bottom") ? CSS_VERTICAL_ALIGN_BOTTOM
+		                                                                         : CSS_VERTICAL_ALIGN_MIDDLE);
+	if (cell && hattr(n, "nowrap", v, sizeof v))
+		HINT(CSS_PROP_WHITE_SPACE, CSS_WHITE_SPACE_NOWRAP);
+	if (!strcmp(tag, "font")) {
+		if (hattr(n, "color", v, sizeof v) && hcolor(v, &c))
+			HINT(CSS_PROP_COLOR, CSS_COLOR_COLOR)->data.color = c;
+		if (hattr(n, "size", v, sizeof v) && v[0]) { // 1…7 (o +1, -1 sobre 3)
+			int sz = atoi(v[0] == '+' || v[0] == '-' ? v + 1 : v);
+			if (v[0] == '+')
+				sz = 3 + sz;
+			else if (v[0] == '-')
+				sz = 3 - sz;
+			static const float PX[] = {10, 13, 16, 18, 24, 32, 48};
+			sz = sz < 1 ? 1 : sz > 7 ? 7 : sz;
+			css_hint *x = HINT(CSS_PROP_FONT_SIZE, CSS_FONT_SIZE_DIMENSION);
+			x->data.length.value = (css_fixed)(PX[sz - 1] * 1024), x->data.length.unit = CSS_UNIT_PX;
+		}
+	}
+	if (!strcmp(tag, "body") && hattr(n, "text", v, sizeof v) && hcolor(v, &c))
+		HINT(CSS_PROP_COLOR, CSS_COLOR_COLOR)->data.color = c;
+	if (tbl) {
+		if (hattr(n, "cellspacing", v, sizeof v) && hlen(v, &L)) {
+			css_hint *x = HINT(CSS_PROP_BORDER_SPACING, CSS_BORDER_SPACING_SET);
+			x->data.position.h = L, x->data.position.v = L;
+		}
+		if (hattr(n, "border", v, sizeof v) && hlen(v, &L) && L.value > 0) {
+			for (int i = 0; i < 4; i++) {
+				HINT(CSS_PROP_BORDER_TOP_WIDTH + i, CSS_BORDER_WIDTH_WIDTH)->data.length = L;
+				HINT(CSS_PROP_BORDER_TOP_STYLE + i, CSS_BORDER_STYLE_OUTSET);
+			}
+		}
+	}
+	if (cell) { // de su tabla: cellpadding y border (un borde de 1 px en las celdas)
+		dom_node_internal *t = NI(n)->parent;
+		for (int up = 0; t && up < 4; up++, t = t->parent) {
+			dom_string *tn = NULL;
+			bool is = false;
+			if (t->type == DOM_ELEMENT_NODE && dom_node_get_node_name((dom_node *)t, &tn) == DOM_NO_ERR && tn) {
+				is = dom_string_byte_length(tn) == 5 && !strncasecmp(dom_string_data(tn), "table", 5);
+				dom_string_unref(tn);
+			}
+			if (!is)
+				continue;
+			if (hattr((dom_node *)t, "cellpadding", v, sizeof v) && hlen(v, &L))
+				for (int i = 0; i < 4; i++)
+					HINT(CSS_PROP_PADDING_TOP + i, CSS_PADDING_SET)->data.length = L;
+			if (hattr((dom_node *)t, "border", v, sizeof v) && hlen(v, &L) && L.value > 0) {
+				L.value = 1024, L.unit = CSS_UNIT_PX;
+				for (int i = 0; i < 4 && k < 20; i++) {
+					HINT(CSS_PROP_BORDER_TOP_WIDTH + i, CSS_BORDER_WIDTH_WIDTH)->data.length = L;
+					HINT(CSS_PROP_BORDER_TOP_STYLE + i, CSS_BORDER_STYLE_INSET);
+				}
+			}
+			break;
+		}
+	}
+#undef HINT
+	if (k) {
+		*nh = (uint32_t)k;
+		*h = HINTS;
+	}
 	return CSS_OK;
 }
 
