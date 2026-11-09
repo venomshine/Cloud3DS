@@ -430,11 +430,51 @@ static css_select_handler H = {
 };
 
 /* ------------------------------------------------------------ hojas */
+// las url() de una hoja (fondos con imagen), respecto a la dirección de la hoja
 static css_error resolve_url(void *pw, const char *base, lwc_string *rel, lwc_string **abs)
 {
-	(void)pw, (void)base;
-	*abs = lwc_string_ref(rel); // las url() de fondos e imágenes no se usan
-	return CSS_OK;
+	(void)pw;
+	const char *r = lwc_string_data(rel);
+	size_t rl = lwc_string_length(rel);
+	char out[1024];
+	if (!base || strstr(base, "about:") == base || memchr(r, ':', rl < 12 ? rl : 12) || !rl) { // ya completa (o data:)
+		*abs = lwc_string_ref(rel);
+		return CSS_OK;
+	}
+	const char *sch = strstr(base, "://");
+	if (!sch) {
+		*abs = lwc_string_ref(rel);
+		return CSS_OK;
+	}
+	size_t hl = (size_t)(sch + 3 - base);
+	hl += strcspn(base + hl, "/?#"); // hasta el final del servidor
+	if (rl > 1 && r[0] == '/' && r[1] == '/') // //servidor/…
+		snprintf(out, sizeof out, "%.*s%.*s", (int)(sch + 1 - base), base, (int)rl, r);
+	else if (r[0] == '/')
+		snprintf(out, sizeof out, "%.*s%.*s", (int)hl, base, (int)rl, r);
+	else {
+		size_t bl = strcspn(base, "?#");
+		while (bl > hl && base[bl - 1] != '/')
+			bl--;
+		if (bl <= hl) // sin carpeta: la raíz
+			snprintf(out, sizeof out, "%.*s/%.*s", (int)hl, base, (int)rl, r);
+		else
+			snprintf(out, sizeof out, "%.*s%.*s", (int)bl, base, (int)rl, r);
+		// «../» y «./»
+		char *p;
+		while ((p = strstr(out + hl, "/./")))
+			memmove(p, p + 2, strlen(p + 2) + 1);
+		while ((p = strstr(out + hl, "/../"))) { // «a/b/../c» → «a/c»
+			char *q = p;
+			if (q > out + hl) {
+				q--;
+				while (q > out + hl && *q != '/')
+					q--;
+			}
+			memmove(q, p + 3, strlen(p + 3) + 1);
+		}
+	}
+	return lwc_intern_string(out, strlen(out), abs) == lwc_error_ok ? CSS_OK : CSS_NOMEM;
 }
 
 static css_stylesheet *sheet_new(const char *url, bool inl)
@@ -561,6 +601,45 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 	free(ha), free(ba);
 	for (int i = 0; i < c->nraw && c->prep; i++)
 		cssprep_vars(c->prep, c->raw[i].css, c->raw[i].n);
+	// las variables de los style="--x: …" de la página (las hojas las usan: anchos de paneles, colores…):
+	// como respaldo, para cuando una regla no tiene otra
+	lwc_string *ks = NULL;
+	if (c->prep && doc && lwc_intern_string("style", 5, &ks) == lwc_error_ok) {
+		dom_node_internal *stack[64];
+		int sp = 0, found = 0;
+		char *buf = malloc(8192);
+		dom_element *root = NULL;
+		if (buf && dom_document_get_document_element(doc, &root) == DOM_NO_ERR && root) {
+			for (dom_node_internal *n = NI(root); n && found < 2000;) {
+				if (n->type == DOM_ELEMENT_NODE) {
+					dom_string *v = get_attr((dom_node *)n, ks);
+					if (v) {
+						size_t l = dom_string_byte_length(v);
+						const char *d = dom_string_data(v);
+						if (l > 4 && l < 8000) {
+							int bl = snprintf(buf, 8192, "z{%.*s}", (int)l, d);
+							if (strstr(buf, "--")) {
+								cssprep_vars(c->prep, buf, (size_t)bl);
+								found++;
+							}
+						}
+						dom_string_unref(v);
+					}
+					if (n->first_child && sp < 64) {
+						stack[sp++] = n;
+						n = n->first_child;
+						continue;
+					}
+				}
+				while (n && !n->next && sp)
+					n = stack[--sp];
+				n = n && n != NI(root) ? n->next : NULL;
+			}
+			dom_node_unref(root);
+		}
+		free(buf);
+		lwc_string_unref(ks);
+	}
 	for (int i = 0; i < c->nraw; i++) {
 		size_t on = 0;
 		char *o = c->prep ? cssprep_rewrite(c->prep, c->raw[i].css, c->raw[i].n, &on) : NULL;

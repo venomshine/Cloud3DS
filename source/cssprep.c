@@ -724,6 +724,62 @@ static bool cv_expr(const char **q, const char *e, CV *r)
 	}
 }
 
+/* un color sencillo (#hex, rgb()/rgba(), transparent, black, white) a r,g,b,a; false si es otra cosa */
+static bool simple_color(const char *q, const char *e, float c[4])
+{
+	while (q < e && *q == ' ')
+		q++;
+	while (e > q && e[-1] == ' ')
+		e--;
+	size_t l = (size_t)(e - q);
+	c[3] = 1;
+	if (l == 11 && !strncasecmp(q, "transparent", 11)) {
+		c[0] = c[1] = c[2] = c[3] = 0;
+		return true;
+	}
+	if (l == 5 && !strncasecmp(q, "black", 5)) {
+		c[0] = c[1] = c[2] = 0;
+		return true;
+	}
+	if (l == 5 && !strncasecmp(q, "white", 5)) {
+		c[0] = c[1] = c[2] = 255;
+		return true;
+	}
+	if (*q == '#' && (l == 4 || l == 7 || l == 9)) {
+		for (size_t i = 1; i < l; i++)
+			if (!isxdigit((unsigned char)q[i]))
+				return false;
+		unsigned x = (unsigned)strtoul(q + 1, NULL, 16);
+		if (l == 4)
+			c[0] = ((x >> 8) & 15) * 17, c[1] = ((x >> 4) & 15) * 17, c[2] = (x & 15) * 17;
+		else if (l == 7)
+			c[0] = (x >> 16) & 255, c[1] = (x >> 8) & 255, c[2] = x & 255;
+		else
+			c[0] = (x >> 24) & 255, c[1] = (x >> 16) & 255, c[2] = (x >> 8) & 255, c[3] = (x & 255) / 255.0f;
+		return true;
+	}
+	if (l > 5 && !strncasecmp(q, "rgb", 3)) {
+		const char *t = memchr(q, '(', l);
+		if (!t)
+			return false;
+		t++;
+		for (int k = 0; k < 4 && t < e; k++) {
+			char *z;
+			float v = strtof(t, &z);
+			if (z == t)
+				break;
+			t = z;
+			if (*t == '%')
+				v = k < 3 ? v * 2.55f : v / 100, t++;
+			c[k] = v;
+			while (t < e && (*t == ',' || *t == ' ' || *t == '/'))
+				t++;
+		}
+		return true;
+	}
+	return false;
+}
+
 static void funcs(const char *v, size_t vn, Out *o)
 {
 	const char *s = v, *e = v + vn;
@@ -797,18 +853,56 @@ static void funcs(const char *v, size_t vn, Out *o)
 		int pick = 0;
 		if (kind == 4) // light-dark(claro, oscuro): el del tema
 			pick = G_DARK && na > 1 ? 1 : 0;
-		else if (kind == 5 && na >= 2) { // color-mix(in srgb, a 40%, b): el primer color, sin su %
+		else if (kind == 5 && na >= 3) { // color-mix(in srgb, a 40%, b 60%): mezclados, si son sencillos
+			float ca[4], cb[4], pa = -1, pb = -1;
+			const char *ae = ends[1], *be = ends[2];
+			char *z;
+			for (const char *t = ae; t > args[1]; t--) // «… 40%» al final
+				if (t[-1] == ' ') {
+					float x = strtof(t, &z);
+					if (z != t && *z == '%')
+						pa = x, ae = t;
+					break;
+				}
+			for (const char *t = be; t > args[2]; t--)
+				if (t[-1] == ' ') {
+					float x = strtof(t, &z);
+					if (z != t && *z == '%')
+						pb = x, be = t;
+					break;
+				}
+			Out ta = {0}, tb = {0};
+			funcs(args[1], (size_t)(ae - args[1]), &ta); // (puede llevar otro color-mix dentro)
+			funcs(args[2], (size_t)(be - args[2]), &tb);
+			if (ta.p && tb.p && simple_color(ta.p, ta.p + ta.n, ca) && simple_color(tb.p, tb.p + tb.n, cb)) {
+				if (pa < 0 && pb < 0)
+					pa = pb = 50;
+				else if (pa < 0)
+					pa = 100 - pb;
+				else if (pb < 0)
+					pb = 100 - pa;
+				float k = pa + pb > 0 ? pa / (pa + pb) : 0.5f;
+				char b2[64];
+				snprintf(b2, sizeof b2, "rgba(%d,%d,%d,%.2f)", (int)(ca[0] * k + cb[0] * (1 - k)), (int)(ca[1] * k + cb[1] * (1 - k)),
+				         (int)(ca[2] * k + cb[2] * (1 - k)), ca[3] * k + cb[3] * (1 - k));
+				puts_(o, b2);
+				free(ta.p), free(tb.p);
+				s = cl + 1;
+				continue;
+			}
+			free(ta.p), free(tb.p);
+		}
+		if (kind == 4) {
+		} else if (kind == 5 && na >= 2) { // color-mix(in srgb, a 40%, b): el primer color, sin su %
 			const char *q = args[1], *z = ends[1];
 			while (z > q && z[-1] != ' ' && memchr(z - 1, '%', 1) == NULL)
 				z--;
 			const char *sp2 = z;
 			while (sp2 > q && sp2[-1] != ' ')
 				sp2--;
-			const char *pc = memchr(q, '%', (size_t)(ends[1] - q));
 			const char *stop = ends[1];
-			if (pc) { // quita « 40%»
-				stop = pc;
-				while (stop > q && stop[-1] != ' ')
+			if (stop > q && stop[-1] == '%') { // quita el « 40%» del final (no el de un color-mix de dentro)
+				while (stop > q && stop[-1] != ' ' && stop[-1] != ')')
 					stop--;
 				while (stop > q && stop[-1] == ' ')
 					stop--;
@@ -1240,8 +1334,74 @@ static bool grad_color(const char *v, char *out, size_t n)
 	return true;
 }
 
+/* background-size (libcss no lo conoce): en outline-style, que el navegador no pinta. cover = dashed,
+ * contain = dotted, 100% 100% = groove (estirada), un ancho = double con outline-width */
+static void bgsize_emit(Out *o, const char *v)
+{
+	while (*v == ' ')
+		v++;
+	if (!strncasecmp(v, "cover", 5))
+		decl_out(o, "outline-style", "dashed");
+	else if (!strncasecmp(v, "contain", 7))
+		decl_out(o, "outline-style", "dotted");
+	else if (!strncmp(v, "100%", 4))
+		decl_out(o, "outline-style", "groove");
+	else if (isdigit((unsigned char)*v) || *v == '.') {
+		float x = len_px(v);
+		if (x > 0 && !strchr(v, '%')) {
+			char b[32];
+			snprintf(b, sizeof b, "%gpx", x);
+			decl_out(o, "outline-style", "double");
+			decl_out(o, "outline-width", b);
+		}
+	}
+}
+
 static void decl_emit(Out *o, const char *name, const char *val)
 {
+	if (!strcmp(name, "background-size")) {
+		bgsize_emit(o, val);
+		return;
+	}
+	if (!strcmp(name, "background")) { // «… center / cover …»: el tamaño fuera (libcss tira todo si lo lleva)
+		const char *sl = NULL;
+		int d = 0;
+		for (const char *q = val; *q; q++) {
+			if (*q == '(')
+				d++;
+			else if (*q == ')')
+				d--;
+			else if (*q == '/' && !d) {
+				sl = q;
+				break;
+			}
+		}
+		if (sl) {
+			const char *z = sl + 1;
+			while (*z == ' ')
+				z++;
+			const char *e2 = z;
+			for (int k = 0; k < 2 && *e2; k++) { // una o dos palabras de tamaño
+				const char *w0 = e2;
+				while (*e2 && *e2 != ' ' && *e2 != ',')
+					e2++;
+				bool sz = !strncasecmp(w0, "cover", 5) || !strncasecmp(w0, "contain", 7) || !strncasecmp(w0, "auto", 4) || isdigit((unsigned char)*w0) || *w0 == '.';
+				if (!sz) {
+					e2 = w0;
+					break;
+				}
+				if (!strncasecmp(w0, "cover", 5) || !strncasecmp(w0, "contain", 7))
+					break;
+				while (*e2 == ' ')
+					e2++;
+			}
+			char b[1024];
+			snprintf(b, sizeof b, "%.*s %s", (int)(sl - val), val, e2);
+			decl_out(o, "background", b);
+			bgsize_emit(o, z);
+			return;
+		}
+	}
 	if (!strcmp(name, "display")) { // lo que libcss no conoce: contents (marcado con column-fill: auto), flow-root, dos palabras
 		const char *imp = strstr(val, "!important");
 		char v[48];
@@ -1769,7 +1929,9 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 			}
 			if (!first && !sel.bad) {
 				Map local = {0};
-				if (has_ci(b0, (size_t)(b1 - b0), "--"))
+				// las de la raíz (html, :root) ya están en su valor final (una regla de @media de después
+				// puede cambiarlas): las propias de la regla, solo en las demás
+				if (has_ci(b0, (size_t)(b1 - b0), "--") && !sel_is_root(p, s0, s1))
 					decls(p, b0, b1, false, &local, o, false);
 				size_t mark = o->n;
 				put(o, sel.p, sel.n);
