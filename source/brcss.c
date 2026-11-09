@@ -1087,6 +1087,17 @@ bool brcss_width_calc(const css_computed_style *s, float vw, float *px, float *p
 
 float brcss_px(const css_computed_style *s, css_fixed len, css_unit unit, float vw)
 {
+	// las absolutas, aquí: libcss redondea los px de cada unidad a entero (1pt = 1,33 px quedaba en 1 px)
+	float f = FIXTOFLT(len);
+	switch (unit) {
+	case CSS_UNIT_PT: return f * 96 / 72;
+	case CSS_UNIT_PC: return f * 16;
+	case CSS_UNIT_IN: return f * 96;
+	case CSS_UNIT_CM: return f * 96 / 2.54f;
+	case CSS_UNIT_MM: return f * 96 / 25.4f;
+	case CSS_UNIT_Q: return f * 96 / 101.6f;
+	default: break;
+	}
 	css_unit_ctx u = unit_ctx(vw);
 	return FIXTOFLT(css_unit_len2css_px(s, &u, len, unit));
 }
