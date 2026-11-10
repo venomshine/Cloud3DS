@@ -67,7 +67,7 @@ struct Sty {
 	const char *bgurl; /* background-image */
 	float bgsw, bgpx, bgpy;
 	float ar, tx, ty, rad; /* aspect-ratio, translate (px o %: txp/typ), border-radius (px; <0: %) */
-	uint8_t txp, typ, fit, fixbg, bcen; /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
+	uint8_t txp, typ, fit, fixbg, bcen, fixd; /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -1011,7 +1011,10 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	// fija y detrás de todo (z-index < 0): un fondo. Si ocupa todo el ancho, el de la página; si no (una columna
 	// centrada), una caja de arriba abajo de la página, en su sitio
 	bool fixbg = false;
-	if (d != CSS_DISPLAY_NONE && css_computed_position(cs) == CSS_POSITION_FIXED) {
+	bool in_fixed = false; // (dentro de otra fija, un menú o una ventana: es lo suyo, no el de la página)
+	for (Box *a = parent; a && !in_fixed; a = a->parent)
+		in_fixed = a->s && a->s->fixd;
+	if (d != CSS_DISPLAY_NONE && css_computed_position(cs) == CSS_POSITION_FIXED && !in_fixed) {
 		int32_t z = 0;
 		css_fixed mv;
 		css_unit mu;
@@ -1024,7 +1027,16 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 				fixbg = true;
 		}
 	}
-	if (d == CSS_DISPLAY_NONE || d == CSS_DISPLAY_TABLE_COLUMN || d == CSS_DISPLAY_TABLE_COLUMN_GROUP || (css_computed_position(cs) == CSS_POSITION_FIXED && !fixbg) ||
+	// fija (position: fixed): donde está con la página arriba del todo, como una absoluta respecto a la
+	// pantalla. Las pegadas abajo (avisos de cookies, chats) no: taparían el final de lo que se ve
+	bool fixd = false;
+	if (d != CSS_DISPLAY_NONE && css_computed_position(cs) == CSS_POSITION_FIXED && !fixbg) {
+		css_fixed tv, bv;
+		css_unit tu, bu;
+		bool top = css_computed_top(cs, &tv, &tu) == CSS_TOP_SET, bot = css_computed_bottom(cs, &bv, &bu) == CSS_BOTTOM_SET;
+		fixd = top || !bot;
+	}
+	if (d == CSS_DISPLAY_NONE || d == CSS_DISPLAY_TABLE_COLUMN || d == CSS_DISPLAY_TABLE_COLUMN_GROUP || (css_computed_position(cs) == CSS_POSITION_FIXED && !fixbg && !fixd) ||
 	    invisible(C, cs, !strcmp(tag, "img") || !strcmp(tag, "svg") || !strcmp(tag, "input") || !strcmp(tag, "select") || !strcmp(tag, "textarea"))) {
 #ifdef BRL_DEBUG
 		if (getenv("BRL_SKIP") && !strcmp(tag, getenv("BRL_SKIP")))
@@ -1051,6 +1063,8 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	sty_fill(C, s, cs, d);
 	if (fixbg)
 		s->fixbg = 1, s->pos = CSS_POSITION_ABSOLUTE;
+	if (fixd)
+		s->fixd = 1, s->pos = CSS_POSITION_ABSOLUTE;
 	if (css_computed_text_transform(cs) == CSS_TEXT_TRANSFORM_UPPERCASE)
 		s->upper = 1;
 	char a[512];
@@ -3002,7 +3016,7 @@ static void child(Ctx *C, Box *c, float pax, float pay, Clip cl, int depth)
 	Sty *s = c->s;
 	float x = pax + c->x, y = pay + c->y;
 	if (c->oof == O_ABS) {
-		Box *cb = s->fixbg ? NULL : abs_cb(c);
+		Box *cb = s->fixbg || s->fixd ? NULL : abs_cb(c);
 		float cbx = 0, cby = 0, cbw = C->vw, cbh = s->fixbg && C->doch > 0 ? C->doch : C->vh;
 		if (cb) {
 			cbx = cb->s->ax + cb->s->bw[3], cby = cb->s->ay + cb->s->bw[0];
@@ -3040,6 +3054,10 @@ static void child(Ctx *C, Box *c, float pax, float pay, Clip cl, int depth)
 			x = cbx + lv + (cbw - lv - rv - c->w) / 2;
 		if (T && B && AUT(s, LMT) && AUT(s, LMB) && cbh - tv - bv - c->h > 0)
 			y = cby + tv + (cbh - tv - bv - c->h) / 2;
+		// de lo fijo, solo las barras (una cabecera de poco alto, una columna estrecha de iconos): lo grande es una
+		// ventana, un menú desplegado o un aviso, que tapan la página
+		if (s->fixd && !(c->h <= C->vh * 0.25f || c->w <= C->vw * 0.12f))
+			return;
 	} else if (s->pos == CSS_POSITION_RELATIVE) {
 		float cbw = c->parent ? c->parent->w : C->vw;
 		if (!AUT(s, LOL))
