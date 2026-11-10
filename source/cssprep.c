@@ -2927,10 +2927,8 @@ char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const ch
 	qsort(cand, (size_t)nc, sizeof *cand, cmp_int);
 	bool hit[512];
 	Out env = {0}, o = {0};
-	if (penv)
-		puts_(&env, penv);
-	bool more = false;
-	for (int j = 0; j < nc; j++) { // las que le tocan; sus variables, a lo heredado
+	bool more = own && *own, anyloc = false;
+	for (int j = 0; j < nc; j++) { // las que le tocan
 		hit[j] = false;
 		if (j && cand[j] == cand[j - 1])
 			continue;
@@ -2943,15 +2941,21 @@ char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const ch
 		if (t == ke || !compound_ok(t, ke, attrs, false))
 			continue;
 		hit[j] = true;
-		if (T->loc) {
-			puts_(&env, T->loc);
-			more = true;
-		}
+		anyloc = anyloc || T->loc;
 	}
-	if (own && *own) {
+	more = more || anyloc;
+	bool anydec0 = false;
+	for (int j = 0; j < nc && !anydec0; j++)
+		anydec0 = hit[j] && p->tpl[cand[j]].dec[0] && p->tpl[cand[j]].uses;
+	if (!more && !(anydec0 && penv && *penv))
+		return NULL; // nada suyo: lo heredado sigue igual y no hay nada que resolver
+	if (penv)
+		puts_(&env, penv);
+	for (int j = 0; j < nc; j++) // sus variables, a lo heredado (en su orden)
+		if (hit[j] && p->tpl[cand[j]].loc)
+			puts_(&env, p->tpl[cand[j]].loc);
+	if (own && *own)
 		puts_(&env, own);
-		more = true;
-	}
 	bool anydec = false;
 	for (int j = 0; j < nc && !anydec; j++)
 		anydec = hit[j] && p->tpl[cand[j]].dec[0] && p->tpl[cand[j]].uses;

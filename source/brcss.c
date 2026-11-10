@@ -127,6 +127,19 @@ static dom_string *get_attr(dom_node *n, lwc_string *name)
 	return v;
 }
 
+// los atributos del último elemento pedido (las plantillas de variables y los temas los quieren a la vez)
+static void attrs_of(dom_node *el, char *out, size_t on);
+static dom_node *A_EL;
+static char A_BUF[2048];
+static const char *attrs_c(dom_node *el)
+{
+	if (el != A_EL) {
+		attrs_of(el, A_BUF, sizeof A_BUF);
+		A_EL = el;
+	}
+	return A_BUF;
+}
+
 /* ------------------------------------------------------------ el manejador */
 static css_error node_name(void *pw, void *n, css_qname *q)
 {
@@ -801,6 +814,7 @@ static void attrs_of(dom_node *el, char *out, size_t on)
 
 void brcss_finish(BrCss *c, dom_document *doc, float width)
 {
+	A_EL = NULL;
 	if (!c)
 		return;
 	dom_document_quirks_mode qm = DOM_DOCUMENT_QUIRKS_MODE_NONE;
@@ -894,11 +908,9 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 
 int brcss_scope_of(BrCss *c, dom_node *el, int parent)
 {
-	static char a[2048];
 	if (!c || !c->prep || !c->nscope)
 		return parent;
-	attrs_of(el, a, sizeof a);
-	return cssprep_scope_match(c->prep, a, parent);
+	return cssprep_scope_match(c->prep, attrs_c(el), parent);
 }
 
 uint32_t brcss_scope_col(const BrCss *c, int scope, const css_computed_style *cs, uint32_t col, int kind)
@@ -1090,15 +1102,14 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 	// las variables por elemento (de los style="" y de las reglas de clase, suyas y heredadas): lo de las
 	// reglas que las usan, resuelto (solo al maquetar: env_out)
 	if (c->prep && env_out) {
-		static char tag[16], at[2048];
+		static char tag[16];
 		dom_string *nm = NULL;
 		tag[0] = 0;
 		if (dom_node_get_node_name(el, &nm) == DOM_NO_ERR && nm) {
 			snprintf(tag, sizeof tag, "%.*s", (int)dom_string_byte_length(nm), dom_string_data(nm));
 			dom_string_unref(nm);
 		}
-		attrs_of(el, at, sizeof at);
-		char *ex = cssprep_env_decls(c->prep, tag, at, penv, own, env_out);
+		char *ex = cssprep_env_decls(c->prep, tag, attrs_c(el), penv, own, env_out);
 		if (ex && !rawst) { // (delante de lo del style="", que manda)
 			size_t xl = strlen(ex);
 			char *no = malloc(on + xl + 1);
@@ -1228,6 +1239,7 @@ float brcss_px(const css_computed_style *s, css_fixed len, css_unit unit, float 
  * estilos calculados con las clases de antes) */
 void brcss_forget(dom_node *n)
 {
+	A_EL = NULL;
 	if (!KEY || !n)
 		return;
 	void *old = NULL;
