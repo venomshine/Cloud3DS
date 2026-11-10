@@ -1051,8 +1051,9 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 				own_vars(dom_string_data(v), dom_string_byte_length(v), own, sizeof own);
 		}
 	}
-	// las variables de los style="" de él y de sus antepasados: lo de las reglas que las usan, resuelto
-	if (c->prep && ((penv && *penv) || own[0])) {
+	// las variables por elemento (de los style="" y de las reglas de clase, suyas y heredadas): lo de las
+	// reglas que las usan, resuelto (solo al maquetar: env_out)
+	if (c->prep && env_out) {
 		static char tag[16], at[2048];
 		dom_string *nm = NULL;
 		tag[0] = 0;
@@ -1061,8 +1062,8 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 			dom_string_unref(nm);
 		}
 		attrs_of(el, at, sizeof at);
-		char *ex = cssprep_env_decls(c->prep, tag, at, penv, own);
-		if (ex && !rawst) { // (detrás de lo del style="", que manda)
+		char *ex = cssprep_env_decls(c->prep, tag, at, penv, own, env_out);
+		if (ex && !rawst) { // (delante de lo del style="", que manda)
 			size_t xl = strlen(ex);
 			char *no = malloc(on + xl + 1);
 			if (no) {
@@ -1075,16 +1076,6 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 			}
 		}
 		free(ex);
-		if (own[0] && env_out) {
-			size_t pl = penv ? strlen(penv) : 0, ol = strlen(own);
-			char *e = malloc(pl + ol + 1);
-			if (e) {
-				if (pl)
-					memcpy(e, penv, pl);
-				memcpy(e + pl, own, ol + 1);
-				*env_out = e;
-			}
-		}
 	}
 	if (o)
 		inl = on ? sheet_parse(o, on, c->base, true) : NULL;

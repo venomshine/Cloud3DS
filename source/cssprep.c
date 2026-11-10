@@ -146,13 +146,16 @@ struct CssPrep {
 	Combo combo[MAX_COMBOS];
 	int ncombo;
 	Map vid;      /* variables marcadas en color y background-color: nombre -> número (1…) */
-	Map ivn;      /* las variables que algún style="" de la página pone */
+	Map ivn;      /* las variables que van por elemento: las de los style="" y las que pone una regla de clase */
 	struct Tpl {  /* declaraciones que usan una de esas: para resolverlas en cada elemento */
 		char *key;  /* el último selector simple compuesto de la regla («.prc-PageLayout-Content») */
 		char *dec;  /* «padding:var(--spacing);» */
 		char *loc;  /* las variables que pone la propia regla («--spacing:var(--x);») */
 	} *tpl;
 	int ntpl, ctpl;
+	Map tix;      /* las plantillas por la primera clase de su selector: «clase» -> «3,17,…» */
+	char *tother; /* las que no empiezan por clase («[data-x]», «#id»): «4,9,…» */
+	bool tixok;
 	char **vname; /* y al revés */
 	int nvid, cvid;
 	Map root, any;     /* las de :root/html/body (las de la página) y todas */
@@ -192,6 +195,8 @@ void cssprep_free(CssPrep *p)
 	}
 	map_free(&p->vid);
 	map_free(&p->ivn);
+	map_free(&p->tix);
+	free(p->tother);
 	for (int i = 0; i < p->ntpl; i++)
 		free(p->tpl[i].key), free(p->tpl[i].dec), free(p->tpl[i].loc);
 	free(p->tpl);
@@ -2640,6 +2645,47 @@ static bool uses_ivar(CssPrep *p, const char *v0, const char *v1)
 }
 
 // una regla con declaraciones que usan variables de los style="": su plantilla, por cada selector
+// pasada 1: las variables que pone una regla cuyo último selector tiene clase («.portada--5xl {--tam: 2rem}»):
+// van por elemento (las heredan sus hijos), como las de los style=""
+static void mark_scoped_vars(CssPrep *p, const char *s0, const char *s1, const char *b0, const char *b1)
+{
+	bool cls = false;
+	for (const char *q = s0; q < s1 && !cls;) {
+		const char *c = find_top(q, s1, ",");
+		const char *x = q, *y = c, *last = x;
+		trim(&x, &y);
+		int d = 0;
+		for (const char *t = x; t < y; t++) {
+			if (*t == '(' || *t == '[')
+				d++;
+			else if ((*t == ')' || *t == ']') && d)
+				d--;
+			else if (!d && (isspace((unsigned char)*t) || *t == '>' || *t == '+' || *t == '~'))
+				last = t + 1;
+		}
+		cls = last < y && memchr(last, '.', (size_t)(y - last)) && !memchr(last, ':', (size_t)(y - last));
+		q = c + 1;
+	}
+	if (!cls)
+		return;
+	for (const char *q = b0; q < b1;) {
+		const char *c = find_top(q, b1, ";{");
+		if (c < b1 && *c == '{') {
+			const char *be = block_end(c + 1, b1);
+			q = be < b1 ? be + 1 : b1;
+			continue;
+		}
+		const char *col = find_top(q, c, ":");
+		if (col < c) {
+			const char *n0 = q, *n1 = col;
+			trim(&n0, &n1);
+			if (n1 - n0 > 2 && n0[0] == '-' && n0[1] == '-')
+				map_set(&p->ivn, n0, (size_t)(n1 - n0), "1", 1);
+		}
+		q = c + 1;
+	}
+}
+
 static void tpl_add(CssPrep *p, const char *s0, const char *s1, const char *b0, const char *b1)
 {
 	Out dec = {0}, loc = {0};
@@ -2666,7 +2712,7 @@ static void tpl_add(CssPrep *p, const char *s0, const char *s1, const char *b0, 
 		}
 		q = c + 1;
 	}
-	if (dec.n && !dec.bad && p->ntpl < 4000)
+	if ((dec.n || loc.n) && !dec.bad && !loc.bad && p->ntpl < 4000)
 		for (const char *q = s0; q < s1;) {
 			const char *c = find_top(q, s1, ",");
 			const char *x = q, *y = c;
@@ -2685,6 +2731,28 @@ static void tpl_add(CssPrep *p, const char *s0, const char *s1, const char *b0, 
 			last = skip_ws(last, y);
 			if (last >= y || memchr(last, ':', (size_t)(y - last))) // (con pseudoclases: :hover… no)
 				continue;
+			// lo de antes que habla de <html> o <body> («html.touch .x»): ya se sabe si lo cumplen
+			bool ctx_ok = true;
+			for (const char *t = x; t < last && ctx_ok;) {
+				while (t < last && (isspace((unsigned char)*t) || *t == '>' || *t == '+' || *t == '~'))
+					t++;
+				const char *ce = t;
+				int dd = 0;
+				while (ce < last && (dd || !(isspace((unsigned char)*ce) || *ce == '>' || *ce == '+' || *ce == '~'))) {
+					if (*ce == '(' || *ce == '[')
+						dd++;
+					else if ((*ce == ')' || *ce == ']') && dd)
+						dd--;
+					ce++;
+				}
+				if (ce > t && (!strncasecmp(t, "html", 4) || !strncasecmp(t, ":root", 5)))
+					ctx_ok = compound_ok(t, ce, p->html, true);
+				else if (ce > t && !strncasecmp(t, "body", 4))
+					ctx_ok = compound_ok(t, ce, p->body, false);
+				t = ce;
+			}
+			if (!ctx_ok)
+				continue;
 			// con una clase, atributo o id: «*» o una etiqueta suelta («* + *», «.prose img») dependen de lo de
 			// alrededor, que aquí no se mira
 			if (!memchr(last, '.', (size_t)(y - last)) && !memchr(last, '[', (size_t)(y - last)) && !memchr(last, '#', (size_t)(y - last)))
@@ -2698,7 +2766,7 @@ static void tpl_add(CssPrep *p, const char *s0, const char *s1, const char *b0, 
 			}
 			struct Tpl *T = &p->tpl[p->ntpl];
 			T->key = strndup(last, (size_t)(y - last));
-			T->dec = strdup(dec.p);
+			T->dec = strdup(dec.p ? dec.p : "");
 			T->loc = loc.p ? strdup(loc.p) : NULL;
 			if (!T->key || !T->dec) {
 				free(T->key), free(T->dec), free(T->loc);
@@ -2725,51 +2793,123 @@ static void env_parse(Map *m, const char *d)
 	}
 }
 
-char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const char *penv, const char *own)
+static void tix_build(CssPrep *p)
 {
-	if (!p || !p->ntpl || ((!penv || !*penv) && (!own || !*own)))
+	Out oth = {0};
+	char num[16];
+	for (int i = 0; i < p->ntpl; i++) {
+		const char *k = p->tpl[i].key, *t = k;
+		while (*t && (isalnum((unsigned char)*t) || *t == '-'))
+			t++;
+		snprintf(num, sizeof num, "%d,", i);
+		if (*t == '.') {
+			const char *z = t + 1;
+			while (*z && (isalnum((unsigned char)*z) || *z == '-' || *z == '_'))
+				z++;
+			const char *old = map_get(&p->tix, t + 1, (size_t)(z - t - 1));
+			size_t ol = old ? strlen(old) : 0, nl = strlen(num);
+			char *v = malloc(ol + nl + 1);
+			if (!v)
+				continue;
+			if (ol)
+				memcpy(v, old, ol);
+			memcpy(v + ol, num, nl + 1);
+			map_set(&p->tix, t + 1, (size_t)(z - t - 1), v, ol + nl);
+			free(v);
+		} else
+			puts_(&oth, num);
+	}
+	p->tother = oth.p;
+	p->tixok = true;
+}
+
+static int cmp_int(const void *a, const void *b) { return *(const int *)a - *(const int *)b; }
+
+char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const char *penv, const char *own, char **env_out)
+{
+	*env_out = NULL;
+	if (!p || !p->ntpl)
 		return NULL;
-	Out o = {0}, b = {0}, c = {0};
+	if (!p->tixok)
+		tix_build(p);
+	// las plantillas que pueden tocarle: las de sus clases y las que no empiezan por clase (en su orden)
+	static int cand[512];
+	int nc = 0;
 	char cls[1024] = "";
 	attr_val(attrs, "class", 5, cls, sizeof cls);
-	for (int i = 0; i < p->ntpl; i++) {
-		const struct Tpl *T = &p->tpl[i];
-		const char *k = T->key, *ke = k + strlen(k);
-		// la etiqueta, si la dice («div.x»); lo demás, con sus clases y atributos
-		const char *t = k;
+	for (const char *c = cls; *c && nc < 500;) {
+		while (*c && isspace((unsigned char)*c))
+			c++;
+		const char *z = c;
+		while (*z && !isspace((unsigned char)*z))
+			z++;
+		const char *l = z > c ? map_get(&p->tix, c, (size_t)(z - c)) : NULL;
+		for (; l && *l && nc < 500; l = strchr(l, ',') + 1)
+			cand[nc++] = atoi(l);
+		c = z;
+	}
+	for (const char *l = p->tother; l && *l && nc < 510; l = strchr(l, ',') + 1)
+		cand[nc++] = atoi(l);
+	if (!nc && (!own || !*own))
+		return NULL;
+	qsort(cand, (size_t)nc, sizeof *cand, cmp_int);
+	bool hit[512];
+	Out env = {0}, o = {0};
+	if (penv)
+		puts_(&env, penv);
+	bool more = false;
+	for (int j = 0; j < nc; j++) { // las que le tocan; sus variables, a lo heredado
+		hit[j] = false;
+		if (j && cand[j] == cand[j - 1])
+			continue;
+		const struct Tpl *T = &p->tpl[cand[j]];
+		const char *k = T->key, *ke = k + strlen(k), *t = k;
 		while (t < ke && (isalnum((unsigned char)*t) || *t == '-'))
 			t++;
 		if (t > k && !(strlen(tag) == (size_t)(t - k) && !strncasecmp(tag, k, (size_t)(t - k))))
 			continue;
-		if (*t == '.') { // (deprisa: su primera clase tiene que estar)
-			const char *z = t + 1;
-			while (z < ke && (isalnum((unsigned char)*z) || *z == '-' || *z == '_'))
-				z++;
-			if (!word_in(cls, t + 1, (size_t)(z - t - 1)))
-				continue;
+		if (t == ke || !compound_ok(t, ke, attrs, false))
+			continue;
+		hit[j] = true;
+		if (T->loc) {
+			puts_(&env, T->loc);
+			more = true;
 		}
-		if (t < ke && !compound_ok(t, ke, attrs, false))
-			continue;
-		if (t == ke && t == k)
-			continue;
-		Map m = {0}; // lo heredado; lo que pone la regla; lo del propio style=""
-		if (penv)
-			env_parse(&m, penv);
-		if (T->loc)
-			env_parse(&m, T->loc);
-		if (own)
-			env_parse(&m, own);
+	}
+	if (own && *own) {
+		puts_(&env, own);
+		more = true;
+	}
+	if (env.p && *env.p) {
+		Map m = {0};
+		env_parse(&m, env.p);
+		for (int j = 0; j < nc; j++)
+			if (hit[j] && p->tpl[cand[j]].dec[0]) {
+				const struct Tpl *T = &p->tpl[cand[j]];
+				// solo si aquí sale distinto que con los valores de toda la página (si no, ya vale la regla
+				// de siempre, con su cascada y lo de sus antepasados)
+				Out ge = {0}, gg = {0};
+				decls_out(p, T->dec, T->dec + strlen(T->dec), &m, &ge);
+				decls_out(p, T->dec, T->dec + strlen(T->dec), NULL, &gg);
+				bool same = (!ge.p && !gg.p) || (ge.p && gg.p && !strcmp(ge.p, gg.p));
+				free(ge.p), free(gg.p);
+				if (same)
+					continue;
 #ifdef BRL_DEBUG
-		size_t o0 = o.n;
+				size_t o0 = o.n;
 #endif
-		decls_out(p, T->dec, T->dec + strlen(T->dec), &m, &o);
+				decls_out(p, T->dec, T->dec + strlen(T->dec), &m, &o);
 #ifdef BRL_DEBUG
-		if (getenv("BRL_ENV"))
-			fprintf(stderr, "env %s [%s] -> %.*s\n", T->key, T->dec, (int)(o.n - o0), o.p ? o.p + o0 : "");
+				if (getenv("BRL_ENV"))
+					fprintf(stderr, "env %s [%s] -> %.*s\n", T->key, T->dec, (int)(o.n - o0), o.p ? o.p + o0 : "");
 #endif
+			}
 		map_free(&m);
 	}
-	free(b.p), free(c.p);
+	if (more && env.p && env.n < 6000)
+		*env_out = env.p; // (lo que heredan sus hijos)
+	else
+		free(env.p);
 	return o.p;
 }
 
@@ -2856,6 +2996,8 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 				decls(p, b0, b1, vars && sel_is_root(p, s0, s1), NULL, NULL, false);
 			if (vars)
 				scope_add(p, s0, s1, b0, b1);
+			if (vars && !sel_is_root(p, s0, s1))
+				mark_scoped_vars(p, s0, s1, b0, b1);
 		} else {
 			Out sel = {0};
 			bool first = true;
