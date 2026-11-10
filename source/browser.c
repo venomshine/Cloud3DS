@@ -3780,9 +3780,12 @@ static void layout(void)
 			B.ord[i] = i;
 		qsort(B.ord, B.nf, sizeof *B.ord, ord_cmp);
 	}
-	for (int i = 0; i < B.nf; i++) // dónde está cada imagen (las de cerca se bajan antes)
+	// dónde está cada imagen (las de cerca se bajan antes): si sale varias veces, la de más arriba
+	for (int i = 0; i < B.nimg; i++)
+		B.img[i].y = 1e9f;
+	for (int i = 0; i < B.nf; i++)
 		if (B.f[i].img >= 0 && B.f[i].img < B.nimg)
-			B.img[B.f[i].img].y = B.l[B.f[i].line].y;
+			B.img[B.f[i].img].y = fminf(B.img[B.f[i].img].y, B.l[B.f[i].line].y);
 	B.off = B.vel = 0;
 	B.zoom = TOP_W / B.vw; // entera a lo ancho; para leer, zoom
 	B.sx = B.sy = B.vy = 0;
