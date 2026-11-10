@@ -64,6 +64,7 @@ static const char UA_CSS[] =
     "ol ol,ul ol,ol ul,ul ul{margin-top:0;margin-bottom:0}"
     "u,ins{text-decoration:underline}s,strike,del{text-decoration:line-through}"
     "hr{margin:.5em 0}center{text-align:-libcss-center}"
+    "details:not([open])>*{display:none}details:not([open])>summary{display:block}" /* cerrado: solo su resumen */
     "a[href]{color:#3366cc;text-decoration:underline}";
 
 /* ------------------------------------------------------------ ayudas sobre libdom */
