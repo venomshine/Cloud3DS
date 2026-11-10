@@ -908,13 +908,20 @@ static void funcs(const char *v, size_t vn, Out *o)
 			CV r;
 			char b[32];
 			if (cv_expr(&q, qe, &r) && (cv_ws(&q, qe), q == qe)) {
-				if (r.pc != 0) // («100% - 32px»: el % que es con lo de dentro del ancho de la página, no solo el 100%)
-					snprintf(b, sizeof b, "%.5g%%", r.pc + (r.px && G_PW > 0 ? r.px * 100 / G_PW : 0));
-				else if (r.num)
+				bool odd = false;
+				if (r.pc != 0) { // («100% - 32px»: el % que es con lo de dentro del ancho de la página, no solo el 100%;
+					// si sale algo raro, sin resolver: se queda sin efecto, como antes)
+					float pc = r.pc + (r.px && G_PW > 0 && fabsf(r.px) <= G_PW ? r.px * 100 / G_PW : 0);
+					odd = !(pc >= -100 && pc <= 1000);
+					snprintf(b, sizeof b, "%.5g%%", pc);
+				} else if (r.num)
 					snprintf(b, sizeof b, "%.4g", r.px);
 				else
 					snprintf(b, sizeof b, "%.4gpx", r.px);
-				puts_(o, b);
+				if (odd)
+					put(o, f, (size_t)(cl + 1 - f));
+				else
+					puts_(o, b);
 			} else
 				put(o, f, (size_t)(cl + 1 - f));
 			free(t.p);

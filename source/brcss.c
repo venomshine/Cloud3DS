@@ -1257,7 +1257,8 @@ bool brcss_width_calc(const css_computed_style *s, float vw, float *px, float *p
 		return false;
 	*px = (float)a;
 	*pct = (float)(b - a) / 100;
-	return true;
+	// (un calc() que libcss no resuelve bien da anchos absurdos, de millones de px: como si no lo hubiera)
+	return *pct >= -100 && *pct <= 1000 && fabsf(*px) < 100000;
 }
 
 float brcss_px(const css_computed_style *s, css_fixed len, css_unit unit, float vw)
