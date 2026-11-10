@@ -1409,6 +1409,9 @@ static void intr(Ctx *C, Box *b, float *mn, float *mx)
 		else if (!AUT(s, LH) && !PCT(s, LH) && s->ih > 0) // alto pedido: el ancho por su proporción
 			w = s->iw * LV(s, LH, 0) / s->ih;
 		a = z = w + ex;
+		// con ancho o máximo en %, se puede encoger hasta nada: no pide mínimo (como en CSS)
+		if (!has && ((!AUT(s, LW) && PCT(s, LW)) || (!AUT(s, LMAXW) && PCT(s, LMAXW))))
+			a = ex;
 	} else if (has)
 		a = z = sw;
 	else {
