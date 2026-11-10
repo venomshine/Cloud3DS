@@ -1347,7 +1347,7 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 		grid_pos(o, start, span);
 		return true;
 	}
-	if (!strcmp(name, "grid-column-start") || !strcmp(name, "grid-column-end"))
+	if (!strcmp(name, "grid-column-start") || !strcmp(name, "grid-column-end") || !strcmp(name, "grid-row-start") || !strcmp(name, "grid-row-end"))
 		return true; // se tratan juntas en decls_out
 	return !strncmp(name, "grid-", 5); // las demás de la rejilla: nada (libcss tampoco)
 }
@@ -1928,8 +1928,8 @@ static void decls(CssPrep *p, const char *s, const char *e, bool root, Map *loca
 // grid-column-start y grid-column-end de una regla, juntas
 static void grid_start_end(const char *s, const char *e, Out *o)
 {
-	int start = 0, end = 0, span = 0;
-	bool any = false;
+	int start = 0, end = 0, span = 0, rs = 0, re_ = 0, rsp = 0;
+	bool any = false, anyr = false;
 	for (const char *q = s; q < e;) {
 		const char *c = find_top(q, e, ";");
 		const char *colon = find_top(q, c, ":");
@@ -1950,9 +1950,27 @@ static void grid_start_end(const char *s, const char *e, Out *o)
 					span = atoi(v + 4);
 				else
 					end = atoi(v);
+			} else if (nl == 14 && !strncasecmp(n0, "grid-row-start", 14)) {
+				anyr = true;
+				if (!strncmp(v, "span", 4))
+					rsp = atoi(v + 4);
+				else
+					rs = atoi(v);
+			} else if (nl == 12 && !strncasecmp(n0, "grid-row-end", 12)) {
+				anyr = true;
+				if (!strncmp(v, "span", 4))
+					rsp = atoi(v + 4);
+				else
+					re_ = atoi(v);
 			}
 		}
 		q = c + 1;
+	}
+	if (anyr && rs > 0 && rs < 256) { // la fila, como grid-row (en column-rule-color)
+		int k = rsp > 0 ? rsp : re_ > rs ? re_ - rs : 1;
+		char b[48];
+		snprintf(b, sizeof b, "rgba(103,%d,%d,0.996)", rs, k < 256 ? k : 1);
+		decl_out(o, "column-rule-color", b);
 	}
 	if (!any)
 		return;
@@ -2070,7 +2088,7 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 					t++;
 			}
 		}
-	if (has_ci(s, (size_t)(e - s), "grid-column-"))
+	if (has_ci(s, (size_t)(e - s), "grid-column-") || has_ci(s, (size_t)(e - s), "grid-row-"))
 		grid_start_end(s, e, o);
 	Out a = {0}, b = {0};
 	while (s < e) {
