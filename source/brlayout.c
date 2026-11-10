@@ -3106,7 +3106,7 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 			if (f->t == F_TEXT) {
 				Sty *ts = f->b->s;
 				float X = ax + f->x, Y = ay + cy + f->y;
-				if (!f->n || !ts->vis || ts->fpx < 1.5f || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
+				if (!f->n || !ts->vis || ts->fpx < 1.5f || !(ts->col >> 24) || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
 					continue;
 				if (Y + f->h > C->bottom && Y < 200000)
 					C->bottom = Y + f->h;

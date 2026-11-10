@@ -2132,6 +2132,11 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 								decl_emit(o, "background-color", gc);
 							} else if (grad_color(a.p, gc, sizeof gc))
 								decl_emit(o, "background-color", gc);
+						} else if (!a.bad && a.n && (!strcmp(name, "border-image-source") || !strcmp(name, "border-image")) && strstr(a.p, "gradient(")) {
+							// un borde pintado con un degradado (libcss no sabe): del color del degradado, no del
+							// texto (lo que pondría sin él)
+							if (grad_color(a.p, gc, sizeof gc))
+								decl_emit(o, "border-color", gc);
 						} else if (!a.bad && a.n && !grid_emit(p, o, name, a.p))
 							decl_emit(o, name, a.p);
 					}
