@@ -61,7 +61,7 @@ struct Sty {
 	int16_t link, clk, img, wdg, colspan, lnum, scope; /* scope: el tema por ámbitos (-1 ninguno) */
 	const char *env;             /* las variables de los style="" de él y sus antepasados («--a:x;») */
 	int16_t gcs, gsp, gr, grs;   /* rejilla: columna (1…, 0 auto) y cuántas; fila y cuántas */
-	int16_t tw[16];              /* rejilla: ancho de las pistas (px; -1 auto; -10·fr) */
+	int16_t tw[24];              /* rejilla: ancho de las pistas (px; -1 auto; -10·fr) */
 	uint8_t outer, inner, li, pos, flt, clr, ws, ta, va, ovx, ovy, bbox, vis, fdir, fwrap, jc, ai, as, lst, lstin;
 	uint8_t bold, under, gall, ncols, ifc, item, bcol, tag, upper, placed, bgsz, bgrep, bgpxp, bgpyp;
 	const char *bgurl; /* background-image */
@@ -482,9 +482,9 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 		int32_t k = 0;
 		if (css_computed_column_count(cs, &k) == CSS_COLUMN_COUNT_SET && k > 0) {
 			k = FIXTOINT(k);
-			s->ncols = (uint8_t)(k < 1 ? 1 : k > 16 ? 16 : k);
+			s->ncols = (uint8_t)(k < 1 ? 1 : k > 24 ? 24 : k);
 		}
-		for (int i = 0; i < 16; i++) // (las que no dice grid-template-columns: auto)
+		for (int i = 0; i < 24; i++) // (las que no dice grid-template-columns: auto)
 			s->tw[i] = -1;
 		const css_computed_counter *ctr = NULL;
 		if (css_computed_counter_reset(cs, &ctr) == CSS_COUNTER_RESET_NAMED && ctr)
@@ -492,7 +492,7 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 				const char *nm = lwc_string_data(ctr->name);
 				if (nm[0] == 'g' && isdigit((unsigned char)nm[1])) {
 					int i = atoi(nm + 1) - 1;
-					if (i >= 0 && i < 16)
+					if (i >= 0 && i < 24)
 						s->tw[i] = (int16_t)FIXTOINT(ctr->value);
 				}
 			}
@@ -1452,7 +1452,7 @@ static void intr(Ctx *C, Box *b, float *mn, float *mx)
 				a += gap * (k - 1);
 		} else if (s->inner == I_GRID) {
 			int nt = s->ncols ? s->ncols : 1;
-			float cmn[16] = {0}, cmx[16] = {0}, gap = LV(s, LCGAP, 0);
+			float cmn[24] = {0}, cmx[24] = {0}, gap = LV(s, LCGAP, 0);
 			int col = 0;
 			for (Box *c = b->first; c; c = c->next) {
 				if (c->oof == O_ABS)
@@ -2556,37 +2556,72 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 		if (c->oof != O_ABS)
 			it[k].b = c, it[k].line = k, k++;
 	qsort(it, (size_t)n, sizeof *it, ord_cmp);
-	// colocación automática (por filas)
-	int r = 0, cc = 0, nrows = 0;
-	for (int i = 0; i < n; i++) {
-		Sty *is = it[i].b->s;
-		int sp = is->gall ? nt : is->gsp > 0 ? is->gsp : 1;
-		if (sp > nt)
-			sp = nt;
-		int st = is->gall ? 0 : is->gcs > 0 ? is->gcs - 1 : -1;
-		if (st >= nt)
-			st = nt - 1;
-		if (st >= 0 && st + sp > nt)
-			sp = nt - st;
-		if (is->gr > 0) { // fila pedida
-			r = is->gr - 1;
-			cc = st >= 0 ? st : 0;
-		} else if (st >= 0) {
-			if (st < cc)
-				r++;
-			cc = st;
-		} else if (cc + sp > nt)
-			r++, cc = 0;
-		col[i] = cc, row[i] = r, span[i] = sp;
-		cc += sp;
-		if (cc >= nt)
-			cc = 0, r++;
-		if (row[i] + 1 > nrows)
-			nrows = row[i] + 1;
+	// colocación (como en CSS): primero lo que pide fila; luego lo demás en orden, en el primer hueco libre
+	// (una tabla de celdas ocupadas), con lo que pide columna en esa columna
+	int maxgr = 0;
+	for (int i = 0; i < n; i++)
+		if (it[i].b->s->gr > maxgr)
+			maxgr = it[i].b->s->gr;
+	int mr = n + maxgr + 2, nrows = 0;
+	uint32_t *occ = calloc((size_t)mr, sizeof *occ); // (24 columnas: un bit cada una)
+	if (!occ) {
+		free(it), free(col), free(row), free(span);
+		return 0;
 	}
+#define G_FREE(r_, c_, s_) (!(occ[r_] & (((s_) >= 32 ? 0xFFFFFFFFu : ((1u << (s_)) - 1)) << (c_))))
+#define G_TAKE(r_, c_, s_) (occ[r_] |= ((s_) >= 32 ? 0xFFFFFFFFu : ((1u << (s_)) - 1)) << (c_))
+	for (int pass = 0; pass < 2; pass++) {
+		int r = 0, cc = 0;
+		for (int i = 0; i < n; i++) {
+			Sty *is = it[i].b->s;
+			if ((is->gr > 0) != (pass == 0))
+				continue;
+			int sp = is->gall ? nt : is->gsp > 0 ? is->gsp : 1;
+			if (sp > nt)
+				sp = nt;
+			int st = is->gall ? 0 : is->gcs > 0 ? is->gcs - 1 : -1;
+			if (st >= nt)
+				st = nt - 1;
+			if (st >= 0 && st + sp > nt)
+				sp = nt - st;
+			int rr, c0;
+			if (pass == 0) { // fila pedida: en su columna, o en la primera libre de esa fila
+				rr = is->gr - 1, c0 = st >= 0 ? st : 0;
+				if (st < 0)
+					while (c0 + sp < nt && !G_FREE(rr, c0, sp))
+						c0++;
+			} else if (st >= 0) { // columna pedida: la primera fila (desde donde va) en que cabe
+				if (cc > st)
+					r++;
+				while (r < mr - 1 && !G_FREE(r, st, sp))
+					r++;
+				rr = r, c0 = st;
+			} else { // donde sea: el primer hueco desde donde va
+				for (;;) {
+					if (cc + sp > nt)
+						r++, cc = 0;
+					if (r >= mr - 1 || G_FREE(r, cc, sp))
+						break;
+					cc++;
+				}
+				rr = r, c0 = cc;
+			}
+			if (rr > mr - 1)
+				rr = mr - 1;
+			G_TAKE(rr, c0, sp);
+			col[i] = c0, row[i] = rr, span[i] = sp;
+			if (pass == 1)
+				r = rr, cc = c0 + sp;
+			if (rr + 1 > nrows)
+				nrows = rr + 1;
+		}
+	}
+#undef G_FREE
+#undef G_TAKE
+	free(occ);
 	// anchos de las pistas
-	float tw[16], room = cw - cg * (nt - 1), fixed = 0, frs = 0, autos = 0;
-	float amx[16] = {0}, amn[16] = {0};
+	float tw[24], room = cw - cg * (nt - 1), fixed = 0, frs = 0, autos = 0;
+	float amx[24] = {0}, amn[24] = {0};
 	for (int i = 0; i < n; i++)
 		if (span[i] == 1) {
 			float a, z;
@@ -2646,7 +2681,7 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 	for (int i = 0; i < nt; i++) // una pista fr no baja de lo mínimo de lo que tiene
 		if (s->tw[i] < -1 && tw[i] < amn[i])
 			tw[i] = fminf(amn[i], cw);
-	float tx[17];
+	float tx[25];
 	tx[0] = 0;
 	for (int i = 0; i < nt; i++)
 		tx[i + 1] = tx[i] + tw[i] + cg;

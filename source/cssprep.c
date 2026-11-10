@@ -1119,8 +1119,8 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 		}
 		/* las pistas (con repeat() desplegado) y su ancho: px fijos, o el peso de fr en negativo
 		 * (-10 = 1fr); los nombres de línea ([content-start]…) se guardan para grid-column */
-		int wv[16], nt = 0;
-		for (const char *q = v; *q && nt < 16;) {
+		int wv[24], nt = 0;
+		for (const char *q = v; *q && nt < 24;) {
 			while (*q == ' ')
 				q++;
 			if (!*q)
@@ -1195,7 +1195,7 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 				w = -1; // auto, min-content…: a lo que pida su contenido (y si no hay fr, se estira)
 			if (w == 0)
 				w = -10;
-			for (int i = 0; i < reps && nt < 16; i++)
+			for (int i = 0; i < reps && nt < 24; i++)
 				wv[nt++] = w;
 		}
 		if (!nt)
@@ -1203,7 +1203,7 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 		char b2[24];
 		snprintf(b2, sizeof b2, "%d", nt);
 		decl_out(o, "column-count", b2);
-		char cr[256];
+		char cr[400];
 		size_t cl = 0;
 		for (int i = 0; i < nt && cl + 16 < sizeof cr; i++)
 			cl += (size_t)snprintf(cr + cl, sizeof cr - cl, "%sg%d %d", i ? " " : "", i + 1, wv[i]);
