@@ -2331,7 +2331,25 @@ static float flex(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			if (!AUT(is, LMAXW) && (!PCT(is, LMAXW) || cw > 0))
 				f->mx = LV(is, LMAXW, cw) + (is->bbox ? 0 : hx(is));
 		} else {
-			f->mn = !AUT(is, LMINH) && (!PCT(is, LMINH) || dh >= 0) ? LV(is, LMINH, dh) + (is->bbox ? 0 : vy(is)) : (is->ovy == CSS_OVERFLOW_VISIBLE || is->ovy == 0) && AUT(is, LBASIS) ? f->base : vy(is);
+			bool vis = is->ovy == CSS_OVERFLOW_VISIBLE || is->ovy == 0;
+			if (!AUT(is, LMINH) && (!PCT(is, LMINH) || dh >= 0))
+				f->mn = LV(is, LMINH, dh) + (is->bbox ? 0 : vy(is));
+			else if (vis && AUT(is, LBASIS))
+				f->mn = f->base;
+			else if (vis && c->kind != K_ATOM) { // (min-height: auto: no baja de su contenido, aunque pida otra base)
+				float wv = spec_w(is, cw, &has);
+				uint8_t al = is->as != CSS_ALIGN_SELF_AUTO && is->as ? is->as : s->ai;
+				if (!has)
+					wv = (al == CSS_ALIGN_ITEMS_STRETCH || al == 0) ? cw - f->cext : fit_w(C, c, cw - f->cext);
+				c->w = clamp_w(is, wv, cw);
+				layout_box(C, c, -1, NULL, 0, 0);
+				f->mn = c->h;
+				bool hh;
+				float sh = spec_h(is, dh, &hh); // (con alto pedido, no más que ese)
+				if (hh)
+					f->mn = fminf(f->mn, sh);
+			} else
+				f->mn = vy(is);
 			f->mx = !AUT(is, LMAXH) && (!PCT(is, LMAXH) || dh >= 0) ? LV(is, LMAXH, dh) + (is->bbox ? 0 : vy(is)) : INF;
 		}
 		if (f->mx < f->mn)
