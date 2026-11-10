@@ -3197,7 +3197,11 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 	if (y1 > C->bottom && y1 < 200000 && ay > -1000 && s->vis)
 		C->bottom = y1;
 	if (b->kind == K_ATOM) {
-		if (s->vis && ay < cl.y1 && y1 > cl.y0 && ax < cl.x1 && x1 > cl.x0) {
+		// (lo que una caja que recorta deja casi todo fuera, como las otras fotos de un carrusel, no se pinta:
+		// aquí no se recortan a medias)
+		float vw_ = fminf(x1, cl.x1) - fmaxf(ax, cl.x0), vh_ = fminf(y1, cl.y1) - fmaxf(ay, cl.y0);
+		bool most = b->w <= 0 || b->h <= 0 || cl.x1 - cl.x0 > 1e8f || (vw_ * vh_ >= 0.5f * b->w * b->h);
+		if (s->vis && most && ay < cl.y1 && y1 > cl.y0 && ax < cl.x1 && x1 > cl.x0) {
 			BrlText t = {s->fpx, s->col, s->link, s->clk, s->bold, 0, s->fit, s->node};
 			C->L->box(C->L->u, ax + s->bw[3] + s->up[3], ay + s->bw[0] + s->up[0], b->w - hx(s), b->h - vy(s), s->img, s->wdg, &t);
 		}
