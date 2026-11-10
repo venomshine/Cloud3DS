@@ -309,8 +309,9 @@ static void trim(const char **s, const char **e)
 static bool has_ci(const char *s, size_t n, const char *needle)
 {
 	size_t l = strlen(needle);
-	for (size_t i = 0; i + l <= n; i++)
-		if (!strncasecmp(s + i, needle, l))
+	int c0 = tolower((unsigned char)needle[0]);
+	for (size_t i = 0; i + l <= n; i++) // (la primera letra antes: se llama muchísimo)
+		if (tolower((unsigned char)s[i]) == c0 && !strncasecmp(s + i, needle, l))
 			return true;
 	return false;
 }
@@ -849,10 +850,17 @@ static bool simple_color(const char *q, const char *e, float c[4])
 static void funcs(const char *v, size_t vn, Out *o)
 {
 	const char *s = v, *e = v + vn;
+	if (!memchr(v, '(', vn)) { // sin funciones: tal cual
+		put(o, v, vn);
+		return;
+	}
 	while (s < e) {
 		const char *f = NULL;
 		int kind = 0;
 		for (const char *q = s; q < e; q++) {
+			int c0 = tolower((unsigned char)*q);
+			if (c0 != 'c' && c0 != 'm' && c0 != 'l')
+				continue;
 			if (q > v && (isalnum((unsigned char)q[-1]) || q[-1] == '-'))
 				continue;
 			if (!strncasecmp(q, "clamp(", 6))
@@ -1007,10 +1015,16 @@ static void funcs(const char *v, size_t vn, Out *o)
 static void colors(const char *v, size_t vn, Out *o)
 {
 	const char *s = v, *e = v + vn;
+	if (!memchr(v, '(', vn)) {
+		put(o, v, vn);
+		return;
+	}
 	while (s < e) {
 		const char *f = NULL;
 		for (const char *q = s; q + 4 < e; q++)
-			if ((!strncasecmp(q, "rgb(", 4) || !strncasecmp(q, "hsl(", 4) || !strncasecmp(q, "rgba(", 5) || !strncasecmp(q, "hsla(", 5)) &&
+			if ((*q | 32) != 'r' && (*q | 32) != 'h')
+				continue;
+			else if ((!strncasecmp(q, "rgb(", 4) || !strncasecmp(q, "hsl(", 4) || !strncasecmp(q, "rgba(", 5) || !strncasecmp(q, "hsla(", 5)) &&
 			    (q == v || !isalnum((unsigned char)q[-1]))) {
 				f = q;
 				break;
@@ -2134,9 +2148,16 @@ static bool sel_unsupported(const char *s, size_t n)
 	                                  "::marker", "::file-selector-button", ":popover-open", ":modal", ":state(", ":dir(",
 	                                  ":user-invalid", ":user-valid", ":autofill", ":defined", ":open", ":closed", "&", ":nth-child(odd of",
 	                                  "::view-transition", ":lang(", NULL};
-	for (int i = 0; BAD[i]; i++)
-		if (has_ci(s, n, BAD[i]))
-			return true;
+	// todas empiezan por «:» o «&»: solo se mira desde esos sitios (era lo más lento de reescribir)
+	for (size_t k = 0; k < n; k++) {
+		if (s[k] != ':' && s[k] != '&')
+			continue;
+		for (int i = 0; BAD[i]; i++) {
+			size_t l = strlen(BAD[i]);
+			if (k + l <= n && !strncasecmp(s + k, BAD[i], l))
+				return true;
+		}
+	}
 	return false;
 }
 
@@ -2149,7 +2170,7 @@ static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget
 	const char *f = NULL;
 	size_t fl = 0;
 	for (size_t i = 0; i < n && !f; i++)
-		for (int k = 0; FN[k]; k++) {
+		for (int k = 0; FN[k] && s[i] == ':'; k++) {
 			size_t l = strlen(FN[k]);
 			if (i + l <= n && !strncasecmp(s + i, FN[k], l)) {
 				f = s + i, fl = l;
@@ -2162,7 +2183,7 @@ static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget
 		// :not(.x a), con combinadores dentro (libcss no lo sabe y tira la regla): fuera ese :not (casi
 		// siempre es «menos dentro de tal sitio», que es lo raro)
 		for (size_t i = 0; i + 5 <= n; i++) {
-			if (strncasecmp(s + i, ":not(", 5))
+			if (s[i] != ':' || strncasecmp(s + i, ":not(", 5))
 				continue;
 			const char *a = s + i + 5, *cl = a;
 			int d = 1, br = 0;
@@ -2201,7 +2222,7 @@ static void sel_expand(const char *s, size_t n, Out *o, bool *first, int *budget
 		// :not(a, b) → :not(a):not(b)
 		const char *nt = NULL;
 		for (size_t i = 0; i + 5 <= n; i++)
-			if (!strncasecmp(s + i, ":not(", 5)) {
+			if (s[i] == ':' && !strncasecmp(s + i, ":not(", 5)) {
 				nt = s + i;
 				break;
 			}

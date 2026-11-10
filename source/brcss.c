@@ -101,11 +101,29 @@ static dom_node *next_elem(dom_node *n)
 // el valor de un atributo (dom_string con referencia, o NULL)
 static dom_string *get_attr(dom_node *n, lwc_string *name)
 {
+	// el nombre como dom_string, guardado (se pregunta por los mismos una y otra vez: id, class…)
+	static struct {
+		lwc_string *l;
+		dom_string *d;
+	} C[32];
+	static int nc;
 	dom_string *k = NULL, *v = NULL;
-	if (dom_string_create((const uint8_t *)lwc_string_data(name), lwc_string_length(name), &k) != DOM_NO_ERR)
-		return NULL;
+	for (int i = 0; i < nc && !k; i++)
+		if (C[i].l == name)
+			k = C[i].d;
+	if (!k) {
+		if (dom_string_create((const uint8_t *)lwc_string_data(name), lwc_string_length(name), &k) != DOM_NO_ERR)
+			return NULL;
+		if (nc < 32) {
+			C[nc].l = lwc_string_ref(name), C[nc].d = k;
+			nc++;
+		} else {
+			dom_element_get_attribute((dom_element *)n, k, &v);
+			dom_string_unref(k);
+			return v;
+		}
+	}
 	dom_element_get_attribute((dom_element *)n, k, &v);
-	dom_string_unref(k);
 	return v;
 }
 
@@ -355,12 +373,30 @@ static css_error node_is_lang(void *pw, void *n, lwc_string *lang, bool *m)
  * como en un navegador, con la prioridad más baja del autor (cualquier regla CSS de la página manda) */
 static bool hattr(dom_node *n, const char *name, char *out, size_t on)
 {
+	static struct {
+		const char *n;
+		dom_string *d;
+	} C[24];
+	static int nc;
 	dom_string *k = NULL, *v = NULL;
 	out[0] = 0;
-	if (dom_string_create((const uint8_t *)name, strlen(name), &k) != DOM_NO_ERR)
-		return false;
+	for (int i = 0; i < nc && !k; i++) // (los nombres son literales: se guardan por su dirección)
+		if (C[i].n == name)
+			k = C[i].d;
+	if (!k) {
+		if (dom_string_create((const uint8_t *)name, strlen(name), &k) != DOM_NO_ERR)
+			return false;
+		if (nc < 24)
+			C[nc].n = name, C[nc].d = k, nc++;
+	}
 	dom_element_get_attribute((dom_element *)n, k, &v);
-	dom_string_unref(k);
+	if (nc >= 24 && C[23].d != k) {
+		bool cached = false;
+		for (int i = 0; i < nc; i++)
+			cached = cached || C[i].d == k;
+		if (!cached)
+			dom_string_unref(k);
+	}
 	if (!v)
 		return false;
 	size_t l = dom_string_byte_length(v);
