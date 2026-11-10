@@ -1907,6 +1907,31 @@ static void grid_start_end(const char *s, const char *e, Out *o)
 }
 
 
+// «unset»: lo heredado se hereda y lo demás vuelve a su valor inicial (las abreviadas, por partes)
+static void unset_emit(Out *o, const char *name)
+{
+	static const char *const INH[] = {"color", "font-size", "font-weight", "font-family", "font-style", "font-variant", "line-height",
+	                                  "letter-spacing", "word-spacing", "text-align", "text-indent", "text-transform", "white-space",
+	                                  "visibility", "list-style-type", "cursor", "direction", NULL};
+	static const char *const INI[] = {"background-color", "border-color", "border-top-color", "border-right-color", "border-bottom-color",
+	                                  "border-left-color", "outline-color", "width", "height", "min-width", "min-height", "max-width",
+	                                  "max-height", "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top",
+	                                  "padding-right", "padding-bottom", "padding-left", "top", "right", "bottom", "left", "opacity",
+	                                  "flex-basis", "flex-grow", "flex-shrink", "background-image", NULL};
+	for (int i = 0; INH[i]; i++)
+		if (!strcmp(name, INH[i])) {
+			decl_out(o, name, "inherit");
+			return;
+		}
+	for (int i = 0; INI[i]; i++)
+		if (!strcmp(name, INI[i])) {
+			decl_out(o, name, "initial");
+			return;
+		}
+	if (!strcmp(name, "background"))
+		decl_out(o, "background-color", "transparent"), decl_out(o, "background-image", "none");
+}
+
 /* con temas por ámbitos: color y background-color llevan al lado (en orphans y widows) qué variable los da,
  * para tomar luego la del tema; 0 si no salen de una */
 static void var_tag(CssPrep *p, Out *o, const char *name, const char *v0, const char *v1)
@@ -2029,8 +2054,11 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 				}
 				if (p->nact && (!strcmp(name, "color") || !strcmp(name, "background-color") || !strcmp(name, "background")))
 					var_tag(p, o, name, v0, v1);
-				if (has_ci(v0, (size_t)(v1 - v0), "var("))
+				if (has_ci(v0, (size_t)(v1 - v0), "var(")) {
 					ok = subst(p, local, v0, (size_t)(v1 - v0), &a, 0);
+					if (!ok) // una variable sin definir (y sin respaldo): la propiedad vale «unset», como en CSS
+						unset_emit(o, name);
+				}
 				else
 					put(&a, v0, (size_t)(v1 - v0));
 				if (ok && !a.bad && a.n) {
