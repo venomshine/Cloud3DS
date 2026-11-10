@@ -794,6 +794,7 @@ static void load_thread_run(void *arg)
 	(void)arg;
 	browser_thread_net();
 	Buf b = {0};
+	char hcs[40] = "";
 	if (!strncasecmp(B.url, "sdmc:", 5) || B.url[0] == '/') {
 		char sp[1100];
 		snprintf(sp, sizeof sp, "%s%s", B.url[0] == '/' ? "sdmc:" : "", B.url);
@@ -823,6 +824,15 @@ static void load_thread_run(void *arg)
 		}
 		if (dl_last_url()[0] && strcmp(dl_last_url(), B.url)) // tras redirigir: los enlaces son relativos a la final
 			util_strlcpy(B.url, dl_last_url(), sizeof B.url);
+		// el juego de caracteres de la cabecera (manda sobre el <meta> de la página, como en HTML)
+		const char *cs = dl_last_ctype();
+		while (*cs && strncasecmp(cs, "charset=", 8))
+			cs++;
+		if (*cs) {
+			cs += 8;
+			cs += *cs == '"' || *cs == '\'';
+			snprintf(hcs, sizeof hcs, "%.*s", (int)strcspn(cs, "\"'; "), cs);
+		}
 	}
 	if (B.abort) { // se dejó mientras se bajaba
 		free(b.p);
@@ -856,8 +866,12 @@ static void load_thread_run(void *arg)
 					}
 	}
 	// muchas páginas (Wikipedia) dicen «UTF-8» demasiado abajo para que hubbub lo vea: si el texto es
-	// UTF-8 válido, se le dice; si no, que lo detecte él
-	dom_hubbub_parser_params params = {.enc = utf8_ok(b.p, b.n) ? "UTF-8" : NULL, .fix_enc = true, .enable_script = false};
+	// UTF-8 válido, se le dice; si no, el de la cabecera HTTP (RTVE: ISO-8859-1, aunque su <meta> diga
+	// UTF-8), y si tampoco, que lo detecte él. (latin1 e ISO-8859-1 son windows-1252, como en HTML)
+	const char *enc = utf8_ok(b.p, b.n) ? "UTF-8" : NULL;
+	if (!enc && hcs[0] && strcasecmp(hcs, "utf-8") && strcasecmp(hcs, "utf8"))
+		enc = !strcasecmp(hcs, "iso-8859-1") || !strcasecmp(hcs, "latin1") || !strcasecmp(hcs, "iso8859-1") || !strcasecmp(hcs, "us-ascii") ? "windows-1252" : hcs;
+	dom_hubbub_parser_params params = {.enc = enc, .fix_enc = true, .enable_script = false};
 	dom_hubbub_parser *parser = NULL;
 	dom_document *doc = NULL;
 	if (dom_hubbub_parser_create(&params, &parser, &doc) != DOM_HUBBUB_OK || !parser) {

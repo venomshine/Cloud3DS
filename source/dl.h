@@ -62,6 +62,8 @@ void dl_set_thread_ua(const char *ua);
 /* para el hilo que llama: de dónde sacar las cookies que mandar y dónde guardar las que lleguen (NULL, ninguna) */
 void dl_set_thread_cookies(size_t (*get)(const char *url, char *out, size_t n), void (*set)(const char *url, const char *set_cookie));
 const char *dl_last_url(void);
+/* el Content-Type de la última respuesta (de este hilo), con su charset si lo dice; "" si no */
+const char *dl_last_ctype(void);
 /* lo mismo con libcurl (TLS moderno): para webs que no aceptan a httpc */
 int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code);
 int dl_fetch(const char *url, const char *accept, size_t (*wr)(char *, size_t, size_t, void *), void (*tot)(void *, u64), void *u, long *code);

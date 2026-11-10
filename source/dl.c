@@ -33,6 +33,7 @@
  * acabó la petición tras las redirecciones: por hilo, para no mezclarse con las descargas */
 static __thread const char *t_ua;
 static __thread char t_final[1024];
+static __thread char t_ctype[128]; /* el Content-Type de la última respuesta (con su charset) */
 
 void dl_set_thread_ua(const char *ua)
 {
@@ -51,6 +52,10 @@ void dl_set_thread_cookies(size_t (*get)(const char *, char *, size_t), void (*s
 const char *dl_last_url(void)
 {
 	return t_final;
+}
+const char *dl_last_ctype(void)
+{
+	return t_ctype;
 }
 #define HC_ROOTS "romfs:/certs/httpc_roots.bin"
 #define HC_BUF (256 * 1024)
@@ -425,6 +430,8 @@ int dl_fetch(const char *url0, const char *accept, size_t (*wr)(char *, size_t, 
 	if (e != HC_OK)
 		return e == HC_NOCONN ? DLF_NOCONN : DLF_FAIL;
 	util_strlcpy(t_final, url, sizeof t_final);
+	t_ctype[0] = 0;
+	httpcGetResponseHeader(&ctx, "Content-Type", t_ctype, sizeof t_ctype);
 	*code_out = code;
 	if (code >= 400) {
 		httpcCloseContext(&ctx);
@@ -801,6 +808,9 @@ int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size
 	curl_easy_getinfo(c, CURLINFO_EFFECTIVE_URL, &eff);
 	if (eff)
 		util_strlcpy(t_final, eff, sizeof t_final);
+	char *ct = NULL;
+	curl_easy_getinfo(c, CURLINFO_CONTENT_TYPE, &ct);
+	util_strlcpy(t_ctype, ct ? ct : "", sizeof t_ctype);
 	curl_easy_cleanup(c);
 	curl_slist_free_all(h);
 	util_log("dl: curl %.80s -> %d, HTTP %ld %s", url, (int)r, code, eb);
