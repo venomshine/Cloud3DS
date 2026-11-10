@@ -168,6 +168,7 @@ struct CssPrep {
 };
 
 static float G_W = 1024; /* el ancho de la página (para vw) */
+static float G_PW = 1024; /* el ancho de la página: un calc(% ± px) se aproxima con él */
 static bool G_KEEP_CALC; /* width: calc(… % …) lo resuelve libcss (sabe el ancho de verdad) */
 
 CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs)
@@ -176,6 +177,8 @@ CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs
 	if (!p)
 		return NULL;
 	p->w = width;
+	if (width > 0)
+		G_PW = width;
 	G_W = width;
 	p->html = strdup(html_attrs ? html_attrs : "");
 	p->body = strdup(body_attrs ? body_attrs : "");
@@ -905,8 +908,8 @@ static void funcs(const char *v, size_t vn, Out *o)
 			CV r;
 			char b[32];
 			if (cv_expr(&q, qe, &r) && (cv_ws(&q, qe), q == qe)) {
-				if (r.pc != 0)
-					snprintf(b, sizeof b, "%.3g%%", r.pc);
+				if (r.pc != 0) // («100% - 32px»: el % que es con lo de dentro del ancho de la página, no solo el 100%)
+					snprintf(b, sizeof b, "%.5g%%", r.pc + (r.px && G_PW > 0 ? r.px * 100 / G_PW : 0));
 				else if (r.num)
 					snprintf(b, sizeof b, "%.4g", r.px);
 				else
