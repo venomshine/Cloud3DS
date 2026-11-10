@@ -668,6 +668,33 @@ static void fixup(Ctx *C, Box *b)
 		(void)prev;
 		b->first = head, b->last = tail;
 		s->ifc = 0;
+		if (s->inner == I_TABLE || s->inner == I_ROWG) { // celdas sueltas (display: table-cell): en una fila anónima
+			Box **pp = &b->first;
+			b->last = NULL;
+			while (*pp) {
+				Box *c0 = *pp;
+				if (c0->s->inner != I_CELL || c0->oof) {
+					b->last = c0;
+					pp = &c0->next;
+					continue;
+				}
+				Box *c1 = c0;
+				while (c1->next && c1->next->s->inner == I_CELL && !c1->next->oof)
+					c1 = c1->next;
+				Box *after = c1->next;
+				c1->next = NULL;
+				Box *r = anon_wrap(C, b, c0, c1);
+				if (!r) {
+					c1->next = after;
+					break;
+				}
+				r->s->inner = I_ROW, r->s->ifc = 0;
+				r->next = after;
+				*pp = r;
+				b->last = r;
+				pp = &r->next;
+			}
+		}
 		return;
 	}
 	if (!any_blk && any_inl) { // todo en línea
