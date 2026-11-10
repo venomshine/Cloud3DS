@@ -2507,6 +2507,14 @@ static float flex(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			case CSS_JUSTIFY_CONTENT_SPACE_EVENLY: between = free_m / (cnt + 1), start = between; break;
 			default: break;
 			}
+		} else if (free_m < -0.5f && !s->fwrap && row) { // no cabe: centrado o al final, desborda por los dos lados o por el principio (como en CSS)
+			switch (s->jc) {
+			case CSS_JUSTIFY_CONTENT_FLEX_END: start = free_m; break;
+			case CSS_JUSTIFY_CONTENT_CENTER:
+			case CSS_JUSTIFY_CONTENT_SPACE_AROUND:
+			case CSS_JUSTIFY_CONTENT_SPACE_EVENLY: start = free_m / 2; break;
+			default: break;
+			}
 		}
 		float pos = start;
 		for (int i = a; i < e; i++) {
