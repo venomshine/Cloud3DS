@@ -624,10 +624,12 @@ static void fixup(Ctx *C, Box *b)
 		while (c) {
 			Box *nx = c->next;
 			c->next = NULL;
-			if (c->kind == K_TEXT || c->kind == K_INLINE || c->kind == K_BR || (c->kind == K_ATOM && !items && !c->oof)) {
+			// (en flex y rejilla, un elemento en línea es un elemento más, como en CSS: solo el texto suelto
+			// va en una caja anónima)
+			if (c->kind == K_TEXT || c->kind == K_BR || (!items && (c->kind == K_INLINE || (c->kind == K_ATOM && !c->oof)))) {
 				// junta los seguidos en línea
 				Box *run0 = c, *run1 = c;
-				while (nx && !nx->oof && (nx->kind == K_TEXT || nx->kind == K_INLINE || nx->kind == K_BR || (nx->kind == K_ATOM && !items))) {
+				while (nx && !nx->oof && (nx->kind == K_TEXT || nx->kind == K_BR || (!items && (nx->kind == K_INLINE || nx->kind == K_ATOM)))) {
 					run1->next = nx;
 					run1 = nx;
 					nx = nx->next;
