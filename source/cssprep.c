@@ -151,6 +151,8 @@ struct CssPrep {
 		char *key;  /* el último selector simple compuesto de la regla («.prc-PageLayout-Content») */
 		char *dec;  /* «padding:var(--spacing);» */
 		char *loc;  /* las variables que pone la propia regla («--spacing:var(--x);») */
+		char *uses; /* las variables que usan sus declaraciones («--a\n--b\n») */
+		char *glob; /* lo que dan con los valores de toda la página (al usarla) */
 	} *tpl;
 	int ntpl, ctpl;
 	Map tix;      /* las plantillas por la primera clase de su selector: «clase» -> «3,17,…» */
@@ -198,7 +200,7 @@ void cssprep_free(CssPrep *p)
 	map_free(&p->tix);
 	free(p->tother);
 	for (int i = 0; i < p->ntpl; i++)
-		free(p->tpl[i].key), free(p->tpl[i].dec), free(p->tpl[i].loc);
+		free(p->tpl[i].key), free(p->tpl[i].dec), free(p->tpl[i].loc), free(p->tpl[i].uses), free(p->tpl[i].glob);
 	free(p->tpl);
 	for (int i = 0; i < p->nvid; i++)
 		free(p->vname[i]);
@@ -2768,6 +2770,22 @@ static void tpl_add(CssPrep *p, const char *s0, const char *s1, const char *b0, 
 			T->key = strndup(last, (size_t)(y - last));
 			T->dec = strdup(dec.p ? dec.p : "");
 			T->loc = loc.p ? strdup(loc.p) : NULL;
+			T->glob = NULL;
+			{ // las variables que usa
+				Out u = {0};
+				const char *d = T->dec ? T->dec : "";
+				for (const char *q2 = d; (q2 = strstr(q2, "var(")); q2 += 4) {
+					const char *a2 = q2 + 4;
+					while (*a2 == ' ')
+						a2++;
+					const char *b2 = a2;
+					while (*b2 && *b2 != ',' && *b2 != ')' && *b2 != ' ')
+						b2++;
+					put(&u, a2, (size_t)(b2 - a2));
+					put(&u, "\n", 1);
+				}
+				T->uses = u.p;
+			}
 			if (!T->key || !T->dec) {
 				free(T->key), free(T->dec), free(T->loc);
 				break;
@@ -2816,6 +2834,20 @@ static void tix_build(CssPrep *p)
 			memcpy(v + ol, num, nl + 1);
 			map_set(&p->tix, t + 1, (size_t)(z - t - 1), v, ol + nl);
 			free(v);
+		} else if (*t == '[' || *t == '#') { // por el nombre del atributo («[data-x]» -> «[data-x») o el id («#id»)
+			const char *z = t + 1;
+			while (*z && (isalnum((unsigned char)*z) || *z == '-' || *z == '_' || *z == ':'))
+				z++;
+			const char *old = map_get(&p->tix, t, (size_t)(z - t));
+			size_t ol = old ? strlen(old) : 0, nl = strlen(num);
+			char *v = malloc(ol + nl + 1);
+			if (!v)
+				continue;
+			if (ol)
+				memcpy(v, old, ol);
+			memcpy(v + ol, num, nl + 1);
+			map_set(&p->tix, t, (size_t)(z - t), v, ol + nl);
+			free(v);
 		} else
 			puts_(&oth, num);
 	}
@@ -2847,6 +2879,25 @@ char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const ch
 		for (; l && *l && nc < 500; l = strchr(l, ',') + 1)
 			cand[nc++] = atoi(l);
 		c = z;
+	}
+	for (const char *a = attrs; *a && nc < 500;) { // sus atributos («[nombre») y su id («#id»)
+		const char *eq = strchr(a, '='), *nl2 = strchr(a, '\n');
+		if (!nl2)
+			nl2 = a + strlen(a);
+		if (eq && eq < nl2) {
+			char key[64];
+			int kl = snprintf(key, sizeof key, "[%.*s", (int)(eq - a), a);
+			const char *l = kl > 0 && kl < (int)sizeof key ? map_get(&p->tix, key, (size_t)kl) : NULL;
+			for (; l && *l && nc < 500; l = strchr(l, ',') + 1)
+				cand[nc++] = atoi(l);
+			if (eq - a == 2 && !strncasecmp(a, "id", 2)) {
+				kl = snprintf(key, sizeof key, "#%.*s", (int)(nl2 - eq - 1), eq + 1);
+				l = kl > 0 && kl < (int)sizeof key ? map_get(&p->tix, key, (size_t)kl) : NULL;
+				for (; l && *l && nc < 500; l = strchr(l, ',') + 1)
+					cand[nc++] = atoi(l);
+			}
+		}
+		a = *nl2 ? nl2 + 1 : nl2;
 	}
 	for (const char *l = p->tother; l && *l && nc < 510; l = strchr(l, ',') + 1)
 		cand[nc++] = atoi(l);
@@ -2880,19 +2931,35 @@ char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const ch
 		puts_(&env, own);
 		more = true;
 	}
-	if (env.p && *env.p) {
+	bool anydec = false;
+	for (int j = 0; j < nc && !anydec; j++)
+		anydec = hit[j] && p->tpl[cand[j]].dec[0] && p->tpl[cand[j]].uses;
+	if (anydec && env.p && *env.p) {
 		Map m = {0};
 		env_parse(&m, env.p);
 		for (int j = 0; j < nc; j++)
 			if (hit[j] && p->tpl[cand[j]].dec[0]) {
-				const struct Tpl *T = &p->tpl[cand[j]];
+				struct Tpl *T = &p->tpl[cand[j]];
+				// ¿usa alguna de las variables de aquí? (si no, sale lo de siempre)
+				bool uses = false;
+				for (const char *u = T->uses; u && *u && !uses;) {
+					const char *ue = strchr(u, '\n');
+					uses = map_get(&m, u, (size_t)(ue - u)) != NULL;
+					u = ue + 1;
+				}
+				if (!uses)
+					continue;
 				// solo si aquí sale distinto que con los valores de toda la página (si no, ya vale la regla
 				// de siempre, con su cascada y lo de sus antepasados)
-				Out ge = {0}, gg = {0};
+				if (!T->glob) {
+					Out gg = {0};
+					decls_out(p, T->dec, T->dec + strlen(T->dec), NULL, &gg);
+					T->glob = gg.p ? gg.p : strdup("");
+				}
+				Out ge = {0};
 				decls_out(p, T->dec, T->dec + strlen(T->dec), &m, &ge);
-				decls_out(p, T->dec, T->dec + strlen(T->dec), NULL, &gg);
-				bool same = (!ge.p && !gg.p) || (ge.p && gg.p && !strcmp(ge.p, gg.p));
-				free(ge.p), free(gg.p);
+				bool same = (!ge.p && !*T->glob) || (ge.p && !strcmp(ge.p, T->glob));
+				free(ge.p);
 				if (same)
 					continue;
 #ifdef BRL_DEBUG
