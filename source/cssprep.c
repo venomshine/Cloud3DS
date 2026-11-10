@@ -2789,7 +2789,19 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 			} else if (IS("supports")) {
 				// lo que se pide con «not» suele ser lo de respaldo para navegadores viejos, y lo demás,
 				// mejoras: se aplican las mejoras (sin selector(), que es para :has() y parecidos)
-				if (strncasecmp(pre, "not", 3) && !has_ci(pre, pl, "selector("))
+				bool ok = strncasecmp(pre, "not", 3) != 0;
+				// selector(X): vale si X es un selector que sabemos tratar (:target sí; :has() no)
+				for (const char *q = pre; ok && *q; q++) {
+					if (strncasecmp(q, "selector(", 9))
+						continue;
+					const char *a = q + 9, *z = a;
+					int d = 1;
+					for (; *z && d; z++)
+						d += *z == '(' ? 1 : *z == ')' ? -1 : 0;
+					ok = !sel_unsupported(a, (size_t)(z - a));
+					q = z - 1;
+				}
+				if (ok)
 					rules(p, b0, b1, o);
 			} else if (IS("layer") || IS("scope") || IS("starting-style")) {
 				if (!IS("starting-style"))
