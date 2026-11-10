@@ -1264,6 +1264,30 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 		}
 		return true;
 	}
+	if (!strcmp(name, "grid-row")) {
+		// «N», «N / M», «N / span K»: la fila y cuántas, a la maqueta en column-rule-color (que nada usa):
+		// rgba(103, fila, cuántas, 254/255), el alfa de marca
+		int start = 0, span = 1;
+		if (isdigit((unsigned char)val[0])) {
+			start = atoi(val);
+			const char *sl = strchr(val, '/');
+			if (sl) {
+				const char *b = sl + 1;
+				while (*b == ' ')
+					b++;
+				if (!strncmp(b, "span", 4))
+					span = atoi(b + 4);
+				else if (atoi(b) > start)
+					span = atoi(b) - start;
+			}
+		}
+		if (start > 0 && start < 256 && span > 0 && span < 256) {
+			char b[48];
+			snprintf(b, sizeof b, "rgba(103,%d,%d,0.996)", start, span);
+			decl_out(o, "column-rule-color", b);
+		}
+		return true;
+	}
 	if (!strcmp(name, "grid-column") && isalpha((unsigned char)val[0]) && strncmp(val, "span", 4)) {
 		// con nombres de línea: «content», «content-start / content-end», «full»
 		char a1[64], a2[64] = "";

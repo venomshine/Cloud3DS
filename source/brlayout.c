@@ -522,6 +522,9 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 			else if (!strcmp(nm, "c3y") || !strcmp(nm, "c3yp"))
 				s->ty = val / 10.0f, s->typ = nm[3] == 'p';
 		}
+	css_color grc; // grid-row (de cssprep: rgba(103, fila, cuántas, 254))
+	if (css_computed_column_rule_color(cs, &grc) == CSS_COLUMN_RULE_COLOR_COLOR && (grc >> 24) == 254 && ((grc >> 16) & 255) == 103)
+		s->gr = (int16_t)((grc >> 8) & 255), s->grs = (int16_t)(grc & 255);
 	s->gall = css_computed_column_span(cs) == CSS_COLUMN_SPAN_ALL;
 	// lo que cssprep pasa en propiedades que libcss sí guarda: aspect-ratio, object-fit, border-radius
 	if (css_computed_column_width(cs, &v, &u) == CSS_COLUMN_WIDTH_SET) {
@@ -2531,6 +2534,15 @@ static float flex(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 }
 
 /* --- rejilla (las pistas y posiciones vienen de cssprep) */
+// ¿libres las columnas de m en las filas r…r+rs-1?
+static bool g_free(const uint32_t *occ, int mr, int r, int rs, uint32_t m)
+{
+	for (int q = 0; q < rs && r + q < mr; q++)
+		if (occ[r + q] & m)
+			return false;
+	return true;
+}
+
 static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 {
 	Sty *s = b->s;
@@ -2558,24 +2570,35 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 	qsort(it, (size_t)n, sizeof *it, ord_cmp);
 	// colocación (como en CSS): primero lo que pide fila; luego lo demás en orden, en el primer hueco libre
 	// (una tabla de celdas ocupadas), con lo que pide columna en esa columna
-	int maxgr = 0;
-	for (int i = 0; i < n; i++)
+	int maxgr = 0, maxrs = 1;
+	for (int i = 0; i < n; i++) {
 		if (it[i].b->s->gr > maxgr)
 			maxgr = it[i].b->s->gr;
-	int mr = n + maxgr + 2, nrows = 0;
-	uint32_t *occ = calloc((size_t)mr, sizeof *occ); // (24 columnas: un bit cada una)
-	if (!occ) {
+		if (it[i].b->s->grs > maxrs)
+			maxrs = it[i].b->s->grs;
+	}
+	int mr = n * maxrs + maxgr + maxrs + 2, nrows = 0;
+	int *rsp = malloc(sizeof(int) * (size_t)n); // cuántas filas ocupa cada uno
+	if (!rsp) {
 		free(it), free(col), free(row), free(span);
 		return 0;
 	}
-#define G_FREE(r_, c_, s_) (!(occ[r_] & (((s_) >= 32 ? 0xFFFFFFFFu : ((1u << (s_)) - 1)) << (c_))))
-#define G_TAKE(r_, c_, s_) (occ[r_] |= ((s_) >= 32 ? 0xFFFFFFFFu : ((1u << (s_)) - 1)) << (c_))
+	uint32_t *occ = calloc((size_t)mr, sizeof *occ); // (24 columnas: un bit cada una)
+	if (!occ) {
+		free(it), free(col), free(row), free(span), free(rsp);
+		return 0;
+	}
+#define G_MASK(c_, s_) (((s_) >= 32 ? 0xFFFFFFFFu : ((1u << (s_)) - 1)) << (c_))
+	int rs = 1;
+#define G_FREE(r_, c_, s_) g_free(occ, mr, r_, rs, G_MASK(c_, s_))
+#define G_TAKE(r_, c_, s_) do { for (int q_ = 0; q_ < rs && (r_) + q_ < mr; q_++) occ[(r_) + q_] |= G_MASK(c_, s_); } while (0)
 	for (int pass = 0; pass < 2; pass++) {
 		int r = 0, cc = 0;
 		for (int i = 0; i < n; i++) {
 			Sty *is = it[i].b->s;
 			if ((is->gr > 0) != (pass == 0))
 				continue;
+			rs = is->grs > 1 ? is->grs : 1;
 			int sp = is->gall ? nt : is->gsp > 0 ? is->gsp : 1;
 			if (sp > nt)
 				sp = nt;
@@ -2609,15 +2632,16 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			if (rr > mr - 1)
 				rr = mr - 1;
 			G_TAKE(rr, c0, sp);
-			col[i] = c0, row[i] = rr, span[i] = sp;
+			col[i] = c0, row[i] = rr, span[i] = sp, rsp[i] = rs;
 			if (pass == 1)
 				r = rr, cc = c0 + sp;
-			if (rr + 1 > nrows)
-				nrows = rr + 1;
+			if (rr + rs > nrows)
+				nrows = rr + rs;
 		}
 	}
 #undef G_FREE
 #undef G_TAKE
+#undef G_MASK
 	free(occ);
 	// anchos de las pistas
 	float tw[24], room = cw - cg * (nt - 1), fixed = 0, frs = 0, autos = 0;
@@ -2688,7 +2712,7 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 	// filas
 	float *rh = calloc((size_t)nrows + 1, sizeof(float));
 	if (!rh) {
-		free(it), free(col), free(row), free(span);
+		free(it), free(col), free(row), free(span), free(rsp);
 		return 0;
 	}
 	for (int i = 0; i < n; i++) {
@@ -2711,11 +2735,21 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			is->um[3] += rest2 / 2;
 		else if (rest2 > 0 && AUT(is, LML))
 			is->um[3] += rest2;
-		rh[row[i]] = fmaxf(rh[row[i]], c->h + is->um[0] + is->um[2]);
+		if (rsp[i] == 1)
+			rh[row[i]] = fmaxf(rh[row[i]], c->h + is->um[0] + is->um[2]);
 	}
+	for (int i = 0; i < n; i++) // los de varias filas: lo que les falte, a la última de las suyas
+		if (rsp[i] > 1) {
+			Box *c = it[i].b;
+			float need = c->h + c->s->um[0] + c->s->um[2], have = rg * (rsp[i] - 1);
+			for (int q = 0; q < rsp[i] && row[i] + q < nrows; q++)
+				have += rh[row[i] + q];
+			if (need > have)
+				rh[row[i] + rsp[i] - 1 < nrows ? row[i] + rsp[i] - 1 : nrows - 1] += need - have;
+		}
 	float *ry = calloc((size_t)nrows + 1, sizeof(float));
 	if (!ry) {
-		free(rh), free(it), free(col), free(row), free(span);
+		free(rh), free(it), free(col), free(row), free(span), free(rsp);
 		return 0;
 	}
 	float y = 0;
@@ -2727,7 +2761,9 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 		Box *c = it[i].b;
 		Sty *is = c->s;
 		uint8_t al = is->as != CSS_ALIGN_SELF_AUTO && is->as ? is->as : s->ai;
-		float h = rh[row[i]], off = 0;
+		float h = rg * (rsp[i] - 1), off = 0;
+		for (int q = 0; q < rsp[i] && row[i] + q < nrows; q++)
+			h += rh[row[i] + q];
 		if ((al == CSS_ALIGN_ITEMS_STRETCH || al == 0) && AUT(is, LH) && c->kind != K_ATOM) {
 			float nh = h - is->um[0] - is->um[2];
 			if (nh > c->h)
@@ -2739,7 +2775,7 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 		c->x = cx0 + tx[col[i]] + is->um[3];
 		c->y = cy0 + ry[row[i]] + off + is->um[0];
 	}
-	free(ry), free(rh), free(it), free(col), free(row), free(span);
+	free(ry), free(rh), free(it), free(col), free(row), free(span), free(rsp);
 	return dh >= 0 ? fmaxf(dh, y) : y;
 }
 
