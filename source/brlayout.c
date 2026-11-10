@@ -1320,6 +1320,9 @@ static void intr_inl(Ctx *C, Box *b, IS *st)
 			intr(C, c, &a, &z);
 			float m = mpx(c->s, LML) + mpx(c->s, LMR);
 			st->mn = fmaxf(st->mn, a + m);
+			if (st->sp && st->line > 0 && c->oof != O_FLOAT) // (el espacio de antes también ocupa)
+				st->line += spw(C, b->s);
+			st->sp = false;
 			st->line += z + m;
 			st->run = 0;
 			continue;
