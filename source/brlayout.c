@@ -484,8 +484,8 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 			k = FIXTOINT(k);
 			s->ncols = (uint8_t)(k < 1 ? 1 : k > 16 ? 16 : k);
 		}
-		for (int i = 0; i < 16; i++)
-			s->tw[i] = -10;
+		for (int i = 0; i < 16; i++) // (las que no dice grid-template-columns: auto)
+			s->tw[i] = -1;
 		const css_computed_counter *ctr = NULL;
 		if (css_computed_counter_reset(cs, &ctr) == CSS_COUNTER_RESET_NAMED && ctr)
 			for (; ctr->name; ctr++) {
@@ -2574,7 +2574,9 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			Box *c = it[i].b;
 			intr(C, c, &a, &z);
 			float m = mpx(c->s, LML) + mpx(c->s, LMR);
-			amn[col[i]] = fmaxf(amn[col[i]], a + m);
+			// (lo que recorta su contenido no tiene mínimo: min-width:auto es 0 si overflow no es visible)
+			bool clip = c->s->ovx != CSS_OVERFLOW_VISIBLE && c->s->ovx != 0 && c->kind != K_ATOM;
+			amn[col[i]] = fmaxf(amn[col[i]], clip ? m : a + m);
 			amx[col[i]] = fmaxf(amx[col[i]], z + m);
 		}
 	for (int i = 0; i < nt; i++) {
@@ -2588,18 +2590,33 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 	}
 	float kf = fixed > room && fixed > 0 ? room / fixed : 1;
 	float rest = room - fixed * kf;
-	float ka = autos > rest && autos > 0 ? fmaxf(0, rest) / autos : 1;
-	rest -= autos * ka;
+	// las auto: cada una desde su mínimo, y lo que sobra a partes iguales hasta su máximo
+	// (una sola no pasa del ancho de la rejilla: un mínimo enorme de lo de dentro no la desborda)
+	for (int i = 0; i < nt; i++)
+		if (s->tw[i] == -1)
+			tw[i] = fminf(fminf(amn[i], amx[i]), fmaxf(0, room)), rest -= tw[i];
+	(void)autos;
+	for (int pass = 0; pass < 16 && rest > 0.01f; pass++) {
+		int ng = 0;
+		for (int i = 0; i < nt; i++)
+			ng += s->tw[i] == -1 && tw[i] < amx[i] - 0.01f;
+		if (!ng)
+			break;
+		float sh = rest / ng;
+		for (int i = 0; i < nt; i++)
+			if (s->tw[i] == -1 && tw[i] < amx[i] - 0.01f) {
+				float g = fminf(sh, amx[i] - tw[i]);
+				tw[i] += g, rest -= g;
+			}
+	}
 	for (int i = 0; i < nt; i++) {
 		int t = s->tw[i];
 		if (t > 0)
 			tw[i] = t * kf;
-		else if (t == -1)
-			tw[i] = fmaxf(amx[i] * ka, fminf(amn[i], amx[i]));
-		else
+		else if (t != -1)
 			tw[i] = frs > 0 ? fmaxf(0, rest) * (-t / 10.0f) / frs : 0;
 	}
-	if (frs <= 0 && rest > 0 && autos > 0) { // sin fr: las auto se estiran
+	if (frs <= 0 && rest > 0) { // sin fr: las auto se estiran
 		int na = 0;
 		for (int i = 0; i < nt; i++)
 			na += s->tw[i] == -1;

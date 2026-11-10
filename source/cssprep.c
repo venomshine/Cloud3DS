@@ -1189,7 +1189,7 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 			else if (fr)
 				w = -(int)(strtof(tr, NULL) * 10 + 0.5f);
 			else
-				w = -10; // auto, min-content…: flexible
+				w = -1; // auto, min-content…: a lo que pida su contenido (y si no hay fr, se estira)
 			if (w == 0)
 				w = -10;
 			for (int i = 0; i < reps && nt < 16; i++)
