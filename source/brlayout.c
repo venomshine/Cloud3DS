@@ -1426,8 +1426,9 @@ static void intr(Ctx *C, Box *b, float *mn, float *mx)
 		else if (!AUT(s, LH) && !PCT(s, LH) && s->ih > 0) // alto pedido: el ancho por su proporción
 			w = s->iw * LV(s, LH, 0) / s->ih;
 		a = z = w + ex;
-		// con ancho o máximo en %, se puede encoger hasta nada: no pide mínimo (como en CSS)
-		if (!has && ((!AUT(s, LW) && PCT(s, LW)) || (!AUT(s, LMAXW) && PCT(s, LMAXW))))
+		// con ancho en %, se puede encoger hasta nada: no pide mínimo (como en Chromium; con solo un máximo en
+		// %, sí: una imagen de 1000 px con max-width: 100% pide sus 1000)
+		if (!has && !AUT(s, LW) && PCT(s, LW))
 			a = ex;
 	} else if (has)
 		a = z = sw;
