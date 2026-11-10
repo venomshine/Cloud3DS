@@ -64,6 +64,9 @@ typedef struct {
 	void (*text)(void *u, float x, float y, float w, float h, const char *s, int n, const BrlText *t);
 	void (*box)(void *u, float x, float y, float w, float h, int img, int wdg, const BrlText *t);
 	void (*bgimg)(void *u, const BrlBg *b, const BrlText *t); /* (puede ser NULL) */
+	/* un icono de una fuente propia de la página: la imagen de su glifo (cp) en ese color (ABGR), o -1
+	 * (puede ser NULL) */
+	int (*glyph)(void *u, const char *font_url, uint32_t cp, uint32_t col);
 	/* parar: la página se deja o no queda memoria */
 	bool (*stop)(void *u);
 } BrLay;

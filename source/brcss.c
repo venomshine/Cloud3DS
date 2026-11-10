@@ -846,7 +846,10 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 	}
 	free(ha), free(ba);
 	for (int i = 0; i < c->nraw && c->prep; i++)
+	{
+		cssprep_set_base(c->prep, c->raw[i].url); // (para los @font-face)
 		cssprep_vars(c->prep, c->raw[i].css, c->raw[i].n);
+	}
 	// las variables de los style="--x: …" de la página (las hojas las usan: anchos de paneles, colores…):
 	// como respaldo, para cuando una regla no tiene otra
 	lwc_string *ks = NULL;
@@ -1040,6 +1043,39 @@ static int ctr_fmt(int v, uint8_t style, char *o, size_t on)
 	return snprintf(o, on, style == CSS_LIST_STYLE_TYPE_DECIMAL_LEADING_ZERO && v >= 0 && v < 10 ? "0%d" : "%d", v);
 }
 
+// un icono de una fuente propia: su carácter y, si la página da la fuente (@font-face), de dónde bajarla
+static void icon_of(BrCss *c, const css_computed_style *ps, const char *t, size_t tl, int k)
+{
+	brcss_ps.icon_cp[k] = 0, brcss_ps.icon_font[k][0] = 0;
+	for (size_t i = 0; i + 2 < tl; i++) { // el primero de U+E000…U+F8FF (3 bytes en UTF-8)
+		unsigned char a = (unsigned char)t[i];
+		if (a == 0xEE || a == 0xEF) {
+			brcss_ps.icon_cp[k] = (uint32_t)(a & 0x0F) << 12 | (uint32_t)((unsigned char)t[i + 1] & 0x3F) << 6 | ((unsigned char)t[i + 2] & 0x3F);
+			break;
+		}
+	}
+	lwc_string **names = NULL;
+	if (!c || !c->prep || !brcss_ps.icon_cp[k] || css_computed_font_family(ps, &names) == 0 || !names)
+		return;
+	for (; *names; names++) {
+		const char *f = cssprep_font(c->prep, lwc_string_data(*names));
+		const char *nl = f ? strchr(f, '\n') : NULL;
+		if (!nl)
+			continue;
+		char base[1024];
+		snprintf(base, sizeof base, "%.*s", (int)(nl - f), f);
+		lwc_string *rel = NULL, *abs = NULL;
+		if (lwc_intern_string(nl + 1, strlen(nl + 1), &rel) != lwc_error_ok)
+			return;
+		if (resolve_url(NULL, base[0] ? base : c->base, rel, &abs) == CSS_OK && abs) {
+			snprintf(brcss_ps.icon_font[k], sizeof brcss_ps.icon_font[k], "%s", lwc_string_data(abs));
+			lwc_string_unref(abs);
+		}
+		lwc_string_unref(rel);
+		return;
+	}
+}
+
 css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style *parent, float vw)
 {
 	return brcss_style_env(c, el, parent, vw, NULL, NULL);
@@ -1144,6 +1180,8 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 			css_computed_style_destroy(brcss_ps.st[k]);
 	memset(&brcss_ps, 0, sizeof brcss_ps);
 	css_computed_style *raw[2] = {NULL, NULL};
+	const char *icon_t[2] = {NULL, NULL};
+	size_t icon_tl[2] = {0, 0};
 	bool count = env_out != NULL; // (la maqueta, en el orden de la página: lleva los contadores)
 	if (count && s)
 		ctr_apply(s);
@@ -1169,8 +1207,10 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 				for (size_t i = 0; i + 1 < tl; i++)
 					if ((unsigned char)t[i] == 0xEE || ((unsigned char)t[i] == 0xEF && (unsigned char)t[i + 1] < 0xA4))
 						pua = true;
-				if (pua)
+				if (pua && !brcss_ps.icon[k]) {
 					brcss_ps.icon[k] = true;
+					icon_t[k] = t, icon_tl[k] = tl; // (su fuente, con el estilo ya combinado)
+				}
 				else if (on + tl < sizeof brcss_ps.after)
 					memcpy(o + on, t, tl), on += tl;
 			} else if ((ci->type == CSS_COMPUTED_CONTENT_COUNTER || ci->type == CSS_COMPUTED_CONTENT_COUNTERS) && ci->data.counter.name) {
@@ -1197,6 +1237,8 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 		css_computed_style *cs = NULL;
 		if (raw[k] && s && css_computed_style_compose(s, raw[k], &u, &cs) == CSS_OK && cs)
 			brcss_ps.st[k] = cs;
+		if (icon_t[k] && raw[k])
+			icon_of(c, brcss_ps.st[k] ? brcss_ps.st[k] : raw[k], icon_t[k], icon_tl[k], k);
 		if (raw[k])
 			css_computed_style_destroy(raw[k]);
 	}

@@ -146,6 +146,8 @@ struct CssPrep {
 	Combo combo[MAX_COMBOS];
 	int ncombo;
 	Map vid;      /* variables marcadas en color y background-color: nombre -> número (1…) */
+	Map fonts;    /* @font-face: familia (en minúsculas) -> «dirección de su hoja\nurl» (ttf, otf o woff) */
+	const char *base; /* la dirección de la hoja que se está leyendo */
 	Map ivn;      /* las variables que van por elemento: las de los style="" y las que pone una regla de clase */
 	struct Tpl {  /* declaraciones que usan una de esas: para resolverlas en cada elemento */
 		char *key;  /* el último selector simple compuesto de la regla («.prc-PageLayout-Content») */
@@ -197,6 +199,7 @@ void cssprep_free(CssPrep *p)
 	}
 	map_free(&p->vid);
 	map_free(&p->ivn);
+	map_free(&p->fonts);
 	map_free(&p->tix);
 	free(p->tother);
 	for (int i = 0; i < p->ntpl; i++)
@@ -3005,6 +3008,8 @@ char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const ch
 	return o.p;
 }
 
+static void font_face(CssPrep *p, const char *b0, const char *b1);
+
 static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 {
 	while (s < e) {
@@ -3063,6 +3068,8 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 				}
 				if (ok)
 					rules(p, b0, b1, o);
+			} else if (IS("font-face") && !o) {
+				font_face(p, b0, b1);
 			} else if (IS("layer") || IS("scope") || IS("starting-style")) {
 				if (!IS("starting-style"))
 					rules(p, b0, b1, o);
@@ -3176,4 +3183,95 @@ char *cssprep_inline(CssPrep *p, const char *d, size_t n, size_t *out_n)
 			o.p[0] = 0;
 	}
 	return o.p;
+}
+
+/* ------------------------------------------------------------ @font-face */
+// de qué fuente sale una familia (para los iconos): la primera url en TrueType, OpenType o WOFF
+static void font_face(CssPrep *p, const char *b0, const char *b1)
+{
+	char fam[96] = "", url[512] = "";
+	for (const char *q = b0; q < b1;) {
+		const char *c = find_top(q, b1, ";");
+		const char *col = find_top(q, c, ":");
+		if (col < c) {
+			const char *n0 = q, *n1 = col, *v0 = col + 1, *v1 = c;
+			trim(&n0, &n1);
+			trim(&v0, &v1);
+			if (n1 - n0 == 11 && !strncasecmp(n0, "font-family", 11)) {
+				while (v0 < v1 && (*v0 == '"' || *v0 == '\'' || *v0 == ' '))
+					v0++;
+				while (v1 > v0 && (v1[-1] == '"' || v1[-1] == '\'' || v1[-1] == ' '))
+					v1--;
+				size_t l = (size_t)(v1 - v0) < sizeof fam - 1 ? (size_t)(v1 - v0) : sizeof fam - 1;
+				for (size_t i = 0; i < l; i++)
+					fam[i] = (char)tolower((unsigned char)v0[i]);
+				fam[l] = 0;
+			} else if (n1 - n0 == 3 && !strncasecmp(n0, "src", 3) && !url[0]) {
+				for (const char *t = v0; t < v1 && !url[0];) { // cada «url(…) format(…)»
+					const char *u = NULL;
+					for (const char *z = t; z + 4 < v1; z++)
+						if (!strncasecmp(z, "url(", 4)) {
+							u = z + 4;
+							break;
+						}
+					if (!u)
+						break;
+					const char *ue = u;
+					int d = 1;
+					for (; ue < v1 && d; ue++)
+						d += *ue == '(' ? 1 : *ue == ')' ? -1 : 0;
+					const char *a = u, *b = ue - 1;
+					while (a < b && (*a == '"' || *a == '\'' || *a == ' '))
+						a++;
+					while (b > a && (b[-1] == '"' || b[-1] == '\'' || b[-1] == ' '))
+						b--;
+					const char *nx = find_top(ue, v1, ",");
+					size_t fl = (size_t)(nx - ue);
+					bool good = false;
+					if (has_ci(ue, fl, "format(")) // por su format()
+						good = !has_ci(ue, fl, "embedded-opentype") &&
+						       (has_ci(ue, fl, "truetype") || has_ci(ue, fl, "opentype") || (has_ci(ue, fl, "woff") && !has_ci(ue, fl, "woff2")));
+					else { // o por su nombre (sin ?…)
+						const char *qq = memchr(a, '?', (size_t)(b - a));
+						const char *ne = qq ? qq : b;
+						good = (ne - a > 4 && (!strncasecmp(ne - 4, ".ttf", 4) || !strncasecmp(ne - 4, ".otf", 4))) ||
+						       (ne - a > 5 && !strncasecmp(ne - 5, ".woff", 5));
+					}
+					if (good && b - a < (long)sizeof url)
+						snprintf(url, sizeof url, "%.*s", (int)(b - a), a);
+					t = nx < v1 ? nx + 1 : v1;
+				}
+			}
+		}
+		q = c + 1;
+	}
+	if (fam[0] && url[0] && !map_get(&p->fonts, fam, strlen(fam))) {
+		size_t bl = p->base ? strlen(p->base) : 0, ul = strlen(url);
+		char *v = malloc(bl + ul + 2);
+		if (v) {
+			memcpy(v, p->base ? p->base : "", bl);
+			v[bl] = '\n';
+			memcpy(v + bl + 1, url, ul + 1);
+			map_set(&p->fonts, fam, strlen(fam), v, bl + 1 + ul);
+			free(v);
+		}
+	}
+}
+
+void cssprep_set_base(CssPrep *p, const char *url)
+{
+	if (p)
+		p->base = url;
+}
+
+const char *cssprep_font(const CssPrep *p, const char *family)
+{
+	if (!p || !family)
+		return NULL;
+	char f[96];
+	size_t l = 0;
+	for (; family[l] && l < sizeof f - 1; l++)
+		f[l] = (char)tolower((unsigned char)family[l]);
+	f[l] = 0;
+	return map_get(&p->fonts, f, l);
 }

@@ -38,7 +38,9 @@ typedef struct {
 	bool after_clear;
 	char before[48], after[48];
 	css_computed_style *st[2]; /* su estilo (::before, ::after), ya con el del elemento; quien lo toma lo suelta */
-	bool icon[2];              /* su texto era un icono de una fuente propia (no se puede pintar: ocupa 1em) */
+	bool icon[2];              /* su texto era un icono de una fuente propia (ocupa 1em) */
+	uint32_t icon_cp[2];       /* su carácter (U+E000…) */
+	char icon_font[2][512];    /* y la fuente (url completa, TrueType/OpenType/WOFF) si la página la da; si no, "" */
 } BrcssPseudo;
 extern BrcssPseudo brcss_ps;
 

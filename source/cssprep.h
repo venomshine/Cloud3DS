@@ -48,6 +48,11 @@ bool cssprep_scope_col(CssPrep *p, int combo, uint32_t *col, int kind, int vid);
 void cssprep_inline_vars(CssPrep *p, const char *decls, size_t n);
 char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const char *penv, const char *own, char **env_out);
 
+/* @font-face: la dirección de la hoja que se lee ahora (antes de cssprep_vars); y de qué fuente sale una
+ * familia: «dirección de su hoja\nurl» (TrueType, OpenType o WOFF), o NULL */
+void cssprep_set_base(CssPrep *p, const char *url);
+const char *cssprep_font(const CssPrep *p, const char *family);
+
 /* modo oscuro: (prefers-color-scheme: dark) vale, y las webs que tienen tema oscuro lo usan */
 void cssprep_set_dark(bool dark);
 

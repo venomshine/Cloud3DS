@@ -819,7 +819,7 @@ static void ps_free(BrcssPseudo *ps)
 }
 
 /* ::before / ::after: una caja con su estilo (fondo, borde, tamaño, posición…) y su texto */
-static void pseudo_box(Ctx *C, Box *b, const char *txt, const css_computed_style *st, bool icon)
+static void pseudo_box(Ctx *C, Box *b, const char *txt, const css_computed_style *st, bool icon, uint32_t icp, const char *ifont)
 {
 	if (!st) {
 		if (txt[0])
@@ -856,15 +856,23 @@ static void pseudo_box(Ctx *C, Box *b, const char *txt, const css_computed_style
 	if (!p)
 		return;
 	p->oof = oof;
-	if (icon && !txt[0]) { // el icono (sin su fuente): su sitio, un cuadro de 1em
+	if (icon && !txt[0]) { // el icono: su glifo (si la página da su fuente), o al menos su sitio, 1em
 		Sty *is = sty_new(C, s);
 		if (is) {
 			is->node = s->node;
 			is->col = s->col, is->fpx = s->fpx, is->lh = s->fpx, is->vis = s->vis, is->scope = s->scope;
-			is->aut = AUTO_ALL & ~(1u << LW | 1u << LH);
-			is->lv[LW] = is->lv[LH] = s->fpx;
 			is->outer = 1, is->inner = I_FLOW, is->shrink = 1;
-			box_new(C, p, K_BLOCK, is);
+			int gi = ifont && ifont[0] && icp && C->L->glyph ? C->L->glyph(C->L->u, ifont, icp, s->col) : -1;
+			if (gi >= 0) {
+				is->aut = AUTO_ALL;
+				is->img = (int16_t)gi, is->iw = is->ih = s->fpx;
+				is->va = CSS_VERTICAL_ALIGN_BASELINE;
+				box_new(C, p, K_ATOM, is);
+			} else {
+				is->aut = AUTO_ALL & ~(1u << LW | 1u << LH);
+				is->lv[LW] = is->lv[LH] = s->fpx;
+				box_new(C, p, K_BLOCK, is);
+			}
 		}
 	}
 	if (txt[0])
@@ -1184,9 +1192,9 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	bool list = !strcmp(tag, "ol") || !strcmp(tag, "ul") || !strcmp(tag, "menu");
 	if (!strcmp(tag, "ol") && attr(n, "start", a, sizeof a) && a[0])
 		ol = atoi(a) - 1;
-	pseudo_box(C, b, ps.before, ps.st[0], ps.icon[0]);
+	pseudo_box(C, b, ps.before, ps.st[0], ps.icon[0], ps.icon_cp[0], ps.icon_font[0]);
 	build_kids(C, b, n, cs, list ? &ol : olc);
-	pseudo_box(C, b, ps.after, ps.st[1], ps.icon[1]);
+	pseudo_box(C, b, ps.after, ps.st[1], ps.icon[1], ps.icon_cp[1], ps.icon_font[1]);
 	if (ps.after_clear && b->kind == K_BLOCK) { // el «clearfix»: debajo de los flotantes de dentro
 		Sty *cl = sty_new(C, s);
 		if (cl) {

@@ -16,6 +16,7 @@
 #include "cssprep.h"
 #include "brfav.h"
 #include "brlayout.h"
+#include "webfont.h"
 #include "core/node.h" /* libdom por dentro: hijos y hermanos sin referencias */
 #include "dl.h"
 #include "gfx.h"
@@ -112,6 +113,7 @@ typedef struct {
 	float y;               /* dónde está (para bajar antes lo que se ve) */
 	bool sized;            /* el tamaño venía de la página */
 	bool natural;          /* de fondo a su tamaño (sprites): se decodifica sin reducir (hasta 512) */
+	bool glyph;            /* un icono de una fuente de la página: blanco, se tiñe al pintarlo */
 	int ow, oh;            /* el tamaño original de la imagen */
 	volatile int st;
 	u8 *rgba;
@@ -1427,6 +1429,42 @@ static void img_free_all(void)
 
 static int fetch_any(const char *url, const char *accept, Buf *b, long *code);
 
+// las fuentes de la página para los iconos (solo las usa el hilo de las imágenes): las últimas 4, de hasta 400 KB
+static struct {
+	char url[512];
+	Buf b;
+	bool bad;
+	u32 used;
+} FONTS[4];
+static u32 FONT_T;
+
+static const Buf *font_get(const char *url)
+{
+	int lru = 0;
+	for (int i = 0; i < 4; i++) {
+		if (!strcmp(FONTS[i].url, url)) {
+			FONTS[i].used = ++FONT_T;
+			return FONTS[i].bad ? NULL : &FONTS[i].b;
+		}
+		if (FONTS[i].used < FONTS[lru].used)
+			lru = i;
+	}
+	free(FONTS[lru].b.p);
+	memset(&FONTS[lru], 0, sizeof FONTS[lru]);
+	util_strlcpy(FONTS[lru].url, url, sizeof FONTS[lru].url);
+	FONTS[lru].used = ++FONT_T;
+	long code = 0;
+	int r = blocked_host(url) ? DLF_FAIL : fetch_any(url, "font/ttf,font/woff,*/*;q=0.5", &FONTS[lru].b, &code);
+	util_log("web: fuente %.120s -> %d, HTTP %ld, %u bytes", url, r, code, (unsigned)FONTS[lru].b.n);
+	if (r != DLF_OK || code >= 400 || FONTS[lru].b.n < 12 || FONTS[lru].b.n > 400 * 1024) {
+		free(FONTS[lru].b.p);
+		FONTS[lru].b.p = NULL, FONTS[lru].b.n = 0;
+		FONTS[lru].bad = true;
+		return NULL;
+	}
+	return &FONTS[lru].b;
+}
+
 // baja y decodifica, primero las que están más cerca de lo que se ve
 static void img_thread(void *arg)
 {
@@ -1463,6 +1501,23 @@ static void img_thread(void *arg)
 					r = DLF_OK, code = 200;
 				}
 			}
+		} else if (!strncmp(im->url, "glyph:", 6)) { // un icono: su glifo, de la fuente (guardada) de la página
+			unsigned rgb = 0, cp = 0;
+			const char *fu = NULL;
+			if (sscanf(im->url + 6, "%x:%x:", &rgb, &cp) == 2 && (fu = strchr(strchr(im->url + 6, ':') + 1, ':')))
+				fu++;
+			const Buf *fb = fu ? font_get(fu) : NULL;
+			u8 *gp = NULL;
+			int gw = 0, gh = 0;
+			if (fb && webfont_glyph((const u8 *)fb->p, fb->n, cp, 48, rgb, &gp, &gw, &gh)) {
+				im->rgba = gp, im->tw = gw, im->th = gh, im->iw = gw, im->ih = gh;
+				B.img_px += (size_t)gw * gh;
+				im->st = IM_RGBA;
+			} else {
+				im->st = IM_FAIL;
+				util_log("web: icono %x de %.100s: no se pudo (%s)", cp, fu ? fu : "-", fb ? "glifo" : "fuente");
+			}
+			continue;
 		} else
 			r = blocked_host(im->url) ? DLF_FAIL : fetch_any(im->url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
 		int mw = im->natural ? 512 : (int)fminf(512, fmaxf(16, im->w * 1.5f)), mh = im->natural ? 512 : (int)fminf(512, fmaxf(16, im->h * 1.5f));
@@ -3450,6 +3505,19 @@ static int bl_img(void *u, dom_node *n, const char *src, float *iw, float *ih)
 		*iw = B.img[k].iw, *ih = B.img[k].ih;
 	return k;
 }
+// un icono de una fuente de la página: una imagen más («glyph:color:carácter:fuente»), la pinta su hilo
+static int bl_glyph(void *u, const char *font_url, uint32_t cp, uint32_t col)
+{
+	(void)u, (void)col; // (el color se le da al pintarlo: el del texto, también en modo oscuro)
+	char k[700];
+	if (snprintf(k, sizeof k, "glyph:ffffff:%x:%s", (unsigned)cp, font_url) >= (int)sizeof k)
+		return -1;
+	int i = img_find_or_add(k);
+	if (i >= 0)
+		B.img[i].w = B.img[i].h = 24, B.img[i].sized = true, B.img[i].glyph = true;
+	return i;
+}
+
 static int bl_svg(void *u, dom_node *n, const css_computed_style *cs, float *w, float *h)
 {
 	(void)u;
@@ -3581,7 +3649,7 @@ static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col,
 	*b = (BgBox){y0, y1, x0, x1, col, {0}, {0}, false, rad}; /* (con su transparencia) */
 	for (int i = B.nf - 1; i >= 0 && i >= B.nf - 400 && !b->over; i--) { // ¿tapa una imagen ya puesta?
 		const Frag *f = &B.f[i];
-		if (f->img < 0)
+		if (f->img < 0 || B.img[f->img].glyph)
 			continue;
 		const Line *l = &B.l[f->line];
 		b->over = f->x < x1 && f->x + f->w > x0 && l->y < y1 && l->y + l->h > y0;
@@ -3624,7 +3692,7 @@ static float layout_boxes(void)
 	title_get();
 	BrLay L = {.css = B.css, .vw = B.vw, .vh = 600, .light = B.light || !strcmp(B.reader_url, B.url), .u = NULL,
 	           .text_w = bl_tw, .line_h = bl_lh, .link = bl_link, .clk = bl_clk, .img = bl_img, .svg = bl_svg, .wdg = bl_wdg,
-	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .stop = bl_stop};
+	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .glyph = bl_glyph, .stop = bl_stop};
 	uint32_t pbg = 0;
 	float h = brl_run(&L, B.doc, &pbg);
 	B.page_bg = pbg;
@@ -4466,7 +4534,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 	for (int k = first_frag(B.sy); k < B.nf; k++) {
 		int i = B.ord[k];
 		const Frag *f = &B.f[i];
-		if ((f->img >= 0 && f->img < B.nimg) != (pass == 0))
+		if ((f->img >= 0 && f->img < B.nimg && !B.img[f->img].glyph) != (pass == 0)) // (los iconos de fuente, con el texto)
 			continue;
 		float x, y, w, h;
 		frag_rect(f, &x, &y, &w, &h);
@@ -4541,7 +4609,8 @@ static void page_paint(float VW, float VH, int mode, int hov)
 		}
 		if (f->img >= 0 && f->img < B.nimg) { // imagen: encajada en su sitio sin deformarla
 			PImg *im = &B.img[f->img];
-			float bw = Wd, bh = im->h * z, by = (B.l[f->line].y + B.l[f->line].h - im->h - B.sy) * z;
+			float bw = Wd, bh = im->glyph ? Wd : im->h * z; // (un icono: cuadrado, del tamaño de su caja)
+			float by = (B.l[f->line].y + B.l[f->line].h - B.sy) * z - bh;
 			if (f->bgi >= 0 && f->bgi < B.nbgi) { // de fondo: a su tamaño y posición, recortada a su caja
 				if (mode != 2 && im->st == IM_TEX && im->tex.ok)
 					bgimg_paint(im, &B.bgi[f->bgi], X, (B.l[f->line].y - B.sy) * z, Wd, B.l[f->line].h * z);
@@ -4549,7 +4618,9 @@ static void page_paint(float VW, float VH, int mode, int hov)
 			}
 			if (mode == 2) {
 			} else if (im->st == IM_TEX && im->tex.ok) {
-				if (f->fit == 2) // object-fit: fill: estirada
+				if (im->glyph) // un icono de una fuente: del color de su texto
+					draw_texture_tint(&im->tex, X, by, bw, bh, DKF(f->col));
+				else if (f->fit == 2) // object-fit: fill: estirada
 					draw_texture(&im->tex, X, by, bw, bh, 1);
 				else if (f->fit == 1) { // contain: entera, centrada
 					float k = fminf(bw / im->tw, bh / im->th), dw = im->tw * k, dh = im->th * k;
@@ -4558,6 +4629,7 @@ static void page_paint(float VW, float VH, int mode, int hov)
 					float k = fmaxf(bw / im->tw, bh / im->th), fu = fminf(1, bw / (im->tw * k)), fv = fminf(1, bh / (im->th * k));
 					draw_texture_part(&im->tex, X, by, bw, bh, (1 - fu) / 2, (1 - fv) / 2, (1 + fu) / 2, (1 + fv) / 2);
 				}
+			} else if (im->glyph) { // (un icono que aún no está: nada, como una letra que falta)
 			} else
 				draw_rect(X, by, bw, bh, DKB(im->st == IM_FAIL ? col_hex(0xF2F2F2) : col_hex(0xEAECF0)));
 			if (mode != 1 && f->link >= 0 && (f->link == hov || i == B.focus))

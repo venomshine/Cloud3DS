@@ -788,6 +788,13 @@ void draw_texture(Texture *t, float x, float y, float w, float h, float alpha) {
     C2D_AlphaImageTint(&tint, alpha);
     C2D_DrawImageAt(t->img, x, y, Z, alpha < 0.999f ? &tint : NULL, w / t->w, h / t->h);
 }
+// una textura que es solo una forma (blanca con transparencia), del color col (un icono de una fuente)
+void draw_texture_tint(Texture *t, float x, float y, float w, float h, u32 col) {
+    if (!t->ok) return;
+    C2D_ImageTint tint;
+    C2D_PlainImageTint(&tint, col, 1.0f);
+    C2D_DrawImageAt(t->img, x, y, Z, &tint, w / t->w, h / t->h);
+}
 // un trozo de la textura (u0…u1, v0…v1: en fracción de la imagen) en w × h
 void draw_texture_part(Texture *t, float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
     if (!cmd_room()) return;
