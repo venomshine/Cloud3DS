@@ -21,4 +21,5 @@ porque en ARM `int32_t` no es `int` y GCC no acepta el molde a la unión. En `li
 elementos vacíos (esta versión no los conoce y metía lo de después, como la `<img>` de un `<picture>`,
 dentro de ellos). En `libcss/src/select/properties/helpers.c`,
 `css__cascade_number` (orphans y widows) guardaba el valor con el tipo 0, que es «inherit», y se perdía:
-ahora es `CSS_ORPHANS_SET`. El navegador de NetSurf en sí es GPL-2.0 y no se usa.
+ahora es `CSS_ORPHANS_SET`. En `libcss/src/select/arena.c`, al juntar estilos iguales solo se comparaba el
+primer elemento de `content` y de los contadores: ahora se comparan las listas enteras. El navegador de NetSurf en sí es GPL-2.0 y no se usa.

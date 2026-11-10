@@ -35,11 +35,15 @@ static inline bool arena__compare_computed_content_item(
 		return false;
 	}
 
-	if (a->type != b->type) {
-		return false;
+	/* (Cloud3DS: toda la lista, no solo el primero: si no, «counter(a) " "» y
+	 * «counter(a) "." counter(b)» se tomaban por iguales y uno se quedaba con el otro) */
+	for (;; a++, b++) {
+		if (a->type != b->type ||
+				memcmp(a, b, sizeof(struct css_computed_content_item)) != 0)
+			return false;
+		if (a->type == CSS_COMPUTED_CONTENT_NONE)
+			return true;
 	}
-
-	return memcmp(a, b, sizeof(struct css_computed_content_item)) == 0;
 }
 
 
@@ -56,14 +60,15 @@ static inline bool arena__compare_css_computed_counter(
 		return false;
 	}
 
-	if (a->value == b->value &&
-			lwc_string_isequal(a->name, b->name,
-					&match) == lwc_error_ok &&
-			match == true) {
-		return true;
+	for (;; a++, b++) { /* (Cloud3DS: toda la lista) */
+		if (a->name == NULL || b->name == NULL)
+			return a->name == b->name;
+		if (a->value != b->value ||
+				lwc_string_isequal(a->name, b->name,
+					&match) != lwc_error_ok ||
+				match == false)
+			return false;
 	}
-
-	return false;
 }
 
 static inline bool arena__compare_string_list(
