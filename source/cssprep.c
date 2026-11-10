@@ -1508,6 +1508,10 @@ static bool translate_emit(Out *o, const char *v)
 
 static void decl_emit(Out *o, const char *name, const char *val)
 {
+	if (!strcmp(name, "counter-set")) { // (libcss no la conoce: para un contador sencillo, es poner su valor)
+		decl_out(o, "counter-reset", val);
+		return;
+	}
 	if (!strcmp(name, "float") || !strcmp(name, "clear") || !strcmp(name, "text-align")) { // valores lógicos (de izquierda a derecha)
 		static const char *const LV[][2] = {{"inline-start", "left"}, {"inline-end", "right"}, {"start", "left"}, {"end", "right"}, {"match-parent", "inherit"}};
 		for (size_t i = 0; i < sizeof LV / sizeof LV[0]; i++) {

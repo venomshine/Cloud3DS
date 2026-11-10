@@ -3094,6 +3094,7 @@ float brl_run(BrLay *L, dom_document *doc, uint32_t *page_bg)
 {
 	Ctx C = {0};
 	C.L = L, C.vw = L->vw, C.vh = L->vh > 0 ? L->vh : 768;
+	brcss_counters_clear();
 	// la raíz: una caja de bloque con el <html> dentro
 	Sty *rs = sty_new(&C, NULL);
 	Box *root = rs ? box_new(&C, NULL, K_BLOCK, rs) : NULL;

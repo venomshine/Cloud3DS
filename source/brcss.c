@@ -909,6 +909,88 @@ static css_unit_ctx unit_ctx(float vw)
 
 BrcssPseudo brcss_ps;
 
+/* ------------------------------------------------------------ contadores de CSS (counter-reset/-increment y
+ * content: counter()), en el orden de la página. Sencillos: uno por nombre (sin anidar) */
+static struct {
+	char name[32];
+	int v;
+} CTR[64];
+static int NCTR;
+
+void brcss_counters_clear(void) { NCTR = 0; }
+
+static int *ctr_get(const char *n, size_t l, bool make)
+{
+	for (int i = 0; i < NCTR; i++)
+		if (strlen(CTR[i].name) == l && !memcmp(CTR[i].name, n, l))
+			return &CTR[i].v;
+	if (!make || NCTR >= 64 || l >= sizeof CTR[0].name)
+		return NULL;
+	memcpy(CTR[NCTR].name, n, l);
+	CTR[NCTR].name[l] = 0;
+	CTR[NCTR].v = 0;
+	return &CTR[NCTR++].v;
+}
+
+static bool ctr_carrier(const char *n, size_t l) // los que usa cssprep para llevar otras cosas
+{
+	return (l >= 2 && n[0] == 'g' && isdigit((unsigned char)n[1])) || (l == 2 && n[0] == 'g' && strchr("cprq", n[1])) ||
+	       (l >= 3 && !strncmp(n, "c3", 2));
+}
+
+static void ctr_apply(const css_computed_style *st)
+{
+	const css_computed_counter *c = NULL;
+	if (css_computed_counter_reset(st, &c) == CSS_COUNTER_RESET_NAMED && c)
+		for (; c->name; c++) {
+			const char *n = lwc_string_data(c->name);
+			size_t l = lwc_string_length(c->name);
+			int *v = ctr_carrier(n, l) ? NULL : ctr_get(n, l, true);
+			if (v)
+				*v = FIXTOINT(c->value);
+		}
+	c = NULL;
+	if (css_computed_counter_increment(st, &c) == CSS_COUNTER_INCREMENT_NAMED && c)
+		for (; c->name; c++) {
+			const char *n = lwc_string_data(c->name);
+			size_t l = lwc_string_length(c->name);
+			int *v = ctr_carrier(n, l) ? NULL : ctr_get(n, l, true);
+			if (v)
+				*v += FIXTOINT(c->value);
+		}
+}
+
+// un número como lo escribe list-style-type
+static int ctr_fmt(int v, uint8_t style, char *o, size_t on)
+{
+	if ((style == CSS_LIST_STYLE_TYPE_LOWER_ROMAN || style == CSS_LIST_STYLE_TYPE_UPPER_ROMAN) && v > 0 && v < 4000) {
+		static const char *const R[] = {"m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"};
+		static const int N[] = {1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1};
+		size_t k = 0;
+		for (int i = 0; i < 13; i++)
+			while (v >= N[i] && k + 3 < on) {
+				for (const char *r = R[i]; *r; r++)
+					o[k++] = style == CSS_LIST_STYLE_TYPE_UPPER_ROMAN ? (char)toupper((unsigned char)*r) : *r;
+				v -= N[i];
+			}
+		o[k] = 0;
+		return (int)k;
+	}
+	bool up = style == CSS_LIST_STYLE_TYPE_UPPER_ALPHA || style == CSS_LIST_STYLE_TYPE_UPPER_LATIN;
+	if ((up || style == CSS_LIST_STYLE_TYPE_LOWER_ALPHA || style == CSS_LIST_STYLE_TYPE_LOWER_LATIN) && v > 0) {
+		char t[8];
+		int k = 0;
+		for (; v > 0 && k < 7; v = (v - 1) / 26)
+			t[k++] = (char)((up ? 'A' : 'a') + (v - 1) % 26);
+		int j = 0;
+		for (; k > 0 && (size_t)j + 1 < on; j++)
+			o[j] = t[--k];
+		o[j] = 0;
+		return j;
+	}
+	return snprintf(o, on, style == CSS_LIST_STYLE_TYPE_DECIMAL_LEADING_ZERO && v >= 0 && v < 10 ? "0%d" : "%d", v);
+}
+
 css_computed_style *brcss_style(BrCss *c, dom_node *el, const css_computed_style *parent, float vw)
 {
 	return brcss_style_env(c, el, parent, vw, NULL, NULL);
@@ -1023,10 +1105,15 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 			css_computed_style_destroy(brcss_ps.st[k]);
 	memset(&brcss_ps, 0, sizeof brcss_ps);
 	css_computed_style *raw[2] = {NULL, NULL};
+	bool count = env_out != NULL; // (la maqueta, en el orden de la página: lleva los contadores)
+	if (count && s)
+		ctr_apply(s);
 	for (int k = 0; k < 2; k++) { // ::before y ::after: su texto (y si el de después cierra los flotantes)
 		const css_computed_style *ps = res->styles[k ? CSS_PSEUDO_ELEMENT_AFTER : CSS_PSEUDO_ELEMENT_BEFORE];
 		if (!ps || css_computed_display(ps, false) == CSS_DISPLAY_NONE)
 			continue;
+		if (count)
+			ctr_apply(ps);
 		const css_computed_content_item *ci = NULL;
 		if (css_computed_content(ps, &ci) != CSS_CONTENT_SET || !ci)
 			continue;
@@ -1047,6 +1134,13 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 					brcss_ps.icon[k] = true;
 				else if (on + tl < sizeof brcss_ps.after)
 					memcpy(o + on, t, tl), on += tl;
+			} else if ((ci->type == CSS_COMPUTED_CONTENT_COUNTER || ci->type == CSS_COMPUTED_CONTENT_COUNTERS) && ci->data.counter.name) {
+				int *v = ctr_get(lwc_string_data(ci->data.counter.name), lwc_string_length(ci->data.counter.name), false);
+				char num[24];
+				// (el estilo llega en el código interno de libcss, uno menos que CSS_LIST_STYLE_TYPE_*)
+				int nl = ctr_fmt(v ? *v : 0, (uint8_t)((ci->type == CSS_COMPUTED_CONTENT_COUNTER ? ci->data.counter.style : ci->data.counters.style) + 1), num, sizeof num);
+				if (nl > 0 && on + (size_t)nl < sizeof brcss_ps.after)
+					memcpy(o + on, num, (size_t)nl), on += (size_t)nl;
 			}
 		o[on] = 0;
 		raw[k] = res->styles[k ? CSS_PSEUDO_ELEMENT_AFTER : CSS_PSEUDO_ELEMENT_BEFORE];
