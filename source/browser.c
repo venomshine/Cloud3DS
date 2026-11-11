@@ -106,7 +106,7 @@ typedef struct {
 } FVal;
 
 /* una imagen de la página: se baja y se decodifica en su hilo; la textura la crea el principal */
-enum { IM_WAIT, IM_RGBA, IM_TEX, IM_FAIL };
+enum { IM_WAIT, IM_RGBA, IM_TEX, IM_FAIL, IM_LOAD /* un hilo la está bajando */ };
 typedef struct {
 	char *url;
 	float w, h;            /* tamaño en la página (px) */
@@ -242,7 +242,7 @@ static struct {
 	int nimg, cimg;
 	BgImg *bgi;
 	int nbgi, cbgi;
-	Thread img_thr;
+	Thread img_thr[3]; /* las imágenes: 3 a la vez (cada petición, con su TLS, es lo que más espera) */
 	volatile bool img_quit;
 	size_t img_px;       /* píxeles decodificados (límite de memoria) */
 } B;
@@ -1857,13 +1857,17 @@ static int img_find_or_add(const char *url)
 
 static void img_stop(void)
 {
-	if (B.img_thr) {
-		B.img_quit = true;
-		threadJoin(B.img_thr, U64_MAX);
-		threadFree(B.img_thr);
-		B.img_thr = NULL;
-	}
+	B.img_quit = true;
+	for (int k = 0; k < 3; k++)
+		if (B.img_thr[k]) {
+			threadJoin(B.img_thr[k], U64_MAX);
+			threadFree(B.img_thr[k]);
+			B.img_thr[k] = NULL;
+		}
 	B.img_quit = false;
+	for (int i = 0; i < B.nimg; i++) // (las que se quedaron a medias: otra vez a la cola)
+		if (B.img[i].st == IM_LOAD)
+			B.img[i].st = IM_WAIT;
 }
 
 static void img_free_all(void)
@@ -1920,21 +1924,44 @@ static const Buf *font_get(const char *url)
 }
 
 // baja y decodifica, primero las que están más cerca de lo que se ve
+static LightLock IMG_LK, FONT_LK;
+static bool IMG_LK_OK;
+#ifndef IMG_NTHR
+#define IMG_NTHR 3
+#endif
+static int IMG_LIVE;    /* hilos de imágenes trabajando */
+static u64 IMG_T0;      /* cuándo empezaron (para el registro) */
+
 static void img_thread(void *arg)
 {
 	(void)arg;
 	browser_thread_net();
 	for (;;) {
-		if (B.img_quit)
+		if (B.img_quit) {
+			LightLock_Lock(&IMG_LK);
+			IMG_LIVE--;
+			LightLock_Unlock(&IMG_LK);
 			return;
+		}
 		int best = -1;
 		float bd = 1e30f, vy = B.sy;
+		LightLock_Lock(&IMG_LK); // (la más cerca de la vista que nadie haya cogido)
 		for (int i = 0; i < B.nimg; i++)
 			if (B.img[i].st == IM_WAIT) {
 				float d = fabsf(B.img[i].y - vy);
 				if (d < bd)
 					bd = d, best = i;
 			}
+		if (best >= 0)
+			B.img[best].st = IM_LOAD;
+		bool last = best < 0 && --IMG_LIVE == 0;
+		LightLock_Unlock(&IMG_LK);
+		if (last) {
+			int ok = 0;
+			for (int i = 0; i < B.nimg; i++)
+				ok += B.img[i].st == IM_RGBA || B.img[i].st == IM_TEX;
+			util_log("web: imágenes: %d de %d en %u ms", ok, B.nimg, (unsigned)(osGetTime() - IMG_T0));
+		}
 		if (best < 0)
 			return;
 		PImg *im = &B.img[best];
@@ -1960,12 +1987,17 @@ static void img_thread(void *arg)
 			const char *fu = NULL;
 			if (sscanf(im->url + 6, "%x:%x:", &rgb, &cp) == 2 && (fu = strchr(strchr(im->url + 6, ':') + 1, ':')))
 				fu++;
+			LightLock_Lock(&FONT_LK); // (las fuentes guardadas son de todos los hilos de imágenes)
 			const Buf *fb = fu ? font_get(fu) : NULL;
 			u8 *gp = NULL;
 			int gw = 0, gh = 0;
-			if (fb && webfont_glyph((const u8 *)fb->p, fb->n, cp, 48, rgb, &gp, &gw, &gh)) {
+			bool gok = fb && webfont_glyph((const u8 *)fb->p, fb->n, cp, 48, rgb, &gp, &gw, &gh);
+			LightLock_Unlock(&FONT_LK);
+			if (gok) {
 				im->rgba = gp, im->tw = gw, im->th = gh, im->iw = gw, im->ih = gh;
+				LightLock_Lock(&IMG_LK);
 				B.img_px += (size_t)gw * gh;
+				LightLock_Unlock(&IMG_LK);
 				im->st = IM_RGBA;
 			} else {
 				im->st = IM_FAIL;
@@ -1987,7 +2019,9 @@ static void img_thread(void *arg)
 		          (svg ? svg_render(b.p, b.n, mw, mh, &px, &w, &h) : img_mem_fit((const u8 *)b.p, b.n, mw, mh, &px, &w, &h) == IMG_OK);
 		if (ok) {
 			im->rgba = px, im->tw = w, im->th = h, im->iw = w, im->ih = h;
+			LightLock_Lock(&IMG_LK);
 			B.img_px += (size_t)w * h;
+			LightLock_Unlock(&IMG_LK);
 			im->st = IM_RGBA;
 		} else {
 			im->st = IM_FAIL;
@@ -2010,7 +2044,20 @@ static void img_start(void)
 		return;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	B.img_thr = threadCreate(img_thread, NULL, 64 * 1024, prio + 2, br_core(), false);
+	if (!IMG_LK_OK)
+		LightLock_Init(&IMG_LK), LightLock_Init(&FONT_LK), IMG_LK_OK = true;
+	IMG_LIVE = 0, IMG_T0 = osGetTime();
+	for (int k = 0; k < IMG_NTHR; k++) {
+		LightLock_Lock(&IMG_LK);
+		IMG_LIVE++;
+		LightLock_Unlock(&IMG_LK);
+		B.img_thr[k] = threadCreate(img_thread, NULL, 64 * 1024, prio + 2, br_core(), false);
+		if (!B.img_thr[k]) {
+			LightLock_Lock(&IMG_LK);
+			IMG_LIVE--;
+			LightLock_Unlock(&IMG_LK);
+		}
+	}
 }
 
 /* ------------------------------------------------------------ con CSS */
@@ -5516,7 +5563,7 @@ static bool imgfit_due(void)
 		const PImg *im = &B.img[i];
 		if (!im->guessed || im->y > lim)
 			continue;
-		if (im->st == IM_WAIT || im->st == IM_RGBA)
+		if (im->st == IM_WAIT || im->st == IM_LOAD || im->st == IM_RGBA)
 			return false; // (aún llegan: se espera a tenerlas todas)
 		if (im->st == IM_TEX && im->ow > 0 && im->oh > 0) {
 			float ar = (float)im->ow / im->oh;
