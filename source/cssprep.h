@@ -27,6 +27,10 @@ typedef struct CssPrep CssPrep;
 /* el ancho de la página en px (para @media) y los atributos de <html> y <body> («nombre=valor»
  * separados por \n), para saber qué reglas definen las variables de la página */
 CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs);
+/* las clases que aparecen en la página (antes de cssprep_vars): lo que exige un antepasado con una clase que no
+ * está, no se aplica */
+void cssprep_add_class(CssPrep *p, const char *name, size_t n);
+void cssprep_classes_done(CssPrep *p);
 void cssprep_free(CssPrep *p);
 
 void cssprep_vars(CssPrep *p, const char *css, size_t n);              /* 1.ª pasada: las variables */

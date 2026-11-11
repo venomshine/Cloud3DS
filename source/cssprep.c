@@ -147,6 +147,8 @@ struct CssPrep {
 	Combo combo[MAX_COMBOS];
 	int ncombo;
 	Map vid;      /* variables marcadas en color y background-color: nombre -> número (1…) */
+	Map dcls;     /* las clases que hay en la página */
+	bool dcls_ok; /* (y ya se sabe cuáles son) */
 	Map fonts;    /* @font-face: familia (en minúsculas) -> «dirección de su hoja\nurl» (ttf, otf o woff) */
 	const char *base; /* la dirección de la hoja que se está leyendo */
 	Map ivn;      /* las variables que van por elemento: las de los style="" y las que pone una regla de clase */
@@ -186,6 +188,44 @@ CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs
 	return p;
 }
 
+void cssprep_add_class(CssPrep *p, const char *name, size_t n)
+{
+	if (p && n && n < 120)
+		map_set(&p->dcls, name, n, "1", 1);
+}
+void cssprep_classes_done(CssPrep *p)
+{
+	if (p)
+		p->dcls_ok = true;
+}
+
+// ¿las clases que pide este trozo de selector («.a.b», «div.a[x]») están en la página? (si no se sabe, sí)
+static bool classes_here(const CssPrep *p, const char *t, const char *e)
+{
+	if (!p->dcls_ok)
+		return true;
+	for (const char *q = t; q < e; q++) {
+		if (*q == '[' || *q == '(') { // (lo de dentro de [] o :not() no cuenta)
+			int d = 1;
+			for (q++; q < e && d; q++)
+				d += *q == '[' || *q == '(' ? 1 : *q == ']' || *q == ')' ? -1 : 0;
+			q--;
+			continue;
+		}
+		if (*q != '.')
+			continue;
+		const char *a = q + 1, *z = a;
+		while (z < e && (isalnum((unsigned char)*z) || *z == '-' || *z == '_' || (unsigned char)*z >= 0x80))
+			z++;
+		if (z > a && z < e && *z == '\\') // (con escapes: no se comprueba)
+			return true;
+		if (z > a && !map_get(&p->dcls, a, (size_t)(z - a)))
+			return false;
+		q = z - 1;
+	}
+	return true;
+}
+
 void cssprep_free(CssPrep *p)
 {
 	if (!p)
@@ -213,6 +253,7 @@ void cssprep_free(CssPrep *p)
 		free(p->vname[i]);
 	free(p->vname);
 	free(p->html), free(p->body);
+	map_free(&p->dcls);
 	free(p);
 }
 
@@ -1116,8 +1157,7 @@ static float px_of(const char *v)
  * column-rule-width = el de la última; la zona (grid-area) da el orden (order) y column-span: all
  * si ocupa toda la fila */
 static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
-{
-	if (!strcmp(name, "grid-template-columns") || !strcmp(name, "grid-template")) {
+{	if (!strcmp(name, "grid-template-columns") || !strcmp(name, "grid-template")) {
 		const char *v = val;
 		if (!strcmp(name, "grid-template")) {
 			const char *sl = strchr(val, '/');
@@ -2847,6 +2887,8 @@ static void tpl_add(CssPrep *p, const char *s0, const char *s1, const char *b0, 
 					ctx_ok = compound_ok(t, ce, p->html, true);
 				else if (ce > t && !strncasecmp(t, "body", 4))
 					ctx_ok = compound_ok(t, ce, p->body, false);
+				else if (ce > t)
+					ctx_ok = classes_here(p, t, ce);
 				t = ce;
 			}
 			if (!ctx_ok)

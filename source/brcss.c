@@ -846,6 +846,30 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 		c->prep = cssprep_new(width, ha, ba);
 	}
 	free(ha), free(ba);
+	// las clases que hay en la página (una regla con «.zen-mode .x» no puede tocar a nada si no hay .zen-mode)
+	if (c->prep && doc) {
+		dom_node_internal *st[128];
+		int sp = 0;
+		dom_element *root = NULL;
+		if (dom_document_get_document_element(doc, &root) == DOM_NO_ERR && root) {
+			st[sp++] = NI(root);
+			while (sp) {
+				dom_node_internal *e = st[--sp];
+				lwc_string **cl = NULL;
+				uint32_t nc = 0;
+				if (dom_element_get_classes((dom_element *)e, &cl, &nc) == DOM_NO_ERR)
+					for (uint32_t k = 0; k < nc; k++) {
+						cssprep_add_class(c->prep, lwc_string_data(cl[k]), lwc_string_length(cl[k]));
+						lwc_string_unref(cl[k]);
+					}
+				for (dom_node_internal *ch = e->last_child; ch; ch = ch->previous)
+					if (ch->type == DOM_ELEMENT_NODE && sp < 128)
+						st[sp++] = ch;
+			}
+			dom_node_unref(root);
+			cssprep_classes_done(c->prep);
+		}
+	}
 	for (int i = 0; i < c->nraw && c->prep; i++)
 	{
 		cssprep_set_base(c->prep, c->raw[i].url); // (para los @font-face)
