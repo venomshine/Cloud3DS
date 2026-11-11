@@ -249,7 +249,7 @@ static JSValue f_cvNew(JSContext *ctx, JSValueConst t, int argc, JSValueConst *a
 	return JS_NewInt32(ctx, n ? cv_new(n, NI(1), NI(2)) : 0);
 }
 enum { CV_RESIZE, CV_SAVE, CV_RESTORE, CV_SETT, CV_BEGIN, CV_MOVE, CV_LINE, CV_BEZ, CV_QUAD, CV_ELL, CV_ARCTO, CV_RECT, CV_CLOSE,
-       CV_FILL, CV_STROKE, CV_FRECT, CV_CRECT, CV_STYLE, CV_DRAWCV };
+       CV_FILL, CV_STROKE, CV_FRECT, CV_CRECT, CV_STYLE, CV_DRAWCV, CV_DRAWIMG, CV_CLIP };
 // cv(op, id, …números): casi todo lo de dibujar
 static JSValue f_cv(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv, int op)
 {
@@ -282,16 +282,13 @@ static JSValue f_cv(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv
 	case CV_STYLE: // fill, stroke (0xAABBGGRR), alpha, lineWidth, cap, join, miter, composición
 		cv_style(id, (uint32_t)num(ctx, argc, argv, 1), (uint32_t)num(ctx, argc, argv, 2), NF(3), NF(4), NI(5), NI(6), NF(7), NI(8));
 		break;
-	case CV_DRAWCV: { // de otro lienzo: (id, otro, sx, sy, sw, sh, dx, dy, dw, dh)
-		int w = 0, h = 0;
-		uint8_t *px = cv_take(NI(1), &w, &h, true);
-		if (px) {
-			float sw = NF(4), sh = NF(5);
-			cv_draw_image(id, px, w, h, NF(2), NF(3), sw > 0 ? sw : w, sh > 0 ? sh : h, NF(6), NF(7), NF(8), NF(9));
-			free(px);
-		}
+	case CV_DRAWCV: // de otro lienzo: (id, otro, sx, sy, sw, sh, dx, dy, dw, dh)
+		cv_draw_canvas(id, NI(1), NF(2), NF(3), NF(4), NF(5), NF(6), NF(7), NF(8), NF(9));
 		break;
-	}
+	case CV_DRAWIMG: // de una imagen guardada (cvImg)
+		cv_draw_img(id, NI(1), NF(2), NF(3), NF(4), NF(5), NF(6), NF(7), NF(8), NF(9));
+		break;
+	case CV_CLIP: cv_clip(id, argc > 1 && JS_ToBool(ctx, argv[1])); break;
 	}
 	return JS_UNDEFINED;
 }
@@ -365,6 +362,79 @@ static JSValue f_cvPng(JSContext *ctx, JSValueConst t, int argc, JSValueConst *a
 	JSValue r = JS_NewString(ctx, u ? u : "data:,");
 	free(u);
 	return r;
+}
+// cvStyle2(id, [dash], offset, suavizar, sombra (0xAABBGGRR), sx, sy, desenfoque)
+static JSValue f_cvStyle2(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	float d[8];
+	int nd = 0;
+	if (argc > 1 && JS_IsArray(argv[1])) {
+		int64_t l = 0;
+		JS_GetLength(ctx, argv[1], &l);
+		for (int64_t i = 0; i < l && nd < 8; i++) {
+			JSValue v = JS_GetPropertyUint32(ctx, argv[1], (uint32_t)i);
+			double x = 0;
+			JS_ToFloat64(ctx, &x, v);
+			JS_FreeValue(ctx, v);
+			d[nd++] = (float)x;
+		}
+	}
+	cv_style2(NI(0), d, nd, NF(2), argc > 3 && JS_ToBool(ctx, argv[3]), (uint32_t)num(ctx, argc, argv, 4), NF(5), NF(6), NF(7));
+	return JS_UNDEFINED;
+}
+// cvPaint(id, trazo, tipo, g0…g5, [offset, color, offset, color…], imagen, repetir)
+static JSValue f_cvPaint(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	float g[6], st[64];
+	uint32_t col[64];
+	int ns = 0;
+	for (int i = 0; i < 6; i++)
+		g[i] = NF(3 + i);
+	if (argc > 9 && JS_IsArray(argv[9])) {
+		int64_t l = 0;
+		JS_GetLength(ctx, argv[9], &l);
+		for (int64_t i = 0; i + 1 < l && ns < 64; i += 2) {
+			JSValue a = JS_GetPropertyUint32(ctx, argv[9], (uint32_t)i), b = JS_GetPropertyUint32(ctx, argv[9], (uint32_t)i + 1);
+			double o = 0, c = 0;
+			JS_ToFloat64(ctx, &o, a), JS_ToFloat64(ctx, &c, b);
+			JS_FreeValue(ctx, a), JS_FreeValue(ctx, b);
+			st[ns] = (float)o, col[ns] = (uint32_t)c, ns++;
+		}
+	}
+	cv_paint(NI(0), argc > 1 && JS_ToBool(ctx, argv[1]), NI(2), g, st, col, ns, NI(10), NI(11));
+	return JS_UNDEFINED;
+}
+// cvImg(url): [número, ancho, alto] de la imagen (la baja y la guarda la primera vez); null si no se pudo
+static JSValue f_cvImg(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	const char *u = argc > 0 ? JS_ToCString(ctx, argv[0]) : NULL;
+	if (!u)
+		return JS_NULL;
+	int ow = 0, oh = 0, h = cv_img_find(u, &ow, &oh);
+	if (!h && J.host->image) {
+		int w = 0, hh = 0;
+		uint8_t *px = J.host->image(u, &w, &hh, &ow, &oh);
+		if (px)
+			h = cv_img_add(u, px, w, hh, ow, oh);
+		else // (que no se vuelva a bajar en cada cuadro: se recuerda vacía, de 1x1 transparente)
+			cv_img_add(u, calloc(1, 4), 1, 1, 1, 1);
+	}
+	JS_FreeCString(ctx, u);
+	if (!h)
+		return JS_NULL;
+	JSValue r = JS_NewArray(ctx);
+	JS_SetPropertyUint32(ctx, r, 0, JS_NewInt32(ctx, h));
+	JS_SetPropertyUint32(ctx, r, 1, JS_NewInt32(ctx, ow));
+	JS_SetPropertyUint32(ctx, r, 2, JS_NewInt32(ctx, oh));
+	return r;
+}
+static JSValue f_cvImgCanvas(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	return JS_NewInt32(ctx, cv_img_from_canvas(NI(0)));
 }
 #undef NF
 #undef NI
@@ -961,6 +1031,12 @@ static const JSCFunctionListEntry NATIVE[] = {
     JS_CFUNC_MAGIC_DEF("cvClearRect", 5, f_cv, CV_CRECT),
     JS_CFUNC_MAGIC_DEF("cvStyle", 9, f_cv, CV_STYLE),
     JS_CFUNC_MAGIC_DEF("cvDrawCv", 10, f_cv, CV_DRAWCV),
+    JS_CFUNC_MAGIC_DEF("cvDrawImg", 10, f_cv, CV_DRAWIMG),
+    JS_CFUNC_MAGIC_DEF("cvClip", 2, f_cv, CV_CLIP),
+    JS_CFUNC_DEF("cvStyle2", 8, f_cvStyle2),
+    JS_CFUNC_DEF("cvPaint", 12, f_cvPaint),
+    JS_CFUNC_DEF("cvImg", 1, f_cvImg),
+    JS_CFUNC_DEF("cvImgCanvas", 1, f_cvImgCanvas),
     JS_CFUNC_DEF("cvText", 7, f_cvText),
     JS_CFUNC_DEF("cvMetrics", 2, f_cvMetrics),
     JS_CFUNC_DEF("cvTransform", 1, f_cvTransform),

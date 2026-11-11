@@ -39,6 +39,9 @@ typedef struct {
 	int frame;
 	int (*frame_of)(dom_node *iframe);
 	void (*post)(int from, int to, const char *json, const char *origin);
+	/* una imagen (para dibujarla en un <canvas>): sus píxeles RGBA (malloc), quizá reducida (w x h) y su tamaño
+	 * de verdad (ow x oh); NULL si no se pudo. Puede ser NULL */
+	uint8_t *(*image)(const char *url, int *w, int *h, int *ow, int *oh);
 } JsHost;
 
 typedef struct {

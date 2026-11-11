@@ -1276,6 +1276,46 @@ static int js_frame_of(dom_node *el)
 	return -1;
 }
 // (todo el JavaScript, de la página y de sus iframes, va en el mismo hilo, de uno en uno: la cola no necesita cerrojo)
+// una imagen para el <canvas> de una página (drawImage, createPattern): bajada y decodificada aquí mismo, en el
+// hilo del JavaScript; hasta 1024x1024 (si es más grande, reducida: el canvas la escala a su tamaño de verdad)
+static uint8_t *js_image(const char *url, int *w, int *h, int *ow, int *oh)
+{
+	Buf b = {0};
+	long code = 0;
+	int r = DLF_FAIL;
+	if (!strncmp(url, "data:", 5)) {
+		const char *c = strstr(url, ";base64,");
+		if (c) {
+			size_t l = strlen(c + 8);
+			if ((b.p = malloc(l * 3 / 4 + 4)))
+				b.n = util_b64_decode(c + 8, l, (u8 *)b.p), r = DLF_OK, code = 200;
+		} else if ((c = strchr(url, ',')) && (b.p = strdup(c + 1))) // (data:image/svg+xml,<svg…> sin base64)
+			b.n = strlen(b.p), r = DLF_OK, code = 200;
+	} else if (!strncmp(url, "file://", 7)) // (una página de la SD: la imagen, de la SD)
+		r = fetch_any(url + 7, "image/*", &b, &code);
+	else if (!blocked_host(url))
+		r = fetch_any(url, "image/png,image/jpeg,image/gif,image/*;q=0.5", &b, &code);
+	u8 *px = NULL;
+	*w = *h = *ow = *oh = 0;
+	if (r == DLF_OK && code < 400 && b.n && mem_free() > 2 * MEM_RESERVE + (u32)b.n * 2 + 4u * 1024 * 1024) {
+		bool svg = false;
+		for (size_t i = 0; i < b.n && i < 512 && !svg; i++)
+			svg = !strncmp(b.p + i, "<svg", 4);
+		if (svg) {
+			if (svg_render(b.p, b.n, 1024, 1024, &px, w, h))
+				*ow = *w, *oh = *h;
+		} else {
+			img_mem_info((const u8 *)b.p, b.n, ow, oh);
+			if (img_mem_fit((const u8 *)b.p, b.n, 1024, 1024, &px, w, h) != IMG_OK)
+				px = NULL;
+			if (px && (*ow <= 0 || *oh <= 0))
+				*ow = *w, *oh = *h;
+		}
+	}
+	util_log("web: canvas: imagen %.100s -> %s (%dx%d)", strncmp(url, "data:", 5) ? url : "data:…", px ? "bien" : "no", *ow, *oh);
+	free(b.p);
+	return px;
+}
 static void js_post(int from, int to, const char *json, const char *origin)
 {
 	if (NFMQ >= 64 || to < 0 || to > NFR || to == from)
@@ -1384,7 +1424,7 @@ static void frame_load(int idx, const char *srcdoc)
 	if (B.js && lim) {
 		JsHost h = {.mem_limit = lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = f->url, .ua = UA_PC, .width = f->w, .height = f->h,
 		            .budget_ms = 15000, .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect,
-		            .frame = idx + 1, .frame_of = js_frame_of, .post = js_post};
+		            .frame = idx + 1, .frame_of = js_frame_of, .post = js_post, .image = js_image};
 		JsResult jr;
 		f->jsp = jsdom_open(f->doc, &h, &jr);
 		util_log("web: iframe %.100s: %d scripts, %d con error, %u ms", f->url, jr.scripts, jr.errors, (unsigned)(osGetTime() - t0));
@@ -1610,7 +1650,7 @@ static void load_thread_run(void *arg)
 	if (js_run && !B.js_defer) {
 		JsHost h = {.mem_limit = js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
 		            .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect,
-		            .height = 600, .frame = 0, .frame_of = js_frame_of, .post = js_post};
+		            .height = 600, .frame = 0, .frame_of = js_frame_of, .post = js_post, .image = js_image};
 		B.in_js = true;
 		JsResult jr;
 		B.jsp = jsdom_open(doc, &h, &jr);
@@ -5918,7 +5958,7 @@ static void jsdef_thread_run(void *arg)
 		return;
 	JsHost h = {.mem_limit = B.js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000,
 	            .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect,
-		            .height = 600, .frame = 0, .frame_of = js_frame_of, .post = js_post};
+		            .height = 600, .frame = 0, .frame_of = js_frame_of, .post = js_post, .image = js_image};
 	JsResult jr;
 	B.jsp = jsdom_open(B.doc, &h, &jr);
 	B.js_scripts = jr.scripts, B.js_errors = jr.errors;

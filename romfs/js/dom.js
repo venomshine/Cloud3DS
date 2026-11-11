@@ -415,6 +415,7 @@ class Element extends Node {
 		const cb = this._ce && this.attributeChangedCallback, obs = cb && this.constructor.observedAttributes, old = obs && obs.includes(n) ? this.getAttribute(n) : undefined;
 		N.setA(this._h, n, String(v));
 		if ((n === 'width' || n === 'height') && this.localName === 'canvas') canvasResized(this);
+		else if (n === 'src' && this.localName === 'img') imgLoaded(this);
 		if (old !== undefined) try { this.attributeChangedCallback(n, old, String(v)); } catch (e) { report(e); }
 	}
 	removeAttribute(n) {
@@ -498,7 +499,7 @@ class Element extends Node {
 	get form() { return this.closest('form'); }
 	get options() { return qsa(this, 'option'); }
 	get selectedIndex() { return Math.max(0, this.options.findIndex(o => o.hasAttribute('selected'))); }
-	get naturalWidth() { return +this.getAttribute('width') || 0; } get naturalHeight() { return +this.getAttribute('height') || 0; }
+	get naturalWidth() { return imgNatural(this)[0]; } get naturalHeight() { return imgNatural(this)[1]; }
 	get complete() { return true; }
 	get dir() { return this.getAttribute('dir') || ''; } get lang() { return this.getAttribute('lang') || ''; }
 	submit() { navigateForm(this); } reset() {}
@@ -850,12 +851,47 @@ const hex2 = v => (v | 0).toString(16).padStart(2, '0');
 function colorStr(c) { return c[3] >= 1 ? '#' + hex2(c[0]) + hex2(c[1]) + hex2(c[2]) : 'rgba(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', ' + c[3] + ')'; }
 const packColor = c => ((Math.round(c[3] * 255) << 24) >>> 0) + (c[2] << 16) + (c[1] << 8) + c[0];
 class CanvasGradient {
-	constructor() { this._stops = []; }
-	addColorStop(o, c) { const v = cssColor(c); if (!v) throw new DOMException('color', 'SyntaxError'); this._stops.push([+o, v]); this._stops.sort((a, b) => a[0] - b[0]); }
-	// (aún sin degradado: su color del medio)
-	_flat() { const s = this._stops; if (!s.length) return [0, 0, 0, 0]; let best = s[0]; for (const x of s) if (Math.abs(x[0] - 0.5) < Math.abs(best[0] - 0.5)) best = x; return best[1]; }
+	constructor(type, g) { this._type = type; this._g = g.map(Number); this._stops = []; }
+	addColorStop(o, c) {
+		o = +o; if (!(o >= 0 && o <= 1)) throw new DOMException('offset', 'IndexSizeError');
+		const v = cssColor(c); if (!v) throw new DOMException('color', 'SyntaxError');
+		let i = this._stops.length; while (i > 0 && this._stops[i - 1][0] > o) i--; // (estable: los iguales, en orden)
+		this._stops.splice(i, 0, [o, v]);
+	}
+	_flat() { const s = this._stops; return s.length ? s[s.length >> 1][1] : [0, 0, 0, 0]; }
+	_send(id, stroke) { const st = []; for (const [o, c] of this._stops) st.push(o, packColor(c)); const g = this._g; N.cvPaint(id, stroke, this._type, g[0] || 0, g[1] || 0, g[2] || 0, g[3] || 0, g[4] || 0, g[5] || 0, st, 0, 0); }
 }
-class CanvasPattern { setTransform() {} }
+class CanvasPattern {
+	constructor(img, rep) { this._img = img; this._rep = rep; }
+	setTransform() {}
+	_flat() { return [128, 128, 128, 1]; }
+	_send(id, stroke) { N.cvPaint(id, stroke, 4, 0, 0, 0, 0, 0, 0, [], this._img, this._rep); }
+}
+// de dónde sale una imagen para drawImage / createPattern: [número, ancho, alto, es un canvas]
+function imgSource(img) {
+	if (!img) return null;
+	if (img._bitmap) return img._bitmap;
+	if (img._h && img.localName === 'canvas') { const id = img._cvid || (img._cvid = N.cvNew(img._h, img.width, img.height)); return id ? [id, img.width, img.height, true] : null; }
+	if (img._h && (img.localName === 'img' || img.localName === 'image')) {
+		const src = img.currentSrc || img.src || (img.getAttribute('href') || '');
+		if (!src) return null;
+		const r = N.cvImg(new URL(src, location.href).href);
+		if (r) img._nat = [r[1], r[2]];
+		return r ? [r[0], r[1], r[2], false] : null;
+	}
+	return null;
+}
+// las <img>: al poner src, «load» (un momento después; los píxeles se bajan cuando se dibujan)
+function imgLoaded(el) {
+	el._nat = undefined;
+	setTimeout(() => { try { el.dispatchEvent(new Event('load')); } catch (e) { report(e); } }, 0);
+}
+function imgNatural(el) {
+	if (el._nat) return el._nat;
+	// (las que no están en la página, como new Image(): se bajan para saber su tamaño; las de la página, el de sus atributos)
+	if (el.localName === 'img' && !el.isConnected && el.getAttribute('src')) { const r = imgSource(el); if (r) return el._nat; }
+	return [+el.getAttribute('width') || 0, +el.getAttribute('height') || 0];
+}
 class ImageData {
 	constructor(a, b, c) {
 		if (a instanceof Uint8ClampedArray) { this.data = a; this.width = b; this.height = c || a.length / 4 / b; }
@@ -909,7 +945,9 @@ function svgPath(p, d) {
 		} else i++;
 	}
 }
-const CAPS = { butt: 0, round: 1, square: 2 }, JOINS = { miter: 0, round: 1, bevel: 2 }, COMPS = { 'source-over': 0, 'destination-out': 1, copy: 2 };
+const CAPS = { butt: 0, round: 1, square: 2 }, JOINS = { miter: 0, round: 1, bevel: 2 };
+const COMPS = { 'source-over': 0, 'destination-out': 1, copy: 2, 'destination-over': 3, 'source-atop': 4, lighter: 5, 'source-in': 6, 'destination-in': 7, xor: 8,
+	'destination-atop': 9, multiply: 10, screen: 11, darken: 12, lighten: 13, overlay: 14, 'hard-light': 15, difference: 16, exclusion: 16, 'color-dodge': 13, 'color-burn': 12, 'soft-light': 14 };
 // «bold 12px Arial» -> [px, negrita]
 function fontOf(f) {
 	const m = /(?:^|\s)(\d*\.?\d+)(px|pt|em|rem|%)?(?:\s*\/\s*\S+)?\s+/.exec(String(f) + ' ');
@@ -931,14 +969,18 @@ class CanvasRenderingContext2D {
 		this._stack = []; this._dirty = true;
 	}
 	_sync() {
-		if (!this._dirty) return;
+		if (!this._dirty && !this._s.fillStyle._send && !this._s.strokeStyle._send) return; // (los degradados, siempre: pueden tener paradas nuevas)
 		const s = this._s;
 		N.cvStyle(this._id, packColor(s.fill), packColor(s.stroke), s.globalAlpha, s.lineWidth, CAPS[s.lineCap] || 0, JOINS[s.lineJoin] || 0, s.miterLimit, COMPS[s.globalCompositeOperation] || 0);
+		if (s.fillStyle._send) s.fillStyle._send(this._id, false);
+		if (s.strokeStyle._send) s.strokeStyle._send(this._id, true);
+		const sc = cssColor(s.shadowColor) || [0, 0, 0, 0], d = s.lineDash.length & 1 ? s.lineDash.concat(s.lineDash) : s.lineDash;
+		N.cvStyle2(this._id, d, s.lineDashOffset, s.imageSmoothingEnabled, packColor(sc), s.shadowOffsetX, s.shadowOffsetY, s.shadowBlur);
 		this._dirty = false;
 	}
 	_setM(m) { this._s.m = m; N.cvSetT(this._id, ...m); }
-	save() { this._stack.push({ ...this._s, m: this._s.m.slice(), lineDash: this._s.lineDash.slice() }); }
-	restore() { const s = this._stack.pop(); if (s) { this._s = s; this._dirty = true; N.cvSetT(this._id, ...s.m); } }
+	save() { this._stack.push({ ...this._s, m: this._s.m.slice(), lineDash: this._s.lineDash.slice() }); N.cvSave(this._id); }
+	restore() { const s = this._stack.pop(); if (s) { this._s = s; this._dirty = true; N.cvSetT(this._id, ...s.m); N.cvRestore(this._id); } }
 	reset() { this._reset(); N.cvResize(this._id, this.canvas.width, this.canvas.height); }
 	isContextLost() { return false; }
 	getContextAttributes() { return { alpha: true, desynchronized: false, colorSpace: 'srgb', willReadFrequently: false }; }
@@ -957,16 +999,20 @@ class CanvasRenderingContext2D {
 	set strokeStyle(v) { this._paint('stroke', v); }
 	_paint(k, v) {
 		let c;
-		if (v instanceof CanvasGradient) c = v._flat(), this._s[k + 'Style'] = v;
-		else if (v instanceof CanvasPattern) c = [128, 128, 128, 1], this._s[k + 'Style'] = v;
+		if (v instanceof CanvasGradient || v instanceof CanvasPattern) c = v._flat(), this._s[k + 'Style'] = v;
 		else { c = cssColor(v); if (!c) return; this._s[k + 'Style'] = colorStr(c); }
 		this._s[k] = c; this._dirty = true;
 	}
-	createLinearGradient() { return new CanvasGradient(); }
-	createRadialGradient() { return new CanvasGradient(); }
-	createConicGradient() { return new CanvasGradient(); }
-	createPattern() { return new CanvasPattern(); }
-	setLineDash(a) { this._s.lineDash = Array.from(a || [], Number); }
+	createLinearGradient(x0, y0, x1, y1) { return new CanvasGradient(1, [x0, y0, x1, y1]); }
+	createRadialGradient(x0, y0, r0, x1, y1, r1) { if (r0 < 0 || r1 < 0) throw new DOMException('radio negativo', 'IndexSizeError'); return new CanvasGradient(2, [x0, y0, r0, x1, y1, r1]); }
+	createConicGradient(a, x, y) { return new CanvasGradient(3, [a, x, y]); }
+	createPattern(img, rep) {
+		const r = imgSource(img); if (!r) return null;
+		const h = r[3] ? N.cvImgCanvas(r[0]) : r[0]; if (!h) return null;
+		rep = rep == null || rep === '' ? 'repeat' : String(rep);
+		return new CanvasPattern(h, rep === 'repeat' ? 3 : rep === 'repeat-x' ? 1 : rep === 'repeat-y' ? 2 : 0);
+	}
+	setLineDash(a) { a = Array.from(a || [], Number); if (a.some(v => !(v >= 0) || !isFinite(v))) return; this._s.lineDash = a; this._dirty = true; }
 	getLineDash() { return this._s.lineDash.slice(); }
 	// caminos
 	beginPath() { N.cvBegin(this._id); }
@@ -990,7 +1036,7 @@ class CanvasRenderingContext2D {
 	_path(p) { if (!(p instanceof Path2D)) return false; this.beginPath(); for (const [k, a] of p._ops) this[k](...a); return true; }
 	fill(p, rule) { if (typeof p === 'string') rule = p; else this._path(p); this._sync(); N.cvFill(this._id, rule === 'evenodd'); }
 	stroke(p) { this._path(p); this._sync(); N.cvStroke(this._id); }
-	clip() {} // (aún sin recortes)
+	clip(p, rule) { if (typeof p === 'string') rule = p; else this._path(p); N.cvClip(this._id, rule === 'evenodd'); }
 	isPointInPath() { return false; }
 	isPointInStroke() { return false; }
 	fillRect(x, y, w, h) { this._sync(); N.cvFillRect(this._id, x, y, w, h); }
@@ -1020,14 +1066,14 @@ class CanvasRenderingContext2D {
 	}
 	// imágenes y píxeles
 	drawImage(img, a, b, c, d, e, f, g, h) {
-		const src = img && img.localName === 'canvas' ? N.cvNew(img._h, img.width, img.height) : img && img._cvid ? img._cvid : 0;
-		if (!src) return; // (de un <img>: aún no, sus píxeles no están en el JavaScript)
-		const sw0 = img.width, sh0 = img.height;
+		const r = imgSource(img);
+		if (!r) return; // (vídeo, o una imagen que no se pudo bajar)
+		const src = r[0], sw0 = r[1], sh0 = r[2];
 		let sx = 0, sy = 0, sw = sw0, sh = sh0, dx, dy, dw, dh;
 		if (e === undefined) { dx = a; dy = b; dw = c === undefined ? sw0 : c; dh = d === undefined ? sh0 : d; }
 		else { sx = a; sy = b; sw = c; sh = d; dx = e; dy = f; dw = g; dh = h; }
 		this._sync();
-		N.cvDrawCv(this._id, src, sx, sy, sw, sh, dx, dy, dw, dh);
+		if (r[3]) N.cvDrawCv(this._id, src, sx, sy, sw, sh, dx, dy, dw, dh); else N.cvDrawImg(this._id, src, sx, sy, sw, sh, dx, dy, dw, dh);
 	}
 	createImageData(w, h) { if (w instanceof ImageData) ({ width: w, height: h } = w); return new ImageData(Math.abs(w | 0), Math.abs(h | 0)); }
 	getImageData(x, y, w, h) { return new ImageData(new Uint8ClampedArray(N.cvGet(this._id, x | 0, y | 0, w | 0, h | 0)), w | 0, h | 0); }
@@ -1061,6 +1107,19 @@ function canvasResized(el) {
 }
 G.CanvasRenderingContext2D = CanvasRenderingContext2D; G.CanvasGradient = CanvasGradient; G.CanvasPattern = CanvasPattern;
 G.ImageData = ImageData; G.Path2D = Path2D;
+// createImageBitmap: la misma imagen (o lienzo), ya lista
+G.createImageBitmap = (src, ...a) => new Promise((ok, bad) => {
+	setTimeout(() => {
+		let r = src instanceof ImageData ? null : imgSource(src);
+		if (src instanceof ImageData || (src && src.size !== undefined && src._t !== undefined)) { // (de ImageData: a un lienzo nuevo)
+			if (!(src instanceof ImageData)) return bad(new DOMException('no se puede', 'InvalidStateError'));
+			const cv = document.createElement('canvas'); cv.width = src.width; cv.height = src.height; cv.getContext('2d').putImageData(src, 0, 0); r = imgSource(cv);
+		}
+		if (!r) return bad(new DOMException('no se puede', 'InvalidStateError'));
+		ok({ _bitmap: r, width: r[1], height: r[2], close() {} });
+	}, 0);
+});
+G.ImageBitmap = class {};
 G.OffscreenCanvas = class { constructor(w, h) { const e = document.createElement('canvas'); e.width = w; e.height = h; return e; } };
 G.Image = class { constructor(w, h) { const e = document.createElement('img'); if (w) e.setAttribute('width', w); if (h) e.setAttribute('height', h); return e; } };
 G.Option = class { constructor(t, v) { const e = document.createElement('option'); e.textContent = t || ''; if (v !== undefined) e.setAttribute('value', v); return e; } };

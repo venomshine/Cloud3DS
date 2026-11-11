@@ -31,6 +31,11 @@ void cv_restore(int id);
 void cv_set_transform(int id, const float m[6]);   /* a b c d e f, como setTransform */
 void cv_get_transform(int id, float m[6]);
 void cv_style(int id, uint32_t fill, uint32_t stroke, float alpha, float line_w, int cap, int join, float miter, int comp);
+/* lo demás del estado: líneas discontinuas, suavizado de imágenes y sombra */
+void cv_style2(int id, const float *dash, int ndash, float dash_off, bool smooth, uint32_t shadow, float sx, float sy, float blur);
+/* degradados y patrones (en vez del color de cv_style): g según el tipo; stops con sus colores RGBA */
+enum { CV_P_COLOR, CV_P_LINEAR, CV_P_RADIAL, CV_P_CONIC, CV_P_PATTERN };
+void cv_paint(int id, bool stroke, int type, const float g[6], const float *stops, const uint32_t *cols, int nstops, int img, int rep);
 
 /* caminos */
 void cv_begin(int id);
@@ -44,11 +49,18 @@ void cv_rect(int id, float x, float y, float w, float h);
 void cv_close(int id);
 void cv_fill(int id, bool evenodd);
 void cv_stroke(int id);
+void cv_clip(int id, bool evenodd);              /* (save/restore lo guardan) */
 
 /* directo */
 void cv_fill_rect(int id, float x, float y, float w, float h);
 void cv_clear_rect(int id, float x, float y, float w, float h);
-void cv_draw_image(int id, const uint8_t *src, int sw_, int sh_, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
+void cv_draw_img(int id, int img, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
+void cv_draw_canvas(int id, int src, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
+
+/* imágenes guardadas (las <img> que se dibujan, los patrones): un número (0: no está) */
+int cv_img_find(const char *url, int *ow, int *oh);
+int cv_img_add(const char *url, uint8_t *px, int w, int h, int ow, int oh); /* se queda con px */
+int cv_img_from_canvas(int id);
 float cv_text(int id, const char *s, float x, float y, float px, bool bold, bool draw); /* dibuja (o mide) y da el ancho */
 void cv_text_metrics(float px, bool bold, float *ascent, float *descent);
 
