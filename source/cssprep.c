@@ -172,6 +172,7 @@ struct CssPrep {
 
 static float G_W = 1024; /* el ancho de la página (para vw) */
 static float G_PW = 1024; /* el ancho de la página: un calc(% ± px) se aproxima con él */
+static float G_REM = 16;  /* la letra de <html> (html { font-size: 62.5% }: 1rem = 10 px) */
 static bool G_KEEP_CALC; /* width: calc(… % …) lo resuelve libcss (sabe el ancho de verdad) */
 
 CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs)
@@ -180,6 +181,7 @@ CssPrep *cssprep_new(float width, const char *html_attrs, const char *body_attrs
 	if (!p)
 		return NULL;
 	p->w = width;
+	G_REM = 16;
 	if (width > 0)
 		G_PW = width;
 	G_W = width;
@@ -391,7 +393,9 @@ static float len_px(const char *v)
 	float x = strtof(v, &end);
 	if (end == v)
 		return -1;
-	if (!strncasecmp(end, "em", 2) || !strncasecmp(end, "rem", 3))
+	if (!strncasecmp(end, "rem", 3))
+		return x * G_REM;
+	if (!strncasecmp(end, "em", 2))
 		return x * 16;
 	return x; // px o sin unidad
 }
@@ -665,6 +669,44 @@ static bool compound_ok(const char *s, const char *e, const char *attrs, bool is
 	return true;
 }
 
+// «html { font-size: 62.5% }» (o :root): la letra de los rem
+static void root_font(CssPrep *p, const char *s0, const char *s1, const char *b0, const char *b1)
+{
+	bool html = false;
+	for (const char *s = s0; s < s1 && !html;) {
+		const char *c = find_top(s, s1, ",");
+		const char *a = s, *b = c;
+		trim(&a, &b);
+		html = (b - a == 4 && !strncasecmp(a, "html", 4)) || (b - a == 5 && !strncasecmp(a, ":root", 5));
+		s = c + 1;
+	}
+	if (!html)
+		return;
+	for (const char *q = b0; q < b1;) {
+		const char *c = find_top(q, b1, ";");
+		const char *colon = find_top(q, c, ":");
+		if (colon < c) {
+			const char *n0 = skip_ws(q, colon), *n1 = colon;
+			trim(&n0, &n1);
+			const char *v = skip_ws(colon + 1, c);
+			if (n1 - n0 == 9 && !strncasecmp(n0, "font-size", 9) && *v != 'v' && *v != 'c') { // (var() o calc(): no)
+				char *u;
+				float x = strtof(v, &u);
+				if (u != v && x > 0) {
+					if (*u == '%')
+						G_REM = 16 * x / 100;
+					else if (!strncasecmp(u, "px", 2))
+						G_REM = x;
+					else if (!strncasecmp(u, "em", 2) || !strncasecmp(u, "rem", 3))
+						G_REM = 16 * x;
+				}
+			}
+		}
+		q = c + 1;
+	}
+	(void)p;
+}
+
 static bool sel_is_root(CssPrep *p, const char *s, const char *e)
 {
 	while (s < e) {
@@ -780,7 +822,7 @@ static bool cv_atom(const char **q, const char *e, CV *r)
 	if (*q < e && **q == '%')
 		r->pc = x, (*q)++;
 	else if (e - *q >= 3 && !strncasecmp(*q, "rem", 3))
-		r->px = x * 16, *q += 3;
+		r->px = x * G_REM, *q += 3;
 	else if (e - *q >= 2 && !strncasecmp(*q, "em", 2))
 		r->px = x * 16, *q += 2;
 	else if (e - *q >= 2 && !strncasecmp(*q, "px", 2))
@@ -1055,7 +1097,7 @@ static void funcs(const char *v, size_t vn, Out *o)
 				float x = strtof(tmp, &u);
 				if (u != tmp && (!strcmp(u, "px") || !strcmp(u, "rem") || !strcmp(u, "em"))) {
 					if (strcmp(u, "px"))
-						x *= 16;
+						x *= !strcmp(u, "rem") ? G_REM : 16;
 					if (!any || (kind == 2 ? x < best : x > best))
 						best = x, pick = i, any = true;
 				}
@@ -1147,7 +1189,9 @@ static float px_of(const char *v)
 		return -1;
 	if (!strncmp(u, "px", 2))
 		return x;
-	if (!strncmp(u, "rem", 3) || !strncmp(u, "em", 2))
+	if (!strncmp(u, "rem", 3))
+		return x * G_REM;
+	if (!strncmp(u, "em", 2))
 		return x * 16;
 	return -1;
 }
@@ -3286,6 +3330,8 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 			bool vars = has_ci(b0, (size_t)(b1 - b0), "--");
 			if (vars || has_ci(b0, (size_t)(b1 - b0), "grid-template"))
 				decls(p, b0, b1, vars && sel_is_root(p, s0, s1), NULL, NULL, false);
+				if (vars)
+					root_font(p, s0, s1, b0, b1);
 			if (vars)
 				scope_add(p, s0, s1, b0, b1);
 			if (vars && !sel_is_root(p, s0, s1))
