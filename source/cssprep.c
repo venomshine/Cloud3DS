@@ -3195,6 +3195,14 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 					rules(p, b0, b1, o);
 			} else if (IS("font-face") && !o) {
 				font_face(p, b0, b1);
+			} else if (IS("container")) {
+				// @container: el ancho de su contenedor no se sabe hasta colocar la página; se toma el de la
+				// página (los que lo usan suelen ser de lo ancho). Con nombre delante, sin él; style(): no
+				const char *c = pre;
+				while (*c && *c != '(' && strncasecmp(c, "not", 3))
+					c++;
+				if (*c && !strstr(c, "style(") && !strstr(c, "scroll-state(") && cssprep_media_ok(c, p->w))
+					rules(p, b0, b1, o);
 			} else if (IS("layer") || IS("scope") || IS("starting-style")) {
 				if (!IS("starting-style"))
 					rules(p, b0, b1, o);
