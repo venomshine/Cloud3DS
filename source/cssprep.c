@@ -1193,6 +1193,14 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
 				char *c = strchr(tr, ',');
 				float hi = c ? px_of(c + 1 + strspn(c + 1, " ")) : -1;
 				w = hi > 0 ? (int)hi : -10; // hasta un máximo en px: ese; si no, flexible
+				char *f2 = c ? strstr(c, "fr") : NULL;
+				if (hi <= 0 && f2) { // minmax(0, 2fr): esas fr, y que puede estrecharse por debajo de su contenido
+					w = -(int)(strtof(c + 1 + strspn(c + 1, " "), NULL) * 10 + 0.5f);
+					if (w == 0)
+						w = -10;
+					if (px_of(tr + 7) <= 0 && strtof(tr + 7, NULL) == 0)
+						w -= 10000; // (marca: mínimo 0)
+				}
 			} else if ((x = px_of(tr)) > 0)
 				w = (int)x;
 			else if (strchr(tr, '%'))

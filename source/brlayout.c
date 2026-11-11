@@ -67,7 +67,8 @@ struct Sty {
 	const char *bgurl; /* background-image */
 	float bgsw, bgpx, bgpy;
 	float ar, tx, ty, rad; /* aspect-ratio, translate (px o %: txp/typ), border-radius (px; <0: %) */
-	uint8_t txp, typ, fit, fixbg, bcen, fixd; /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
+	uint8_t txp, typ, fit, fixbg, bcen, fixd;
+	uint32_t fr0;  /* rejilla: pistas minmax(0, Nfr), que pueden estrecharse por debajo de su contenido */ /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -492,8 +493,12 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 				const char *nm = lwc_string_data(ctr->name);
 				if (nm[0] == 'g' && isdigit((unsigned char)nm[1])) {
 					int i = atoi(nm + 1) - 1;
-					if (i >= 0 && i < 24)
-						s->tw[i] = (int16_t)FIXTOINT(ctr->value);
+					if (i >= 0 && i < 24) {
+						int v = FIXTOINT(ctr->value);
+						if (v < -5000) // (minmax(0, Nfr), de cssprep)
+							v += 10000, s->fr0 |= 1u << i;
+						s->tw[i] = (int16_t)v;
+					}
 				}
 			}
 	}
@@ -2734,8 +2739,8 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			if (s->tw[i] == -1)
 				tw[i] += rest / na;
 	}
-	for (int i = 0; i < nt; i++) // una pista fr no baja de lo mínimo de lo que tiene
-		if (s->tw[i] < -1 && tw[i] < amn[i])
+	for (int i = 0; i < nt; i++) // una pista fr no baja de lo mínimo de lo que tiene (salvo minmax(0, fr))
+		if (s->tw[i] < -1 && !((s->fr0 >> i) & 1) && tw[i] < amn[i])
 			tw[i] = fminf(amn[i], cw);
 	float tx[25];
 	tx[0] = 0;
