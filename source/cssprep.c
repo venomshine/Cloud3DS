@@ -3266,7 +3266,9 @@ char *cssprep_env_decls(CssPrep *p, const char *tag, const char *attrs, const ch
 				decls_out(p, T->dec, T->dec + strlen(T->dec), &m, &ge);
 				bool same = (!ge.p && !*T->glob) || (ge.p && !strcmp(ge.p, T->glob));
 				free(ge.p);
-				if (same)
+				// (tras una que sale, también las de después: lo que sale aquí pesa como un style="" y
+				// taparía la regla de después que sí habría ganado, como la de un @media más ancho)
+				if (same && !o.n)
 					continue;
 #ifdef BRL_DEBUG
 				size_t o0 = o.n;
