@@ -39,6 +39,9 @@ struct BrCss {
 
 /* la hoja del navegador: lo que hace cada etiqueta si la página no dice otra cosa (como el anexo D
  * de CSS 2.1, más las etiquetas de HTML5) */
+/* el estilo de <html>: los rem son de su letra (html { font-size: 10px }), no de los 16 px de siempre */
+static css_computed_style *G_ROOT_ST;
+
 static const char UA_CSS[] =
     "html,address,blockquote,body,dd,div,dl,dt,fieldset,form,frame,frameset,h1,h2,h3,h4,h5,h6,noframes,ol,p,ul,"
     "center,dir,hr,menu,pre,header,footer,nav,main,section,article,aside,figure,figcaption,details,summary,"
@@ -844,6 +847,8 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 		}
 		c->width = width;
 		c->prep = cssprep_new(width, ha, ba);
+		if (G_ROOT_ST) // (la de la página de antes, no)
+			css_computed_style_destroy(G_ROOT_ST), G_ROOT_ST = NULL;
 	}
 	free(ha), free(ba);
 	// las clases que hay en la página (una regla con «.zen-mode .x» no puede tocar a nada si no hay .zen-mode)
@@ -973,9 +978,11 @@ void brcss_free(BrCss *c)
 }
 
 /* ------------------------------------------------------------ estilos */
+
 static css_unit_ctx unit_ctx(float vw)
 {
 	css_unit_ctx u = {0};
+	u.root_style = G_ROOT_ST;
 	u.viewport_width = INTTOFIX((int)vw);
 	u.viewport_height = INTTOFIX(600);
 	u.font_size_default = INTTOFIX(16);
@@ -1251,6 +1258,20 @@ css_computed_style *brcss_style_env(BrCss *c, dom_node *el, const css_computed_s
 		res->styles[k ? CSS_PSEUDO_ELEMENT_AFTER : CSS_PSEUDO_ELEMENT_BEFORE] = NULL;
 	}
 	css_select_results_destroy(res);
+	if (s && !parent) { // <html>: una copia, para los rem de todo lo demás
+		dom_string *nm = NULL;
+		if (dom_node_get_node_name(el, &nm) == DOM_NO_ERR && nm) {
+			if (dom_string_byte_length(nm) == 4 && !strncasecmp(dom_string_data(nm), "html", 4)) {
+				css_computed_style *cp = NULL;
+				if (css_computed_style_compose(s, s, &u, &cp) == CSS_OK && cp) {
+					if (G_ROOT_ST)
+						css_computed_style_destroy(G_ROOT_ST);
+					G_ROOT_ST = cp;
+				}
+			}
+			dom_string_unref(nm);
+		}
+	}
 	if (s && parent) { // lo que se hereda (color, letra…) y los tamaños relativos, del padre
 		css_computed_style *cs = NULL;
 		if (css_computed_style_compose(parent, s, &u, &cs) == CSS_OK && cs) {
