@@ -1984,6 +1984,39 @@ static void decls(CssPrep *p, const char *s, const char *e, bool root, Map *loca
 	(void)o, (void)inl;
 }
 
+/* grid-auto-flow: column (los carruseles: «grid-auto-flow: column; grid-auto-columns: 282px»): todo en una fila,
+ * cada uno en su columna, del ancho de grid-auto-columns: como 24 pistas de ese ancho (las que caben aquí) */
+static void grid_autoflow(const char *s, const char *e, Out *o)
+{
+	bool col = false;
+	int w = -1;
+	for (const char *q = s; q < e;) {
+		const char *c = find_top(q, e, ";");
+		const char *colon = find_top(q, c, ":");
+		if (colon < c) {
+			const char *n0 = skip_ws(q, colon), *n1 = colon;
+			trim(&n0, &n1);
+			const char *v = skip_ws(colon + 1, c);
+			size_t nl = (size_t)(n1 - n0);
+			if (nl == 14 && !strncasecmp(n0, "grid-auto-flow", 14))
+				col = !strncasecmp(v, "column", 6);
+			else if (nl == 17 && !strncasecmp(n0, "grid-auto-columns", 17)) {
+				float x = px_of(v);
+				w = x > 0 ? (int)x : strstr(v, "fr") && strstr(v, "fr") < c ? -10 : -1;
+			}
+		}
+		q = c + 1;
+	}
+	if (!col)
+		return;
+	decl_out(o, "column-count", "24");
+	char cr[400];
+	size_t cl = 0;
+	for (int i = 0; i < 24 && cl + 16 < sizeof cr; i++)
+		cl += (size_t)snprintf(cr + cl, sizeof cr - cl, "%sg%d %d", i ? " " : "", i + 1, w + 20000); // (+20000: marca)
+	decl_out(o, "counter-reset", cr);
+}
+
 // grid-column-start y grid-column-end de una regla, juntas
 static void grid_start_end(const char *s, const char *e, Out *o)
 {
@@ -2155,6 +2188,8 @@ static void decls_out(CssPrep *p, const char *s, const char *e, const Map *local
 		}
 	if (has_ci(s, (size_t)(e - s), "grid-column-") || has_ci(s, (size_t)(e - s), "grid-row-"))
 		grid_start_end(s, e, o);
+	if (has_ci(s, (size_t)(e - s), "grid-auto-flow"))
+		grid_autoflow(s, e, o);
 	Out a = {0}, b = {0};
 	while (s < e) {
 		const char *c = find_top(s, e, ";{");

@@ -68,7 +68,8 @@ struct Sty {
 	float bgsw, bgpx, bgpy;
 	float ar, tx, ty, rad; /* aspect-ratio, translate (px o %: txp/typ), border-radius (px; <0: %) */
 	uint8_t txp, typ, fit, fixbg, bcen, fixd;
-	uint32_t fr0;  /* rejilla: pistas minmax(0, Nfr), que pueden estrecharse por debajo de su contenido */ /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
+	uint32_t fr0;  /* rejilla: pistas minmax(0, Nfr), que pueden estrecharse por debajo de su contenido */
+	uint8_t gflow; /* rejilla: grid-auto-flow: column (un carrusel): sus pistas no se encogen */ /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -498,6 +499,8 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 						int v = FIXTOINT(ctr->value);
 						if (v < -5000) // (minmax(0, Nfr), de cssprep)
 							v += 10000, s->fr0 |= 1u << i;
+						else if (v > 15000) // (grid-auto-flow: column, de cssprep)
+							v -= 20000, s->gflow = 1;
 						s->tw[i] = (int16_t)v;
 					}
 				}
@@ -2704,7 +2707,8 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 		else
 			frs += -t / 10.0f;
 	}
-	float kf = fixed > room && fixed > 0 ? room / fixed : 1;
+	// (las fijas que no caben se encogen a lo que hay; las de un carrusel, no: se salen, como en CSS)
+	float kf = !s->gflow && fixed > room && fixed > 0 ? room / fixed : 1;
 	float rest = room - fixed * kf;
 	// las auto: cada una desde su mínimo, y lo que sobra a partes iguales hasta su máximo
 	// (una sola no pasa del ancho de la rejilla: un mínimo enorme de lo de dentro no la desborda)
