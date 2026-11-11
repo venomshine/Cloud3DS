@@ -293,11 +293,23 @@ static const char *skip_str(const char *s, const char *e) // s en la comilla
 }
 
 /* el primer carácter de set fuera de paréntesis, corchetes, comillas y comentarios (o e) */
+/* los caracteres que cambian algo al buscar (escapes, cadenas, comentarios, paréntesis y corchetes) */
+static const unsigned char FT_SPECIAL[256] = {['\\'] = 1, ['"'] = 1, ['\''] = 1, ['/'] = 1, ['('] = 1, ['['] = 1, [')'] = 1, [']'] = 1};
+
 static const char *find_top(const char *s, const char *e, const char *set)
 {
+	// (se llama muchísimo: lo normal, una letra cualquiera, solo mira una tabla y uno o dos separadores)
+	const char a = set[0], b = a ? set[1] : 0;
+	const char *more = b ? set + 2 : NULL;
 	int d = 0;
 	while (s < e) {
 		char c = *s;
+		if (!FT_SPECIAL[(unsigned char)c]) {
+			if (!d && (c == a || c == b || (more && *more && c && strchr(more, c))))
+				return s;
+			s++;
+			continue;
+		}
 		if (c == '\\' && s + 1 < e) {
 			s += 2;
 			continue;
