@@ -195,6 +195,7 @@ static struct {
 	bool js;             /* ejecutar el JavaScript de las páginas */
 	bool nojs;           /* la página de ahora es de una web con el JavaScript apagado (botón «JS») */
 	bool shown;          /* la página de ahora ya se vio: al recolocarla, se sigue viendo (no la pantalla de carga) */
+	volatile bool js_dropped; /* se soltó su JavaScript por memoria (el aviso, en el principal) */
 	int js_scripts, js_errors;
 	char js_nav[1024];   /* la página pidió ir a otra dirección desde su JavaScript */
 	JsPage *jsp;         /* el JavaScript de la página, vivo para los clics */
@@ -1509,17 +1510,6 @@ static bool frames_after_js(void)
 	if (frames_sync())
 		ch = true, frames_pump();
 	return ch;
-}
-
-static void load_thread_run(void *arg);
-static void load_thread(void *arg)
-{
-	load_thread_run(arg);
-	if (!B.js_defer || B.abort)
-		pf_stop(), B.js_defer = false; // (lo que sobró de lo pedido por adelantado)
-	if (B.abort || !B.css_sig)
-		keep_free(); // (las hojas guardadas: solo con JavaScript vivo)
-	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
 }
 
 // la memoria que pedirá el árbol de un HTML: las etiquetas y su texto, unas 12 veces lo que pesan; lo de dentro de
@@ -5891,6 +5881,10 @@ void br_top(void)
 	}
 	if (B.st == ST_READY)
 		B.shown = true;
+	if (B.st == ST_READY && B.js_dropped) {
+		B.js_dropped = false;
+		toast_icon("Sin memoria para su JavaScript: se ve sin él", IC_CODE, T.text2);
+	}
 	cv_upload();
 	// texturas de las imágenes ya decodificadas (pocas por fotograma, para no dar tirones)
 	for (int i = 0, up = 0; i < B.nimg && up < 2; i++)
@@ -5988,6 +5982,21 @@ static void layout_thread(void *arg)
 	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
 }
 
+// colocarla otra vez tras su JavaScript; si la memoria no da (el JavaScript de las webs grandes ocupa mucho), se
+// suelta su JavaScript y se coloca entera sin él: mejor la página sin JavaScript que media página
+static void relayout(void)
+{
+	layout();
+	if (B.lay_oom && !B.abort && B.jsp) {
+		util_log("web: sin memoria para colocarla con su JavaScript (%d líneas): sin él", B.nl);
+		jsdom_close(B.jsp);
+		B.jsp = NULL;
+		B.js_dropped = true;
+		layout();
+	} else if (B.lay_oom)
+		util_log("web: memoria llena colocándola otra vez (%d líneas)", B.nl);
+}
+
 static void layout_thread_run(void *arg)
 {
 	(void)arg;
@@ -6053,7 +6062,7 @@ static void act_thread_run(void *arg)
 		css_refresh();
 		brcss_forget((dom_node *)B.doc);
 		int keep = B.idle_left;
-		layout();
+		relayout();
 		B.idle_left = keep;
 		B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
 		for (int i = 0; fn && i < B.nf; i++) // lo marcado sigue marcado
@@ -6119,7 +6128,7 @@ static void jsdef_thread_run(void *arg)
 	css_refresh();
 	brcss_forget((dom_node *)B.doc);
 	int keep = B.idle_left;
-	layout();
+	relayout();
 	B.idle_left = keep;
 	B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
 	for (int i = 0; fn && i < B.nf; i++)
@@ -6173,7 +6182,7 @@ static void idle_thread_run(void *arg)
 		css_refresh();
 		brcss_forget((dom_node *)B.doc);
 		int keep = B.idle_left;
-		layout();
+		relayout();
 		B.idle_left = keep;
 		B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
 		for (int i = 0; fn && i < B.nf; i++)
