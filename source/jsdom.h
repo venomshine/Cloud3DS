@@ -33,6 +33,12 @@ typedef struct {
 	/* dónde quedó un elemento en la página (x, y, ancho, alto en px; false: no se colocó). NULL: la página entera.
 	 * (puede ser NULL: sin medidas) */
 	bool (*rect)(dom_node *n, float r[4]);
+	float height;         /* window.innerHeight (0: 600) */
+	/* ventanas: esta es la página (0) o un iframe (1…); de qué iframe es un <iframe> de esta página (-1 si no se
+	 * cargó) y mandar un mensaje (postMessage, en JSON) a otra ventana: llega luego, con jsdom_message */
+	int frame;
+	int (*frame_of)(dom_node *iframe);
+	void (*post)(int from, int to, const char *json, const char *origin);
 } JsHost;
 
 typedef struct {
@@ -56,4 +62,7 @@ bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res);
 /* lo que la página dejó para después (temporizadores, scripts que carga): un rato de ms. *changed: el
  * árbol cambió. Devuelve si aún le queda algo por hacer. Mismas reglas de hilos que jsdom_click. */
 bool jsdom_idle(JsPage *p, unsigned ms, bool *changed, JsResult *res);
+/* un mensaje de otra ventana (postMessage de su JavaScript, en JSON; from: la página 0 o el iframe 1…): su evento
+ * «message» y lo que haga a raíz de él. *changed: el árbol cambió. Mismas reglas de hilos que jsdom_click. */
+void jsdom_message(JsPage *p, const char *json, const char *origin, int from, bool *changed, JsResult *res);
 void jsdom_close(JsPage *p);

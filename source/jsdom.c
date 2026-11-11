@@ -114,6 +114,27 @@ static JSValue f_doc(JSContext *ctx, JSValueConst t, int argc, JSValueConst *arg
 	return wrap(ctx, (dom_node *)J.doc);
 }
 
+// de qué ventana es un <iframe> de esta página (1…; -1 si no se cargó)
+static JSValue f_frameOf(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	dom_node *n = argc > 0 ? unwrap(argv[0]) : NULL;
+	return JS_NewInt32(ctx, n && J.host->frame_of ? J.host->frame_of(n) : -1);
+}
+// postMessage a otra ventana (to: 0 la página, 1… un iframe), con los datos en JSON
+static JSValue f_post(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	int32_t to = -1;
+	if (argc < 3 || !J.host->post || JS_ToInt32(ctx, &to, argv[0]))
+		return JS_FALSE;
+	const char *json = JS_ToCString(ctx, argv[1]), *origin = JS_ToCString(ctx, argv[2]);
+	if (json && origin)
+		J.host->post(J.host->frame, to, json, origin);
+	JS_FreeCString(ctx, json), JS_FreeCString(ctx, origin);
+	return JS_TRUE;
+}
+
 // dónde quedó un elemento en la página: [x, y, ancho, alto] (null si no se colocó); sin nodo, la página entera
 static JSValue f_rect(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
@@ -700,6 +721,8 @@ static const JSCFunctionListEntry NATIVE[] = {
     JS_CFUNC_DEF("runCode", 1, f_runCode),
     JS_CFUNC_DEF("runModule", 2, f_runModule),
     JS_CFUNC_DEF("rect", 1, f_rect),
+    JS_CFUNC_DEF("frameOf", 1, f_frameOf),
+    JS_CFUNC_DEF("post", 3, f_post),
     JS_CFUNC_DEF("doc", 0, f_doc),
     JS_CFUNC_DEF("type", 1, f_type),
     JS_CFUNC_DEF("name", 1, f_name),
@@ -1229,6 +1252,8 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 	JS_SetPropertyStr(ctx, nat, "ua", JS_NewString(ctx, host->ua));
 	JS_SetPropertyStr(ctx, nat, "width", JS_NewFloat64(ctx, host->width));
 	JS_SetPropertyStr(ctx, nat, "dark", JS_NewBool(ctx, host->dark));
+	JS_SetPropertyStr(ctx, nat, "frame", JS_NewInt32(ctx, host->frame));
+	JS_SetPropertyStr(ctx, nat, "height", JS_NewFloat64(ctx, host->height > 0 ? host->height : 600));
 	JS_SetPropertyStr(ctx, g, "__n", nat);
 	JS_FreeValue(ctx, g);
 	bool ok = eval(ctx, prelude, pn, "dom.js");
@@ -1332,6 +1357,37 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 		return NULL;
 	}
 	return pg;
+}
+
+void jsdom_message(JsPage *p, const char *json, const char *origin, int from, bool *changed, JsResult *res)
+{
+	*changed = false;
+	memset(res, 0, sizeof *res);
+	if (!p || !p->ctx || p->oom)
+		return;
+	use(p, res, 3000);
+	J.mut = 0;
+	JSValue g = JS_GetGlobalObject(p->ctx), f = JS_GetPropertyStr(p->ctx, g, "__message");
+	if (JS_IsFunction(p->ctx, f)) {
+		JSValue a[3] = {JS_NewString(p->ctx, json), JS_NewString(p->ctx, origin), JS_NewInt32(p->ctx, from)};
+		JSValue r = JS_Call(p->ctx, f, g, 3, a);
+		if (JS_IsException(r))
+			report(p->ctx, "message");
+		JS_FreeValue(p->ctx, r);
+		for (int i = 0; i < 3; i++)
+			JS_FreeValue(p->ctx, a[i]);
+	}
+	JS_FreeValue(p->ctx, f);
+	JS_FreeValue(p->ctx, g);
+	pending_jobs(p->rt);
+	for (int round = 0; round < 20 && now_ms() - J.t0 < 3000; round++) { // lo que deje para enseguida
+		bool more = call(p->ctx, "__timers", JS_NewInt32(p->ctx, 50));
+		pending_jobs(p->rt);
+		if (!more)
+			break;
+	}
+	*changed = J.mut > 0;
+	done(p, res);
 }
 
 bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res)

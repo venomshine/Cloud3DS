@@ -72,6 +72,7 @@ typedef struct {
 	int (*glyph)(void *u, const char *font_url, uint32_t cp, uint32_t col);
 	/* parar: la página se deja o no queda memoria */
 	bool (*stop)(void *u);
+	bool frames;         /* los <iframe> ocupan su hueco (el navegador pinta su página dentro) */
 } BrLay;
 
 /* maqueta la página; devuelve su alto. page_bg: el fondo de la página (de <html> o <body>; 0 si no) */

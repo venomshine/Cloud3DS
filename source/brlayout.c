@@ -1051,7 +1051,7 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	}
 	char tag[16];
 	tag_of(n, tag, sizeof tag);
-	if (in_list(tag, NEVER))
+	if (in_list(tag, NEVER) && !(C->L->frames && !strcmp(tag, "iframe"))) // (los iframe, si el navegador los pinta)
 		return;
 	char *env = NULL;
 	css_computed_style *cs = brcss_style_env(C->L->css, n, pcs, C->vw, parent ? parent->s->env : NULL, &env);
@@ -1222,6 +1222,11 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 			iw = ih * 1.33f;
 		else if (ih <= 0)
 			ih = iw * 0.75f;
+	} else if (!strcmp(tag, "iframe")) { // otra página dentro: su hueco (la pinta el navegador); 300x150 si no dice
+		replaced = true;
+		char v[32];
+		iw = attr(n, "width", v, sizeof v) && atof(v) > 0 ? (float)atof(v) : 300;
+		ih = attr(n, "height", v, sizeof v) && atof(v) > 0 ? (float)atof(v) : 150;
 	} else if (!strcmp(tag, "svg")) {
 		replaced = true;
 		if (C->L->light || !C->L->svg || (s->img = (int16_t)C->L->svg(C->L->u, n, cs, &iw, &ih)) < 0) {

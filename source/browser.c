@@ -421,6 +421,12 @@ static int fetch_net(const char *url, const char *accept, Buf *b, long *code)
 
 static u32 mem_free(void);
 static void browser_thread_net(void);
+/* el documento que se está leyendo o colocando: la página o uno de sus iframes (su dirección, para lo relativo, y su
+ * ancho, para el CSS) */
+static const char *DOC_BASE;
+static float DOC_W;
+#define BASE_URL (DOC_BASE ? DOC_BASE : B.url)
+#define BASE_W (DOC_W > 0 ? DOC_W : VW_PC)
 static bool ci_has(const char *h, const char *nd);
 
 /* ------------------------------------------------------------ descarga por adelantado
@@ -750,24 +756,24 @@ static __attribute__((noinline)) void css_one(BrCss *c, dom_node *el, bool is_st
 {
 	char a[256];
 	if (is_style) {
-		if (attr(el, "media", a, sizeof a) && !cssprep_media_ok(a, VW_PC))
+		if (attr(el, "media", a, sizeof a) && !cssprep_media_ok(a, BASE_W))
 			return;
 		dom_string *tx = NULL;
 		if (dom_node_get_text_content(el, &tx) == DOM_NO_ERR && tx) {
-			css_sheet(c, dom_string_data(tx), dom_string_byte_length(tx), B.url, links, bytes, 0);
+			css_sheet(c, dom_string_data(tx), dom_string_byte_length(tx), BASE_URL, links, bytes, 0);
 			dom_string_unref(tx);
 		}
 		return;
 	}
 	if (*links >= CSS_MAX_LINKS || !attr(el, "rel", a, sizeof a) || !ci_has(a, "stylesheet") || ci_has(a, "alternate"))
 		return;
-	if (attr(el, "media", a, sizeof a) && !cssprep_media_ok(a, VW_PC)) // print, tema oscuro…
+	if (attr(el, "media", a, sizeof a) && !cssprep_media_ok(a, BASE_W)) // print, tema oscuro…
 		return;
 	char *href = malloc(2048), *abs = href ? href + 1024 : NULL;
 	if (!href)
 		return;
 	if (attr(el, "href", href, 1024) && href[0]) {
-		resolve(B.url, href, abs, 1024);
+		resolve(BASE_URL, href, abs, 1024);
 		css_fetch(c, abs, links, bytes, 0);
 	}
 	free(href);
@@ -979,6 +985,7 @@ static bool blocked_host(const char *url)
 
 static bool js_rect(dom_node *n, float r[4]);
 static void geo_free(void);
+static void tag_of(dom_node *n, char *tag, size_t sz);
 static int js_fetch(const char *url, const char *method, const char *hdrs, const char *body, size_t blen, char **out, size_t *n, long *code,
                     char *fin, size_t fl, char *ctype, size_t cl)
 {
@@ -1213,7 +1220,7 @@ static void css_refresh(void)
 // el CSS de la página, de sus <style> y <link> (las hojas, bajadas o de las guardadas)
 static BrCss *css_build(dom_document *doc, size_t *bytes_out)
 {
-	BrCss *css = brcss_new(B.url);
+	BrCss *css = brcss_new(BASE_URL);
 	if (!css)
 		return NULL;
 	int links = 0;
@@ -1222,11 +1229,230 @@ static BrCss *css_build(dom_document *doc, size_t *bytes_out)
 	u64 t0 = osGetTime();
 	css_collect(css, (dom_node *)doc, 0, &links, &bytes);
 	u64 t1 = osGetTime();
-	brcss_finish(css, doc, VW_PC); // su CSS moderno, traducido para libcss
+	brcss_finish(css, doc, BASE_W); // su CSS moderno, traducido para libcss
 	util_log("web: CSS: bajar %u ms, procesar %u ms", (unsigned)(t1 - t0), (unsigned)(osGetTime() - t1));
 	if (bytes_out)
 		*bytes_out = bytes;
 	return css;
+}
+
+/* ------------------------------------------------------------ iframes: otra página dentro, con su CSS y su JavaScript
+ * (su window y su document), pintada en su hueco. Las ventanas se hablan con postMessage (en JSON): la página es
+ * la 0 y los iframes la 1… Así funcionan los vídeos incrustados, los inicios de sesión y los retos «no soy un robot» */
+#define FR_MAX 4
+typedef struct {
+	dom_node *el;        /* su <iframe> en la página */
+	char url[1024];
+	dom_document *doc;
+	BrCss *css;
+	JsPage *jsp;
+	float w, h;
+	float cx, cy, cw, ch; /* su hueco por dentro (sin el borde), de la última maquetación */
+	bool tried;
+} Frame;
+static Frame FR[FR_MAX];
+static int NFR;
+typedef struct {
+	int from, to;
+	char *json;
+	char origin[128];
+} FMsg;
+static FMsg FMQ[64];
+static int NFMQ;
+
+static int js_frame_of(dom_node *el)
+{
+	for (int i = 0; i < NFR; i++)
+		if (FR[i].el == el && FR[i].jsp)
+			return i + 1;
+	return -1;
+}
+// (todo el JavaScript, de la página y de sus iframes, va en el mismo hilo, de uno en uno: la cola no necesita cerrojo)
+static void js_post(int from, int to, const char *json, const char *origin)
+{
+	if (NFMQ >= 64 || to < 0 || to > NFR || to == from)
+		return;
+	char *j = strdup(json);
+	if (!j)
+		return;
+	FMsg *m = &FMQ[NFMQ++];
+	m->from = from, m->to = to, m->json = j;
+	util_strlcpy(m->origin, origin, sizeof m->origin);
+}
+static JsPage *frame_jsp(int id)
+{
+	return id == 0 ? B.jsp : id <= NFR ? FR[id - 1].jsp : NULL;
+}
+// el JavaScript de qué ventana lleva un nodo (el de la página o el de su iframe)
+static JsPage *jsp_of_node(dom_node *n)
+{
+	dom_document *d = NULL;
+	if (n && dom_node_get_owner_document(n, &d) == DOM_NO_ERR && d) {
+		for (int i = 0; i < NFR; i++)
+			if (FR[i].doc == d) {
+				dom_node_unref(d);
+				return FR[i].jsp;
+			}
+		dom_node_unref(d);
+	}
+	return B.jsp;
+}
+// los mensajes pendientes, a su ventana (pueden traer otros); true si alguna cambió
+static bool frames_pump(void)
+{
+	bool any = false;
+	for (int round = 0; round < 100 && NFMQ && !B.abort; round++) {
+		FMsg m = FMQ[0];
+		memmove(FMQ, FMQ + 1, sizeof *FMQ * (size_t)--NFMQ);
+		JsPage *p = frame_jsp(m.to);
+		if (p) {
+			bool ch = false;
+			JsResult r;
+			jsdom_message(p, m.json, m.origin, m.from, &ch, &r);
+			any |= ch;
+			if (m.to == 0 && r.navigate[0])
+				util_strlcpy(B.js_nav, r.navigate, sizeof B.js_nav);
+		}
+		free(m.json);
+	}
+	return any;
+}
+static void frames_free(void)
+{
+	for (int i = 0; i < NFR; i++) {
+		jsdom_close(FR[i].jsp); // (antes que su documento: tiene sus nodos)
+		if (FR[i].doc)
+			dom_node_unref(FR[i].doc);
+		brcss_free(FR[i].css);
+	}
+	memset(FR, 0, sizeof FR);
+	NFR = 0;
+	for (int i = 0; i < NFMQ; i++)
+		free(FMQ[i].json);
+	NFMQ = 0;
+}
+
+static dom_document *html_parse(const char *p, size_t n)
+{
+	dom_hubbub_parser_params params = {.enc = utf8_ok(p, n) ? "UTF-8" : NULL, .fix_enc = true, .enable_script = false};
+	dom_hubbub_parser *parser = NULL;
+	dom_document *doc = NULL;
+	if (dom_hubbub_parser_create(&params, &parser, &doc) != DOM_HUBBUB_OK || !parser)
+		return NULL;
+	dom_hubbub_parser_parse_chunk(parser, (const uint8_t *)(p ? p : ""), n);
+	dom_hubbub_parser_completed(parser);
+	dom_hubbub_parser_destroy(parser);
+	return doc;
+}
+
+static void frame_load(int idx, const char *srcdoc)
+{
+	Frame *f = &FR[idx];
+	f->tried = true;
+	Buf b = {0};
+	long code = 200;
+	u64 t0 = osGetTime();
+	if (srcdoc) {
+		b.p = strdup(srcdoc), b.n = b.p ? strlen(b.p) : 0;
+	} else if (fetch_any(f->url, "text/html,application/xhtml+xml,*/*;q=0.8", &b, &code) != DLF_OK || code >= 400) {
+		util_log("web: iframe %.100s -> HTTP %ld: no", f->url, code);
+		free(b.p);
+		return;
+	} else if (FA_FIN[0])
+		util_strlcpy(f->url, FA_FIN, sizeof f->url);
+	f->doc = html_parse(b.p, b.n);
+	free(b.p);
+	if (!f->doc)
+		return;
+	// su CSS (respecto a su dirección y con su ancho)
+	bool keep = KEEP_ON;
+	KEEP_ON = false, DOC_BASE = f->url, DOC_W = f->w;
+	f->css = css_build(f->doc, NULL);
+	DOC_BASE = NULL, DOC_W = 0, KEEP_ON = keep;
+	// su JavaScript, con su ventana (la idx+1) y su tamaño
+	u32 fr = mem_free();
+	size_t lim = fr > 16u * 1024 * 1024 ? 10u * 1024 * 1024 : fr > 8u * 1024 * 1024 ? fr - 6u * 1024 * 1024 : 0;
+	if (B.js && lim) {
+		JsHost h = {.mem_limit = lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = f->url, .ua = UA_PC, .width = f->w, .height = f->h,
+		            .budget_ms = 15000, .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect,
+		            .frame = idx + 1, .frame_of = js_frame_of, .post = js_post};
+		JsResult jr;
+		f->jsp = jsdom_open(f->doc, &h, &jr);
+		util_log("web: iframe %.100s: %d scripts, %d con error, %u ms", f->url, jr.scripts, jr.errors, (unsigned)(osGetTime() - t0));
+		if (jr.oom) {
+			jsdom_close(f->jsp);
+			f->jsp = NULL;
+		}
+	}
+}
+
+// los <iframe> de la página que se ven y aún no se cargaron (también los que crea su JavaScript): true si hay nuevos
+static bool frames_sync(void)
+{
+	if (!B.doc || B.light || !strcmp(B.reader_url, B.url) || B.abort)
+		return false;
+	bool added = false;
+	dom_node_internal *st[96];
+	int sp = 0;
+	st[sp++] = (dom_node_internal *)B.doc;
+	while (sp && NFR < FR_MAX && !B.abort) {
+		dom_node_internal *n = st[--sp];
+		for (dom_node_internal *c = n->last_child; c; c = c->previous)
+			if (c->type == DOM_ELEMENT_NODE && sp < 96)
+				st[sp++] = c;
+		if (n->type != DOM_ELEMENT_NODE)
+			continue;
+		char tag[8];
+		tag_of((dom_node *)n, tag, sizeof tag);
+		if (strcmp(tag, "iframe"))
+			continue;
+		bool known = false;
+		for (int i = 0; i < NFR && !known; i++)
+			known = FR[i].el == (dom_node *)n;
+		float r[4];
+		if (known || !js_rect((dom_node *)n, r) || r[2] < 20 || r[3] < 20) // (sin colocar o de juguete: fuera)
+			continue;
+		char src[1024] = "", *srcdoc = NULL;
+		if (!attr((dom_node *)n, "src", src, sizeof src) || !src[0] || !strncasecmp(src, "about:", 6) || !strncasecmp(src, "javascript:", 11)) {
+			src[0] = 0;
+			dom_string *k = NULL, *v = NULL; // srcdoc="<html>…": la página va en el atributo
+			if (dom_string_create((const uint8_t *)"srcdoc", 6, &k) == DOM_NO_ERR) {
+				if (dom_element_get_attribute((dom_element *)n, k, &v) == DOM_NO_ERR && v) {
+					srcdoc = strndup(dom_string_data(v), dom_string_byte_length(v));
+					dom_string_unref(v);
+				}
+				dom_string_unref(k);
+			}
+			if (!srcdoc)
+				continue;
+		}
+		Frame *f = &FR[NFR];
+		memset(f, 0, sizeof *f);
+		f->el = (dom_node *)n, f->w = r[2], f->h = r[3];
+		if (src[0])
+			resolve(B.url, src, f->url, sizeof f->url);
+		else
+			util_strlcpy(f->url, B.url, sizeof f->url);
+		if (src[0] && blocked_host(f->url)) {
+			free(srcdoc);
+			continue;
+		}
+		NFR++;
+		if (mem_free() > 10u * 1024 * 1024)
+			frame_load(NFR - 1, srcdoc);
+		free(srcdoc);
+		added = true;
+	}
+	return added;
+}
+
+// tras el JavaScript de la página o de un iframe: sus mensajes y los iframes nuevos; true si hay que colocar otra vez
+static bool frames_after_js(void)
+{
+	bool ch = frames_pump();
+	if (frames_sync())
+		ch = true, frames_pump();
+	return ch;
 }
 
 static void load_thread_run(void *arg);
@@ -1374,7 +1600,8 @@ static void load_thread_run(void *arg)
 	KEEP_ON = js_run; // (con JavaScript: las hojas se guardan, por si trae clases nuevas)
 	if (js_run && !B.js_defer) {
 		JsHost h = {.mem_limit = js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
-		            .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect};
+		            .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect,
+		            .height = 600, .frame = 0, .frame_of = js_frame_of, .post = js_post};
 		B.in_js = true;
 		JsResult jr;
 		B.jsp = jsdom_open(doc, &h, &jr);
@@ -1444,6 +1671,7 @@ static void start_load(const char *url)
 	pf_stop();
 	keep_free();
 	geo_free();
+	frames_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -4001,6 +4229,11 @@ static float bl_lh(void *u, float px)
 static int bl_link(void *u, dom_node *a, const char *href)
 {
 	(void)u, (void)a;
+	if (DOC_BASE && !strstr(href, "://") && href[0] != '#') { // (en un iframe: respecto a su página)
+		char abs[1024];
+		resolve(DOC_BASE, href, abs, sizeof abs);
+		return link_add(abs);
+	}
 	return link_add(href);
 }
 static int bl_clk(void *u, dom_node *n)
@@ -4031,7 +4264,7 @@ static int bl_img(void *u, dom_node *n, const char *src, float *iw, float *ih)
 			dom_string_unref(kk);
 		}
 	} else {
-		resolve(B.url, src, abs, sizeof abs);
+		resolve(BASE_URL, src, abs, sizeof abs);
 		k = img_find_or_add(abs);
 	}
 	if (k >= 0 && B.img[k].ow > 0 && B.img[k].oh > 0) // (su tamaño de verdad, no el reducido al decodificarla)
@@ -4193,14 +4426,35 @@ static bool js_rect(dom_node *n, float r[4])
 	return true;
 }
 
+/* colocando un iframe: lo suyo va en su hueco de la página (desplazado y recortado) */
+static struct {
+	bool on;
+	float ox, oy, x0, y0, x1, y1;
+} FT;
+static bool ft_cut(float *x, float *y, float w, float h)
+{
+	if (!FT.on)
+		return false;
+	*x += FT.ox, *y += FT.oy;
+	return *y >= FT.y1 || *y + h <= FT.y0 || *x >= FT.x1 || *x + w <= FT.x0;
+}
 static void bl_text(void *u, float x, float y, float w, float h, const char *t, int n, const BrlText *st)
 {
 	(void)u, (void)h;
-	bl_frag(x, y, w, text_lineh(px_sc(st->px)), t, n, st);
+	float lh = text_lineh(px_sc(st->px));
+	if (ft_cut(&x, &y, w, lh))
+		return;
+	bl_frag(x, y, w, lh, t, n, st);
 }
 static void bl_box(void *u, float x, float y, float w, float h, int img, int wdg, const BrlText *st)
 {
 	(void)u;
+	if (!FT.on && st->node) // (el hueco de un iframe por dentro: ahí va su página)
+		for (int i = 0; i < NFR; i++)
+			if (FR[i].el == st->node)
+				FR[i].cx = x, FR[i].cy = y, FR[i].cw = w, FR[i].ch = h;
+	if (ft_cut(&x, &y, w, h))
+		return;
 	Frag *f = bl_frag(x, y, w, h, "", 0, st);
 	if (!f)
 		return;
@@ -4220,11 +4474,19 @@ static void bl_bgimg(void *u, const BrlBg *g, const BrlText *st)
 	(void)u;
 	char abs[1024];
 	if (strncmp(g->url, "data:", 5))
-		resolve(B.url, g->url, abs, sizeof abs);
+		resolve(BASE_URL, g->url, abs, sizeof abs);
 	else
 		util_strlcpy(abs, g->url, sizeof abs);
 	if (!strncmp(abs, "data:image/svg", 14) && !strstr(abs, "base64")) // (un svg escrito en la url: aún no)
 		return;
+	BrlBg gg = *g;
+	if (FT.on) {
+		gg.x0 += FT.ox, gg.x1 += FT.ox, gg.y0 += FT.oy, gg.y1 += FT.oy;
+		gg.x0 = fmaxf(gg.x0, FT.x0), gg.y0 = fmaxf(gg.y0, FT.y0), gg.x1 = fminf(gg.x1, FT.x1), gg.y1 = fminf(gg.y1, FT.y1);
+		if (gg.x1 <= gg.x0 || gg.y1 <= gg.y0)
+			return;
+		g = &gg;
+	}
 	int k = img_find_or_add(abs);
 	if (k < 0)
 		return;
@@ -4252,6 +4514,11 @@ static void bl_bgimg(void *u, const BrlBg *g, const BrlText *st)
 static void bl_bg(void *u, float x0, float y0, float x1, float y1, uint32_t col, const float bw[4], const uint32_t bc[4], float rad)
 {
 	(void)u;
+	if (FT.on) {
+		x0 = fmaxf(x0 + FT.ox, FT.x0), x1 = fminf(x1 + FT.ox, FT.x1), y0 = fmaxf(y0 + FT.oy, FT.y0), y1 = fminf(y1 + FT.oy, FT.y1);
+		if (x1 <= x0 || y1 <= y0)
+			return;
+	}
 	if (B.nbg == B.cbg) {
 		int nc = B.cbg ? B.cbg * 2 : 64;
 		BgBox *nb = realloc(B.bg, nc * sizeof *nb);
@@ -4307,10 +4574,36 @@ static float layout_boxes(void)
 	BrLay L = {.css = B.css, .vw = B.vw, .vh = 600, .light = B.light || !strcmp(B.reader_url, B.url), .u = NULL,
 	           .text_w = bl_tw, .line_h = bl_lh, .link = bl_link, .clk = bl_clk, .img = bl_img, .svg = bl_svg, .wdg = bl_wdg,
 	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .geom = bl_geom, .glyph = bl_glyph, .stop = bl_stop};
+	L.frames = !L.light && B.js;
 	uint32_t pbg = 0;
 	geo_reset(B.nel_total);
 	float h = brl_run(&L, B.doc, &pbg);
 	B.page_bg = pbg;
+	// los iframes cargados: su página, colocada a su ancho, en su hueco (recortada a él)
+	for (int i = 0; i < NFR && !B.abort; i++) {
+		Frame *f = &FR[i];
+		float r[4] = {f->cx, f->cy, f->cw, f->ch};
+		if (!f->doc || !f->css || r[2] < 1 || r[3] < 1)
+			continue;
+		BrLay L2 = L;
+		L2.css = f->css, L2.vw = r[2], L2.vh = r[3], L2.frames = false; // (sin iframes dentro de iframes)
+		FT.on = true, FT.ox = r[0], FT.oy = r[1], FT.x0 = r[0], FT.y0 = r[1], FT.x1 = r[0] + r[2], FT.y1 = r[1] + r[3];
+		DOC_BASE = f->url, DOC_W = r[2];
+		uint32_t fbg = 0;
+		size_t nbg0 = (size_t)B.nbg;
+		brl_run(&L2, f->doc, &fbg);
+		if (fbg >> 24) { // su fondo, debajo de lo suyo
+			float bw[4] = {0}; uint32_t bc[4] = {0};
+			FT.on = false;
+			bl_bg(NULL, r[0], r[1], r[0] + r[2], r[1] + r[3], fbg, bw, bc, 0);
+			if ((size_t)B.nbg > nbg0 + 1) { // (el último: al principio de los suyos)
+				BgBox t = B.bg[B.nbg - 1];
+				memmove(&B.bg[nbg0 + 1], &B.bg[nbg0], sizeof t * ((size_t)B.nbg - 1 - nbg0));
+				B.bg[nbg0] = t;
+			}
+		}
+		FT.on = false, DOC_BASE = NULL, DOC_W = 0;
+	}
 	return h;
 }
 
@@ -4654,6 +4947,7 @@ static void close_br(void)
 	pf_stop();
 	keep_free();
 	geo_free();
+	frames_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -5504,8 +5798,9 @@ static void act_thread_run(void *arg)
 	browser_thread_net();
 	JsResult r;
 	bool changed = false;
-	bool go_on = jsdom_click(B.jsp, ACT_EL, &changed, &r);
+	bool go_on = jsdom_click(jsp_of_node(ACT_EL), ACT_EL, &changed, &r); // (de la página o de un iframe)
 	js_oom_check(&r);
+	changed |= frames_after_js();
 	if (B.idle_dirty)
 		changed = true, B.idle_dirty = false;
 	if (r.navigate[0])
@@ -5556,7 +5851,8 @@ static void jsdef_thread_run(void *arg)
 	if (!B.doc || B.abort)
 		return;
 	JsHost h = {.mem_limit = B.js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000,
-	            .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect};
+	            .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect,
+		            .height = 600, .frame = 0, .frame_of = js_frame_of, .post = js_post};
 	JsResult jr;
 	B.jsp = jsdom_open(B.doc, &h, &jr);
 	B.js_scripts = jr.scripts, B.js_errors = jr.errors;
@@ -5570,7 +5866,8 @@ static void jsdef_thread_run(void *arg)
 	}
 	B.idle_left = B.jsp ? 30000 : 0;
 	B.idle_next = util_ms() + 600;
-	if (!jr.changed || B.abort || B.js_nav[0])
+	bool fch = !B.abort && frames_after_js(); // (sus iframes: se cargan con la página ya colocada, que da su tamaño)
+	if ((!jr.changed && !fch) || B.abort || B.js_nav[0])
 		return;
 	// otra vez, sin mover la vista
 	float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
@@ -5609,6 +5906,14 @@ static void idle_thread_run(void *arg)
 	u64 t0 = util_ms();
 	bool more = jsdom_idle(B.jsp, 600, &changed, &r);
 	js_oom_check(&r);
+	for (int i = 0; i < NFR; i++) // (los de sus iframes, un rato cada uno)
+		if (FR[i].jsp) {
+			bool c2 = false;
+			JsResult r2;
+			more |= jsdom_idle(FR[i].jsp, 300, &c2, &r2);
+			changed |= c2;
+		}
+	changed |= frames_after_js();
 	B.idle_left -= (int)(util_ms() - t0) + 1;
 	if (!more)
 		B.idle_left = 0;
@@ -5888,6 +6193,7 @@ static void home_enter(void)
 	pf_stop();
 	keep_free();
 	geo_free();
+	frames_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;

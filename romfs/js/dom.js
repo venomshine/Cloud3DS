@@ -520,7 +520,8 @@ class Element extends Node {
 	get ariaLabel() { return this.getAttribute('aria-label'); } set ariaLabel(v) { this.setAttribute('aria-label', v); }
 	get ariaHidden() { return this.getAttribute('aria-hidden'); } set ariaHidden(v) { this.setAttribute('aria-hidden', v); }
 	get ariaExpanded() { return this.getAttribute('aria-expanded'); } set ariaExpanded(v) { this.setAttribute('aria-expanded', v); }
-	get contentWindow() { return null; } get contentDocument() { return null; } // (los iframes aún no tienen su página)
+	get contentWindow() { if (this.localName !== 'iframe') return undefined; const id = N.frameOf(this._h); return id > 0 ? winProxy(id) : null; }
+	get contentDocument() { return null; } // (otra página: su documento no se ve desde aquí, como entre orígenes distintos)
 	webkitMatchesSelector(s) { return this.matches(s); } msMatchesSelector(s) { return this.matches(s); } mozMatchesSelector(s) { return this.matches(s); }
 	getElementsByTagNameNS(ns, t) { return this.getElementsByTagName(t); }
 	getAttributeNS(ns, n) { return this.getAttribute(n); } setAttributeNS(ns, n, v) { this.setAttribute(String(n).replace(/^\w+:/, ''), v); }
@@ -700,7 +701,7 @@ G.navigator = { userAgent: N.ua, language: 'es-ES', languages: ['es-ES', 'es', '
 	vendor: '', appName: 'Netscape', appVersion: '5.0', maxTouchPoints: 1, hardwareConcurrency: 1, webdriver: false,
 	sendBeacon() { return true; }, serviceWorker: undefined, clipboard: { writeText: () => Promise.resolve() }, mediaDevices: undefined };
 G.screen = { width: N.width, height: 600, availWidth: N.width, availHeight: 600, colorDepth: 24, pixelDepth: 24, orientation: { type: 'landscape-primary', angle: 0 } };
-G.innerWidth = N.width; G.innerHeight = 600; G.outerWidth = N.width; G.outerHeight = 600; G.devicePixelRatio = 1;
+G.innerWidth = N.width; G.innerHeight = N.height || 600; G.outerWidth = N.width; G.outerHeight = N.height || 600; G.devicePixelRatio = 1;
 G.scrollX = 0; G.scrollY = 0; G.pageXOffset = 0; G.pageYOffset = 0;
 G.scrollTo = G.scroll = G.scrollBy = () => {};
 G.alert = m => N.log('alert: ' + m); G.confirm = () => true; G.prompt = () => null; G.print = () => {};
@@ -768,6 +769,21 @@ G.name = '';
 G.closed = false; G.opener = null; G.frameElement = null; G.length = 0;
 G.isSecureContext = location.protocol === 'https:';
 G.postMessage = (data, targetOrigin) => { setTimeout(() => G.dispatchEvent(new G.MessageEvent('message', { data, origin: location.origin, source: G })), 0); };
+/* las otras ventanas (la página o sus iframes): solo se les puede mandar mensajes, como entre orígenes distintos. El
+ * mismo objeto para la misma ventana (event.source === iframe.contentWindow) */
+const FRAME = N.frame || 0, winProxies = new Map();
+function winProxy(id) {
+	let w = winProxies.get(id); if (w) return w;
+	w = { postMessage(d, o) { let j; try { j = JSON.stringify(d === undefined ? null : d); } catch (e) { j = 'null'; } N.post(id, j, location.origin); },
+		closed: false, length: 0, focus() {}, blur() {}, close() {} };
+	w.window = w.self = w.frames = w; w.top = id === 0 ? w : winProxy(0); w.parent = w.top;
+	Object.defineProperty(w, 'location', { get() { throw new DOMException('Blocked a frame from accessing a cross-origin frame.', 'SecurityError'); } });
+	winProxies.set(id, w); return w;
+}
+if (FRAME) { G.parent = G.top = winProxy(0); G.frameElement = null; }
+// un mensaje de otra ventana (lo trae el navegador): su evento «message»
+G.__message = (json, origin, from) => { let d; try { d = JSON.parse(json); } catch (e) { d = json; } G.dispatchEvent(new G.MessageEvent('message', { data: d, origin, source: winProxy(from), ports: [] })); };
+if (!G.DOMException) G.DOMException = class extends Error { constructor(m, n) { super(m); this.name = n || 'Error'; } };
 class MessagePort extends EventTarget {
 	constructor() { super(); this._other = null; this._started = false; this._q = []; }
 	postMessage(data) { const o = this._other; if (!o) return; setTimeout(() => { const ev = new G.MessageEvent('message', { data, target: o }); if (typeof o.onmessage === 'function') try { o.onmessage(ev); } catch (e) { report(e); } o.dispatchEvent(ev); }, 0); }
