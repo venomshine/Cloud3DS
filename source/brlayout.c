@@ -2644,6 +2644,8 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			int st = is->gall ? 0 : is->gcs > 0 ? is->gcs - 1 : -1;
 			if (st >= nt)
 				st = nt - 1;
+			if (is->gsp == 99 && st >= 0) // (hasta el final: «8 / -1»)
+				sp = nt - st;
 			if (st >= 0 && st + sp > nt)
 				sp = nt - st;
 			int rr, c0;

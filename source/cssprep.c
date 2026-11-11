@@ -1395,6 +1395,10 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val0)
 				span = atoi(b + 4);
 			else {
 				int end = atoi(b);
+				if (end == -1 && start > 1) { // de una columna hasta el final: span 99, que la maqueta ajusta
+					grid_pos(o, start, 99);
+					return true;
+				}
 				if (end < 0) { // hasta el final: toda la fila
 					decl_out(o, "column-span", "all");
 					return true;
@@ -2066,6 +2070,10 @@ static void grid_start_end(const char *s, const char *e, Out *o)
 	}
 	if (!any)
 		return;
+	if (end == -1 && start > 1) { // de una columna hasta el final (span 99: la maqueta lo ajusta)
+		grid_pos(o, start, 99);
+		return;
+	}
 	if (end < 0) {
 		decl_out(o, "column-span", "all");
 		return;
