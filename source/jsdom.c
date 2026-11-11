@@ -13,6 +13,7 @@
 
 #include "quickjs.h"
 #include <dom/bindings/hubbub/parser.h>
+#include "core/node.h" /* libdom por dentro: recorrer sin referencias (buscar deprisa) */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,6 +113,86 @@ static JSValue f_doc(JSContext *ctx, JSValueConst t, int argc, JSValueConst *arg
 {
 	(void)t, (void)argc, (void)argv;
 	return wrap(ctx, (dom_node *)J.doc);
+}
+
+/* buscar elementos deprisa: los de dentro de root (sin él) con etiqueta tag (o «*»/vacía), id y todas las clases cls.
+ * Se recorre aquí, sin crear un objeto de JavaScript por cada elemento que se mira: solo los que valen.
+ * N.find(root, tag, id, [clases], solo_el_primero) -> [nodos] o el primero (o null) */
+static JSValue f_find(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	dom_node *root = argc > 0 ? unwrap(argv[0]) : NULL;
+	if (!root || argc < 5)
+		return JS_NULL;
+	const char *tag = JS_ToCString(ctx, argv[1]), *id = JS_ToCString(ctx, argv[2]);
+	bool first = JS_ToBool(ctx, argv[4]);
+	lwc_string *cls[8];
+	int nc = 0;
+	int64_t len = 0;
+	if (JS_IsArray(argv[3]) && !JS_GetLength(ctx, argv[3], &len))
+		for (int64_t i = 0; i < len && nc < 8; i++) {
+			JSValue v = JS_GetPropertyUint32(ctx, argv[3], (uint32_t)i);
+			size_t l;
+			const char *c = JS_ToCStringLen(ctx, &l, v);
+			if (c && lwc_intern_string(c, l, &cls[nc]) == lwc_error_ok)
+				nc++;
+			JS_FreeCString(ctx, c);
+			JS_FreeValue(ctx, v);
+		}
+	size_t tl = tag ? strlen(tag) : 0, il = id ? strlen(id) : 0;
+	bool any_tag = !tl || (tl == 1 && tag[0] == '*');
+	bool dash = tl == 2 && tag[0] == '*' && tag[1] == '-'; // («*-»: las etiquetas con guion, las de los web components)
+	if (dash)
+		any_tag = false;
+	dom_string *kid = NULL;
+	if (il)
+		dom_string_create((const uint8_t *)"id", 2, &kid);
+	JSValue out = first ? JS_NULL : JS_NewArray(ctx);
+	uint32_t k = 0;
+	// recorrido en orden del documento, sin pila: hijo, hermano o subir
+	dom_node_internal *r = (dom_node_internal *)root, *n = r->first_child;
+	while (n) {
+		if (n->type == DOM_ELEMENT_NODE) {
+			bool ok = true;
+			if (!any_tag) {
+				dom_string *nm = n->name;
+				ok = nm && (dash ? memchr(dom_string_data(nm), '-', dom_string_byte_length(nm)) != NULL
+				                 : dom_string_byte_length(nm) == tl && !strncasecmp(dom_string_data(nm), tag, tl));
+			}
+			if (ok && il) {
+				dom_string *v = NULL;
+				dom_element_get_attribute((dom_element *)n, kid, &v);
+				ok = v && dom_string_byte_length(v) == il && !memcmp(dom_string_data(v), id, il);
+				if (v)
+					dom_string_unref(v);
+			}
+			for (int i = 0; ok && i < nc; i++) {
+				bool m = false;
+				dom_element_has_class((dom_element *)n, cls[i], &m);
+				ok = m;
+			}
+			if (ok) {
+				if (first) {
+					out = wrap(ctx, (dom_node *)n);
+					break;
+				}
+				JS_SetPropertyUint32(ctx, out, k++, wrap(ctx, (dom_node *)n));
+			}
+		}
+		if (n->first_child && (n->type == DOM_ELEMENT_NODE || n->type == DOM_DOCUMENT_FRAGMENT_NODE))
+			n = n->first_child;
+		else {
+			while (n && n != r && !n->next)
+				n = n->parent;
+			n = n && n != r ? n->next : NULL;
+		}
+	}
+	if (kid)
+		dom_string_unref(kid);
+	for (int i = 0; i < nc; i++)
+		lwc_string_unref(cls[i]);
+	JS_FreeCString(ctx, tag), JS_FreeCString(ctx, id);
+	return out;
 }
 
 // de qué ventana es un <iframe> de esta página (1…; -1 si no se cargó)
@@ -721,6 +802,7 @@ static const JSCFunctionListEntry NATIVE[] = {
     JS_CFUNC_DEF("runCode", 1, f_runCode),
     JS_CFUNC_DEF("runModule", 2, f_runModule),
     JS_CFUNC_DEF("rect", 1, f_rect),
+    JS_CFUNC_DEF("find", 5, f_find),
     JS_CFUNC_DEF("frameOf", 1, f_frameOf),
     JS_CFUNC_DEF("post", 3, f_post),
     JS_CFUNC_DEF("doc", 0, f_doc),

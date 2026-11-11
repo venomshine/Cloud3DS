@@ -37,6 +37,7 @@ const ran = new Set();
 function jsType(el) { const t = (el.getAttribute('type') || '').toLowerCase(); return t === 'module' || (!el.hasAttribute('nomodule') && (!t || /^(text|application)\/(x-)?(java|ecma)script$/.test(t))); }
 function inserted(node) {
 	if (!node || !node._h) return;
+	if (ceDefs.size && node.isConnected) ceSubtree(node);
 	const scripts = node.nodeType === ELEMENT && node.localName === 'script' ? [node] : node.nodeType === ELEMENT || node.nodeType === FRAG ? qsa(node, 'script') : [];
 	for (const sc of scripts) {
 		const id = N.id(sc._h);
@@ -173,7 +174,7 @@ class Node extends EventTarget {
 	hasChildNodes() { return !!N.first(this._h); }
 	appendChild(c) { c = nodeOf(c); if (c instanceof DocumentFragment) { const ks = c.childNodes; for (const k of ks) N.append(this._h, k._h); for (const k of ks) inserted(k); return c; } N.append(this._h, c._h); inserted(c); return c; }
 	insertBefore(c, ref) { c = nodeOf(c); if (c instanceof DocumentFragment) { const ks = c.childNodes; for (const k of ks) N.insert(this._h, k._h, H(ref)); for (const k of ks) inserted(k); return c; } N.insert(this._h, c._h, H(ref)); inserted(c); return c; }
-	removeChild(c) { N.removeChild(this._h, c._h); return c; }
+	removeChild(c) { N.removeChild(this._h, c._h); if (c._ce && typeof c.disconnectedCallback === 'function') { c._conn = false; try { c.disconnectedCallback(); } catch (e) { report(e); } } return c; }
 	replaceChild(n, old) { this.insertBefore(n, old); this.removeChild(old); return old; }
 	cloneNode(deep) { return W(N.clone(this._h, !!deep)); }
 	contains(o) { for (let n = o; n; n = n.parentNode) if (n === this) return true; return false; }
@@ -318,8 +319,27 @@ function walkEls(root, fn) {
 	}
 	return false;
 }
-function qsa(root, sel) { const out = new NodeList(); walkEls(root, e => { if (matches(e, sel)) out.push(e); }); return out; }
-function qs(root, sel) { let r = null; walkEls(root, e => { if (matches(e, sel)) { r = e; return true; } }); return r; }
+// lo sencillo (#id, etiqueta, .clases y su mezcla, sin combinadores ni [atributos] ni :pseudo), a la búsqueda nativa
+const fastCache = new Map();
+function fastSel(sel) {
+	let f = fastCache.get(sel);
+	if (f !== undefined) return f;
+	f = null;
+	const g = compiled(sel);
+	if (g.length === 1 && g[0].length === 1) { const x = g[0][0].simple; if (!x.attrs.length && !x.pseudo.length && x.cls.length <= 8 && !(x.id || '').includes('\\') && !x.cls.some(c => c.includes('\\'))) f = x; }
+	fastCache.set(sel, f);
+	return f;
+}
+function qsa(root, sel) {
+	const f = root && root._h && fastSel(sel);
+	if (f) { const out = new NodeList(); for (const h of N.find(root._h, f.tag || '', f.id || '', f.cls, false) || []) out.push(W(h)); return out; }
+	const out = new NodeList(); walkEls(root, e => { if (matches(e, sel)) out.push(e); }); return out;
+}
+function qs(root, sel) {
+	const f = root && root._h && fastSel(sel);
+	if (f) return W(N.find(root._h, f.tag || '', f.id || '', f.cls, true));
+	let r = null; walkEls(root, e => { if (matches(e, sel)) { r = e; return true; } }); return r;
+}
 
 /* --- clases, estilo, data-* */
 class DOMTokenList {
@@ -390,8 +410,18 @@ class Element extends Node {
 	get dataset() { return dataObj(this); }
 	get attributes() { const a = N.attrs(this._h).map(([name, value]) => ({ name, value, nodeName: name, nodeValue: value })); a.getNamedItem = n => a.find(x => x.name === n) || null; return a; }
 	getAttribute(n) { return N.getA(this._h, String(n).toLowerCase()); }
-	setAttribute(n, v) { N.setA(this._h, String(n).toLowerCase(), String(v)); }
-	removeAttribute(n) { N.remA(this._h, String(n).toLowerCase()); }
+	setAttribute(n, v) {
+		n = String(n).toLowerCase();
+		const cb = this._ce && this.attributeChangedCallback, obs = cb && this.constructor.observedAttributes, old = obs && obs.includes(n) ? this.getAttribute(n) : undefined;
+		N.setA(this._h, n, String(v));
+		if (old !== undefined) try { this.attributeChangedCallback(n, old, String(v)); } catch (e) { report(e); }
+	}
+	removeAttribute(n) {
+		n = String(n).toLowerCase();
+		const cb = this._ce && this.attributeChangedCallback, obs = cb && this.constructor.observedAttributes, old = obs && obs.includes(n) ? this.getAttribute(n) : undefined;
+		N.remA(this._h, n);
+		if (old !== undefined && old !== null) try { this.attributeChangedCallback(n, old, null); } catch (e) { report(e); }
+	}
 	hasAttribute(n) { return N.getA(this._h, String(n).toLowerCase()) !== null; }
 	toggleAttribute(n, f) { const h = this.hasAttribute(n); const want = f === undefined ? !h : !!f; if (want) this.setAttribute(n, ''); else this.removeAttribute(n); return want; }
 	getAttributeNames() { return N.attrs(this._h).map(x => x[0]); }
@@ -402,7 +432,7 @@ class Element extends Node {
 	get nextElementSibling() { return nextEl(this); }
 	get previousElementSibling() { return prevEl(this); }
 	get innerHTML() { return this.childNodes.map(html).join(''); }
-	set innerHTML(v) { while (this.firstChild) this.removeChild(this.firstChild); for (const h of N.parse(String(v))) N.append(this._h, h); }
+	set innerHTML(v) { while (this.firstChild) this.removeChild(this.firstChild); for (const h of N.parse(String(v))) N.append(this._h, h); if (ceDefs.size && this.isConnected) ceSubtree(this); }
 	get outerHTML() { return html(this); }
 	set outerHTML(v) { const p = this.parentNode; if (!p) return; for (const h of N.parse(String(v))) N.insert(p._h, h, this._h); this.remove(); }
 	get innerText() { return this.textContent; }
@@ -447,7 +477,7 @@ class Element extends Node {
 	get scrollHeight() { if (this === document.documentElement || this === document.body) { const r = N.rect(null); return Math.max(G.innerHeight, r ? Math.round(r[3]) : 0); } const r = N.rect(this._h); return r ? Math.round(r[3]) : 0; }
 	get scrollTop() { return this === document.documentElement || this === document.body ? (G.scrollY || 0) : 0; } set scrollTop(v) {}
 	get scrollLeft() { return 0; } set scrollLeft(v) {}
-	attachShadow() { return this; }
+	attachShadow(o) { this._shadow = true; return this; }
 	animate() { return { finished: Promise.resolve(), cancel() {}, play() {}, pause() {} }; }
 	// propiedades de formulario y enlaces que muchas páginas leen o cambian
 	get value() { return this.getAttribute('value') ?? (this.localName === 'textarea' ? this.textContent : ''); }
@@ -515,7 +545,7 @@ class Element extends Node {
 	get isContentEditable() { return this.getAttribute('contenteditable') === 'true' || this.getAttribute('contenteditable') === ''; }
 	get contentEditable() { return this.getAttribute('contenteditable') || 'inherit'; } set contentEditable(v) { this.setAttribute('contenteditable', v); }
 	get draggable() { return this.getAttribute('draggable') === 'true'; } get spellcheck() { return true; } get translate() { return true; }
-	get slot() { return this.getAttribute('slot') || ''; } get assignedSlot() { return null; } get shadowRoot() { return null; }
+	get slot() { return this.getAttribute('slot') || ''; } get assignedSlot() { return null; } get shadowRoot() { return this._shadow ? this : null; }
 	get role() { return this.getAttribute('role'); } set role(v) { this.setAttribute('role', v); }
 	get ariaLabel() { return this.getAttribute('aria-label'); } set ariaLabel(v) { this.setAttribute('aria-label', v); }
 	get ariaHidden() { return this.getAttribute('aria-hidden'); } set ariaHidden(v) { this.setAttribute('aria-hidden', v); }
@@ -549,14 +579,14 @@ class Document extends Node {
 	get referrer() { return ''; } get domain() { return location.hostname; } get visibilityState() { return 'visible'; } get hidden() { return false; }
 	get characterSet() { return 'UTF-8'; } get compatMode() { return 'CSS1Compat'; } get activeElement() { return this.body; }
 	get forms() { return qsa(this, 'form'); } get images() { return qsa(this, 'img'); } get links() { return qsa(this, 'a[href]'); } get scripts() { return qsa(this, 'script'); }
-	createElement(t) { return W(N.create(String(t).toLowerCase())); }
+	createElement(t, o) { const e = W(N.create(String(t).toLowerCase())); if (ceDefs.has(e.localName)) ceUpgrade(e); return e; }
 	createElementNS(ns, t) { return this.createElement(t); }
 	createTextNode(s) { return W(N.createText(String(s))); }
 	createComment(s) { return W(N.createText('')); }
 	createDocumentFragment() { return W(N.createFrag()); }
 	createEvent() { return new Event(''); }
 	createTreeWalker(root) { const a = []; walkEls(root, e => { a.push(e); }); let i = -1; return { nextNode() { i++; return a[i] || null; }, get currentNode() { return a[i] || root; } }; }
-	getElementById(id) { let r = null; id = String(id); walkEls(this, e => { if (N.getA(e._h, 'id') === id) { r = e; return true; } }); return r; }
+	getElementById(id) { return W(N.find(this._h, '', String(id), [], true)); }
 	getElementsByTagName(t) { t = String(t).toLowerCase(); return qsa(this, t === '*' ? '*' : t); }
 	getElementsByClassName(c) { return qsa(this, String(c).trim().split(/\s+/).map(x => '.' + x).join('')); }
 	getElementsByName(n) { return qsa(this, '[name="' + n + '"]'); }
@@ -623,6 +653,58 @@ G.DocumentFragment = DocumentFragment; G.CharacterData = CharacterData; G.EventT
 for (const k of ['MouseEvent', 'KeyboardEvent', 'FocusEvent', 'UIEvent', 'InputEvent', 'TouchEvent', 'PointerEvent', 'ErrorEvent', 'MessageEvent', 'ProgressEvent', 'PopStateEvent', 'HashChangeEvent', 'StorageEvent', 'AnimationEvent', 'TransitionEvent']) G[k] = class extends Event {};
 for (const k of ['HTMLDivElement', 'HTMLSpanElement', 'HTMLAnchorElement', 'HTMLImageElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLFormElement', 'HTMLScriptElement', 'HTMLLinkElement', 'HTMLStyleElement', 'HTMLIFrameElement', 'HTMLVideoElement', 'HTMLAudioElement', 'HTMLMediaElement', 'HTMLCanvasElement', 'HTMLTemplateElement', 'HTMLSelectElement', 'HTMLTextAreaElement', 'HTMLBodyElement', 'HTMLHeadElement', 'HTMLHtmlElement', 'HTMLParagraphElement', 'HTMLUListElement', 'HTMLLIElement', 'HTMLTableElement', 'SVGElement', 'HTMLUnknownElement'])
 	G[k] = Element;
+
+/* ---------- web components: customElements.define, «class X extends HTMLElement», sus callbacks */
+const ceDefs = new Map(), ceByClass = new Map(), ceWait = new Map();
+let ceUpgrading = null;
+// HTMLElement como constructor: «super()» en un componente devuelve el elemento que se está mejorando (o uno nuevo)
+function HTMLElementCtor() {
+	if (ceUpgrading) { const e = ceUpgrading; ceUpgrading = null; return e; }
+	const name = new.target && ceByClass.get(new.target);
+	const e = W(N.create(name || 'div'));
+	if (new.target) Object.setPrototypeOf(e, new.target.prototype);
+	e._ce = true;
+	return e;
+}
+HTMLElementCtor.prototype = Element.prototype; // (instanceof HTMLElement: todos los elementos)
+Object.setPrototypeOf(HTMLElementCtor, Element);
+G.HTMLElement = HTMLElementCtor;
+function ceUpgrade(el) {
+	if (el._ce || el.nodeType !== ELEMENT) return;
+	const cls = ceDefs.get(el.localName);
+	if (!cls) return;
+	el._ce = true;
+	Object.setPrototypeOf(el, cls.prototype);
+	ceUpgrading = el;
+	try { new cls(); } catch (e) { report(e); }
+	ceUpgrading = null;
+	const obs = cls.observedAttributes;
+	if (obs && typeof el.attributeChangedCallback === 'function')
+		for (const a of obs) { const v = el.getAttribute(a); if (v !== null) try { el.attributeChangedCallback(a, null, v); } catch (e) { report(e); } }
+	if (el.isConnected && typeof el.connectedCallback === 'function') { el._conn = true; try { el.connectedCallback(); } catch (e) { report(e); } }
+}
+// lo que entra en el documento: sus componentes, mejorados (y avisados de que ya están)
+function ceSubtree(root) {
+	if (!ceDefs.size || !root || !root._h) return;
+	const one = el => { if (ceDefs.has(el.localName)) { if (!el._ce) ceUpgrade(el); else if (el.isConnected && typeof el.connectedCallback === 'function' && !el._conn) { el._conn = true; try { el.connectedCallback(); } catch (e) { report(e); } } } };
+	if (root.nodeType === ELEMENT) one(root);
+	if (root.nodeType === ELEMENT || root.nodeType === FRAG || root.nodeType === DOC) for (const h of N.find(root._h, '*-', '', [], false) || []) one(W(h)); // (solo las de guion)
+}
+G.customElements = {
+	define(name, cls) {
+		name = String(name).toLowerCase();
+		if (ceDefs.has(name)) throw new DOMException('"' + name + '" ya está definido', 'NotSupportedError');
+		ceDefs.set(name, cls); ceByClass.set(cls, name);
+		for (const h of N.find(document._h, name, '', [], false) || []) ceUpgrade(W(h));
+		const w = ceWait.get(name); if (w) { w.res(cls); ceWait.delete(name); }
+	},
+	get(name) { return ceDefs.get(String(name).toLowerCase()); },
+	getName(cls) { return ceByClass.get(cls) || null; },
+	whenDefined(name) { name = String(name).toLowerCase(); if (ceDefs.has(name)) return Promise.resolve(ceDefs.get(name)); let w = ceWait.get(name); if (!w) { let res; const p = new Promise(r => { res = r; }); w = { p, res }; ceWait.set(name, w); } return w.p; },
+	upgrade(root) { ceSubtree(root); },
+};
+// shadow DOM, lo básico: su raíz es el propio elemento (lo que pone en ella se ve como hijos suyos)
+G.ShadowRoot = class {};
 const proto = EventTarget.prototype;
 G.addEventListener = proto.addEventListener.bind(G); G.removeEventListener = proto.removeEventListener.bind(G); G.dispatchEvent = proto.dispatchEvent.bind(G);
 G.__cookies = []; G.__ready = false; G.__script = null;
@@ -760,7 +842,6 @@ G.AbortController = class { constructor() { this.signal = new AbortSignal(); } a
 G.WebSocket = class { constructor() { setTimeout(() => this.onerror && this.onerror(new Event('error')), 0); } send() {} close() {} };
 G.Worker = class { postMessage() {} terminate() {} addEventListener() {} };
 G.BroadcastChannel = class { postMessage() {} close() {} addEventListener() {} };
-G.customElements = { define() {}, get() {}, whenDefined: () => Promise.resolve() };
 
 /* ---------- mensajes entre ventanas y canales (React los usa para repartir su trabajo): llegan después,
  * como en un navegador, con su MessageEvent */
