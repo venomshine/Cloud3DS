@@ -112,6 +112,7 @@ typedef struct {
 	int nel;
 	uint32_t page_bg;
 	bool bg_html;
+	int in_fixed; /* dentro de algo fijo: no alarga la página */
 } Ctx;
 
 typedef struct {
@@ -3181,7 +3182,9 @@ static void child(Ctx *C, Box *c, float pax, float pay, Clip cl, int depth)
 		x += s->txp ? c->w * s->tx / 100 : s->tx;
 	if (s->ty != 0)
 		y += s->typ ? c->h * s->ty / 100 : s->ty;
+	C->in_fixed += s->fixd;
 	emit(C, c, x, y, cl, depth + 1);
+	C->in_fixed -= s->fixd;
 }
 
 static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
@@ -3205,8 +3208,9 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 				C->L->bgimg(C->L->u, &g, &t);
 		}
 	}
-	if (y1 > C->bottom && y1 < 200000 && ay > -1000 && s->vis)
-		C->bottom = y1;
+	// (el alto de la página: lo que se ve; lo que una caja que recorta deja fuera, no)
+	if (!C->in_fixed && fminf(y1, cl.y1) > C->bottom && y1 < 200000 && ay > -1000 && ay < cl.y1 && s->vis)
+		C->bottom = fminf(y1, cl.y1);
 	if (b->kind == K_ATOM) {
 		// (lo que una caja que recorta deja casi todo fuera, como las otras fotos de un carrusel, no se pinta:
 		// aquí no se recortan a medias)
@@ -3241,8 +3245,8 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 				float X = ax + f->x, Y = ay + cy + f->y;
 				if (!f->n || !ts->vis || ts->fpx < 1.5f || !(ts->col >> 24) || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
 					continue;
-				if (Y + f->h > C->bottom && Y < 200000)
-					C->bottom = Y + f->h;
+				if (!C->in_fixed && fminf(Y + f->h, in.y1) > C->bottom && Y < 200000)
+					C->bottom = fminf(Y + f->h, in.y1);
 				BrlText t = {ts->fpx, ts->col, ts->link, ts->clk, ts->bold, ts->under, 0, ts->node};
 				C->L->text(C->L->u, X, Y, f->w, f->h, f->s, f->n, &t);
 			} else if (f->t == F_BOX || f->t == F_OOF)
