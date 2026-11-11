@@ -193,6 +193,7 @@ static struct {
 	float tip;           /* tiempo enseñando el % de zoom */
 	volatile int nel_done, nel_total; /* nodos colocados y total (para el progreso) */
 	bool js;             /* ejecutar el JavaScript de las páginas */
+	bool nojs;           /* la página de ahora es de una web con el JavaScript apagado (botón «JS») */
 	int js_scripts, js_errors;
 	char js_nav[1024];   /* la página pidió ir a otra dirección desde su JavaScript */
 	JsPage *jsp;         /* el JavaScript de la página, vivo para los clics */
@@ -429,6 +430,7 @@ static float DOC_W;
 #define BASE_URL (DOC_BASE ? DOC_BASE : B.url)
 #define BASE_W (DOC_W > 0 ? DOC_W : VW_PC)
 static bool ci_has(const char *h, const char *nd);
+static int nojs_find(const char *url);
 
 /* ------------------------------------------------------------ descarga por adelantado
  * Nada más leer el HTML se piden a la vez (varios hilos) los scripts y las hojas de estilo que la página va a
@@ -1633,11 +1635,13 @@ static void load_thread_run(void *arg)
 	size_t js_lim = fr > lay + 2u * 1024 * 1024 ? fr - lay : 0;
 	if (js_lim > 24u * 1024 * 1024)
 		js_lim = 24u * 1024 * 1024;
+	B.nojs = nojs_find(B.url) >= 0; // (apagado para esta web: botón «JS»)
+	B.js_scripts = B.js_errors = 0;
 	// los scripts y las hojas, a bajarse ya, todos a la vez (los usan el JavaScript y el CSS de abajo)
-	bool js_run = doc && B.js && !reader && !B.light && js_lim && !B.abort; // (en modo ligero, sin JavaScript)
+	bool js_run = doc && B.js && !B.nojs && !reader && !B.light && js_lim && !B.abort; // (en modo ligero, sin JavaScript)
 	if (doc && !reader && !B.abort)
 		pf_start(doc, js_run);
-	if (doc && B.js && !reader && !B.light && !js_lim && B.oom == OOM_NONE)
+	if (doc && B.js && !B.nojs && !reader && !B.light && !js_lim && B.oom == OOM_NONE)
 		B.oom = OOM_JS, B.oom_need = lay + 2u * 1024 * 1024;
 	// si la página ya trae su texto, se enseña así y su JavaScript va después, con ella a la vista (y se
 	// vuelve a colocar si cambia algo); si es un cascarón que llena el JavaScript, primero el JavaScript
@@ -4687,7 +4691,7 @@ static float layout_boxes(void)
 	BrLay L = {.css = B.css, .vw = B.vw, .vh = 600, .light = B.light || !strcmp(B.reader_url, B.url), .u = NULL,
 	           .text_w = bl_tw, .line_h = bl_lh, .link = bl_link, .clk = bl_clk, .img = bl_img, .svg = bl_svg, .wdg = bl_wdg,
 	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .geom = bl_geom, .glyph = bl_glyph, .stop = bl_stop};
-	L.frames = !L.light && B.js;
+	L.frames = !L.light && B.js && !B.nojs;
 	L.canvas = L.frames;
 	uint32_t pbg = 0;
 	geo_reset(B.nel_total);
@@ -4700,7 +4704,7 @@ static float layout_boxes(void)
 		if (!f->doc || !f->css || r[2] < 1 || r[3] < 1)
 			continue;
 		BrLay L2 = L;
-		L2.css = f->css, L2.vw = r[2], L2.vh = r[3], L2.frames = false, L2.canvas = !L2.light && B.js; // (sin iframes dentro de iframes)
+		L2.css = f->css, L2.vw = r[2], L2.vh = r[3], L2.frames = false, L2.canvas = !L2.light && B.js && !B.nojs; // (sin iframes dentro de iframes)
 		FT.on = true, FT.ox = r[0], FT.oy = r[1], FT.x0 = r[0], FT.y0 = r[1], FT.x1 = r[0] + r[2], FT.y1 = r[1] + r[3];
 		DOC_BASE = f->url, DOC_W = r[2];
 		uint32_t fbg = 0;
@@ -4984,6 +4988,56 @@ static void go(const char *url, bool push)
 }
 
 #define LIGHT_PATH APP_DIR "/navegador_ligero"
+/* las webs con el JavaScript apagado (botón «JS»): una por línea */
+#define NOJS_PATH APP_DIR "/navegador_sin_js.txt"
+#define NOJS_MAX 64
+static char NOJS[NOJS_MAX][96];
+static int NNOJS;
+static bool NOJS_READ;
+static const char *host_of(const char *u, char *out, size_t n);
+static void nojs_load(void)
+{
+	if (NOJS_READ)
+		return;
+	NOJS_READ = true;
+	FILE *f = fopen(NOJS_PATH, "r");
+	char ln[128];
+	while (f && NNOJS < NOJS_MAX && fgets(ln, sizeof ln, f)) {
+		ln[strcspn(ln, "\r\n")] = 0;
+		if (ln[0])
+			util_strlcpy(NOJS[NNOJS++], ln, sizeof NOJS[0]);
+	}
+	if (f)
+		fclose(f);
+}
+static int nojs_find(const char *url)
+{
+	char h[96];
+	nojs_load();
+	host_of(url, h, sizeof h);
+	for (int i = 0; i < NNOJS; i++)
+		if (!strcasecmp(NOJS[i], h))
+			return i;
+	return -1;
+}
+// apaga o enciende el JavaScript de la web de esa dirección (y lo guarda); devuelve si queda apagado
+static bool nojs_toggle(const char *url)
+{
+	int i = nojs_find(url);
+	if (i >= 0)
+		memmove(NOJS[i], NOJS[i + 1], sizeof NOJS[0] * (size_t)(NNOJS - i - 1)), NNOJS--;
+	else {
+		if (NNOJS == NOJS_MAX) // (llena: se va la más antigua)
+			memmove(NOJS[0], NOJS[1], sizeof NOJS[0] * (NOJS_MAX - 1)), NNOJS--;
+		host_of(url, NOJS[NNOJS++], sizeof NOJS[0]);
+	}
+	FILE *f = fopen(NOJS_PATH, "w");
+	for (int k = 0; f && k < NNOJS; k++)
+		fprintf(f, "%s\n", NOJS[k]);
+	if (f)
+		fclose(f);
+	return i < 0;
+}
 #define CLARO_PATH APP_DIR "/navegador_claro"
 static void light_load(void)
 {
@@ -6962,6 +7016,29 @@ void br_bottom(void)
 	draw_circle(mx0 + 15, ty + 12, 6.5f, B.dark ? T.accent : T.text);
 	draw_circle(mx0 + 18.5f, ty + 9.5f, 5.5f, mbg); // el mordisco: del color del botón
 	bool tdark = tap(mx0, ty, 30, 24);
+	// JavaScript de esta web: encendido (en color) o apagado (tachado); se recuerda por web
+	float jx = BOT_W - 180;
+	bool jon = !B.nojs && !B.light, jp = touch_in(jx, ty, 32, 24);
+	draw_rrect(jx, ty, 32, 24, 12, jon ? col_lerp(T.bg, T.accent, B.js_scripts > 0 ? 0.25f : 0.12f) : jp ? T.surface2 : T.surface);
+	float jw = text_width("JS", TS_SUB);
+	text_draw("JS", jx + 16 - jw / 2, ty + 12 - text_lineh(TS_SUB) / 2, TS_SUB, jon ? T.accent : T.text3);
+	if (!jon)
+		draw_rect(jx + 16 - jw / 2 - 2, ty + 12, jw + 4, 1.5f, T.text3);
+	if (tap(jx, ty, 32, 24) && B.url[0]) {
+		char h[96];
+		host_of(B.url, h, sizeof h);
+		if (B.light)
+			toast_icon("En modo ligero no hay JavaScript (la pluma)", IC_FEATHER, T.text2);
+		else {
+			bool off = nojs_toggle(B.url);
+			char m[160];
+			snprintf(m, sizeof m, off ? "JavaScript apagado en %s" : "JavaScript encendido en %s", h);
+			toast_icon(m, IC_CODE, off ? T.text2 : T.accent);
+			char u2[1024];
+			util_strlcpy(u2, B.url, sizeof u2);
+			start_load(u2);
+		}
+	}
 	// favoritos: guardar esta página y abrir la lista
 	bm_load();
 	bool is_fav = B.url[0] && bm_find_fav(B.url) >= 0;
