@@ -2351,10 +2351,17 @@ static int next_pow2i(int v)
 // los <canvas> que cambiaron: sus píxeles a su textura (cada 3 fotogramas como mucho; reducidos si son grandes)
 static void cv_upload(void)
 {
-	static int tick;
-	if (++tick % 3 || !B.nimg)
+	static int tick, still, next;
+	static float last_sy, last_z;
+	// moviéndose por la página (o con zoom): casi nada, para que vaya suave; quieta, cada 3 fotogramas
+	if (B.sy != last_sy || B.zoom != last_z)
+		still = 0, last_sy = B.sy, last_z = B.zoom;
+	else if (still < 1000)
+		still++;
+	if (++tick % (still < 20 ? 20 : 3) || !B.nimg)
 		return;
-	for (int i = 0; i < B.nimg; i++) {
+	for (int n = 0; n < B.nimg; n++) { // (uno por vez, por turnos: cada subida es un buen trozo de fotograma)
+		int i = (next + n) % B.nimg;
 		PImg *im = &B.img[i];
 		if (im->st != IM_TEX || strncmp(im->url, "canvas:", 7))
 			continue;
@@ -2364,7 +2371,7 @@ static void cv_upload(void)
 			continue;
 		float k = fminf(1, fminf(1024.0f / w, 1024.0f / h));
 		int tw = (int)(w * k), th = (int)(h * k);
-		while (tw > 8 && th > 8 && (long)next_pow2i(tw) * next_pow2i(th) > 512 * 1024)
+		while (tw > 8 && th > 8 && (long)next_pow2i(tw) * next_pow2i(th) > 256 * 1024) // (hasta 512x512: 1 MB de memoria lineal)
 			tw = tw * 9 / 10, th = th * 9 / 10;
 		tw = tw < 1 ? 1 : tw, th = th < 1 ? 1 : th;
 		if (tw != w || th != h) { // (al tamaño de la textura: el más cercano)
@@ -2381,6 +2388,8 @@ static void cv_upload(void)
 		im->iw = tw, im->ih = th, im->ow = w, im->oh = h;
 		free(px);
 		B.page_ver++;
+		next = i + 1;
+		return;
 	}
 }
 

@@ -26,8 +26,17 @@ typedef int LightLock;
 static void LightLock_Init(LightLock *l) { (void)l; }
 static void LightLock_Lock(LightLock *l) { (void)l; }
 static void LightLock_Unlock(LightLock *l) { (void)l; }
+static bool room(size_t n) { (void)n; return true; }
 #else
 #include <3ds.h>
+#include <malloc.h>
+// ¿cabe sin dejar a la app sin memoria? (lo libre del montón, con 6 MB de margen para lo demás)
+static bool room(size_t n)
+{
+	struct mallinfo mi = mallinfo();
+	size_t hs = envGetHeapSize(), used = (size_t)mi.uordblks;
+	return hs > used && hs - used > n + (6u << 20);
+}
 #define FONT_R "romfs:/fonts/LiberationSans-Regular.ttf"
 #define FONT_B "romfs:/fonts/LiberationSans-Bold.ttf"
 #endif
@@ -37,6 +46,7 @@ static void LightLock_Unlock(LightLock *l) { (void)l; }
 #define ST_MAX 64
 #define IMG_MAX 48
 #define IMG_BUDGET (12u << 20) /* las imágenes guardadas para drawImage y los patrones */
+#define CV_BUDGET (16u << 20)  /* los píxeles de todos los lienzos juntos (más grandes, en blanco) */
 
 /* con qué se pinta: un color, un degradado (su tabla de 256 colores) o una imagen que se repite */
 typedef struct {
@@ -83,6 +93,7 @@ typedef struct {
 
 static Cv *CV[CV_MAX];
 static int NEXT_ID = 1;
+static size_t CV_BYTES; /* lo que ocupan los píxeles de los lienzos */
 static LightLock LK;
 static bool LK_OK;
 
@@ -168,6 +179,8 @@ void cv_free(int id)
 		if (CV[i] && CV[i]->id == id) {
 			path_clear(CV[i]);
 			clip_reset(CV[i]);
+			if (CV[i]->px)
+				CV_BYTES -= (size_t)CV[i]->w * CV[i]->h * 4;
 			free(CV[i]->sub), free(CV[i]->px), free(CV[i]);
 			CV[i] = NULL;
 		}
@@ -191,13 +204,16 @@ bool cv_resize(int id, int w, int h)
 		return false;
 	}
 	w = w < 0 ? 0 : w, h = h < 0 ? 0 : h;
+	if (c->px)
+		CV_BYTES -= (size_t)c->w * c->h * 4;
 	free(c->px);
 	c->px = NULL;
+	clip_reset(c); // (antes de cambiar el tamaño: las máscaras son del de antes)
 	c->w = w, c->h = h;
-	if ((long)w * h > 0 && (long)w * h <= CV_MAX_PX)
-		c->px = calloc((size_t)w * h, 4);
+	size_t sz = (size_t)w * h * 4;
+	if ((long)w * h > 0 && (long)w * h <= CV_MAX_PX && CV_BYTES + sz <= CV_BUDGET && room(sz) && (c->px = calloc(sz, 1)))
+		CV_BYTES += sz;
 	st_reset(&c->st);
-	clip_reset(c);
 	path_clear(c);
 	c->dirty = true;
 	ulk();
@@ -618,7 +634,7 @@ int cv_img_find(const char *url, int *ow, int *oh)
 int cv_img_add(const char *url, uint8_t *px, int w, int h, int ow, int oh)
 {
 	size_t sz = (size_t)w * h * 4;
-	if (!px || w <= 0 || h <= 0 || sz > IMG_BUDGET) {
+	if (!px || w <= 0 || h <= 0 || sz > IMG_BUDGET || !room(0)) {
 		free(px);
 		return 0;
 	}
@@ -1072,7 +1088,7 @@ void cv_clip(int id, bool evenodd)
 	uint8_t *cov = NULL;
 	int x0, y0, w, h;
 	size_t n = (size_t)c->w * c->h;
-	Mask *m = malloc(sizeof *m + n);
+	Mask *m = room(n) ? malloc(sizeof *m + n) : NULL;
 	if (!m)
 		return;
 	m->rc = 1;
