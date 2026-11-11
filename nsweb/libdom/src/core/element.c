@@ -81,6 +81,9 @@ static void _dom_element_destroy_classes(struct dom_element *ele)
 }
 
 
+/* separadores de clases: los espacios de HTML (no solo ' ': también tabulador, salto de línea…) */
+#define CLS_WS(c) ((c) == ' ' || (c) == '\t' || (c) == '\n' || (c) == '\r' || (c) == '\f')
+
 /**
  * Create element's class cache from class attribute value
  *
@@ -101,12 +104,12 @@ static dom_exception _dom_element_create_classes(struct dom_element *ele,
 
 	/* Count number of classes */
 	for (pos = value; *pos != '\0'; ) {
-		if (*pos != ' ') {
-			while (*pos != ' ' && *pos != '\0')
+		if (!CLS_WS(*pos)) {
+			while (*pos != '\0' && !CLS_WS(*pos))
 				pos++;
 			n_classes++;
 		} else {
-			while (*pos == ' ')
+			while (CLS_WS(*pos))
 				pos++;
 		}
 	}
@@ -119,16 +122,16 @@ static dom_exception _dom_element_create_classes(struct dom_element *ele,
 
 		for (pos = value, n_classes = 0;
 				*pos != '\0'; ) {
-			if (*pos != ' ') {
+			if (!CLS_WS(*pos)) {
 				const char *s = pos;
-				while (*pos != ' ' && *pos != '\0')
+				while (*pos != '\0' && !CLS_WS(*pos))
 					pos++;
 				if (lwc_intern_string(s, pos - s, 
 						&classes[n_classes++]) !=
 						lwc_error_ok)
 					goto error;
 			} else {
-				while (*pos == ' ')
+				while (CLS_WS(*pos))
 					pos++;
 			}
 		}

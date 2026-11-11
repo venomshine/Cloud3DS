@@ -27,4 +27,5 @@ primer elemento de `content` y de los contadores: ahora se comparan las listas e
 («auto» depende del contenedor, y así no se confundía con un 0 puesto por la página). En
 `libcss/src/select/unit.c`, `vh` y `vw` venían cambiadas (vw con el alto y vh con el ancho), y
 `css_unit_len2css_px` redondeaba los px de cada unidad a entero (1vw = 10,24 px quedaba en 10): ahora van
-bien y sin redondear. El navegador de NetSurf en sí es GPL-2.0 y no se usa.
+bien y sin redondear. En `libdom/src/core/element.c`, las clases del atributo `class` se separaban solo
+por espacios: ahora también por tabulador, salto de línea, retorno y avance de página, como dice HTML. El navegador de NetSurf en sí es GPL-2.0 y no se usa.
