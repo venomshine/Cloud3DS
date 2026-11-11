@@ -8,6 +8,7 @@
 /* Maquetación por cajas (ver brlayout.h). Las medidas van en px de la página; cada caja guarda su
  * posición relativa a la caja de la que cuelga al colocarla («lp»), y al pintar se suman. */
 #include "brlayout.h"
+#include "cssprep.h" /* (las media de <source>) */
 #include "core/node.h" /* libdom por dentro: hijos y hermanos sin referencias */
 
 #include <ctype.h>
@@ -950,10 +951,39 @@ static bool src_first(const char *set, char *out, size_t n)
 	out[l] = 0;
 	return true;
 }
-static bool img_src(dom_node *n, char *a, size_t an)
+// en un <picture>, el primer <source> que vale (su media se cumple y su tipo se sabe abrir), como hace un navegador:
+// manda sobre el src del <img> (suele ser otro recorte: 2:1 en vez de cuadrado)
+static bool pic_source(dom_node *n, char *a, size_t an, float vw)
+{
+	dom_node_internal *p = NI(n)->parent;
+	char t[12], v[1024];
+	if (!p)
+		return false;
+	tag_of((dom_node *)p, t, sizeof t);
+	if (strcmp(t, "picture"))
+		return false;
+	for (dom_node_internal *c = p->first_child; c && c != NI(n); c = c->next) {
+		if (c->type != DOM_ELEMENT_NODE)
+			continue;
+		tag_of((dom_node *)c, t, sizeof t);
+		if (strcmp(t, "source"))
+			continue;
+		if (attr((dom_node *)c, "media", v, sizeof v) && v[0] && !cssprep_media_ok(v, vw))
+			continue;
+		if (attr((dom_node *)c, "type", v, sizeof v) && v[0] && (strstr(v, "avif") || strstr(v, "jxl")))
+			continue;
+		if ((attr((dom_node *)c, "srcset", v, sizeof v) && v[0]) || (attr((dom_node *)c, "data-srcset", v, sizeof v) && v[0]))
+			return src_first(v, a, an);
+		return false;
+	}
+	return false;
+}
+static bool img_src(dom_node *n, char *a, size_t an, float vw)
 {
 	static const char *const LAZY[] = {"data-src", "data-lazy-src", "data-original", "data-url", "data-hi-res-src", NULL};
 	char v[1024];
+	if (pic_source(n, a, an, vw) && a[0] && strncmp(a, "data:", 5))
+		return true;
 	if (attr(n, "src", a, an) && a[0] && strncmp(a, "data:", 5))
 		return true;
 	for (int i = 0; LAZY[i]; i++)
@@ -1147,7 +1177,7 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	float iw = 0, ih = 0;
 	if (!strcmp(tag, "img")) {
 		replaced = true;
-		bool ok = img_src(n, a, sizeof a);
+		bool ok = img_src(n, a, sizeof a, C->vw);
 		char v[32];
 		if (attr(n, "width", v, sizeof v) && atof(v) > 0)
 			iw = (float)atof(v);
@@ -1163,6 +1193,8 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 					iw = ih * kw / kh;
 				else if (iw <= 0)
 					iw = kw, ih = kh;
+				else if (fabsf(iw / ih - kw / kh) > 0.02f * kw / kh) // (width y height de otro recorte: como un
+					ih = iw * kh / kw; // navegador con la imagen ya bajada, su proporción, sobre todo con <picture>)
 			}
 		}
 		if (s->img < 0) { // sin imagen: su texto (si lo tiene y es un enlace, o en modo ligero)
