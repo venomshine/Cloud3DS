@@ -671,7 +671,7 @@ G.location = new Proxy(locObj, {
 	},
 	get(t, p) {
 		if (p === 'assign' || p === 'replace') return u => N.navigate(resolveUrl(t.href, String(u)));
-		if (p === 'reload') return () => {};
+		if (p === 'reload') return () => N.navigate(t.href); // (otra vez la misma: tras un reto «soy un navegador», ya con su cookie)
 		if (p === 'toString') return () => t.href;
 		return t[p];
 	},
@@ -712,8 +712,21 @@ G.CSS = { supports: () => false, escape: s => String(s).replace(/[^\w-]/g, c => 
 G.DOMParser = class { parseFromString(s) { const f = document.createDocumentFragment(); for (const h of N.parse(String(s))) N.append(f._h, h); return { body: f, documentElement: f, querySelector: x => qs(f, x), querySelectorAll: x => qsa(f, x), getElementById: id => qs(f, '#' + id) }; } };
 G.TextEncoder = class { encode(s) { const u = unescape(encodeURIComponent(String(s))); const a = new Uint8Array(u.length); for (let i = 0; i < u.length; i++) a[i] = u.charCodeAt(i); return a; } };
 G.TextDecoder = class { decode(a) { if (!a) return ''; let s = ''; for (const b of new Uint8Array(a.buffer || a)) s += String.fromCharCode(b); try { return decodeURIComponent(escape(s)); } catch (e) { return s; } } };
-G.Blob = class { constructor(parts) { this._t = (parts || []).join(''); this.size = this._t.length; } text() { return Promise.resolve(this._t); } };
-G.FormData = class { constructor(form) { this._p = []; if (form) for (const e of form.querySelectorAll('input[name],select[name],textarea[name]')) this._p.push([e.name, e.value]); } append(k, v) { this._p.push([k, String(v)]); } get(k) { const e = this._p.find(x => x[0] === k); return e ? e[1] : null; } entries() { return this._p[Symbol.iterator](); } };
+G.Blob = class { constructor(parts, o) { this._t = (parts || []).map(p => p && p._t != null ? p._t : typeof p === 'string' ? p : ArrayBuffer.isView(p) || p instanceof ArrayBuffer ? new G.TextDecoder().decode(p) : String(p)).join(''); this.size = this._t.length; this.type = (o && o.type) || ''; } text() { return Promise.resolve(this._t); } slice(a, b) { return new G.Blob([this._t.slice(a, b)], { type: this.type }); } arrayBuffer() { return Promise.resolve(new G.TextEncoder().encode(this._t).buffer); } };
+G.File = class extends G.Blob { constructor(parts, name, o) { super(parts, o); this.name = name; this.lastModified = Date.now(); } };
+G.FormData = class {
+	constructor(form) { this._p = []; if (form) for (const e of form.querySelectorAll('input[name],select[name],textarea[name]')) { const t = (e.getAttribute('type') || '').toLowerCase(); if ((t === 'checkbox' || t === 'radio') && !e.checked) continue; if (t === 'submit' || t === 'button' || t === 'file' || e.disabled) continue; this._p.push([e.name, e.value]); } }
+	_v(v, f) { return v && typeof v === 'object' && v._t != null ? (f ? Object.assign(Object.create(Object.getPrototypeOf(v)), v, { name: f }) : v) : String(v); }
+	append(k, v, f) { this._p.push([String(k), this._v(v, f)]); }
+	set(k, v, f) { this.delete(k); this.append(k, v, f); }
+	get(k) { const e = this._p.find(x => x[0] === k); return e ? e[1] : null; }
+	getAll(k) { return this._p.filter(x => x[0] === k).map(x => x[1]); }
+	has(k) { return this._p.some(x => x[0] === k); }
+	delete(k) { this._p = this._p.filter(x => x[0] !== k); }
+	forEach(f, t) { for (const [k, v] of this._p) f.call(t, v, k, this); }
+	entries() { return this._p[Symbol.iterator](); } keys() { return this._p.map(x => x[0])[Symbol.iterator](); } values() { return this._p.map(x => x[1])[Symbol.iterator](); }
+	[Symbol.iterator]() { return this.entries(); }
+};
 class AbortSignal extends EventTarget {
 	constructor() { super(); this.aborted = false; this.reason = undefined; this.onabort = null; }
 	throwIfAborted() { if (this.aborted) throw this.reason; }
@@ -791,38 +804,103 @@ const selection = { rangeCount: 0, isCollapsed: true, type: 'None', anchorNode: 
 G.getSelection = () => selection;
 G.speechSynthesis = undefined;
 
-/* ---------- red: fetch y XMLHttpRequest (las respuestas llegan sin esperar: va en su hilo) */
-function doFetch(url, method, body) {
-	const r = N.fetch(resolveUrl(location.href, String(url)), method || 'GET', body == null ? null : String(body));
+/* ---------- red: fetch y XMLHttpRequest (las respuestas llegan sin esperar: va en su hilo). Las cabeceras que
+ * pide la página van de verdad (una API que espera JSON lo dice en Content-Type), y la respuesta trae su tipo */
+class Headers {
+	constructor(init) {
+		this._m = new Map();
+		if (init instanceof Headers) init.forEach((v, k) => this.append(k, v));
+		else if (Array.isArray(init)) for (const [k, v] of init) this.append(k, v);
+		else if (init && typeof init === 'object') for (const k of Object.keys(init)) this.append(k, init[k]);
+	}
+	append(k, v) { k = String(k).toLowerCase(); const o = this._m.get(k); this._m.set(k, o == null ? String(v) : o + ', ' + v); }
+	set(k, v) { this._m.set(String(k).toLowerCase(), String(v)); }
+	get(k) { const v = this._m.get(String(k).toLowerCase()); return v == null ? null : v; }
+	has(k) { return this._m.has(String(k).toLowerCase()); }
+	delete(k) { this._m.delete(String(k).toLowerCase()); }
+	forEach(f, t) { for (const [k, v] of this._m) f.call(t, v, k, this); }
+	entries() { return this._m.entries(); } keys() { return this._m.keys(); } values() { return this._m.values(); }
+	[Symbol.iterator]() { return this._m.entries(); }
+	_lines() { let s = ''; for (const [k, v] of this._m) s += k + ': ' + v + '\n'; return s; }
+}
+G.Headers = Headers;
+function bodyStr(b) {
+	if (b == null) return null;
+	if (typeof b === 'string') return b;
+	if (b instanceof URLSearchParams) return b.toString();
+	if (b instanceof G.FormData) return b._p.map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+	if (b instanceof G.Blob) return b._t;
+	if (b instanceof ArrayBuffer || ArrayBuffer.isView(b)) return new G.TextDecoder().decode(b);
+	return String(b);
+}
+// FormData como lo manda un navegador: multipart/form-data con su separador (y los archivos con su nombre y tipo)
+function multipart(fd) {
+	const bnd = '----Cloud3DSFormBoundary' + Math.random().toString(36).slice(2, 12);
+	let out = '';
+	for (const [k, v] of fd._p) {
+		out += '--' + bnd + '\r\n';
+		if (v && typeof v === 'object' && v._t != null) out += 'Content-Disposition: form-data; name="' + k + '"; filename="' + (v.name || 'blob') + '"\r\nContent-Type: ' + (v.type || 'application/octet-stream') + '\r\n\r\n' + v._t + '\r\n';
+		else out += 'Content-Disposition: form-data; name="' + k + '"\r\n\r\n' + v + '\r\n';
+	}
+	return [out + '--' + bnd + '--\r\n', 'multipart/form-data; boundary=' + bnd];
+}
+function doFetch(url, method, body, headers) {
+	const h = headers instanceof Headers ? headers : new Headers(headers);
+	if (body instanceof URLSearchParams && !h.has('content-type')) h.set('content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
+	if (body instanceof G.FormData) { const [b, t] = multipart(body); body = b; h.set('content-type', t); }
+	else if (body instanceof G.Blob && body.type && !h.has('content-type')) h.set('content-type', body.type);
+	else if (typeof body === 'string' && method && String(method).toUpperCase() !== 'GET' && !h.has('content-type')) h.set('content-type', 'text/plain;charset=UTF-8');
+	const r = N.fetch(resolveUrl(location.href, String(url)), String(method || 'GET').toUpperCase(), bodyStr(body), h._lines());
 	if (!r) throw new TypeError('Failed to fetch');
-	return { status: r[0], text: r[1], url: r[2] };
+	return { status: r[0], text: r[1], url: r[2], type: r[3] || '' };
 }
 class Response {
-	constructor(r) { this._r = r; this.status = r.status; this.ok = r.status >= 200 && r.status < 300; this.url = r.url; this.statusText = ''; this.redirected = false; this.headers = { get: () => null, has: () => false, forEach() {} }; }
-	text() { return Promise.resolve(this._r.text); }
-	json() { try { return Promise.resolve(JSON.parse(this._r.text)); } catch (e) { return Promise.reject(e); } }
-	blob() { return Promise.resolve(new Blob([this._r.text])); }
+	constructor(r, init) {
+		if (typeof r === 'string' || r == null) r = { status: init && init.status || 200, text: r == null ? '' : r, url: '', type: init && init.headers ? new Headers(init.headers).get('content-type') || '' : '' };
+		this._r = r; this.status = r.status; this.ok = r.status >= 200 && r.status < 300; this.url = r.url; this.statusText = r.status === 200 ? 'OK' : ''; this.redirected = false;
+		this.type = 'basic'; this.bodyUsed = false;
+		this.headers = new Headers(r.type ? { 'content-type': r.type } : {});
+	}
+	text() { this.bodyUsed = true; return Promise.resolve(this._r.text); }
+	json() { this.bodyUsed = true; try { return Promise.resolve(JSON.parse(this._r.text)); } catch (e) { return Promise.reject(e); } }
+	blob() { return Promise.resolve(new Blob([this._r.text], { type: this._r.type })); }
 	arrayBuffer() { return Promise.resolve(new TextEncoder().encode(this._r.text).buffer); }
+	formData() { const f = new G.FormData(); for (const [k, v] of new URLSearchParams(this._r.text)) f.append(k, v); return Promise.resolve(f); }
 	clone() { return new Response(this._r); }
+	static json(d, i) { return new Response(JSON.stringify(d), Object.assign({ headers: { 'content-type': 'application/json' } }, i)); }
+	static error() { return new Response({ status: 0, text: '', url: '', type: '' }); }
 }
-G.Response = Response; G.Headers = class { constructor() {} get() { return null; } set() {} append() {} has() { return false; } };
-G.Request = class { constructor(u, o) { this.url = String(u); Object.assign(this, o || {}); } };
-G.fetch = (u, o) => { try { o = o || {}; if (u && u.url) u = u.url; return Promise.resolve(new Response(doFetch(u, o.method, o.body))); } catch (e) { return Promise.reject(e); } };
+G.Response = Response;
+G.Request = class { constructor(u, o) { o = o || {}; if (u && u.url) { o = Object.assign({ method: u.method, headers: u.headers, body: u.body }, o); u = u.url; } this.url = resolveUrl(location.href, String(u)); this.method = String(o.method || 'GET').toUpperCase(); this.headers = new Headers(o.headers); this.body = o.body; this.signal = o.signal; this.credentials = o.credentials || 'same-origin'; } clone() { return new G.Request(this.url, this); } };
+G.fetch = (u, o) => {
+	o = o || {};
+	try {
+		let method = o.method, headers = o.headers, body = o.body;
+		if (u && typeof u === 'object' && u.url) { method = method || u.method; headers = headers || u.headers; body = body !== undefined ? body : u.body; u = u.url; }
+		if (o.signal && o.signal.aborted) return Promise.reject(o.signal.reason || new Error('AbortError'));
+		return Promise.resolve(new Response(doFetch(u, method, body, headers)));
+	} catch (e) { return Promise.reject(e); }
+};
 G.XMLHttpRequest = class extends EventTarget {
-	constructor() { super(); this.readyState = 0; this.status = 0; this.responseText = ''; this.response = ''; this.responseType = ''; this.timeout = 0; this.withCredentials = false; this.upload = { addEventListener() {} }; }
-	open(m, u) { this._m = m; this._u = u; this.readyState = 1; }
-	setRequestHeader() {} getResponseHeader() { return null; } getAllResponseHeaders() { return ''; } overrideMimeType() {} abort() {}
+	constructor() { super(); this.readyState = 0; this.status = 0; this.statusText = ''; this.responseText = ''; this.response = ''; this.responseType = ''; this.timeout = 0; this.withCredentials = false; this.upload = new EventTarget(); this._rq = new Headers(); this._type = ''; }
+	open(m, u) { this._m = m; this._u = u; this.readyState = 1; this._rq = new Headers(); }
+	setRequestHeader(k, v) { this._rq.append(k, v); }
+	getResponseHeader(k) { return String(k).toLowerCase() === 'content-type' && this._type ? this._type : null; }
+	getAllResponseHeaders() { return this._type ? 'content-type: ' + this._type + '\r\n' : ''; }
+	overrideMimeType() {} abort() { this._aborted = true; }
 	send(body) {
 		setTimeout(() => {
-			try { const r = doFetch(this._u, this._m, body); this.status = r.status; this.responseText = r.text; this.responseURL = r.url;
-				this.response = this.responseType === 'json' ? (() => { try { return JSON.parse(r.text); } catch (e) { return null; } })() : r.text; }
+			if (this._aborted) return;
+			try { const r = doFetch(this._u, this._m, body, this._rq); this.status = r.status; this.statusText = r.status === 200 ? 'OK' : ''; this.responseText = r.text; this.responseURL = r.url; this._type = r.type;
+				this.response = this.responseType === 'json' ? (() => { try { return JSON.parse(r.text); } catch (e) { return null; } })() : this.responseType === 'arraybuffer' ? new TextEncoder().encode(r.text).buffer : r.text; }
 			catch (e) { this.status = 0; }
 			this.readyState = 4;
-			const fire = t => { const ev = new Event(t); ev.target = this; if (typeof this['on' + t] === 'function') try { this['on' + t](ev); } catch (e) { report(e); } };
+			const fire = t => { const ev = new Event(t); ev.target = this; if (typeof this['on' + t] === 'function') try { this['on' + t](ev); } catch (e) { report(e); } this.dispatchEvent(ev); };
 			fire('readystatechange'); fire(this.status ? 'load' : 'error'); fire('loadend');
 		}, 0);
 	}
 };
+G.XMLHttpRequest.UNSENT = 0; G.XMLHttpRequest.OPENED = 1; G.XMLHttpRequest.HEADERS_RECEIVED = 2; G.XMLHttpRequest.LOADING = 3; G.XMLHttpRequest.DONE = 4;
 
 /* ---------- temporizadores: corren con un reloj propio, sin esperar de verdad */
 let tid = 0, vnow = 0; const timers = new Map();

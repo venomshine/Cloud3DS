@@ -579,6 +579,9 @@ static int dl_request_curl(int method, const char *url, const char *const *heade
 	CURLcode r = curl_easy_perform(c);
 	long code = 0;
 	curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+	char *ct = NULL;
+	curl_easy_getinfo(c, CURLINFO_CONTENT_TYPE, &ct);
+	util_strlcpy(t_ctype, ct ? ct : "", sizeof t_ctype);
 	curl_easy_cleanup(c);
 	curl_slist_free_all(h);
 	util_log("http: curl %.80s -> %d, HTTP %ld %s", url, (int)r, code, eb);
@@ -645,6 +648,8 @@ static int dl_request_hc(int method, const char *url0, const char *const *header
 		break;
 	}
 	*code_out = code;
+	t_ctype[0] = 0; // (el tipo de la respuesta: para quien lo pida, como el fetch de las páginas)
+	httpcGetResponseHeader(&ctx, "Content-Type", t_ctype, sizeof t_ctype);
 	u8 *buf = malloc(64 * 1024);
 	u32 dl = 0, total = 0, before;
 	int out = buf ? DLF_OK : DLF_FAIL;

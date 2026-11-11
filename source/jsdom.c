@@ -503,17 +503,21 @@ static JSValue f_fetch(JSContext *ctx, JSValueConst t, int argc, JSValueConst *a
 	const char *method = argc > 1 && JS_IsString(argv[1]) ? JS_ToCString(ctx, argv[1]) : NULL;
 	size_t bl = 0;
 	const char *body = argc > 2 && JS_IsString(argv[2]) ? JS_ToCStringLen(ctx, &bl, argv[2]) : NULL;
-	char *out = NULL, fin[1024] = "";
+	const char *hdrs = argc > 3 && JS_IsString(argv[3]) ? JS_ToCString(ctx, argv[3]) : NULL; // «Nombre: valor\n…»
+	char *out = NULL, fin[1024] = "", ct[128] = "";
 	size_t n = 0;
 	long code = 0;
-	int r = url ? J.host->fetch(url, method ? method : "GET", body, bl, &out, &n, &code, fin, sizeof fin) : -1;
+	int r = url ? J.host->fetch(url, method ? method : "GET", hdrs, body, bl, &out, &n, &code, fin, sizeof fin, ct, sizeof ct) : -1;
 	JSValue res = JS_NULL;
 	if (r == 0) {
 		res = JS_NewArray(ctx);
 		JS_SetPropertyUint32(ctx, res, 0, JS_NewInt32(ctx, (int)code));
 		JS_SetPropertyUint32(ctx, res, 1, JS_NewStringLen(ctx, out ? out : "", n));
 		JS_SetPropertyUint32(ctx, res, 2, JS_NewString(ctx, fin[0] ? fin : url));
+		JS_SetPropertyUint32(ctx, res, 3, JS_NewString(ctx, ct));
 	}
+	if (hdrs)
+		JS_FreeCString(ctx, hdrs);
 	free(out);
 	if (url)
 		JS_FreeCString(ctx, url);
@@ -571,7 +575,7 @@ static JSValue f_runSrc(JSContext *ctx, JSValueConst t, int argc, JSValueConst *
 	size_t n = 0;
 	long http = 0;
 	u64 t0 = now_ms();
-	bool ok = J.host->fetch(url, "GET", NULL, 0, &code, &n, &http, fin, sizeof fin) == 0 && http < 400 && code;
+	bool ok = J.host->fetch(url, "GET", NULL, NULL, 0, &code, &n, &http, fin, sizeof fin, NULL, 0) == 0 && http < 400 && code;
 	if (ok) {
 		char *tt = realloc(code, n + 1);
 		if (tt) {
@@ -612,7 +616,7 @@ static JSValue f_runModule(JSContext *ctx, JSValueConst t, int argc, JSValueCons
 		size_t cn = 0;
 		long http = 0;
 		u64 t0 = now_ms();
-		if (J.host->fetch && J.host->fetch(a, "GET", NULL, 0, &code, &cn, &http, fin, sizeof fin) == 0 && http < 400 && code) {
+		if (J.host->fetch && J.host->fetch(a, "GET", NULL, NULL, 0, &code, &cn, &http, fin, sizeof fin, NULL, 0) == 0 && http < 400 && code) {
 			char *tt = realloc(code, cn + 1);
 			if (tt) {
 				code = tt, code[cn] = 0;
@@ -706,7 +710,7 @@ static const JSCFunctionListEntry NATIVE[] = {
     JS_CFUNC_DEF("removeChild", 2, f_removeChild),
     JS_CFUNC_DEF("clone", 2, f_clone),
     JS_CFUNC_DEF("parse", 1, f_parse),
-    JS_CFUNC_DEF("fetch", 3, f_fetch),
+    JS_CFUNC_DEF("fetch", 4, f_fetch),
     JS_CFUNC_DEF("log", 1, f_log),
     JS_CFUNC_DEF("now", 0, f_now),
     JS_CFUNC_DEF("navigate", 1, f_navigate),
@@ -934,7 +938,7 @@ static JSModuleDef *mod_load(JSContext *ctx, const char *name, void *op)
 	size_t n = 0;
 	long http = 0;
 	u64 t0 = now_ms();
-	if (!J.host->fetch || J.host->fetch(name, "GET", NULL, 0, &code, &n, &http, fin, sizeof fin) != 0 || http >= 400 || !code) {
+	if (!J.host->fetch || J.host->fetch(name, "GET", NULL, NULL, 0, &code, &n, &http, fin, sizeof fin, NULL, 0) != 0 || http >= 400 || !code) {
 		free(code);
 		JS_ThrowReferenceError(ctx, "could not load module '%s'", name);
 		return NULL;
@@ -1247,7 +1251,7 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 				char abs[1024], fin[1024];
 				resolve(host->url, src, abs, sizeof abs);
 				long code_http = 0;
-				if (host->fetch(abs, "GET", NULL, 0, &code, &cn, &code_http, fin, sizeof fin) != 0 || code_http >= 400) {
+				if (host->fetch(abs, "GET", NULL, NULL, 0, &code, &cn, &code_http, fin, sizeof fin, NULL, 0) != 0 || code_http >= 400) {
 					free(code);
 					code = NULL;
 				} else if (code) { // QuickJS necesita el código terminado en 0

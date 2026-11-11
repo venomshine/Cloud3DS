@@ -977,7 +977,8 @@ static bool blocked_host(const char *url)
 	return false;
 }
 
-static int js_fetch(const char *url, const char *method, const char *body, size_t blen, char **out, size_t *n, long *code, char *fin, size_t fl)
+static int js_fetch(const char *url, const char *method, const char *hdrs, const char *body, size_t blen, char **out, size_t *n, long *code,
+                    char *fin, size_t fl, char *ctype, size_t cl)
 {
 	if (blocked_host(url)) {
 		util_log("web: bloqueado %.80s", url);
@@ -986,19 +987,44 @@ static int js_fetch(const char *url, const char *method, const char *body, size_
 	Buf b = {0};
 	int r;
 	*code = 0;
+	if (ctype && cl)
+		ctype[0] = 0;
 	if (!strncasecmp(url, "file:", 5)) { // de una página de la SD: es un archivo de la SD
 		url += 5;
 		while (url[0] == '/' && url[1] == '/')
 			url++;
 	}
-	if (strcasecmp(method, "GET") && strstr(url, "://")) { // POST y demás
-		static const char *const H[] = {"Content-Type: application/x-www-form-urlencoded; charset=UTF-8", NULL};
-		r = dl_request(strcasecmp(method, "PUT") ? HTTPC_METHOD_POST : HTTPC_METHOD_PUT, url, H, body, blen, buf_cb, &b, code);
+	bool get = !strcasecmp(method, "GET");
+	if ((!get || (hdrs && *hdrs)) && strstr(url, "://")) { // POST y demás, o con cabeceras propias: tal cual las pide
+		// sus cabeceras («Nombre: valor» por línea), y si manda datos sin decir de qué tipo, de formulario
+		const char *H[24];
+		char hb[2048];
+		int nh = 0;
+		bool has_ct = false;
+		util_strlcpy(hb, hdrs ? hdrs : "", sizeof hb);
+		for (char *p = hb, *e; *p && nh < 22; p = e) {
+			e = p + strcspn(p, "\n");
+			char *nx = *e ? e + 1 : e;
+			*e = 0;
+			if (strchr(p, ':') && strncasecmp(p, "host:", 5) && strncasecmp(p, "content-length:", 15) && strncasecmp(p, "cookie:", 7)) {
+				has_ct |= !strncasecmp(p, "content-type:", 13);
+				H[nh++] = p;
+			}
+			e = nx;
+		}
+		if (!get && !has_ct)
+			H[nh++] = "Content-Type: application/x-www-form-urlencoded; charset=UTF-8";
+		H[nh] = NULL;
+		int m = get ? HTTPC_METHOD_GET : !strcasecmp(method, "PUT") ? HTTPC_METHOD_PUT : !strcasecmp(method, "DELETE") ? HTTPC_METHOD_DELETE :
+		        !strcasecmp(method, "HEAD") ? HTTPC_METHOD_HEAD : HTTPC_METHOD_POST;
+		r = dl_request(m, url, H, body, blen, buf_cb, &b, code);
 		util_strlcpy(fin, url, fl);
 	} else {
 		r = fetch_any(url, "*/*", &b, code);
 		util_strlcpy(fin, FA_FIN, fl);
 	}
+	if (ctype && cl)
+		util_strlcpy(ctype, dl_last_ctype(), cl);
 	if (r != DLF_OK) {
 		free(b.p);
 		return -1;

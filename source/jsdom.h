@@ -17,7 +17,9 @@
 
 typedef struct {
 	/* bajar algo (scripts, fetch, XMLHttpRequest): 0 bien; *out con malloc (se libera fuera) */
-	int (*fetch)(const char *url, const char *method, const char *body, size_t blen, char **out, size_t *n, long *code, char *final_url, size_t fl);
+	/* headers: las que pide la página («Nombre: valor» por línea, o NULL); ctype: el Content-Type de la respuesta */
+	int (*fetch)(const char *url, const char *method, const char *headers, const char *body, size_t blen, char **out, size_t *n, long *code,
+	             char *final_url, size_t fl, char *ctype, size_t cl);
 	void (*log)(const char *msg);
 	const char *url;      /* la de la página */
 	const char *ua;       /* navigator.userAgent */
