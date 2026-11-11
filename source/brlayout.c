@@ -69,7 +69,9 @@ struct Sty {
 	float ar, tx, ty, rad; /* aspect-ratio, translate (px o %: txp/typ), border-radius (px; <0: %) */
 	uint8_t txp, typ, fit, fixbg, bcen, fixd;
 	uint32_t fr0;  /* rejilla: pistas minmax(0, Nfr), que pueden estrecharse por debajo de su contenido */
-	uint8_t gflow; /* rejilla: grid-auto-flow: column (un carrusel): sus pistas no se encogen */ /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
+	uint8_t gflow; /* rejilla: grid-auto-flow: column (un carrusel): sus pistas no se encogen */
+	const char *gtpl; /* rejilla: su grid-template-areas («p1=1,2,1,2;…»: columna, cuántas, fila, cuántas) */
+	char gname[24];   /* elemento de rejilla: el nombre de su zona (grid-area: p1) */ /* bcen: centra (1) o arrima a la derecha (2) los bloques hijos (<center>) */ /* fixbg: fija y detrás de todo, más estrecha que la página */
 	/* resultado */
 	float um[4], up[4], cmt, cmb, minc, maxc, cy, sx, sy, layw, fbase, lbase, ax, ay;
 	bool icv, laid;
@@ -531,6 +533,19 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 			else if (!strcmp(nm, "c3y") || !strcmp(nm, "c3yp"))
 				s->ty = val / 10.0f, s->typ = nm[3] == 'p';
 		}
+	{ // grid-template-areas y grid-area por nombre (de cssprep, en content: «gt:…» la rejilla, «ga:p1» el elemento)
+		const css_computed_content_item *ci = NULL;
+		if (css_computed_content(cs, &ci) == CSS_CONTENT_SET && ci && ci->type == CSS_COMPUTED_CONTENT_STRING && ci->data.string) {
+			const char *t = lwc_string_data(ci->data.string);
+			size_t tl = lwc_string_length(ci->data.string);
+			if (tl > 3 && !strncmp(t, "gt:", 3)) {
+				char *a = arena(C, tl - 2);
+				if (a)
+					memcpy(a, t + 3, tl - 3), a[tl - 3] = 0, s->gtpl = a;
+			} else if (tl > 3 && tl - 3 < sizeof s->gname && !strncmp(t, "ga:", 3))
+				memcpy(s->gname, t + 3, tl - 3), s->gname[tl - 3] = 0;
+		}
+	}
 	css_color gcc; // grid-column-start solo (de cssprep: rgba(103, columna, 0, 254) en outline-color)
 	if (css_computed_outline_color(cs, &gcc) == CSS_OUTLINE_COLOR_COLOR && (gcc >> 24) == 254 && ((gcc >> 16) & 255) == 103)
 		s->gcs = (int16_t)((gcc >> 8) & 255);
@@ -2607,6 +2622,25 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 		if (c->oof != O_ABS)
 			it[k].b = c, it[k].line = k, k++;
 	qsort(it, (size_t)n, sizeof *it, ord_cmp);
+	if (s->gtpl) // las zonas con nombre, de la plantilla de esta rejilla
+		for (int i = 0; i < n; i++) {
+			Sty *is = it[i].b->s;
+			if (!is->gname[0])
+				continue;
+			size_t gl = strlen(is->gname);
+			for (const char *q = s->gtpl; *q;) {
+				const char *eq = strchr(q, '='), *sc = strchr(q, ';');
+				if (!eq || !sc)
+					break;
+				if ((size_t)(eq - q) == gl && !strncmp(q, is->gname, gl)) {
+					int c0, cs2, r0, rs2;
+					if (sscanf(eq + 1, "%d,%d,%d,%d", &c0, &cs2, &r0, &rs2) == 4)
+						is->gcs = (int16_t)c0, is->gsp = (int16_t)cs2, is->gr = (int16_t)r0, is->grs = (int16_t)rs2, is->gall = 0;
+					break;
+				}
+				q = sc + 1;
+			}
+		}
 	// colocación (como en CSS): primero lo que pide fila; luego lo demás en orden, en el primer hueco libre
 	// (una tabla de celdas ocupadas), con lo que pide columna en esa columna
 	int maxgr = 0, maxrs = 1;

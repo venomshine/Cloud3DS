@@ -1281,11 +1281,23 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val0)
 		char names[24][48];
 		int pos[24][4], nc = 0;
 		bool full[24];
-		grid_areas_n(val, val + strlen(val), names, pos, full, &nc);
+		int nn = grid_areas_n(val, val + strlen(val), names, pos, full, &nc);
 		if (nc > 0) {
 			char b2[16];
 			snprintf(b2, sizeof b2, "%d", nc);
 			decl_out(o, "column-count", b2);
+		}
+		// la plantilla, con la rejilla (varias rejillas usan los mismos nombres, «p1», con otras plantillas): en
+		// content, que en un elemento no hace nada; cada elemento lleva solo el nombre de su zona
+		char tp[900];
+		size_t tl = (size_t)snprintf(tp, sizeof tp, "\"gt:");
+		for (int k = 0; k < nn && tl + 64 < sizeof tp; k++)
+			if (strspn(names[k], "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") == strlen(names[k]))
+				tl += (size_t)snprintf(tp + tl, sizeof tp - tl, "%s=%d,%d,%d,%d;", names[k], pos[k][0] + 1, pos[k][1] - pos[k][0] + 1, pos[k][2] + 1,
+				                       pos[k][3] - pos[k][2] + 1);
+		if (nn && tl + 2 < sizeof tp) {
+			tp[tl++] = '"', tp[tl] = 0;
+			decl_out(o, "content", tp);
 		}
 		return true;
 	}
@@ -1307,6 +1319,11 @@ static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val0)
 	if (!strcmp(name, "grid-area")) {
 		char nm[48];
 		snprintf(nm, sizeof nm, "%.*s", (int)strcspn(val, " /"), val);
+		if (nm[0] && strspn(nm, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") == strlen(nm) && strlen(nm) < 30) {
+			char cb[48]; // (el nombre de su zona: la maqueta la busca en la plantilla de su rejilla)
+			snprintf(cb, sizeof cb, "\"ga:%s\"", nm);
+			decl_out(o, "content", cb);
+		}
 		const char *a = map_get(&p->areas, nm, strlen(nm));
 		if (!a) { // no es una zona: quizá unas líneas con nombre («content» = content-start…content-end)
 			char k1[80], k2[80];
