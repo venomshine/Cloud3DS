@@ -24,4 +24,7 @@ dentro de ellos). En `libcss/src/select/properties/helpers.c`,
 ahora es `CSS_ORPHANS_SET`. En `libcss/src/select/arena.c`, al juntar estilos iguales solo se comparaba el
 primer elemento de `content` y de los contadores: ahora se comparan las listas enteras. En `libcss/src/select/computed.c`, `css_computed_min_width` y
 `css_computed_min_height` cambiaban «auto» por 0 si el elemento no era flex: ahora devuelven «auto» tal cual
-(«auto» depende del contenedor, y así no se confundía con un 0 puesto por la página). El navegador de NetSurf en sí es GPL-2.0 y no se usa.
+(«auto» depende del contenedor, y así no se confundía con un 0 puesto por la página). En
+`libcss/src/select/unit.c`, `vh` y `vw` venían cambiadas (vw con el alto y vh con el ancho), y
+`css_unit_len2css_px` redondeaba los px de cada unidad a entero (1vw = 10,24 px quedaba en 10): ahora van
+bien y sin redondear. El navegador de NetSurf en sí es GPL-2.0 y no se usa.

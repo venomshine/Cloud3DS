@@ -266,11 +266,11 @@ static inline css_fixed css_unit__px_per_unit(
 				viewport_height,
 				viewport_width);
 
-	case CSS_UNIT_VH:
-		return FDIV(viewport_width, F_100);
+	case CSS_UNIT_VH: /* (en libcss venían cambiadas: vh con el ancho y vw con el alto) */
+		return FDIV(viewport_height, F_100);
 
 	case CSS_UNIT_VW:
-		return FDIV(viewport_height, F_100);
+		return FDIV(viewport_width, F_100);
 
 	default:
 		return 0;
@@ -322,12 +322,13 @@ css_fixed css_unit_len2css_px(
 			unit,
 			ctx->pw);
 
-	/* Ensure we round px_per_unit to the nearest whole number of pixels:
-	 * the use of FIXTOINT() below will truncate. */
-	px_per_unit += F_0_5;
-
-	/* Calculate total number of pixels */
-	return FMUL(length, TRUNCATEFIX(px_per_unit));
+	/* sin redondear los px por unidad (1vw = 10,24 px, 1em = 14,4 px…), como los navegadores;
+	 * vw y vh multiplicando antes de dividir, para que 100vw sea el ancho justo */
+	if (unit == CSS_UNIT_VW)
+		return FDIV(FMUL(length, ctx->viewport_width), F_100);
+	if (unit == CSS_UNIT_VH)
+		return FDIV(FMUL(length, ctx->viewport_height), F_100);
+	return FMUL(length, px_per_unit);
 }
 
 /* Exported function, documented in libcss/unit.h. */
