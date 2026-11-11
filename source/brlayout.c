@@ -2844,7 +2844,10 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 		float h = rg * (rsp[i] - 1), off = 0;
 		for (int q = 0; q < rsp[i] && row[i] + q < nrows; q++)
 			h += rh[row[i] + q];
-		if ((al == CSS_ALIGN_ITEMS_STRETCH || al == 0) && AUT(is, LH) && c->kind != K_ATOM) {
+		if (!AUT(is, LH) && PCT(is, LH) && c->kind != K_ATOM) { // alto en %: del de su hueco, ya sabido
+			is->laid = false;
+			layout_box(C, c, h - is->um[0] - is->um[2], NULL, 0, 0);
+		} else if ((al == CSS_ALIGN_ITEMS_STRETCH || al == 0) && AUT(is, LH) && c->kind != K_ATOM) {
 			float nh = h - is->um[0] - is->um[2];
 			if (nh > c->h)
 				c->h = nh;
