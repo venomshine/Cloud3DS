@@ -114,6 +114,7 @@ typedef struct {
 	bool sized;            /* el tamaño venía de la página */
 	bool natural;          /* de fondo a su tamaño (sprites): se decodifica sin reducir (hasta 512) */
 	bool glyph;            /* un icono de una fuente de la página: blanco, se tiñe al pintarlo */
+	bool guessed;          /* se colocó sin saber su proporción (ni la página la daba): 4:3 */
 	int ow, oh;            /* el tamaño original de la imagen */
 	volatile int st;
 	u8 *rgba;
@@ -230,6 +231,7 @@ static struct {
 	bool css_dark;         /* la página se pidió con tema oscuro */
 	bool lt_tx;            /* se pidió oscura y ahora es modo claro: se aclara al pintar */  /* lo buscado en Google (por si Google no responde: DuckDuckGo) */
 	int idle_relayouts;  /* recolocaciones por su JavaScript de fondo (como mucho 3) */
+	bool img_relaid;     /* ya se recolocó por las proporciones de las imágenes (una vez por página) */
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
 	volatile int click_link; /* tras un clic con JavaScript: el enlace a seguir (-1 ninguno, -2 esperando) */
@@ -3515,8 +3517,14 @@ static int bl_img(void *u, dom_node *n, const char *src, float *iw, float *ih)
 		resolve(B.url, src, abs, sizeof abs);
 		k = img_find_or_add(abs);
 	}
-	if (k >= 0 && B.img[k].iw > 0)
+	if (k >= 0 && B.img[k].ow > 0 && B.img[k].oh > 0) // (su tamaño de verdad, no el reducido al decodificarla)
+		*iw = (float)B.img[k].ow, *ih = (float)B.img[k].oh;
+	else if (k >= 0 && B.img[k].iw > 0)
 		*iw = B.img[k].iw, *ih = B.img[k].ih;
+	else if (k >= 0) { // aún no se sabe: se coloca a 4:3 salvo que la página dé ancho y alto
+		char w[16], h[16];
+		B.img[k].guessed = !(attr(n, "width", w, sizeof w) && attr(n, "height", h, sizeof h));
+	}
 	return k;
 }
 // un icono de una fuente de la página: una imagen más («glyph:color:carácter:fuente»), la pinta su hilo
@@ -4876,6 +4884,7 @@ static void layout_thread_run(void *arg)
 	B.idle_left = B.jsp ? 30000 : 0;
 	B.idle_next = util_ms() + 600;
 	B.idle_relayouts = 0;
+	B.img_relaid = false;
 	B.idle_dirty = false;
 	B.ready_ms = util_ms();
 	B.st = ST_READY;
@@ -4973,6 +4982,47 @@ static void idle_thread_run(void *arg)
 	}
 	B.idle_next = util_ms() + 400;
 	B.st = ST_READY;
+}
+
+/* recolocar cuando ya se sabe la proporción de las imágenes que se colocaron sin saberla (a 4:3): las fotos
+ * de una portada salían con otro alto que en un navegador. Una vez por página, sin moverse de donde se está */
+static void imgfit_thread(void *arg)
+{
+	(void)arg;
+	float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
+	B.st = ST_LAYOUT;
+	int keep = B.idle_left;
+	util_log("web: recolocar con la proporción de las imágenes");
+	layout();
+	B.idle_left = keep;
+	B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
+	clamp_view();
+	B.tip = 0;
+	img_start();
+	B.st = ST_READY;
+	B.thr_done = true;
+}
+
+// ¿hace falta? las de cerca de lo que se ve ya están, y alguna no era 4:3
+static bool imgfit_due(void)
+{
+	if (B.img_relaid || !B.nf)
+		return false;
+	float lim = B.sy + 2.5f * (float)SCR_H / (B.zoom > 0 ? B.zoom : 1);
+	bool off = false;
+	for (int i = 0; i < B.nimg; i++) {
+		const PImg *im = &B.img[i];
+		if (!im->guessed || im->y > lim)
+			continue;
+		if (im->st == IM_WAIT || im->st == IM_RGBA)
+			return false; // (aún llegan: se espera a tenerlas todas)
+		if (im->st == IM_TEX && im->ow > 0 && im->oh > 0) {
+			float ar = (float)im->ow / im->oh;
+			if (fabsf(ar - 4.0f / 3) > 0.08f * 4 / 3)
+				off = true;
+		}
+	}
+	return off;
 }
 
 static void start_action(dom_node *el, int link)
@@ -5711,6 +5761,20 @@ void br_bottom(void)
 		B.thr_done = false, B.thr = threadCreate(idle_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
 		if (!B.thr)
 			B.st = ST_READY, B.idle_left = 0;
+	}
+	if (B.st == ST_READY && !B.light && strcmp(B.reader_url, B.url) && util_ms() - B.last_in > 1200 && imgfit_due()) {
+		B.img_relaid = true;
+		if (B.thr) {
+			threadJoin(B.thr, U64_MAX);
+			threadFree(B.thr);
+			B.thr = NULL;
+		}
+		B.st = ST_ACT;
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		B.thr_done = false, B.thr = threadCreate(imgfit_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
+		if (!B.thr)
+			B.st = ST_READY;
 	}
 	if (B.st == ST_READY && B.click_link >= 0) { // el clic con JavaScript dejó seguir el enlace
 		int k = B.click_link;
