@@ -522,6 +522,9 @@ static void sty_fill(Ctx *C, Sty *s, const css_computed_style *cs, uint8_t d)
 			else if (!strcmp(nm, "c3y") || !strcmp(nm, "c3yp"))
 				s->ty = val / 10.0f, s->typ = nm[3] == 'p';
 		}
+	css_color gcc; // grid-column-start solo (de cssprep: rgba(103, columna, 0, 254) en outline-color)
+	if (css_computed_outline_color(cs, &gcc) == CSS_OUTLINE_COLOR_COLOR && (gcc >> 24) == 254 && ((gcc >> 16) & 255) == 103)
+		s->gcs = (int16_t)((gcc >> 8) & 255);
 	css_color grc; // grid-row (de cssprep: rgba(103, fila, cuántas, 254))
 	if (css_computed_column_rule_color(cs, &grc) == CSS_COLUMN_RULE_COLOR_COLOR && (grc >> 24) == 254 && ((grc >> 16) & 255) == 103)
 		s->gr = (int16_t)((grc >> 8) & 255), s->grs = (int16_t)(grc & 255);

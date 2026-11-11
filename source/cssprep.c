@@ -1980,6 +1980,12 @@ static void grid_start_end(const char *s, const char *e, Out *o)
 	}
 	if (!span && end > 0 && start > 0 && end > start)
 		span = end - start;
+	if (start > 0 && start < 256 && !span && !end) { // solo dónde empieza («col-start-1»): aparte, que no pise el
+		char b[48];                                  // span de otra regla («col-span-12»): en outline-color
+		snprintf(b, sizeof b, "rgba(103,%d,0,0.996)", start);
+		decl_out(o, "outline-color", b);
+		return;
+	}
 	grid_pos(o, start, span);
 }
 
