@@ -1522,6 +1522,40 @@ static void load_thread(void *arg)
 	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
 }
 
+// la memoria que pedirá el árbol de un HTML: las etiquetas y su texto, unas 12 veces lo que pesan; lo de dentro de
+// <script> y <style> (un solo nodo de texto cada uno: en las webs grandes, la mitad o más del HTML), unas 2
+static u64 html_need(const char *p, size_t n)
+{
+	size_t raw = 0;
+	for (size_t i = 0; p && i + 8 < n; i++) {
+		if (p[i] != '<' || (strncasecmp(p + i + 1, "script", 6) && strncasecmp(p + i + 1, "style", 5)))
+			continue;
+		bool scr = !strncasecmp(p + i + 1, "script", 6);
+		const char *gt = memchr(p + i, '>', n - i);
+		if (!gt)
+			break;
+		size_t a = (size_t)(gt - p) + 1, b = a;
+		const char *end = scr ? "</script" : "</style";
+		size_t el = strlen(end);
+		while (b + el <= n && strncasecmp(p + b, end, el))
+			b++;
+		raw += b - a;
+		i = b;
+	}
+	return (u64)(n - raw) * MEM_PER_HTML + (u64)raw * 2;
+}
+
+static void load_thread_run(void *arg);
+static void load_thread(void *arg)
+{
+	load_thread_run(arg);
+	if (!B.js_defer || B.abort)
+		pf_stop(), B.js_defer = false; // (lo que sobró de lo pedido por adelantado)
+	if (B.abort || !B.css_sig)
+		keep_free(); // (las hojas guardadas: solo con JavaScript vivo)
+	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
+}
+
 static void load_thread_run(void *arg)
 {
 	(void)arg;
@@ -1580,9 +1614,11 @@ static void load_thread_run(void *arg)
 	cssprep_set_dark(B.dark); // (prefers-color-scheme: dark): las webs con tema oscuro lo usan
 	B.css_dark = B.dark;
 	bool reader = !strcmp(B.reader_url, B.url);
-	// ¿cabe? el árbol ocupa unas 12 veces el HTML: si ni eso cabe, ni se intenta (el aviso)
-	if (!reader && (u64)b.n * MEM_PER_HTML + MEM_RESERVE > mem_free()) { // en modo lectura: lo que quepa
-		B.oom_need = (u32)((u64)b.n * MEM_PER_HTML > 0xFFFFFFFFu ? 0xFFFFFFFFu : b.n * MEM_PER_HTML);
+	// ¿cabe? el árbol ocupa unas 12 veces el HTML (lo de dentro de <script> y <style>, texto sin más, unas 2):
+	// si ni eso cabe, ni se intenta (el aviso)
+	u64 need = html_need(b.p, b.n);
+	if (!reader && need + MEM_RESERVE > mem_free()) { // en modo lectura: lo que quepa
+		B.oom_need = (u32)(need > 0xFFFFFFFFu ? 0xFFFFFFFFu : need);
 		util_log("web: no cabe: %u KB de HTML, %u KB libres", (unsigned)(b.n / 1024), (unsigned)(mem_free() / 1024));
 		free(b.p);
 		B.st = ST_OOM;
@@ -1623,7 +1659,7 @@ static void load_thread_run(void *arg)
 			break;
 		if (off + k < b.n && mem_free() < 2 * MEM_RESERVE) {
 			B.oom = OOM_PARSE;
-			B.oom_need = (u32)(b.n * MEM_PER_HTML);
+			B.oom_need = (u32)(need > 0xFFFFFFFFu ? 0xFFFFFFFFu : need);
 			util_log("web: memoria llena leyendo la página (%u de %u KB)", (unsigned)((off + k) / 1024), (unsigned)(b.n / 1024));
 			reader = true; // lo leído se ve sin JavaScript ni CSS (no queda memoria para ellos)
 			break;
