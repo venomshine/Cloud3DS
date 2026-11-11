@@ -2327,8 +2327,8 @@ static float flex(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			else if (is->ovx == CSS_OVERFLOW_VISIBLE || is->ovx == 0) {
 				float sw = spec_w(is, cw, &has);
 				f->mn = has ? fminf(a, sw) : a;
-				if (!AUT(is, LMAXW) && !PCT(is, LMAXW))
-					f->mn = fminf(f->mn, is->lv[LMAXW] + (is->bbox ? 0 : hx(is)));
+				if (!AUT(is, LMAXW) && (!PCT(is, LMAXW) || cw > 0)) // (y no más que su máximo, también en %)
+					f->mn = fminf(f->mn, LV(is, LMAXW, cw) + (is->bbox ? 0 : hx(is)));
 			} else
 				f->mn = hx(is);
 			f->mx = INF;
@@ -2684,7 +2684,9 @@ static float grid(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 			float m = mpx(c->s, LML) + mpx(c->s, LMR);
 			// (lo que recorta su contenido no tiene mínimo: min-width:auto es 0 si overflow no es visible)
 			bool clip = c->s->ovx != CSS_OVERFLOW_VISIBLE && c->s->ovx != 0 && c->kind != K_ATOM;
-			amn[col[i]] = fmaxf(amn[col[i]], clip ? m : a + m);
+			// (con min-width puesto, ese es su mínimo: «min-width: 0» deja la columna estrecharse)
+			float mw = !AUT(c->s, LMINW) && !PCT(c->s, LMINW) ? c->s->lv[LMINW] + (c->s->bbox ? 0 : hx(c->s)) : -1;
+			amn[col[i]] = fmaxf(amn[col[i]], mw >= 0 ? mw + m : clip ? m : a + m);
 			amx[col[i]] = fmaxf(amx[col[i]], z + m);
 		}
 	for (int i = 0; i < nt; i++) {
