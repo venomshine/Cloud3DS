@@ -69,11 +69,15 @@ void _dom_event_target_internal_finalise(dom_event_target_internal *eti)
  * \param capture   Whether add this listener in the capturing phase
  * \return DOM_NO_ERR on success, appropriate dom_exception on failure.
  */
+/* alguien escucha eventos (si nadie, los de mutación no se preparan ni se mandan) */
+bool _dom_any_listener = false;
+
 dom_exception _dom_event_target_add_event_listener(
 		dom_event_target_internal *eti,
 		dom_string *type, struct dom_event_listener *listener, 
 		bool capture)
 {
+	_dom_any_listener = true;
 	struct listener_entry *le = NULL;
 
 	le = malloc(sizeof(struct listener_entry));
@@ -164,6 +168,7 @@ dom_exception _dom_event_target_add_event_listener_ns(
 		dom_string *namespace, dom_string *type, 
 		struct dom_event_listener *listener, bool capture)
 {
+	_dom_any_listener = true;
 	UNUSED(eti);
 	UNUSED(namespace);
 	UNUSED(type);
