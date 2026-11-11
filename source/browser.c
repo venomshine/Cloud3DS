@@ -194,6 +194,7 @@ static struct {
 	volatile int nel_done, nel_total; /* nodos colocados y total (para el progreso) */
 	bool js;             /* ejecutar el JavaScript de las páginas */
 	bool nojs;           /* la página de ahora es de una web con el JavaScript apagado (botón «JS») */
+	bool shown;          /* la página de ahora ya se vio: al recolocarla, se sigue viendo (no la pantalla de carga) */
 	int js_scripts, js_errors;
 	char js_nav[1024];   /* la página pidió ir a otra dirección desde su JavaScript */
 	JsPage *jsp;         /* el JavaScript de la página, vivo para los clics */
@@ -1717,6 +1718,7 @@ static void start_load(const char *url)
 		return;
 	}
 	B.abort = false;
+	B.shown = false; // (otra página: hasta que se vea, la pantalla de carga)
 	if (B.thr) {
 		threadJoin(B.thr, U64_MAX);
 		threadFree(B.thr);
@@ -5760,6 +5762,7 @@ static struct {
 	float x0, y0, zoom; /* origen en la página y zoom con que se pintó */
 	u32 ver;
 	float cut; /* hasta dónde (px de la textura) se pudo pintar (la GPU no daba para más) */
+	float dx, dy; /* dónde se dibujó la última vez (para enseñarla quieta mientras se recoloca) */
 } PCS;
 
 
@@ -5794,6 +5797,7 @@ static void page_draw(int hov)
 		PCS.valid = true, PCS.zoom = z, PCS.ver = B.page_ver;
 		dx = (B.sx - PCS.x0) * z, dy = (B.sy - PCS.y0) * z;
 	}
+	PCS.dx = dx, PCS.dy = dy;
 	gfx_rt_draw(&PC, -floorf(dx + 0.5f), -floorf(dy + 0.5f));
 	page_paint(TOP_W, SCR_H, 2, hov);
 }
@@ -5808,6 +5812,20 @@ void br_top(void)
 	}
 	if (B.st == ST_OOM) {
 		oom_top();
+		return;
+	}
+	if (B.st == ST_LAYOUT && B.shown && PC.ok && PCS.valid) { // se recoloca una página que ya se veía: la de antes,
+		gfx_rt_draw(&PC, -floorf(PCS.dx + 0.5f), -floorf(PCS.dy + 0.5f)); // quieta, con un aviso pequeño
+		const char *msg = "Actualizando la página…";
+		float w = text_width(msg, TS_SUB) + 44, x = (TOP_W - w) / 2, y = SCR_H - 34;
+		draw_rrect(x, y, w, 24, 12, col_alpha(T.surface, 0.94f));
+		B.t_load += 1.0f / 60;
+		draw_arc(x + 16, y + 12, 6, 2, B.t_load * 6, B.t_load * 6 + 4.2f, T.accent);
+		text_draw(msg, x + 28, y + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+		if (B.nel_total > 0) {
+			float f = clampf((float)B.nel_done / B.nel_total, 0, 1);
+			draw_rect(x + 12, y + 21, (w - 24) * f, 2, T.accent);
+		}
 		return;
 	}
 	if (B.st != ST_READY && B.st != ST_ACT) {
@@ -5835,6 +5853,8 @@ void br_top(void)
 		(void)X;
 		return;
 	}
+	if (B.st == ST_READY)
+		B.shown = true;
 	cv_upload();
 	// texturas de las imágenes ya decodificadas (pocas por fotograma, para no dar tirones)
 	for (int i = 0, up = 0; i < B.nimg && up < 2; i++)
