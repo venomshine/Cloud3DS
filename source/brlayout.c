@@ -3270,6 +3270,8 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 		return;
 	Sty *s = b->s;
 	s->ax = ax, s->ay = ay;
+	if (C->L->geom && s->node && b->kind != K_INLINE)
+		C->L->geom(C->L->u, s->node, ax, ay, b->w, b->h, true);
 	float x1 = ax + b->w, y1 = ay + b->h;
 	if (s->vis && b->kind != K_INLINE && s->tag != T_HTML && s->tag != T_BODY) {
 		paint_bg(C, s, ax, ay, x1, y1, cl);
@@ -3320,6 +3322,8 @@ static void emit(Ctx *C, Box *b, float ax, float ay, Clip cl, int depth)
 			if (f->t == F_TEXT) {
 				Sty *ts = f->b->s;
 				float X = ax + f->x, Y = ay + cy + f->y;
+				if (C->L->geom && ts->node && f->n) // (también lo que no se ve: para las medidas)
+					C->L->geom(C->L->u, ts->node, X, Y, f->w, f->h, false);
 				if (!f->n || !ts->vis || ts->fpx < 1.5f || !(ts->col >> 24) || Y + f->h <= in.y0 || Y >= in.y1 || X >= in.x1 || X + f->w <= in.x0)
 					continue;
 				if (!C->in_fixed && fminf(Y + f->h, in.y1) > C->bottom && Y < 200000)

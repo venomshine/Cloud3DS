@@ -64,6 +64,9 @@ typedef struct {
 	void (*text)(void *u, float x, float y, float w, float h, const char *s, int n, const BrlText *t);
 	void (*box)(void *u, float x, float y, float w, float h, int img, int wdg, const BrlText *t);
 	void (*bgimg)(void *u, const BrlBg *b, const BrlText *t); /* (puede ser NULL) */
+	/* dónde queda cada elemento (caja con borde, en px de página; los en línea, por cada trozo de su texto), para
+	 * las medidas que pide el JavaScript (getBoundingClientRect, offsetWidth…). (puede ser NULL) */
+	void (*geom)(void *u, dom_node *n, float x, float y, float w, float h, bool block);
 	/* un icono de una fuente propia de la página: la imagen de su glifo (cp) en ese color (ABGR), o -1
 	 * (puede ser NULL) */
 	int (*glyph)(void *u, const char *font_url, uint32_t cp, uint32_t col);

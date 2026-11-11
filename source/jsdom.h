@@ -30,6 +30,9 @@ typedef struct {
 	void (*cookie_set)(const char *url, const char *set_cookie);
 	size_t mem_limit;     /* memoria máxima para el JavaScript (0: la de siempre) */
 	bool dark;            /* (prefers-color-scheme: dark) */
+	/* dónde quedó un elemento en la página (x, y, ancho, alto en px; false: no se colocó). NULL: la página entera.
+	 * (puede ser NULL: sin medidas) */
+	bool (*rect)(dom_node *n, float r[4]);
 } JsHost;
 
 typedef struct {

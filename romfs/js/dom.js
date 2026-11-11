@@ -138,6 +138,15 @@ function inlineHandler(node, type, code) {
 }
 function report(e) { N.log('js: ' + (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e)); }
 
+class DOMRectReadOnly {
+	constructor(x = 0, y = 0, w = 0, h = 0) { this.x = x; this.y = y; this.width = w; this.height = h; }
+	get top() { return Math.min(this.y, this.y + this.height); } get left() { return Math.min(this.x, this.x + this.width); }
+	get right() { return Math.max(this.x, this.x + this.width); } get bottom() { return Math.max(this.y, this.y + this.height); }
+	toJSON() { return { x: this.x, y: this.y, width: this.width, height: this.height, top: this.top, left: this.left, right: this.right, bottom: this.bottom }; }
+	static fromRect(r) { r = r || {}; return new this(r.x, r.y, r.width, r.height); }
+}
+class DOMRect extends DOMRectReadOnly {}
+
 /* ---------- colecciones: arrays de verdad (forEach, for…of, Array.from) con item(), y su clase
  * (instanceof NodeList / HTMLCollection) */
 class NodeList extends Array { item(i) { return this[i] ?? null; } }
@@ -423,12 +432,21 @@ class Element extends Node {
 	closest(s) { for (let e = this; e && e.nodeType === ELEMENT; e = e.parentElement) if (matches(e, s)) return e; return null; }
 	click() { this.dispatchEvent(new Event('click', { bubbles: true, cancelable: true })); }
 	focus() {} blur() {} scrollIntoView() {} select() {}
-	getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
-	getClientRects() { return []; }
-	get offsetWidth() { return 0; } get offsetHeight() { return 0; } get clientWidth() { return 0; } get clientHeight() { return 0; }
-	get offsetTop() { return 0; } get offsetLeft() { return 0; } get offsetParent() { return this.parentElement; }
-	get scrollTop() { return 0; } set scrollTop(v) {} get scrollLeft() { return 0; } set scrollLeft(v) {}
-	get scrollHeight() { return 0; } get scrollWidth() { return 0; }
+	// medidas: las de la última vez que se colocó la página (en px de página, con la vista arriba del todo); lo que no
+	// se colocó (display: none, fuera del documento) mide 0, como en un navegador
+	getBoundingClientRect() { const r = N.rect(this._h); return r ? new DOMRect(r[0] - (G.scrollX || 0), r[1] - (G.scrollY || 0), r[2], r[3]) : new DOMRect(0, 0, 0, 0); }
+	getClientRects() { return N.rect(this._h) ? [this.getBoundingClientRect()] : []; }
+	get offsetWidth() { const r = N.rect(this._h); return r ? Math.round(r[2]) : 0; }
+	get offsetHeight() { const r = N.rect(this._h); return r ? Math.round(r[3]) : 0; }
+	get offsetTop() { const r = N.rect(this._h); return r ? Math.round(r[1]) : 0; }
+	get offsetLeft() { const r = N.rect(this._h); return r ? Math.round(r[0]) : 0; }
+	get offsetParent() { if (!N.rect(this._h)) return null; const b = document.body; return this === b || this === document.documentElement ? null : b; }
+	get clientWidth() { if (this === document.documentElement) return G.innerWidth; const r = N.rect(this._h); return r ? Math.round(r[2]) : 0; }
+	get clientHeight() { if (this === document.documentElement) return G.innerHeight; const r = N.rect(this._h); return r ? Math.round(r[3]) : 0; }
+	get scrollWidth() { const r = this === document.documentElement || this === document.body ? N.rect(null) : N.rect(this._h); return r ? Math.round(r[2]) : 0; }
+	get scrollHeight() { if (this === document.documentElement || this === document.body) { const r = N.rect(null); return Math.max(G.innerHeight, r ? Math.round(r[3]) : 0); } const r = N.rect(this._h); return r ? Math.round(r[3]) : 0; }
+	get scrollTop() { return this === document.documentElement || this === document.body ? (G.scrollY || 0) : 0; } set scrollTop(v) {}
+	get scrollLeft() { return 0; } set scrollLeft(v) {}
 	attachShadow() { return this; }
 	animate() { return { finished: Promise.resolve(), cancel() {}, play() {}, pause() {} }; }
 	// propiedades de formulario y enlaces que muchas páginas leen o cambian
@@ -703,7 +721,8 @@ G.btoa = s => { s = String(s); let o = ''; for (let i = 0; i < s.length; i += 3)
 G.atob = s => { s = String(s).replace(/[^A-Za-z0-9+/]/g, ''); let o = ''; for (let i = 0; i < s.length; i += 4) { const a = B64.indexOf(s[i]), b = B64.indexOf(s[i + 1]), c = B64.indexOf(s[i + 2]), d = B64.indexOf(s[i + 3]); o += String.fromCharCode(a << 2 | b >> 4); if (c >= 0 && s[i + 2]) o += String.fromCharCode((b & 15) << 4 | c >> 2); if (d >= 0 && s[i + 3]) o += String.fromCharCode((c & 3) << 6 | d); } return o; };
 class Observer { constructor(cb) { this.cb = cb; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
 G.MutationObserver = Observer; G.ResizeObserver = Observer; G.PerformanceObserver = Observer;
-G.IntersectionObserver = class extends Observer { observe(el) { const cb = this.cb; setTimeout(() => { try { cb([{ target: el, isIntersecting: true, intersectionRatio: 1, boundingClientRect: el.getBoundingClientRect() }], this); } catch (e) { report(e); } }, 0); } };
+// (todo «se ve»: la página se pinta entera, y así las imágenes perezosas se piden; con su rectángulo de verdad)
+G.IntersectionObserver = class extends Observer { observe(el) { const cb = this.cb; setTimeout(() => { try { const r = el.getBoundingClientRect(); cb([{ target: el, isIntersecting: true, isVisible: true, intersectionRatio: 1, boundingClientRect: r, intersectionRect: r, rootBounds: new DOMRect(0, 0, G.innerWidth, G.innerHeight), time: N.now() }], this); } catch (e) { report(e); } }, 0); } };
 G.requestIdleCallback = f => setTimeout(() => f({ timeRemaining: () => 50, didTimeout: false }), 1);
 G.cancelIdleCallback = id => clearTimeout(id);
 G.Image = class { constructor(w, h) { const e = document.createElement('img'); if (w) e.setAttribute('width', w); if (h) e.setAttribute('height', h); return e; } };
@@ -782,7 +801,7 @@ G.XMLSerializer = class { serializeToString(n) { return n.nodeType === ELEMENT ?
 G.clearImmediate = id => clearTimeout(id);
 G.PromiseRejectionEvent = class extends Event {};
 G.Window = function Window() {}; G.Window.prototype = Object.getPrototypeOf(G);
-G.NodeList = NodeList; G.HTMLCollection = HTMLCollection; G.DOMTokenList = DOMTokenList;
+G.NodeList = NodeList; G.HTMLCollection = HTMLCollection; G.DOMTokenList = DOMTokenList; G.DOMRect = DOMRect; G.DOMRectReadOnly = DOMRectReadOnly;
 // (las listas del DOM que algunas librerías recorren al empezar: core-js, por ejemplo)
 for (const k of ['CSSRuleList', 'CSSStyleDeclaration', 'CSSValueList', 'ClientRectList', 'DOMRectList', 'DOMStringList', 'DataTransferItemList', 'FileList', 'HTMLAllCollection', 'MediaList', 'MimeTypeArray', 'NamedNodeMap',
 	'PaintRequestList', 'Plugin', 'PluginArray', 'SVGLengthList', 'SVGNumberList', 'SVGPathSegList', 'SVGPointList', 'SVGStringList', 'SVGTransformList', 'SourceBufferList', 'StyleSheetList', 'TextTrackCueList', 'TextTrackList', 'TouchList'])

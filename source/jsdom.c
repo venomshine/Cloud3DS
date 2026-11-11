@@ -114,6 +114,20 @@ static JSValue f_doc(JSContext *ctx, JSValueConst t, int argc, JSValueConst *arg
 	return wrap(ctx, (dom_node *)J.doc);
 }
 
+// dónde quedó un elemento en la página: [x, y, ancho, alto] (null si no se colocó); sin nodo, la página entera
+static JSValue f_rect(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	float r[4];
+	dom_node *n = argc > 0 && !JS_IsNull(argv[0]) && !JS_IsUndefined(argv[0]) ? unwrap(argv[0]) : NULL;
+	if (!J.host->rect || (argc > 0 && !n && !JS_IsNull(argv[0]) && !JS_IsUndefined(argv[0])) || !J.host->rect(n, r))
+		return JS_NULL;
+	JSValue a = JS_NewArray(ctx);
+	for (int i = 0; i < 4; i++)
+		JS_SetPropertyUint32(ctx, a, (uint32_t)i, JS_NewFloat64(ctx, r[i]));
+	return a;
+}
+
 static JSValue f_type(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
 	(void)t;
@@ -685,6 +699,7 @@ static const JSCFunctionListEntry NATIVE[] = {
     JS_CFUNC_DEF("runSrc", 1, f_runSrc),
     JS_CFUNC_DEF("runCode", 1, f_runCode),
     JS_CFUNC_DEF("runModule", 2, f_runModule),
+    JS_CFUNC_DEF("rect", 1, f_rect),
     JS_CFUNC_DEF("doc", 0, f_doc),
     JS_CFUNC_DEF("type", 1, f_type),
     JS_CFUNC_DEF("name", 1, f_name),

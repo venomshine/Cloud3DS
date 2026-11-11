@@ -977,6 +977,8 @@ static bool blocked_host(const char *url)
 	return false;
 }
 
+static bool js_rect(dom_node *n, float r[4]);
+static void geo_free(void);
 static int js_fetch(const char *url, const char *method, const char *hdrs, const char *body, size_t blen, char **out, size_t *n, long *code,
                     char *fin, size_t fl, char *ctype, size_t cl)
 {
@@ -1372,7 +1374,7 @@ static void load_thread_run(void *arg)
 	KEEP_ON = js_run; // (con JavaScript: las hojas se guardan, por si trae clases nuevas)
 	if (js_run && !B.js_defer) {
 		JsHost h = {.mem_limit = js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
-		            .cookie_get = ck_get, .cookie_set = ck_set};
+		            .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect};
 		B.in_js = true;
 		JsResult jr;
 		B.jsp = jsdom_open(doc, &h, &jr);
@@ -1441,6 +1443,7 @@ static void start_load(const char *url)
 	B.js_defer = false;
 	pf_stop();
 	keep_free();
+	geo_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -4115,6 +4118,81 @@ static Frag *bl_frag(float x, float y, float w, float h, const char *t, int n, c
 	B.nt += n;
 	return f;
 }
+/* dónde quedó cada elemento en la última maquetación (para el JavaScript: getBoundingClientRect, offsetWidth…).
+ * Tabla por dirección del nodo; los elementos en línea, unión de los trozos de su texto (y la de los suyos) */
+typedef struct {
+	dom_node *n;
+	float x0, y0, x1, y1;
+	bool block;
+} Geo;
+static Geo *GEO;
+static int GEO_CAP;
+static Geo *geo_slot(dom_node *n, bool make)
+{
+	if (!GEO_CAP)
+		return NULL;
+	uintptr_t h = ((uintptr_t)n >> 3) * 2654435761u;
+	for (int k = 0; k < GEO_CAP; k++) {
+		Geo *g = &GEO[(h + (uintptr_t)k) & (uintptr_t)(GEO_CAP - 1)];
+		if (g->n == n)
+			return g;
+		if (!g->n) {
+			if (!make)
+				return NULL;
+			g->n = n, g->x0 = g->y0 = 1e30f, g->x1 = g->y1 = -1e30f, g->block = false;
+			return g;
+		}
+	}
+	return NULL;
+}
+static void geo_reset(int nodes)
+{
+	int cap = 1024;
+	while (cap < nodes * 2 && cap < (1 << 17))
+		cap <<= 1;
+	if (cap != GEO_CAP) {
+		free(GEO);
+		GEO = calloc((size_t)cap, sizeof *GEO);
+		GEO_CAP = GEO ? cap : 0;
+	} else if (GEO)
+		memset(GEO, 0, sizeof *GEO * (size_t)cap);
+}
+static void geo_free(void)
+{
+	free(GEO);
+	GEO = NULL, GEO_CAP = 0;
+}
+static void bl_geom(void *u, dom_node *n, float x, float y, float w, float h, bool block)
+{
+	(void)u;
+	if (block) {
+		Geo *g = geo_slot(n, true);
+		if (g)
+			g->x0 = x, g->y0 = y, g->x1 = x + w, g->y1 = y + h, g->block = true;
+		return;
+	}
+	// un trozo de texto: crece su elemento y los en línea de encima, hasta el primer bloque
+	for (dom_node_internal *p = (dom_node_internal *)n; p && p->type != DOM_DOCUMENT_NODE; p = p->parent) {
+		Geo *g = geo_slot((dom_node *)p, true);
+		if (!g || g->block)
+			break;
+		g->x0 = fminf(g->x0, x), g->y0 = fminf(g->y0, y), g->x1 = fmaxf(g->x1, x + w), g->y1 = fmaxf(g->y1, y + h);
+	}
+}
+// para el JavaScript: el rectángulo de un elemento (false: no se colocó, como display: none); NULL: la página entera
+static bool js_rect(dom_node *n, float r[4])
+{
+	if (!n) {
+		r[0] = r[1] = 0, r[2] = PAGE_W, r[3] = B.total > 0 ? B.total : 600;
+		return true;
+	}
+	Geo *g = geo_slot(n, false);
+	if (!g || g->x1 < g->x0)
+		return false;
+	r[0] = g->x0, r[1] = g->y0, r[2] = g->x1 - g->x0, r[3] = g->y1 - g->y0;
+	return true;
+}
+
 static void bl_text(void *u, float x, float y, float w, float h, const char *t, int n, const BrlText *st)
 {
 	(void)u, (void)h;
@@ -4228,8 +4306,9 @@ static float layout_boxes(void)
 	title_get();
 	BrLay L = {.css = B.css, .vw = B.vw, .vh = 600, .light = B.light || !strcmp(B.reader_url, B.url), .u = NULL,
 	           .text_w = bl_tw, .line_h = bl_lh, .link = bl_link, .clk = bl_clk, .img = bl_img, .svg = bl_svg, .wdg = bl_wdg,
-	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .glyph = bl_glyph, .stop = bl_stop};
+	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .geom = bl_geom, .glyph = bl_glyph, .stop = bl_stop};
 	uint32_t pbg = 0;
+	geo_reset(B.nel_total);
 	float h = brl_run(&L, B.doc, &pbg);
 	B.page_bg = pbg;
 	return h;
@@ -4574,6 +4653,7 @@ static void close_br(void)
 	B.js_defer = false;
 	pf_stop();
 	keep_free();
+	geo_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -5476,7 +5556,7 @@ static void jsdef_thread_run(void *arg)
 	if (!B.doc || B.abort)
 		return;
 	JsHost h = {.mem_limit = B.js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000,
-	            .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set};
+	            .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set, .rect = js_rect};
 	JsResult jr;
 	B.jsp = jsdom_open(B.doc, &h, &jr);
 	B.js_scripts = jr.scripts, B.js_errors = jr.errors;
@@ -5807,6 +5887,7 @@ static void home_enter(void)
 	B.js_defer = false;
 	pf_stop();
 	keep_free();
+	geo_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
