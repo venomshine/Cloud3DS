@@ -195,6 +195,9 @@ static struct {
 	int js_scripts, js_errors;
 	char js_nav[1024];   /* la página pidió ir a otra dirección desde su JavaScript */
 	JsPage *jsp;         /* el JavaScript de la página, vivo para los clics */
+	bool js_defer;       /* la página ya se ve: su JavaScript, después (jsdef_thread) */
+	size_t js_lim;       /* la memoria para ese JavaScript */
+	u32 css_sig;         /* huella de sus hojas y de <html>/<body> (si el JavaScript la cambia, CSS otra vez) */
 	volatile bool cancel, in_js; /* B mientras carga: parar su JavaScript; está ejecutándose */
 	int idle_left;       /* ms que aún puede seguir su JavaScript con la página a la vista */
 	u64 idle_next, last_in; /* cuándo darle otro rato; última vez que se tocó algo */
@@ -359,7 +362,7 @@ static void nohc_add(const char *url)
 }
 
 // un archivo de la SD (ruta que empieza por / o sdmc:) o de Internet, entero en b
-static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
+static int fetch_net(const char *url, const char *accept, Buf *b, long *code)
 {
 	*code = 0;
 	if (B.abort) // la página se deja: ni se pide
@@ -416,6 +419,203 @@ static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
 	return r;
 }
 
+static u32 mem_free(void);
+static void browser_thread_net(void);
+static bool ci_has(const char *h, const char *nd);
+
+/* ------------------------------------------------------------ descarga por adelantado
+ * Nada más leer el HTML se piden a la vez (varios hilos) los scripts y las hojas de estilo que la página va a
+ * pedir: mientras corre el JavaScript, o mientras llega una hoja, ya se están bajando las demás. Antes iban de
+ * una en una, y en la consola cada petición (con su TLS) es lo más lento de cargar una página */
+#define PF_MAX 48
+#define PF_THR 3 /* (httpc tiene pocas sesiones: con la de la página y la de las imágenes, 5) */
+enum { PF_QUEUED, PF_RUN, PF_DONE, PF_TAKEN };
+typedef struct {
+	char url[1024], fin[1024];
+	const char *accept;
+	Buf b;
+	long code;
+	int r;
+	volatile int st;
+} PfEnt;
+static struct {
+	PfEnt *e;
+	int n;
+	volatile bool stop;
+	LightLock lk;
+	LightEvent ev;
+	Thread th[PF_THR];
+	int nth;
+	bool init;
+} PF;
+static __thread char FA_FIN[1024]; /* a dónde acabó la última fetch_any (tras redirigir) */
+
+static void pf_worker(void *arg)
+{
+	(void)arg;
+	browser_thread_net();
+	for (;;) {
+		PfEnt *e = NULL;
+		LightLock_Lock(&PF.lk);
+		// primero las hojas (sin ellas no se enseña la página; los scripts van ya después), luego lo demás
+		for (int pass = 0; pass < 2 && !e; pass++)
+			for (int i = 0; i < PF.n && !PF.stop && !B.abort; i++)
+				if (PF.e[i].st == PF_QUEUED && (pass || !strncmp(PF.e[i].accept, "text/css", 8))) {
+					e = &PF.e[i];
+					e->st = PF_RUN;
+					break;
+				}
+		LightLock_Unlock(&PF.lk);
+		if (!e)
+			break;
+		if (mem_free() < 6u * 1024 * 1024) // (poca memoria: que lo pida quien lo use, cuando lo use)
+			e->r = DLF_FAIL, e->code = 0;
+		else {
+			e->r = fetch_net(e->url, e->accept, &e->b, &e->code);
+			util_strlcpy(e->fin, dl_last_url()[0] ? dl_last_url() : e->url, sizeof e->fin);
+		}
+		e->st = PF_DONE;
+		LightEvent_Signal(&PF.ev);
+	}
+}
+
+static void pf_add(const char *url, const char *accept)
+{
+	if (!PF.e || PF.n >= PF_MAX || strncasecmp(url, "http", 4) || blocked_host(url))
+		return;
+	for (int i = 0; i < PF.n; i++)
+		if (!strcmp(PF.e[i].url, url))
+			return;
+	PfEnt *e = &PF.e[PF.n];
+	memset(e, 0, sizeof *e);
+	util_strlcpy(e->url, url, sizeof e->url);
+	e->accept = accept;
+	e->st = PF_QUEUED;
+	PF.n++;
+}
+
+// lo que la página pedirá: <script src> (si corre su JavaScript) y <link rel="stylesheet">, en su orden
+static void pf_collect(dom_node *n, int depth, bool js)
+{
+	if (depth > 80)
+		return;
+	dom_node *ch = NULL;
+	if (dom_node_get_first_child(n, &ch) != DOM_NO_ERR)
+		return;
+	while (ch) {
+		dom_node_type t;
+		if (dom_node_get_node_type(ch, &t) == DOM_NO_ERR && t == DOM_ELEMENT_NODE) {
+			dom_string *nm = NULL;
+			char tag[8] = "", a[256], href[1024], abs[1024];
+			if (dom_node_get_node_name(ch, &nm) == DOM_NO_ERR && nm) {
+				size_t l = dom_string_byte_length(nm);
+				snprintf(tag, sizeof tag, "%.*s", (int)(l < 7 ? l : 7), dom_string_data(nm));
+				dom_string_unref(nm);
+			}
+			if (!strcasecmp(tag, "link")) {
+				if (attr(ch, "rel", a, sizeof a) && ci_has(a, "stylesheet") && !ci_has(a, "alternate") &&
+				    !(attr(ch, "media", a, sizeof a) && !cssprep_media_ok(a, VW_PC)) && attr(ch, "href", href, sizeof href) && href[0]) {
+					resolve(B.url, href, abs, sizeof abs);
+					pf_add(abs, "text/css,*/*;q=0.1");
+				}
+			} else if (!strcasecmp(tag, "script")) {
+				bool ty = !attr(ch, "type", a, sizeof a) || !a[0] || !strcasecmp(a, "text/javascript") || !strcasecmp(a, "application/javascript") ||
+				          !strcasecmp(a, "application/x-javascript") || !strcasecmp(a, "text/ecmascript");
+				if (js && ty && attr(ch, "src", href, sizeof href) && href[0]) {
+					resolve(B.url, href, abs, sizeof abs);
+					pf_add(abs, "*/*");
+				}
+			} else if (strcasecmp(tag, "svg"))
+				pf_collect(ch, depth + 1, js);
+		}
+		dom_node *nx = NULL;
+		dom_node_get_next_sibling(ch, &nx);
+		dom_node_unref(ch);
+		ch = nx;
+	}
+}
+
+static void pf_stop(void);
+static void pf_start(dom_document *doc, bool js)
+{
+	pf_stop();
+	if (!PF.init) {
+		LightLock_Init(&PF.lk);
+		LightEvent_Init(&PF.ev, RESET_ONESHOT);
+		PF.init = true;
+	}
+	PF.e = calloc(PF_MAX, sizeof *PF.e);
+	PF.n = 0, PF.stop = false, PF.nth = 0;
+	if (!PF.e || !doc)
+		return;
+	pf_collect((dom_node *)doc, 0, js);
+	if (!PF.n)
+		return;
+	s32 prio = 0x30;
+	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	for (int i = 0; i < PF_THR && i < PF.n; i++) {
+		Thread t = threadCreate(pf_worker, NULL, 64 * 1024, prio, br_core(), false);
+		if (t)
+			PF.th[PF.nth++] = t;
+	}
+}
+
+// se acabó de cargar: lo que se esté bajando termina y lo que sobró se suelta
+static void pf_stop(void)
+{
+	if (!PF.init)
+		return;
+	PF.stop = true;
+	for (int i = 0; i < PF.nth; i++) {
+		threadJoin(PF.th[i], U64_MAX);
+		threadFree(PF.th[i]);
+	}
+	PF.nth = 0;
+	if (PF.e)
+		for (int i = 0; i < PF.n; i++)
+			free(PF.e[i].b.p);
+	free(PF.e);
+	PF.e = NULL, PF.n = 0;
+}
+
+// ¿ya se pidió por adelantado? se espera a que llegue (si no ha empezado, lo pide quien lo quiere)
+static bool pf_take(const char *url, Buf *b, long *code, int *r)
+{
+	if (!PF.e || !PF.nth)
+		return false;
+	PfEnt *e = NULL;
+	LightLock_Lock(&PF.lk);
+	for (int i = 0; i < PF.n; i++)
+		if (!strcmp(PF.e[i].url, url) && PF.e[i].st != PF_TAKEN) {
+			e = &PF.e[i];
+			if (e->st == PF_QUEUED)
+				e->st = PF_TAKEN, e = NULL; // (lo baja ya quien lo pide)
+			break;
+		}
+	LightLock_Unlock(&PF.lk);
+	if (!e)
+		return false;
+	while (e->st == PF_RUN && !B.abort)
+		LightEvent_WaitTimeout(&PF.ev, 100000000LL);
+	if (e->st != PF_DONE)
+		return false;
+	*b = e->b, *code = e->code, *r = e->r;
+	util_strlcpy(FA_FIN, e->fin, sizeof FA_FIN);
+	memset(&e->b, 0, sizeof e->b);
+	e->st = PF_TAKEN;
+	return true;
+}
+
+static int fetch_any(const char *url, const char *accept, Buf *b, long *code)
+{
+	int r;
+	if (pf_take(url, b, code, &r))
+		return r;
+	r = fetch_net(url, accept, b, code);
+	util_strlcpy(FA_FIN, strstr(url, "://") && dl_last_url()[0] ? dl_last_url() : url, sizeof FA_FIN);
+	return r;
+}
+
 static bool ci_has(const char *h, const char *nd)
 {
 	size_t l = strlen(nd);
@@ -432,6 +632,29 @@ static char CSS_SEEN[CSS_MAX_LINKS][96]; /* las ya bajadas (una web enlaza la mi
 static int CSS_NSEEN;
 static void css_sheet(BrCss *c, const char *css, size_t n, const char *url, int *links, size_t *bytes, int depth);
 
+/* con el JavaScript para después, las hojas bajadas se guardan un rato: si el JavaScript cambia las
+ * hojas o las clases de <html>/<body>, el CSS se rehace sin volver a bajarlas */
+static struct {
+	char *url;
+	Buf b;
+} KEEP[CSS_MAX_LINKS];
+static int NKEEP;
+static bool KEEP_ON;
+static int keep_find(const char *url)
+{
+	for (int i = 0; i < NKEEP; i++)
+		if (!strcmp(KEEP[i].url, url))
+			return i;
+	return -1;
+}
+static void keep_free(void)
+{
+	for (int i = 0; i < NKEEP; i++)
+		free(KEEP[i].url), free(KEEP[i].b.p);
+	NKEEP = 0;
+	KEEP_ON = false;
+}
+
 // una hoja de otra parte (un <link> o un @import): se baja (si no se bajó ya) y entra con las suyas
 static __attribute__((noinline)) void css_fetch(BrCss *c, const char *abs, int *links, size_t *bytes, int depth)
 {
@@ -444,13 +667,27 @@ static __attribute__((noinline)) void css_fetch(BrCss *c, const char *abs, int *
 	if (CSS_NSEEN < CSS_MAX_LINKS)
 		util_strlcpy(CSS_SEEN[CSS_NSEEN++], key, sizeof CSS_SEEN[0]);
 	Buf cb = {0};
-	long code;
+	long code = 200;
 	(*links)++;
-	int r = fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code);
-	util_log("web: css %s -> %d, HTTP %ld, %u bytes", abs, r, code, (unsigned)cb.n);
+	int r = DLF_OK;
+	int k = keep_find(abs);
+	if (k >= 0) // (ya bajada: rehaciendo el CSS tras el JavaScript)
+		cb = KEEP[k].b;
+	else {
+		r = fetch_any(abs, "text/css,*/*;q=0.1", &cb, &code);
+		util_log("web: css %s -> %d, HTTP %ld, %u bytes", abs, r, code, (unsigned)cb.n);
+	}
 	if (r == DLF_OK && code < 400 && cb.n && *bytes + cb.n <= CSS_MAX_BYTES)
 		css_sheet(c, cb.p, cb.n, abs, links, bytes, depth);
-	free(cb.p);
+	if (k < 0 && KEEP_ON && NKEEP < CSS_MAX_LINKS && r == DLF_OK && code < 400 && cb.n && mem_free() > 8u * 1024 * 1024) {
+		KEEP[NKEEP].url = strdup(abs);
+		if (KEEP[NKEEP].url) {
+			KEEP[NKEEP++].b = cb;
+			return;
+		}
+	}
+	if (k < 0)
+		free(cb.p);
 }
 
 // una hoja: primero las de sus @import (van antes en la cascada), luego ella
@@ -757,7 +994,7 @@ static int js_fetch(const char *url, const char *method, const char *body, size_
 		util_strlcpy(fin, url, fl);
 	} else {
 		r = fetch_any(url, "*/*", &b, code);
-		util_strlcpy(fin, strstr(url, "://") && dl_last_url()[0] ? dl_last_url() : url, fl);
+		util_strlcpy(fin, FA_FIN, fl);
 	}
 	if (r != DLF_OK) {
 		free(b.p);
@@ -784,10 +1021,191 @@ static int count_nodes(dom_node *n)
 	return k;
 }
 
+// cuánto texto se ve ya sin JavaScript (fuera de script, style, noscript y template), hasta «lim»
+static void page_text(dom_node *n, int depth, size_t *k, size_t lim)
+{
+	if (depth > 80 || *k >= lim)
+		return;
+	dom_node *c = NULL;
+	if (dom_node_get_first_child(n, &c) != DOM_NO_ERR)
+		return;
+	while (c && *k < lim) {
+		dom_node_type t;
+		if (dom_node_get_node_type(c, &t) == DOM_NO_ERR) {
+			if (t == DOM_TEXT_NODE) {
+				dom_string *v = NULL;
+				if (dom_node_get_node_value(c, &v) == DOM_NO_ERR && v) {
+					const char *d = dom_string_data(v);
+					for (size_t i = 0, l = dom_string_byte_length(v); i < l; i++)
+						*k += !isspace((unsigned char)d[i]);
+					dom_string_unref(v);
+				}
+			} else if (t == DOM_ELEMENT_NODE) {
+				dom_string *nm = NULL;
+				char tag[10] = "";
+				if (dom_node_get_node_name(c, &nm) == DOM_NO_ERR && nm) {
+					snprintf(tag, sizeof tag, "%.*s", (int)dom_string_byte_length(nm), dom_string_data(nm));
+					dom_string_unref(nm);
+				}
+				if (strcasecmp(tag, "script") && strcasecmp(tag, "style") && strcasecmp(tag, "noscript") && strcasecmp(tag, "template") &&
+				    strcasecmp(tag, "head"))
+					page_text(c, depth + 1, k, lim);
+			}
+		}
+		dom_node *nx = NULL;
+		dom_node_get_next_sibling(c, &nx);
+		dom_node_unref(c);
+		c = nx;
+	}
+}
+
+// la huella de lo que decide el CSS además de los estilos de cada elemento: sus hojas (<link> y el largo de
+// cada <style>) y los atributos de <html> y <body> (clases como «js» o el tema)
+static u32 sig_mix(u32 h, const char *p, size_t n)
+{
+	for (size_t i = 0; i < n; i++)
+		h = (h ^ (u8)p[i]) * 16777619u;
+	return h;
+}
+static void css_sig_walk(dom_node *n, int depth, u32 *h)
+{
+	if (depth > 80)
+		return;
+	dom_node *c = NULL;
+	if (dom_node_get_first_child(n, &c) != DOM_NO_ERR)
+		return;
+	while (c) {
+		dom_node_type t;
+		if (dom_node_get_node_type(c, &t) == DOM_NO_ERR && t == DOM_ELEMENT_NODE) {
+			dom_string *nm = NULL;
+			char tag[8] = "", a[512];
+			if (dom_node_get_node_name(c, &nm) == DOM_NO_ERR && nm) {
+				snprintf(tag, sizeof tag, "%.*s", (int)dom_string_byte_length(nm), dom_string_data(nm));
+				dom_string_unref(nm);
+			}
+			if (!strcasecmp(tag, "style")) {
+				dom_string *tx = NULL;
+				size_t l = 0;
+				if (dom_node_get_text_content(c, &tx) == DOM_NO_ERR && tx)
+					l = dom_string_byte_length(tx), dom_string_unref(tx);
+				*h = sig_mix(*h, (const char *)&l, sizeof l);
+			} else if (!strcasecmp(tag, "link")) {
+				if (attr(c, "rel", a, sizeof a) && ci_has(a, "stylesheet") && attr(c, "href", a, sizeof a))
+					*h = sig_mix(*h, a, strlen(a));
+			} else if (strcasecmp(tag, "script") && strcasecmp(tag, "svg")) {
+				if (!strcasecmp(tag, "html") || !strcasecmp(tag, "body")) {
+					static const char *const AT[] = {"class", "style", "data-theme", "lang", "dir", NULL};
+					for (int i = 0; AT[i]; i++)
+						if (attr(c, AT[i], a, sizeof a))
+							*h = sig_mix(sig_mix(*h, AT[i], strlen(AT[i])), a, strlen(a));
+				}
+				css_sig_walk(c, depth + 1, h);
+			}
+		}
+		dom_node *nx = NULL;
+		dom_node_get_next_sibling(c, &nx);
+		dom_node_unref(c);
+		c = nx;
+	}
+}
+// y el conjunto de clases de la página (las reglas que piden una clase que no hay no se le dan a libcss:
+// si el JavaScript trae una nueva, como «is-open» al abrir un menú, hay que rehacer el CSS)
+static u32 cls_set_sum(dom_node_internal *n, u32 *tab, int cap)
+{
+	u32 sum = 0;
+	dom_node_internal *st[96];
+	int sp = 0;
+	for (; n; n = n->next) // (los hermanos, aquí; los hijos, con la pila o por recursión si se llena)
+		if (n->type == DOM_ELEMENT_NODE) {
+			lwc_string **cl = NULL;
+			uint32_t nc = 0;
+			if (dom_element_get_classes((dom_element *)n, &cl, &nc) == DOM_NO_ERR) {
+				for (uint32_t k = 0; k < nc; k++) {
+					u32 h = sig_mix(2166136261u, lwc_string_data(cl[k]), lwc_string_length(cl[k])) | 1;
+					for (int i = (int)(h & (u32)(cap - 1)), t = 0; t < cap; i = (i + 1) & (cap - 1), t++) {
+						if (tab[i] == h)
+							break;
+						if (!tab[i]) {
+							tab[i] = h, sum += h;
+							break;
+						}
+					}
+					lwc_string_unref(cl[k]);
+				}
+			}
+			if (n->first_child) {
+				if (sp < 96)
+					st[sp++] = n->first_child;
+				else
+					sum += cls_set_sum(n->first_child, tab, cap);
+			}
+		}
+	while (sp)
+		sum += cls_set_sum(st[--sp], tab, cap);
+	return sum;
+}
+static u32 css_sig(dom_document *doc)
+{
+	u32 h = 2166136261u;
+	if (!doc)
+		return h;
+	css_sig_walk((dom_node *)doc, 0, &h);
+	u32 *tab = calloc(16384, sizeof *tab);
+	if (tab) {
+		h ^= cls_set_sum(((dom_node_internal *)doc)->first_child, tab, 16384) * 2654435761u;
+		free(tab);
+	}
+	return h;
+}
+
+static BrCss *css_build(dom_document *doc, size_t *bytes_out);
+// tras el JavaScript (al cargar, un clic, sus temporizadores): si cambió lo que decide qué reglas valen
+// (hojas, <html>/<body> o clases nuevas), el CSS otra vez, con las hojas guardadas
+static void css_refresh(void)
+{
+	if (!B.css || !B.doc || !B.css_sig)
+		return;
+	u32 sg = css_sig(B.doc);
+	if (sg == B.css_sig)
+		return;
+	u64 t0 = osGetTime();
+	BrCss *nc = css_build(B.doc, NULL);
+	if (!nc)
+		return;
+	brcss_free(B.css);
+	B.css = nc;
+	B.ncss = brcss_sheets(nc);
+	B.css_sig = sg;
+	util_log("web: CSS otra vez (lo cambió su JavaScript), %u ms", (unsigned)(osGetTime() - t0));
+}
+
+// el CSS de la página, de sus <style> y <link> (las hojas, bajadas o de las guardadas)
+static BrCss *css_build(dom_document *doc, size_t *bytes_out)
+{
+	BrCss *css = brcss_new(B.url);
+	if (!css)
+		return NULL;
+	int links = 0;
+	size_t bytes = 0;
+	CSS_NSEEN = 0;
+	u64 t0 = osGetTime();
+	css_collect(css, (dom_node *)doc, 0, &links, &bytes);
+	u64 t1 = osGetTime();
+	brcss_finish(css, doc, VW_PC); // su CSS moderno, traducido para libcss
+	util_log("web: CSS: bajar %u ms, procesar %u ms", (unsigned)(t1 - t0), (unsigned)(osGetTime() - t1));
+	if (bytes_out)
+		*bytes_out = bytes;
+	return css;
+}
+
 static void load_thread_run(void *arg);
 static void load_thread(void *arg)
 {
 	load_thread_run(arg);
+	if (!B.js_defer || B.abort)
+		pf_stop(), B.js_defer = false; // (lo que sobró de lo pedido por adelantado)
+	if (B.abort || !B.css_sig)
+		keep_free(); // (las hojas guardadas: solo con JavaScript vivo)
 	B.thr_done = true; // ya se puede reutilizar (o soltar) sin esperar
 }
 
@@ -797,6 +1215,7 @@ static void load_thread_run(void *arg)
 	browser_thread_net();
 	Buf b = {0};
 	char hcs[40] = "";
+	u64 t0 = osGetTime(), t_dl = 0, t_parse = 0, t_js = 0; // (cuánto tarda cada parte, al registro)
 	if (!strncasecmp(B.url, "sdmc:", 5) || B.url[0] == '/') {
 		char sp[1100];
 		snprintf(sp, sizeof sp, "%s%s", B.url[0] == '/' ? "sdmc:" : "", B.url);
@@ -841,6 +1260,7 @@ static void load_thread_run(void *arg)
 		return;
 	}
 	B.bytes = b.n;
+	t_dl = osGetTime();
 	if (!b.n)
 		util_log("web: %s vacía (HTTP %d)", B.url, B.http_code);
 	B.oom = OOM_NONE;
@@ -899,6 +1319,7 @@ static void load_thread_run(void *arg)
 	dom_hubbub_parser_completed(parser);
 	dom_hubbub_parser_destroy(parser);
 	free(b.p);
+	t_parse = osGetTime();
 	// su JavaScript, antes del CSS: lo que añada o cambie (también hojas de estilo) ya cuenta
 	B.js_nav[0] = 0;
 	// el JavaScript, con lo que quede (dejando sitio para colocar la página)
@@ -906,9 +1327,21 @@ static void load_thread_run(void *arg)
 	size_t js_lim = fr > lay + 2u * 1024 * 1024 ? fr - lay : 0;
 	if (js_lim > 24u * 1024 * 1024)
 		js_lim = 24u * 1024 * 1024;
+	// los scripts y las hojas, a bajarse ya, todos a la vez (los usan el JavaScript y el CSS de abajo)
+	bool js_run = doc && B.js && !reader && !B.light && js_lim && !B.abort; // (en modo ligero, sin JavaScript)
+	if (doc && !reader && !B.abort)
+		pf_start(doc, js_run);
 	if (doc && B.js && !reader && !B.light && !js_lim && B.oom == OOM_NONE)
 		B.oom = OOM_JS, B.oom_need = lay + 2u * 1024 * 1024;
-	if (doc && B.js && !reader && !B.light && js_lim && !B.abort) { // en modo ligero, sin JavaScript
+	// si la página ya trae su texto, se enseña así y su JavaScript va después, con ella a la vista (y se
+	// vuelve a colocar si cambia algo); si es un cascarón que llena el JavaScript, primero el JavaScript
+	size_t txt = 0;
+	if (js_run)
+		page_text((dom_node *)doc, 0, &txt, 1500);
+	B.js_defer = js_run && txt >= 1500;
+	B.js_lim = js_lim;
+	KEEP_ON = js_run; // (con JavaScript: las hojas se guardan, por si trae clases nuevas)
+	if (js_run && !B.js_defer) {
 		JsHost h = {.mem_limit = js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000, .cancel = &B.cancel,
 		            .cookie_get = ck_get, .cookie_set = ck_set};
 		B.in_js = true;
@@ -927,17 +1360,19 @@ static void load_thread_run(void *arg)
 			B.jsp = NULL;
 		}
 	}
+	t_js = osGetTime();
 	// el CSS de la página (se baja y se lee aquí, en el hilo, para no parar la pantalla)
-	BrCss *css = doc && !reader ? brcss_new(B.url) : NULL;
+	size_t bytes = 0;
+	BrCss *css = doc && !reader ? css_build(doc, &bytes) : NULL;
 	if (css) {
-		int links = 0;
-		size_t bytes = 0;
-		CSS_NSEEN = 0;
-		css_collect(css, (dom_node *)doc, 0, &links, &bytes);
-		brcss_finish(css, doc, VW_PC); // su CSS moderno, traducido para libcss
 		B.ncss = brcss_sheets(css);
 		util_log("web: %d hojas CSS, %u bytes", B.ncss, (unsigned)bytes);
 	}
+	B.css_sig = css && js_run ? css_sig(doc) : 0;
+	util_log("web: tiempos: HTML %u ms, leer %u, JavaScript %u, CSS %u (%d por adelantado)", (unsigned)(t_dl - t0), (unsigned)(t_parse - t_dl),
+	         (unsigned)(t_js - t_parse), (unsigned)(osGetTime() - t_js), PF.n);
+	if (B.js_defer)
+		util_log("web: con texto (%u letras): su JavaScript, con la página a la vista", (unsigned)txt);
 	B.css = css;
 	B.doc = doc;
 	B.nel_total = doc ? count_nodes((dom_node *)doc) : 0;
@@ -974,6 +1409,9 @@ static void start_load(const char *url)
 	}
 	jsdom_close(B.jsp); // antes que el documento: tiene sus nodos
 	B.jsp = NULL;
+	B.js_defer = false;
+	pf_stop();
+	keep_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -4057,6 +4495,9 @@ static void close_br(void)
 	}
 	jsdom_close(B.jsp); // antes que el documento: tiene sus nodos
 	B.jsp = NULL;
+	B.js_defer = false;
+	pf_stop();
+	keep_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -4917,6 +5358,7 @@ static void act_thread_run(void *arg)
 		float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
 		dom_node *fn = B.focus >= 0 && B.focus < B.nf ? B.f[B.focus].node : NULL;
 		B.st = ST_LAYOUT;
+		css_refresh();
 		brcss_forget((dom_node *)B.doc);
 		int keep = B.idle_left;
 		layout();
@@ -4936,6 +5378,65 @@ static void act_thread_run(void *arg)
 }
 
 // lo que la página dejó para después, con ella ya a la vista: un rato corto; si cambia, se recoloca
+// el JavaScript de una página que ya se ve (la carga lo dejó para después): sus scripts (casi todos ya
+// bajados por adelantado) y, si cambió algo, la página otra vez (con el CSS de nuevo si cambió lo que lo decide)
+static void jsdef_thread_run(void *arg);
+static void jsdef_thread(void *arg)
+{
+	jsdef_thread_run(arg);
+	pf_stop();
+	if (!B.jsp)
+		keep_free(), B.css_sig = 0;
+	if (B.st == ST_ACT || B.st == ST_LAYOUT)
+		B.st = ST_READY;
+	B.thr_done = true;
+}
+
+static void jsdef_thread_run(void *arg)
+{
+	(void)arg;
+	browser_thread_net();
+	B.js_defer = false;
+	if (!B.doc || B.abort)
+		return;
+	JsHost h = {.mem_limit = B.js_lim, .dark = B.dark, .fetch = js_fetch, .log = js_log, .url = B.url, .ua = UA_PC, .width = VW_PC, .budget_ms = 20000,
+	            .cancel = &B.cancel, .cookie_get = ck_get, .cookie_set = ck_set};
+	JsResult jr;
+	B.jsp = jsdom_open(B.doc, &h, &jr);
+	B.js_scripts = jr.scripts, B.js_errors = jr.errors;
+	util_log("web: JavaScript (después): %d scripts, %d con error, %u ms%s", jr.scripts, jr.errors, jr.ms, jr.changed ? ", cambió la página" : "");
+	if (jr.navigate[0])
+		util_strlcpy(B.js_nav, jr.navigate, sizeof B.js_nav);
+	if (jr.oom) {
+		util_log("web: el JavaScript se quedó sin memoria (%u KB)", (unsigned)(jr.mem / 1024));
+		jsdom_close(B.jsp);
+		B.jsp = NULL;
+	}
+	B.idle_left = B.jsp ? 30000 : 0;
+	B.idle_next = util_ms() + 600;
+	if (!jr.changed || B.abort || B.js_nav[0])
+		return;
+	// otra vez, sin mover la vista
+	float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
+	dom_node *fn = B.focus >= 0 && B.focus < B.nf ? B.f[B.focus].node : NULL;
+	B.st = ST_LAYOUT;
+	u64 t0 = osGetTime();
+	css_refresh();
+	brcss_forget((dom_node *)B.doc);
+	int keep = B.idle_left;
+	layout();
+	B.idle_left = keep;
+	B.zoom = z, B.sx = sx, B.sy = sy, B.px = px, B.py = py;
+	for (int i = 0; fn && i < B.nf; i++)
+		if (B.f[i].node == fn) {
+			B.focus = i;
+			break;
+		}
+	clamp_view();
+	util_log("web: colocada otra vez tras su JavaScript, %u ms", (unsigned)(osGetTime() - t0));
+	img_start();
+}
+
 static void idle_thread_run(void *arg);
 static void idle_thread(void *arg)
 {
@@ -4966,6 +5467,7 @@ static void idle_thread_run(void *arg)
 		float z = B.zoom, sx = B.sx, sy = B.sy, px = B.px, py = B.py;
 		dom_node *fn = B.focus >= 0 && B.focus < B.nf ? B.f[B.focus].node : NULL;
 		B.st = ST_LAYOUT;
+		css_refresh();
 		brcss_forget((dom_node *)B.doc);
 		int keep = B.idle_left;
 		layout();
@@ -5226,6 +5728,9 @@ static void home_enter(void)
 	}
 	jsdom_close(B.jsp);
 	B.jsp = NULL;
+	B.js_defer = false;
+	pf_stop();
+	keep_free();
 	if (B.doc) {
 		dom_node_unref(B.doc);
 		B.doc = NULL;
@@ -5748,6 +6253,19 @@ void br_bottom(void)
 		hidCircleRead(&cp);
 		if (abs(cp.dx) > 18 || abs(cp.dy) > 18)
 			B.last_in = util_ms();
+	}
+	if (B.st == ST_READY && B.js_defer && !B.jsp) { // la página ya se ve: ahora su JavaScript
+		if (B.thr) {
+			threadJoin(B.thr, U64_MAX);
+			threadFree(B.thr);
+			B.thr = NULL;
+		}
+		B.st = ST_ACT;
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		B.thr_done = false, B.thr = threadCreate(jsdef_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
+		if (!B.thr)
+			B.st = ST_READY, B.js_defer = false;
 	}
 	if (B.st == ST_READY && B.jsp && B.idle_left > 0 && util_ms() > B.idle_next && util_ms() - B.last_in > 800) {
 		if (B.thr) {

@@ -1041,6 +1041,7 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 		}
 	}
 	res->ms = (unsigned)(now_ms() - J.t0);
+	res->changed = J.mut > 0;
 	done(pg, res);
 	if (!ok) {
 		jsdom_close(pg);

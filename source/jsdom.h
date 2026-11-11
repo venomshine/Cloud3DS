@@ -36,6 +36,7 @@ typedef struct {
 	char navigate[1024];  /* la página pidió ir a otra dirección (location.href = …) */
 	bool oom;             /* se quedó sin memoria: su JavaScript ya no sigue */
 	size_t mem;           /* memoria que ocupa su JavaScript */
+	bool changed;         /* (jsdom_open) tocó el árbol: hay que volver a colocar la página */
 } JsResult;
 
 typedef struct JsPage JsPage;
