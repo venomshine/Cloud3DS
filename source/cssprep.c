@@ -1082,8 +1082,57 @@ static void funcs(const char *v, size_t vn, Out *o)
 			funcs(q, (size_t)(stop - q), o);
 			s = cl + 1;
 			continue;
-		} else if (kind == 1)
-			pick = na >= 3 ? 1 : 0;
+		} else if ((kind == 1 && na == 3) || ((kind == 2 || kind == 3) && na >= 1)) {
+			// clamp()/min()/max() con todo en longitudes (px, rem, em, vw, vh, calc…): su valor en px
+			float x[8], rv = 0;
+			bool all = true;
+			for (int i = 0; i < na && all; i++) {
+				Out t = {0};
+				funcs(args[i], (size_t)(ends[i] - args[i]), &t);
+				const char *q = t.p, *qe = t.p ? t.p + t.n : NULL;
+				CV r;
+				all = q && cv_expr(&q, qe, &r) && (cv_ws(&q, qe), q == qe) && r.pc == 0 && (!r.num || r.px == 0);
+				x[i] = all ? r.px : 0;
+				free(t.p);
+			}
+			if (all) {
+				if (kind == 1)
+					rv = x[1] < x[0] ? x[0] : x[1] > x[2] ? (x[2] < x[0] ? x[0] : x[2]) : x[1];
+				else
+					for (int i = 0; i < na; i++)
+						if (i == 0 || (kind == 2 ? x[i] < rv : x[i] > rv))
+							rv = x[i];
+				char b[32];
+				snprintf(b, sizeof b, "%.4gpx", rv);
+				puts_(o, b);
+				s = cl + 1;
+				continue;
+			}
+			if (kind == 1) { // con %: el del medio, como calc() si es una cuenta
+				pick = 1;
+				const char *m = args[1];
+				bool op = false;
+				for (const char *q = m + 1; q < ends[1]; q++)
+					if ((*q == '+' || *q == '-' || *q == '*' || *q == '/') && q[-1] == ' ')
+						op = true;
+				if (op) {
+					Out t = {0};
+					puts_(&t, "calc(");
+					put(&t, m, (size_t)(ends[1] - m));
+					puts_(&t, ")");
+					funcs(t.p, t.n, o);
+					free(t.p);
+					s = cl + 1;
+					continue;
+				}
+			}
+		}
+		if (kind == 1 && na != 3)
+			pick = 0;
+		else if (kind == 1)
+			;
+		else if (kind == 4 || kind == 5)
+			;
 		else {
 			float best = 0;
 			bool any = false;
