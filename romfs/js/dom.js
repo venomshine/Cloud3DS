@@ -724,12 +724,23 @@ class URLx {
 		if (!m0 && base !== undefined) u = resolveUrl(String(base), u);
 		const m = /^([a-zA-Z][\w+.-]*:)(?:\/\/([^/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/.exec(u);
 		if (!m) throw new TypeError('URL no válida: ' + u);
-		this.protocol = m[1].toLowerCase(); this.host = m[2] || ''; this.pathname = m[3] || '/'; this.search = m[4] || ''; this.hash = m[5] || '';
-		const hp = this.host.split(':'); this.hostname = hp[0]; this.port = hp[1] || '';
-		this.origin = this.protocol + '//' + this.host; this.username = ''; this.password = '';
+		this.protocol = m[1].toLowerCase(); this.host = m[2] || ''; this._path = m[3] || '/'; this._search = m[4] || ''; this._hash = m[5] || '';
+		this.username = ''; this.password = '';
 	}
-	get href() { return this.protocol + (this.host || this.protocol === 'file:' ? '//' + this.host : '') + this.pathname + this.search + this.hash; }
-	set href(v) { Object.assign(this, new URLx(v)); }
+	// (como en un navegador: search y hash con su «?» y «#», o vacíos; al ponerlos, se añaden si faltan)
+	get search() { return this._search.length > 1 ? this._search : ''; }
+	set search(v) { v = String(v); this._search = v === '' ? '' : v[0] === '?' ? v : '?' + v; }
+	get hash() { return this._hash.length > 1 ? this._hash : ''; }
+	set hash(v) { v = String(v); this._hash = v === '' ? '' : v[0] === '#' ? v : '#' + v; }
+	get pathname() { return this._path; }
+	set pathname(v) { v = String(v); this._path = v[0] === '/' ? v : '/' + v; }
+	get hostname() { return this.host.split(':')[0]; }
+	set hostname(v) { const p = this.port; this.host = String(v) + (p ? ':' + p : ''); }
+	get port() { return this.host.split(':')[1] || ''; }
+	set port(v) { v = String(v); this.host = this.hostname + (v ? ':' + v : ''); }
+	get origin() { return this.protocol + '//' + this.host; }
+	get href() { return this.protocol + (this.host || this.protocol === 'file:' ? '//' + this.host : '') + this._path + this._search + this._hash; }
+	set href(v) { const n = new URLx(v); this.protocol = n.protocol; this.host = n.host; this._path = n._path; this._search = n._search; this._hash = n._hash; }
 	get searchParams() { const self = this; const p = new URLSearchParams(this.search); p._url = self; return p; }
 	toString() { return this.href; }
 	toJSON() { return this.href; }
