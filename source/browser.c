@@ -6263,7 +6263,8 @@ void br_bottom(void)
 		B.st = ST_ACT;
 		s32 prio = 0x30;
 		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-		B.thr_done = false, B.thr = threadCreate(jsdef_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
+		// (por debajo de las imágenes: que sigan llegando mientras trabaja)
+		B.thr_done = false, B.thr = threadCreate(jsdef_thread, NULL, 1024 * 1024, prio + 3, br_core(), false);
 		if (!B.thr)
 			B.st = ST_READY, B.js_defer = false;
 	}
