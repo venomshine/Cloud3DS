@@ -39,6 +39,7 @@ struct JsPage {
 	JsHost host;
 	char url[1024], ua[200];
 	bool oom;          /* se quedó sin memoria: no se ejecuta nada más */
+	JSValue imap;      /* el <script type="importmap"> de la página: sus «imports» (o undefined) */
 };
 
 static struct {
@@ -591,6 +592,49 @@ static JSValue f_runSrc(JSContext *ctx, JSValueConst t, int argc, JSValueConst *
 	return JS_NewBool(ctx, ok);
 }
 
+static bool run_module(JSContext *ctx, const char *code, size_t n, const char *name, const char *meta_url);
+// un <script type="module"> añadido desde JavaScript: con src (su dirección) o su código (con la de la página)
+static JSValue f_runModule(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	if (argc < 2)
+		return JS_FALSE;
+	bool is_src = JS_ToBool(ctx, argv[1]);
+	size_t n = 0;
+	const char *a = JS_ToCStringLen(ctx, &n, argv[0]);
+	if (!a)
+		return JS_FALSE;
+	bool ok = false;
+	static int k;
+	char name[1100];
+	if (is_src) {
+		char *code = NULL, fin[1024];
+		size_t cn = 0;
+		long http = 0;
+		u64 t0 = now_ms();
+		if (J.host->fetch && J.host->fetch(a, "GET", NULL, 0, &code, &cn, &http, fin, sizeof fin) == 0 && http < 400 && code) {
+			char *tt = realloc(code, cn + 1);
+			if (tt) {
+				code = tt, code[cn] = 0;
+				J.res->scripts++;
+				ok = run_module(ctx, code, cn, a, a);
+			}
+		}
+		free(code);
+		unsigned spent = (unsigned)(now_ms() - t0), cap = J.host->budget_ms;
+		J.budget = J.budget + spent < cap ? J.budget + spent : cap;
+	} else {
+		const char *u = J.host->url ? J.host->url : "";
+		snprintf(name, sizeof name, "%.*s#module-js-%d", (int)strcspn(u, "#"), u, ++k);
+		J.res->scripts++;
+		ok = run_module(ctx, a, n, name, u);
+	}
+	if (!ok)
+		J.res->errors++;
+	JS_FreeCString(ctx, a);
+	return JS_NewBool(ctx, ok);
+}
+
 // un <script> con código añadido desde JavaScript
 static JSValue f_runCode(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
@@ -636,6 +680,7 @@ static const JSCFunctionListEntry NATIVE[] = {
     JS_CFUNC_DEF("setCookie", 1, f_setCookie),
     JS_CFUNC_DEF("runSrc", 1, f_runSrc),
     JS_CFUNC_DEF("runCode", 1, f_runCode),
+    JS_CFUNC_DEF("runModule", 2, f_runModule),
     JS_CFUNC_DEF("doc", 0, f_doc),
     JS_CFUNC_DEF("type", 1, f_type),
     JS_CFUNC_DEF("name", 1, f_name),
@@ -678,8 +723,25 @@ static void report(JSContext *ctx, const char *where)
 {
 	JSValue e = JS_GetException(ctx);
 	const char *s = JS_ToCString(ctx, e);
-	char msg[300];
-	snprintf(msg, sizeof msg, "js: error en %s: %s", where, s ? s : "?");
+	char msg[600], at[300] = "";
+	if (JS_IsObject(e)) { // dónde: las dos primeras líneas de su pila
+		JSValue st = JS_GetPropertyStr(ctx, e, "stack");
+		const char *t = JS_IsString(st) ? JS_ToCString(ctx, st) : NULL;
+		if (t) {
+			const char *p = t;
+			for (int k = 0; k < 2 && *p; k++) {
+				while (*p == ' ' || *p == '\n')
+					p++;
+				size_t l = strcspn(p, "\n");
+				size_t al = strlen(at);
+				snprintf(at + al, sizeof at - al, "%s%.*s", al ? " | " : " @ ", (int)(l < 120 ? l : 120), p);
+				p += l;
+			}
+			JS_FreeCString(ctx, t);
+		}
+		JS_FreeValue(ctx, st);
+	}
+	snprintf(msg, sizeof msg, "js: error en %s: %s%s", where, s ? s : "?", at);
 	if (!s || strstr(s, "out of memory"))
 		J.oom = true;
 	if (J.host->log)
@@ -743,6 +805,180 @@ static bool eval(JSContext *ctx, const char *code, size_t n, const char *name)
 	if (!ok)
 		report(ctx, name);
 	JS_FreeValue(ctx, v);
+	return ok;
+}
+
+/* ---------- módulos (import / export, import(), <script type="module">) */
+static void pending_jobs(JSRuntime *rt);
+static void resolve(const char *base, const char *href, char *out, size_t n);
+
+// quita los «.» y «..» del camino de una dirección (https://x/a/b/../c.js -> https://x/a/c.js)
+static void path_norm(char *u)
+{
+	char *sch = strstr(u, "://");
+	char *s = sch ? strchr(sch + 3, '/') : (u[0] == '/' ? u : NULL);
+	if (!s)
+		return;
+	size_t ql = strcspn(s, "?#");
+	char tail[1024], out[1024];
+	snprintf(tail, sizeof tail, "%s", s + ql);
+	size_t on = 0;
+	const char *p = s + 1, *e = s + ql;
+	size_t marks[128];
+	int nm = 0;
+	out[on++] = '/';
+	while (p <= e) {
+		const char *q = p;
+		while (q < e && *q != '/')
+			q++;
+		size_t l = (size_t)(q - p);
+		bool last = q >= e;
+		if (l == 1 && p[0] == '.') {
+		} else if (l == 2 && p[0] == '.' && p[1] == '.') {
+			if (nm)
+				on = marks[--nm];
+		} else if (l || last) {
+			if (nm < 128)
+				marks[nm++] = on;
+			if (on + l + 2 < sizeof out) {
+				memcpy(out + on, p, l), on += l;
+				if (!last)
+					out[on++] = '/';
+			}
+		}
+		p = q + 1;
+	}
+	out[on] = 0;
+	snprintf(s, sizeof tail, "%s%s", out, tail);
+}
+
+// «react», «@lit/x»: un nombre suelto (no es ni ruta ni dirección): lo resuelve el importmap
+static bool bare_spec(const char *n)
+{
+	if (n[0] == '/' || !strncmp(n, "./", 2) || !strncmp(n, "../", 3))
+		return false;
+	for (const char *p = n; *p && *p != '/'; p++)
+		if (*p == ':')
+			return false;
+	return true;
+}
+
+static char *mod_norm(JSContext *ctx, const char *base, const char *name, void *op)
+{
+	JsPage *pg = op;
+	char out[1024] = "";
+	if (bare_spec(name) && pg && JS_IsObject(pg->imap)) { // el importmap: exacto o por prefijo «x/» (el más largo)
+		JSValue v = JS_GetPropertyStr(ctx, pg->imap, name);
+		if (JS_IsString(v)) {
+			const char *t = JS_ToCString(ctx, v);
+			if (t)
+				resolve(pg->url, t, out, sizeof out), JS_FreeCString(ctx, t);
+		}
+		JS_FreeValue(ctx, v);
+		if (!out[0]) {
+			JSPropertyEnum *tab = NULL;
+			uint32_t len = 0;
+			size_t best = 0;
+			if (JS_GetOwnPropertyNames(ctx, &tab, &len, pg->imap, JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY) == 0) {
+				for (uint32_t i = 0; i < len; i++) {
+					const char *k = JS_AtomToCString(ctx, tab[i].atom);
+					size_t kl = k ? strlen(k) : 0;
+					if (k && kl > best && k[kl - 1] == '/' && !strncmp(name, k, kl)) {
+						JSValue pv = JS_GetPropertyStr(ctx, pg->imap, k);
+						const char *t = JS_ToCString(ctx, pv);
+						if (t) {
+							char tmp[1024];
+							snprintf(tmp, sizeof tmp, "%s%s", t, name + kl);
+							resolve(pg->url, tmp, out, sizeof out);
+							best = kl;
+							JS_FreeCString(ctx, t);
+						}
+						JS_FreeValue(ctx, pv);
+					}
+					JS_FreeCString(ctx, k);
+				}
+				JS_FreePropertyEnum(ctx, tab, len);
+			}
+		}
+	}
+	if (!out[0])
+		resolve(base && base[0] ? base : (pg ? pg->url : ""), name, out, sizeof out);
+	path_norm(out);
+	return js_strdup(ctx, out);
+}
+
+static char *fix_utf8(const char *s, size_t n, size_t *out_n);
+
+// compila un módulo (con su import.meta.url); devuelve su valor compilado o una excepción
+static JSValue mod_compile(JSContext *ctx, const char *code, size_t n, const char *name, const char *meta_url)
+{
+	size_t fn = 0;
+	char *fixed = fix_utf8(code, n, &fn);
+	if (fixed)
+		code = fixed, n = fn;
+	JSValue fv = JS_Eval(ctx, code, n, name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+	free(fixed);
+	if (JS_IsException(fv))
+		return fv;
+	JSValue meta = JS_GetImportMeta(ctx, JS_VALUE_GET_PTR(fv));
+	if (JS_IsObject(meta))
+		JS_SetPropertyStr(ctx, meta, "url", JS_NewString(ctx, meta_url));
+	JS_FreeValue(ctx, meta);
+	return fv;
+}
+
+static JSModuleDef *mod_load(JSContext *ctx, const char *name, void *op)
+{
+	(void)op;
+	char *code = NULL, fin[1024];
+	size_t n = 0;
+	long http = 0;
+	u64 t0 = now_ms();
+	if (!J.host->fetch || J.host->fetch(name, "GET", NULL, 0, &code, &n, &http, fin, sizeof fin) != 0 || http >= 400 || !code) {
+		free(code);
+		JS_ThrowReferenceError(ctx, "could not load module '%s'", name);
+		return NULL;
+	}
+	unsigned spent = (unsigned)(now_ms() - t0), cap = J.host->budget_ms; // (bajarlo no cuenta como su tiempo)
+	J.budget = J.budget + spent < cap ? J.budget + spent : cap;
+	J.res->scripts++;
+	JSValue fv = mod_compile(ctx, code, n, name, name);
+	free(code);
+	if (JS_IsException(fv))
+		return NULL;
+	JSModuleDef *m = JS_VALUE_GET_PTR(fv);
+	JS_FreeValue(ctx, fv);
+	return m;
+}
+
+static const char *mod_inline_name(JsPage *pg, int i, char *buf)
+{
+	snprintf(buf, 1100, "%.*s#module-%d", (int)strcspn(pg->url, "#"), pg->url, i + 1);
+	return buf;
+}
+
+// un módulo de la página (externo o en el HTML): se compila, se ejecuta y se espera a que acabe
+static bool run_module(JSContext *ctx, const char *code, size_t n, const char *name, const char *meta_url)
+{
+	JSValue fv = mod_compile(ctx, code, n, name, meta_url);
+	if (JS_IsException(fv)) {
+		report(ctx, name);
+		return false;
+	}
+	JSValue r = JS_EvalFunction(ctx, fv); // (se queda con fv)
+	if (JS_IsException(r)) {
+		report(ctx, name);
+		return false;
+	}
+	pending_jobs(JS_GetRuntime(ctx));
+	bool ok = true;
+	if (JS_PromiseState(ctx, r) == JS_PROMISE_REJECTED) {
+		JSValue e = JS_PromiseResult(ctx, r);
+		JS_Throw(ctx, e);
+		report(ctx, name);
+		ok = false;
+	}
+	JS_FreeValue(ctx, r);
 	return ok;
 }
 
@@ -853,16 +1089,25 @@ static void collect(dom_node *n, NodeList *l, int depth)
 	}
 }
 
-static bool js_type_ok(dom_node *s)
+enum { SK_NO, SK_CLASSIC, SK_MODULE, SK_IMPORTMAP };
+// qué es un <script>: JavaScript de siempre, un módulo, el importmap o nada que ejecutar (datos JSON, plantillas…;
+// los «nomodule» son la copia para navegadores sin módulos: aquí hay módulos, así que fuera)
+static int script_kind(dom_node *s)
 {
 	char ty[64];
 	if (!get_attr(s, "type", ty, sizeof ty) || !ty[0])
-		return true;
+		return get_attr(s, "nomodule", ty, sizeof ty) ? SK_NO : SK_CLASSIC;
 	for (char *p = ty; *p; p++)
 		*p = (char)tolower((unsigned char)*p);
-	return !strcmp(ty, "text/javascript") || !strcmp(ty, "application/javascript") || !strcmp(ty, "application/x-javascript") ||
-	       !strcmp(ty, "text/ecmascript");
+	if (!strcmp(ty, "module"))
+		return SK_MODULE;
+	if (!strcmp(ty, "importmap"))
+		return SK_IMPORTMAP;
+	bool js = !strcmp(ty, "text/javascript") || !strcmp(ty, "application/javascript") || !strcmp(ty, "application/x-javascript") || !strcmp(ty, "text/ecmascript");
+	char nm[8];
+	return js && !get_attr(s, "nomodule", nm, sizeof nm) ? SK_CLASSIC : SK_NO;
 }
+static bool js_type_ok(dom_node *s) { return script_kind(s) == SK_CLASSIC; }
 
 static void resolve(const char *base, const char *href, char *out, size_t n)
 {
@@ -951,6 +1196,8 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 	J.cls = 0;
 	JS_NewClassID(rt, &J.cls);
 	JS_NewClass(rt, J.cls, &NODE_CLASS);
+	pg->imap = JS_UNDEFINED;
+	JS_SetModuleLoaderFunc(rt, mod_norm, mod_load, pg); // import / import(): se resuelven y se bajan aquí
 	JSContext *ctx = pg->ctx = JS_NewContext(rt);
 	if (!ctx) {
 		free(prelude);
@@ -971,11 +1218,29 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 		NodeList l = {0};
 		collect((dom_node *)doc, &l, 0);
 		size_t total = 0;
+		// primero los de siempre, en su orden; los módulos van después (como «defer» en un navegador)
+		for (int pass = 0; pass < 2; pass++)
 		for (int i = 0; i < l.n && now_ms() - J.t0 < host->budget_ms; i++) {
 			dom_node *s = l.v[i];
-			if (!js_type_ok(s))
+			int kind = script_kind(s);
+			if (kind == SK_IMPORTMAP && pass == 0) { // {"imports": {"react": "/js/react.js", "lib/": "/js/lib/"}}
+				dom_string *tx = NULL;
+				dom_node_get_text_content(s, &tx);
+				if (tx) {
+					JSValue j = JS_ParseJSON(ctx, dom_string_data(tx), dom_string_byte_length(tx), "importmap");
+					if (JS_IsObject(j)) {
+						JS_FreeValue(ctx, pg->imap);
+						pg->imap = JS_GetPropertyStr(ctx, j, "imports");
+					} else
+						JS_FreeValue(ctx, JS_GetException(ctx));
+					JS_FreeValue(ctx, j);
+					dom_string_unref(tx);
+				}
 				continue;
-			char src[1024], name[1100];
+			}
+			if (kind != (pass == 0 ? SK_CLASSIC : SK_MODULE))
+				continue;
+			char src[1024] = "", name[1100];
 			char *code = NULL;
 			size_t cn = 0;
 			if (get_attr(s, "src", src, sizeof src) && src[0]) {
@@ -1013,10 +1278,10 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res)
 			}
 			total += cn;
 			JSValue sv = wrap(ctx, s);
-			call(ctx, "__current", sv);
+			call(ctx, "__current", pass == 0 ? sv : JS_NULL); // (en un módulo, document.currentScript es null)
 			JS_FreeValue(ctx, sv);
 			res->scripts++;
-			if (!eval(ctx, code, cn, name))
+			if (pass == 0 ? !eval(ctx, code, cn, name) : !run_module(ctx, code, cn, src[0] && strstr(name, "://") ? name : mod_inline_name(pg, i, name), pg->url))
 				res->errors++;
 			free(code);
 			pending_jobs(rt);
@@ -1110,7 +1375,7 @@ void jsdom_close(JsPage *p)
 	if (p->rt)
 		JS_UpdateStackTop(p->rt);
 	if (p->ctx)
-		JS_FreeContext(p->ctx);
+		JS_FreeValue(p->ctx, p->imap), JS_FreeContext(p->ctx);
 	if (p->rt)
 		JS_FreeRuntime(p->rt);
 	if (p->doc)

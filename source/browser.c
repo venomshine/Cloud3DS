@@ -519,8 +519,11 @@ static void pf_collect(dom_node *n, int depth, bool js)
 					pf_add(abs, "text/css,*/*;q=0.1");
 				}
 			} else if (!strcasecmp(tag, "script")) {
-				bool ty = !attr(ch, "type", a, sizeof a) || !a[0] || !strcasecmp(a, "text/javascript") || !strcasecmp(a, "application/javascript") ||
-				          !strcasecmp(a, "application/x-javascript") || !strcasecmp(a, "text/ecmascript");
+				char nm[8];
+				bool mod = attr(ch, "type", a, sizeof a) && !strcasecmp(a, "module");
+				bool ty = mod || (!attr(ch, "nomodule", nm, sizeof nm) &&
+				                  (!attr(ch, "type", a, sizeof a) || !a[0] || !strcasecmp(a, "text/javascript") || !strcasecmp(a, "application/javascript") ||
+				                   !strcasecmp(a, "application/x-javascript") || !strcasecmp(a, "text/ecmascript")));
 				if (js && ty && attr(ch, "src", href, sizeof href) && href[0]) {
 					resolve(B.url, href, abs, sizeof abs);
 					pf_add(abs, "*/*");
