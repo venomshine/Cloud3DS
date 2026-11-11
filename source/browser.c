@@ -968,7 +968,14 @@ static bool blocked_host(const char *url)
 	                                 "adservice.google.", "cloudflareinsights.com", "facebook.net", "connect.facebook", "scorecardresearch.com", "quantserve.com",
 	                                 "amazon-adsystem.com", "adnxs.com", "criteo.", "taboola.com", "outbrain.com", "hotjar.com", "clarity.ms",
 	                                 "newrelic.com", "nr-data.net", "segment.io", "segment.com", "mixpanel.com", "pubmatic.com", "rubiconproject.com",
-	                                 "moatads.com", "chartbeat.", "optimizely.com", "adsafeprotected.com", "2mdn.net", "yieldmo.com", NULL};
+	                                 "moatads.com", "chartbeat.", "optimizely.com", "adsafeprotected.com", "2mdn.net", "yieldmo.com",
+	                                 // (más redes de anuncios, pujas y medición que aparecieron en las webs de prueba)
+	                                 "mrf.io", "sensic.net", "indexww.com", "casalemedia.com", "openx.net", "smartadserver.com", "teads.tv",
+	                                 "seedtag.com", "permutive.", "omtrdc.net", "demdex.net", "krxd.net", "bluekai.com", "id5-sync.com",
+	                                 "adform.net", "33across.com", "sharethrough.com", "gumgum.com", "bidswitch.net", "everesttech.net",
+	                                 "pbstck.com", "omnitagjs.com", "parsely.com", "metrics.brightcove.com", "ads-twitter.com", "analytics.tiktok.com",
+	                                 "snap.licdn.com", "bat.bing.com", "mc.yandex", "googleoptimize.com", "doubleverify.com",
+	                                 "lijit.com", "adsrvr.org", "rlcdn.com", "tapad.com", "agkn.com", "media.net", "amazon-adsystem", NULL};
 	const char *h = strstr(url, "://");
 	if (!h)
 		return false;
