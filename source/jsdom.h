@@ -61,7 +61,11 @@ JsPage *jsdom_open(dom_document *doc, const JsHost *host, JsResult *res);
  * *changed: el árbol cambió (hay que volver a colocar la página); devuelve false si la página
  * canceló lo que haría el navegador (preventDefault: no seguir el enlace). Se puede llamar desde
  * otro hilo, nunca a la vez que otra función de esta página. */
-bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res);
+/* (x, y: dónde, en px de la página; -1 si no se sabe) */
+bool jsdom_click(JsPage *p, dom_node *target, float x, float y, bool *changed, JsResult *res);
+/* lo escrito en una caja de texto (su valor; enter: como pulsar Intro): sus eventos (input, change, teclas, submit).
+ * Devuelve false si la página lo canceló (no se envía el formulario). Mismas reglas que jsdom_click */
+bool jsdom_input(JsPage *p, dom_node *target, const char *value, bool enter, bool *changed, JsResult *res);
 /* lo que la página dejó para después (temporizadores, scripts que carga): un rato de ms. *changed: el
  * árbol cambió. Devuelve si aún le queda algo por hacer. Mismas reglas de hilos que jsdom_click. */
 bool jsdom_idle(JsPage *p, unsigned ms, bool *changed, JsResult *res);

@@ -240,6 +240,7 @@ static struct {
 	bool idle_dirty;     /* cambió algo más que aún no se ve: se recoloca con el próximo clic */
 	int nclk;            /* cosas que se tocan por JavaScript */
 	volatile int click_link; /* tras un clic con JavaScript: el enlace a seguir (-1 ninguno, -2 esperando) */
+	volatile int click_wdg;  /* tras tocar un control con JavaScript: hacer lo suyo (ACT_WDG / ACT_INPUT; 0 nada) */
 	PImg *img;
 	int nimg, cimg;
 	BgImg *bgi;
@@ -431,6 +432,9 @@ static float DOC_W;
 #define BASE_W (DOC_W > 0 ? DOC_W : VW_PC)
 static bool ci_has(const char *h, const char *nd);
 static int nojs_find(const char *url);
+/* tras tocar algo con JavaScript: un clic (en un enlace, en lo que sea o en un control) o lo escrito en una caja de texto */
+enum { ACT_CLICK = 0, ACT_WDG, ACT_INPUT };
+static void start_action_k(dom_node *el, int link, int kind, const char *str);
 
 /* ------------------------------------------------------------ descarga por adelantado
  * Nada más leer el HTML se piden a la vez (varios hilos) los scripts y las hojas de estilo que la página va a
@@ -5326,8 +5330,11 @@ static int wdg_at_pointer(void)
 	return -1;
 }
 
-// tocar un control: escribir, marcar, elegir o enviar
-static void wdg_activate(int k)
+// tocar un control: escribir, marcar, elegir o enviar. Con JavaScript, primero su página (start_action_k): lo de
+// aquí va después, si no lo canceló (after: ya pasó por la página)
+static void wdg_default(int k, bool after);
+static void wdg_activate(int k) { wdg_default(k, false); }
+static void wdg_default(int k, bool after)
 {
 	if (k < 0 || k >= B.nwg)
 		return;
@@ -5340,11 +5347,16 @@ static void wdg_activate(int k)
 		char hint[96] = "", out[1024];
 		if (!attr(w->node, "placeholder", hint, sizeof hint) && !attr(w->node, "aria-label", hint, sizeof hint))
 			util_strlcpy(hint, "Escribe aquí", sizeof hint);
-		if (kb_input(hint, v->value ? v->value : w->label, out, sizeof out, w->type == WG_AREA, w->type == WG_PASS)) {
+		if (after) { // la página ya vio lo escrito y no lo canceló: se envía
+			if (w->type != WG_AREA && w->form)
+				form_submit(w->form, NULL);
+		} else if (kb_input(hint, v->value ? v->value : w->label, out, sizeof out, w->type == WG_AREA, w->type == WG_PASS)) {
 			free(v->value);
 			v->value = strdup(out);
 			util_strlcpy(w->label, out, sizeof w->label);
-			if (w->type != WG_AREA && w->form) // como pulsar Intro: se envía (una búsqueda, por ejemplo)
+			if (B.jsp) // con JavaScript: primero la página (sus eventos de escribir y de enviar)
+				start_action_k(w->node, -1, ACT_INPUT, out);
+			else if (w->type != WG_AREA && w->form) // como pulsar Intro: se envía (una búsqueda, por ejemplo)
 				form_submit(w->form, NULL);
 		}
 	} else if (w->type == WG_CHECK) {
@@ -5954,6 +5966,9 @@ static void layout_thread_run(void *arg)
 // un clic con el JavaScript de la página: sus eventos y, si cambió algo, se vuelve a colocar
 static dom_node *ACT_EL;
 static int ACT_LINK;
+static int ACT_KIND;
+static float ACT_X = -1, ACT_Y = -1; /* dónde se tocó, en px de la página (-1: no se sabe) */
+static char *ACT_STR;
 static void act_thread_run(void *arg);
 static void act_thread(void *arg)
 {
@@ -5967,7 +5982,8 @@ static void act_thread_run(void *arg)
 	browser_thread_net();
 	JsResult r;
 	bool changed = false;
-	bool go_on = jsdom_click(jsp_of_node(ACT_EL), ACT_EL, &changed, &r); // (de la página o de un iframe)
+	bool go_on = ACT_KIND == ACT_INPUT ? jsdom_input(jsp_of_node(ACT_EL), ACT_EL, ACT_STR, true, &changed, &r)
+	                                   : jsdom_click(jsp_of_node(ACT_EL), ACT_EL, ACT_X, ACT_Y, &changed, &r); // (de la página o de un iframe)
 	js_oom_check(&r);
 	changed |= frames_after_js();
 	if (B.idle_dirty)
@@ -5993,7 +6009,8 @@ static void act_thread_run(void *arg)
 		B.tip = 0;
 		img_start();
 	}
-	B.click_link = go_on ? ACT_LINK : -1;
+	B.click_link = go_on && ACT_KIND == ACT_CLICK ? ACT_LINK : -1;
+	B.click_wdg = go_on && ACT_KIND != ACT_CLICK ? ACT_KIND : 0; // (lo de siempre del control, ya en el principal)
 	B.st = ST_READY;
 }
 
@@ -6157,22 +6174,30 @@ static bool imgfit_due(void)
 	return off;
 }
 
-static void start_action(dom_node *el, int link)
+static void start_action_k(dom_node *el, int link, int kind, const char *str);
+static void start_action(dom_node *el, int link) { start_action_k(el, link, ACT_CLICK, NULL); }
+static void start_action_k(dom_node *el, int link, int kind, const char *str)
 {
 	if (B.thr) {
 		threadJoin(B.thr, U64_MAX);
 		threadFree(B.thr);
 		B.thr = NULL;
 	}
-	ACT_EL = el, ACT_LINK = link;
-	B.click_link = -2;
+	ACT_EL = el, ACT_LINK = link, ACT_KIND = kind;
+	ACT_X = B.sx + B.px / B.zoom - PAD_X, ACT_Y = B.sy + B.py / B.zoom; // (el puntero, en la página)
+	if (ACT_X < 0 || ACT_Y < 0)
+		ACT_X = ACT_Y = -1;
+	free(ACT_STR);
+	ACT_STR = str ? strdup(str) : NULL;
+	B.click_link = -2, B.click_wdg = 0;
 	B.st = ST_ACT;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
 	B.thr_done = false, B.thr = threadCreate(act_thread, NULL, 1024 * 1024, prio + 1, br_core(), false);
-	if (!B.thr) { // sin hilo: el clic sigue como un enlace normal
+	if (!B.thr) { // sin hilo: el clic sigue como un enlace normal (o el control, como siempre)
 		B.st = ST_READY;
-		B.click_link = link;
+		B.click_link = kind == ACT_CLICK ? link : -1;
+		B.click_wdg = kind == ACT_CLICK ? 0 : kind;
 	}
 }
 
@@ -6927,6 +6952,15 @@ void br_bottom(void)
 		if (!B.thr)
 			B.st = ST_READY;
 	}
+	if (B.st == ST_READY && B.click_wdg) { // el control, tras su JavaScript: lo de siempre (buscado por su nodo: la
+		int kind = B.click_wdg; // página pudo recolocarse)
+		B.click_wdg = 0;
+		for (int i = 0; i < B.nwg; i++)
+			if (B.wg[i].node == ACT_EL) {
+				wdg_default(i, kind == ACT_INPUT);
+				break;
+			}
+	}
 	if (B.st == ST_READY && B.click_link >= 0) { // el clic con JavaScript dejó seguir el enlace
 		int k = B.click_link;
 		B.click_link = -1;
@@ -7225,7 +7259,12 @@ void br_bottom(void)
 			go(full, true);
 		}
 	} else if (click && ready && wdg_at_pointer() >= 0) {
-		wdg_activate(wdg_at_pointer());
+		int wk = wdg_at_pointer();
+		const Wdg *w = &B.wg[wk];
+		if (B.jsp && w->type != WG_TEXT && w->type != WG_PASS && w->type != WG_AREA)
+			start_action_k(w->node, -1, ACT_WDG, NULL); // (su clic, a la página; luego, lo suyo)
+		else
+			wdg_activate(wk);
 	} else if (click && ready) {
 		int k = link_at_pointer(), fi = frag_at_pointer();
 		if (k < 0 && B.focus >= 0)

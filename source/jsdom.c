@@ -1713,7 +1713,7 @@ void jsdom_message(JsPage *p, const char *json, const char *origin, int from, bo
 	done(p, res);
 }
 
-bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res)
+bool jsdom_click(JsPage *p, dom_node *target, float x, float y, bool *changed, JsResult *res)
 {
 	*changed = false;
 	memset(res, 0, sizeof *res);
@@ -1721,9 +1721,55 @@ bool jsdom_click(JsPage *p, dom_node *target, bool *changed, JsResult *res)
 		return true;
 	use(p, res, 3000);
 	J.mut = 0;
-	JSValue t = wrap(p->ctx, target);
-	bool go_on = call(p->ctx, "__click", t); // false: preventDefault
-	JS_FreeValue(p->ctx, t);
+	JSValue g = JS_GetGlobalObject(p->ctx), f = JS_GetPropertyStr(p->ctx, g, "__click");
+	bool go_on = true; // false: preventDefault
+	if (JS_IsFunction(p->ctx, f)) {
+		JSValue a[3] = {wrap(p->ctx, target), JS_NewFloat64(p->ctx, x), JS_NewFloat64(p->ctx, y)};
+		JSValue r = JS_Call(p->ctx, f, g, 3, a);
+		if (JS_IsException(r))
+			report(p->ctx, "__click");
+		else
+			go_on = JS_ToBool(p->ctx, r) != 0;
+		JS_FreeValue(p->ctx, r);
+		for (int i = 0; i < 3; i++)
+			JS_FreeValue(p->ctx, a[i]);
+	}
+	JS_FreeValue(p->ctx, f), JS_FreeValue(p->ctx, g);
+	pending_jobs(p->rt);
+	for (int round = 0; round < 20 && now_ms() - J.t0 < 3000; round++) {
+		bool more = call(p->ctx, "__timers", JS_NewInt32(p->ctx, 1000));
+		pending_jobs(p->rt);
+		if (!more)
+			break;
+	}
+	*changed = J.mut > 0;
+	res->ms = (unsigned)(now_ms() - J.t0);
+	done(p, res);
+	return go_on;
+}
+
+bool jsdom_input(JsPage *p, dom_node *target, const char *value, bool enter, bool *changed, JsResult *res)
+{
+	*changed = false;
+	memset(res, 0, sizeof *res);
+	if (!p || !p->ctx || !target || p->oom)
+		return true;
+	use(p, res, 3000);
+	J.mut = 0;
+	JSValue g = JS_GetGlobalObject(p->ctx), f = JS_GetPropertyStr(p->ctx, g, "__input");
+	bool go_on = true;
+	if (JS_IsFunction(p->ctx, f)) {
+		JSValue a[3] = {wrap(p->ctx, target), JS_NewString(p->ctx, value ? value : ""), JS_NewBool(p->ctx, enter)};
+		JSValue r = JS_Call(p->ctx, f, g, 3, a);
+		if (JS_IsException(r))
+			report(p->ctx, "__input");
+		else
+			go_on = JS_ToBool(p->ctx, r) != 0;
+		JS_FreeValue(p->ctx, r);
+		for (int i = 0; i < 3; i++)
+			JS_FreeValue(p->ctx, a[i]);
+	}
+	JS_FreeValue(p->ctx, f), JS_FreeValue(p->ctx, g);
 	pending_jobs(p->rt);
 	for (int round = 0; round < 20 && now_ms() - J.t0 < 3000; round++) {
 		bool more = call(p->ctx, "__timers", JS_NewInt32(p->ctx, 1000));

@@ -1356,14 +1356,46 @@ G.__timers = delta => {
 	}
 	return [...timers.values()].some(t => t.at <= limit && !t.every);
 };
-G.__click = h => {
+G.__click = (h, x, y) => {
 	const el = W(h); if (!el) return true;
-	const ev = new G.MouseEvent('click', { bubbles: true, cancelable: true });
-	ev.button = 0; ev.which = 1;
+	// dónde: en la página (pageX), en la ventana (clientX, con el scroll) y en el elemento (offsetX); como un toque
+	// de verdad, antes su pointerdown/mousedown/touchstart y sus «up» (los juegos y los menús escuchan esos)
+	const at = {};
+	if (x >= 0 && y >= 0) {
+		const r = el.getBoundingClientRect(), sx = G.scrollX || 0, sy = G.scrollY || 0;
+		Object.assign(at, { pageX: x, pageY: y, clientX: x - sx, clientY: y - sy, x: x - sx, y: y - sy, screenX: x - sx, screenY: y - sy, offsetX: x - sx - r.left, offsetY: y - sy - r.top });
+	}
+	const mk = (C, t, o) => { const e = new C(t, { bubbles: true, cancelable: true }); Object.assign(e, at, { button: 0, which: 1, buttons: t.endsWith('down') ? 1 : 0, pointerId: 1, pointerType: 'touch', isPrimary: true }, o); return e; };
+	if (x >= 0) {
+		const touch = { identifier: 0, target: el, ...at };
+		for (const [C, t] of [[G.PointerEvent, 'pointerdown'], [G.TouchEvent, 'touchstart'], [G.MouseEvent, 'mousedown'], [G.PointerEvent, 'pointerup'], [G.TouchEvent, 'touchend'], [G.MouseEvent, 'mouseup']])
+			try { el.dispatchEvent(mk(C, t, C === G.TouchEvent ? { touches: t === 'touchstart' ? [touch] : [], changedTouches: [touch], targetTouches: t === 'touchstart' ? [touch] : [] } : {})); } catch (e) { report(e); }
+	}
+	const ev = mk(G.MouseEvent, 'click', {});
 	el.dispatchEvent(ev);
 	// <label for> y casillas: como un navegador
 	if (!ev.defaultPrevented && el.localName === 'label') { const f = el.getAttribute('for'); const t = f ? document.getElementById(f) : el.querySelector('input'); if (t && t !== el) t.click(); }
 	return !ev.defaultPrevented;
+};
+// lo que se escribió en una caja de texto (con el teclado de la consola): su valor y los eventos de escribir; con
+// enter, como pulsar Intro (y el submit de su formulario). Devuelve false si la página lo canceló (no se envía)
+G.__input = (h, v, enter) => {
+	const el = W(h); if (!el) return true;
+	const fire = (t, o) => { const ev = new (t.startsWith('key') ? G.KeyboardEvent : t === 'input' ? G.InputEvent : Event)(t, { bubbles: true, cancelable: true, ...o }); Object.assign(ev, o); el.dispatchEvent(ev); return ev; };
+	try { el.dispatchEvent(new G.FocusEvent('focus')); el.dispatchEvent(new G.FocusEvent('focusin', { bubbles: true })); } catch (e) { report(e); }
+	el.value = v;
+	const last = v.slice(-1);
+	if (last) { fire('keydown', { key: last, code: '', keyCode: last.charCodeAt(0), which: last.charCodeAt(0) }); fire('keyup', { key: last, keyCode: last.charCodeAt(0), which: last.charCodeAt(0) }); }
+	fire('input', { data: v, inputType: 'insertText' });
+	fire('change', {});
+	if (!enter) return true;
+	const kd = fire('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
+	fire('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, charCode: 13 });
+	fire('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
+	if (kd.defaultPrevented) return false;
+	const f = el.closest && el.closest('form');
+	if (f) { const se = new Event('submit', { bubbles: true, cancelable: true }); se.submitter = null; f.dispatchEvent(se); if (se.defaultPrevented) return false; }
+	return true;
 };
 G.__current = s => { G.__script = s ? W(s._h || s) : null; if (G.__script) ran.add(N.id(G.__script._h)); };
 G.__loaded = () => {
