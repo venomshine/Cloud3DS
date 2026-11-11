@@ -10,6 +10,7 @@
  * página (document, Element, classList, style, eventos, temporizadores…) está en romfs:/js/dom.js,
  * escrito en JavaScript encima de esto. */
 #include "jsdom.h"
+#include "canvas.h"
 
 #include "quickjs.h"
 #include <dom/bindings/hubbub/parser.h>
@@ -229,6 +230,144 @@ static JSValue f_rect(JSContext *ctx, JSValueConst t, int argc, JSValueConst *ar
 		JS_SetPropertyUint32(ctx, a, (uint32_t)i, JS_NewFloat64(ctx, r[i]));
 	return a;
 }
+
+/* ------------------------------------------------------------ <canvas> 2D (canvas.c): lo usa CanvasRenderingContext2D (dom.js) */
+static double num(JSContext *ctx, int argc, JSValueConst *argv, int i)
+{
+	double d = 0;
+	if (i < argc && JS_ToFloat64(ctx, &d, argv[i]))
+		d = 0;
+	return d != d ? 0 : d; // (NaN: 0)
+}
+#define NF(i) ((float)num(ctx, argc, argv, (i)))
+#define NI(i) ((int)num(ctx, argc, argv, (i)))
+// cvNew(canvas, ancho, alto): su lienzo (el mismo si ya tenía)
+static JSValue f_cvNew(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	dom_node *n = argc > 0 ? unwrap(argv[0]) : NULL;
+	return JS_NewInt32(ctx, n ? cv_new(n, NI(1), NI(2)) : 0);
+}
+enum { CV_RESIZE, CV_SAVE, CV_RESTORE, CV_SETT, CV_BEGIN, CV_MOVE, CV_LINE, CV_BEZ, CV_QUAD, CV_ELL, CV_ARCTO, CV_RECT, CV_CLOSE,
+       CV_FILL, CV_STROKE, CV_FRECT, CV_CRECT, CV_STYLE, CV_DRAWCV };
+// cv(op, id, …números): casi todo lo de dibujar
+static JSValue f_cv(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv, int op)
+{
+	(void)t;
+	int id = NI(0);
+	switch (op) {
+	case CV_RESIZE: cv_resize(id, NI(1), NI(2)); break;
+	case CV_SAVE: cv_save(id); break;
+	case CV_RESTORE: cv_restore(id); break;
+	case CV_SETT: {
+		float m[6];
+		for (int i = 0; i < 6; i++)
+			m[i] = NF(1 + i);
+		cv_set_transform(id, m);
+		break;
+	}
+	case CV_BEGIN: cv_begin(id); break;
+	case CV_MOVE: cv_move(id, NF(1), NF(2)); break;
+	case CV_LINE: cv_line(id, NF(1), NF(2)); break;
+	case CV_BEZ: cv_bezier(id, NF(1), NF(2), NF(3), NF(4), NF(5), NF(6)); break;
+	case CV_QUAD: cv_quad(id, NF(1), NF(2), NF(3), NF(4)); break;
+	case CV_ELL: cv_ellipse(id, NF(1), NF(2), NF(3), NF(4), NF(5), NF(6), NF(7), argc > 8 && JS_ToBool(ctx, argv[8])); break;
+	case CV_ARCTO: cv_arc_to(id, NF(1), NF(2), NF(3), NF(4), NF(5)); break;
+	case CV_RECT: cv_rect(id, NF(1), NF(2), NF(3), NF(4)); break;
+	case CV_CLOSE: cv_close(id); break;
+	case CV_FILL: cv_fill(id, argc > 1 && JS_ToBool(ctx, argv[1])); break;
+	case CV_STROKE: cv_stroke(id); break;
+	case CV_FRECT: cv_fill_rect(id, NF(1), NF(2), NF(3), NF(4)); break;
+	case CV_CRECT: cv_clear_rect(id, NF(1), NF(2), NF(3), NF(4)); break;
+	case CV_STYLE: // fill, stroke (0xAABBGGRR), alpha, lineWidth, cap, join, miter, composición
+		cv_style(id, (uint32_t)num(ctx, argc, argv, 1), (uint32_t)num(ctx, argc, argv, 2), NF(3), NF(4), NI(5), NI(6), NF(7), NI(8));
+		break;
+	case CV_DRAWCV: { // de otro lienzo: (id, otro, sx, sy, sw, sh, dx, dy, dw, dh)
+		int w = 0, h = 0;
+		uint8_t *px = cv_take(NI(1), &w, &h, true);
+		if (px) {
+			float sw = NF(4), sh = NF(5);
+			cv_draw_image(id, px, w, h, NF(2), NF(3), sw > 0 ? sw : w, sh > 0 ? sh : h, NF(6), NF(7), NF(8), NF(9));
+			free(px);
+		}
+		break;
+	}
+	}
+	return JS_UNDEFINED;
+}
+// cvText(id, texto, x, y, px, negrita, dibujar): el ancho
+static JSValue f_cvText(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	const char *s = argc > 1 ? JS_ToCString(ctx, argv[1]) : NULL;
+	if (!s)
+		return JS_NewFloat64(ctx, 0);
+	float w = cv_text(NI(0), s, NF(2), NF(3), NF(4), argc > 5 && JS_ToBool(ctx, argv[5]), argc > 6 && JS_ToBool(ctx, argv[6]));
+	JS_FreeCString(ctx, s);
+	return JS_NewFloat64(ctx, w);
+}
+static JSValue f_cvMetrics(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	float a, d;
+	cv_text_metrics(NF(0), argc > 1 && JS_ToBool(ctx, argv[1]), &a, &d);
+	JSValue r = JS_NewArray(ctx);
+	JS_SetPropertyUint32(ctx, r, 0, JS_NewFloat64(ctx, a));
+	JS_SetPropertyUint32(ctx, r, 1, JS_NewFloat64(ctx, d));
+	return r;
+}
+static JSValue f_cvTransform(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	float m[6];
+	cv_get_transform(NI(0), m);
+	JSValue r = JS_NewArray(ctx);
+	for (int i = 0; i < 6; i++)
+		JS_SetPropertyUint32(ctx, r, (uint32_t)i, JS_NewFloat64(ctx, m[i]));
+	return r;
+}
+// cvGet(id, x, y, w, h): un ArrayBuffer con sus píxeles RGBA
+static JSValue f_cvGet(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	int w = NI(3), h = NI(4);
+	if (w <= 0 || h <= 0 || (long)w * h > 4 * 1024 * 1024)
+		return JS_ThrowRangeError(ctx, "getImageData: tamaño no válido");
+	uint8_t *b = malloc((size_t)w * h * 4);
+	if (!b)
+		return JS_ThrowOutOfMemory(ctx);
+	cv_get(NI(0), NI(1), NI(2), w, h, b);
+	JSValue r = JS_NewArrayBufferCopy(ctx, b, (size_t)w * h * 4);
+	free(b);
+	return r;
+}
+// cvPut(id, datos (Uint8ClampedArray), w, h, dx, dy)
+static JSValue f_cvPut(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	if (argc < 6)
+		return JS_UNDEFINED;
+	size_t off = 0, len = 0, el = 0, n = 0;
+	JSValue ab = JS_GetTypedArrayBuffer(ctx, argv[1], &off, &len, &el);
+	if (JS_IsException(ab))
+		return ab;
+	uint8_t *p = JS_GetArrayBuffer(ctx, &n, ab);
+	int w = NI(2), h = NI(3);
+	if (p && w > 0 && h > 0 && off + len <= n && len >= (size_t)w * h * 4)
+		cv_put(NI(0), p + off, w, h, NI(4), NI(5));
+	JS_FreeValue(ctx, ab);
+	return JS_UNDEFINED;
+}
+static JSValue f_cvPng(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
+{
+	(void)t;
+	char *u = cv_png_data_url(NI(0));
+	JSValue r = JS_NewString(ctx, u ? u : "data:,");
+	free(u);
+	return r;
+}
+#undef NF
+#undef NI
 
 static JSValue f_type(JSContext *ctx, JSValueConst t, int argc, JSValueConst *argv)
 {
@@ -802,6 +941,32 @@ static const JSCFunctionListEntry NATIVE[] = {
     JS_CFUNC_DEF("runCode", 1, f_runCode),
     JS_CFUNC_DEF("runModule", 2, f_runModule),
     JS_CFUNC_DEF("rect", 1, f_rect),
+    JS_CFUNC_DEF("cvNew", 3, f_cvNew),
+    JS_CFUNC_MAGIC_DEF("cvResize", 3, f_cv, CV_RESIZE),
+    JS_CFUNC_MAGIC_DEF("cvSave", 1, f_cv, CV_SAVE),
+    JS_CFUNC_MAGIC_DEF("cvRestore", 1, f_cv, CV_RESTORE),
+    JS_CFUNC_MAGIC_DEF("cvSetT", 7, f_cv, CV_SETT),
+    JS_CFUNC_MAGIC_DEF("cvBegin", 1, f_cv, CV_BEGIN),
+    JS_CFUNC_MAGIC_DEF("cvMove", 3, f_cv, CV_MOVE),
+    JS_CFUNC_MAGIC_DEF("cvLine", 3, f_cv, CV_LINE),
+    JS_CFUNC_MAGIC_DEF("cvBez", 7, f_cv, CV_BEZ),
+    JS_CFUNC_MAGIC_DEF("cvQuad", 5, f_cv, CV_QUAD),
+    JS_CFUNC_MAGIC_DEF("cvEll", 9, f_cv, CV_ELL),
+    JS_CFUNC_MAGIC_DEF("cvArcTo", 6, f_cv, CV_ARCTO),
+    JS_CFUNC_MAGIC_DEF("cvRect", 5, f_cv, CV_RECT),
+    JS_CFUNC_MAGIC_DEF("cvClose", 1, f_cv, CV_CLOSE),
+    JS_CFUNC_MAGIC_DEF("cvFill", 2, f_cv, CV_FILL),
+    JS_CFUNC_MAGIC_DEF("cvStroke", 1, f_cv, CV_STROKE),
+    JS_CFUNC_MAGIC_DEF("cvFillRect", 5, f_cv, CV_FRECT),
+    JS_CFUNC_MAGIC_DEF("cvClearRect", 5, f_cv, CV_CRECT),
+    JS_CFUNC_MAGIC_DEF("cvStyle", 9, f_cv, CV_STYLE),
+    JS_CFUNC_MAGIC_DEF("cvDrawCv", 10, f_cv, CV_DRAWCV),
+    JS_CFUNC_DEF("cvText", 7, f_cvText),
+    JS_CFUNC_DEF("cvMetrics", 2, f_cvMetrics),
+    JS_CFUNC_DEF("cvTransform", 1, f_cvTransform),
+    JS_CFUNC_DEF("cvGet", 5, f_cvGet),
+    JS_CFUNC_DEF("cvPut", 6, f_cvPut),
+    JS_CFUNC_DEF("cvPng", 1, f_cvPng),
     JS_CFUNC_DEF("find", 5, f_find),
     JS_CFUNC_DEF("frameOf", 1, f_frameOf),
     JS_CFUNC_DEF("post", 3, f_post),

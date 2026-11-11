@@ -1051,7 +1051,7 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 	}
 	char tag[16];
 	tag_of(n, tag, sizeof tag);
-	if (in_list(tag, NEVER) && !(C->L->frames && !strcmp(tag, "iframe"))) // (los iframe, si el navegador los pinta)
+	if (in_list(tag, NEVER) && !(C->L->frames && !strcmp(tag, "iframe")) && !(C->L->canvas && !strcmp(tag, "canvas"))) // (los iframe, si el navegador los pinta)
 		return;
 	char *env = NULL;
 	css_computed_style *cs = brcss_style_env(C->L->css, n, pcs, C->vw, parent ? parent->s->env : NULL, &env);
@@ -1227,6 +1227,15 @@ static void build_el(Ctx *C, Box *parent, dom_node *n, const css_computed_style 
 		char v[32];
 		iw = attr(n, "width", v, sizeof v) && atof(v) > 0 ? (float)atof(v) : 300;
 		ih = attr(n, "height", v, sizeof v) && atof(v) > 0 ? (float)atof(v) : 150;
+	} else if (!strcmp(tag, "canvas")) { // lo que dibuje el JavaScript: su hueco (300x150 si no dice) y sus píxeles
+		replaced = true;
+		char v[32];
+		iw = attr(n, "width", v, sizeof v) && atof(v) >= 0 && v[0] ? (float)atof(v) : 300;
+		ih = attr(n, "height", v, sizeof v) && atof(v) >= 0 && v[0] ? (float)atof(v) : 150;
+		if (!C->L->light && C->L->img) {
+			float kw = 0, kh = 0;
+			s->img = (int16_t)C->L->img(C->L->u, n, "canvas:", &kw, &kh);
+		}
 	} else if (!strcmp(tag, "svg")) {
 		replaced = true;
 		if (C->L->light || !C->L->svg || (s->img = (int16_t)C->L->svg(C->L->u, n, cs, &iw, &ih)) < 0) {

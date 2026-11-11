@@ -48,8 +48,8 @@ static const char UA_CSS[] =
     "hgroup,legend,search{display:block}"
     "li{display:list-item}"
     "head,script,style,noscript,template,title,meta,link,base,datalist,param,source,track,area,map,"
-    "canvas,video,audio,object,embed,dialog,input[type=hidden]{display:none}"
-    "iframe{display:inline-block;border:2px inset #767676}" /* (otra página en su hueco: la pinta el navegador) */
+    "video,audio,object,embed,dialog,input[type=hidden]{display:none}"
+    "iframe{display:inline-block;border:2px inset #767676}canvas{display:inline}" /* (otra página en su hueco: la pinta el navegador) */
     "svg{display:inline}" /* los dibujos de la página se pintan (como imagen) */
     "input,button,select,textarea{display:inline-block}button{text-align:center}"
     "[hidden]{display:none}"

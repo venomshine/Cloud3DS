@@ -23,6 +23,7 @@
 #include "icons.h"
 #include "img.h"
 #include "svg.h"
+#include "canvas.h"
 #include "jsdom.h"
 #include "ui.h"
 #include "util.h"
@@ -1334,6 +1335,7 @@ static void frames_free(void)
 	}
 	memset(FR, 0, sizeof FR);
 	NFR = 0;
+	cv_free_all(); // (los <canvas> de la página y de sus iframes)
 	for (int i = 0; i < NFMQ; i++)
 		free(FMQ[i].json);
 	NFMQ = 0;
@@ -2296,6 +2298,49 @@ static void img_thread(void *arg)
 			         b.p && b.n >= 12 ? (!memcmp(b.p + 8, "WEBP", 4) ? "webp" : !memcmp(b.p + 4, "ftyp", 4) ? "avif" : b.p) : "-");
 		}
 		free(b.p);
+	}
+}
+
+static int next_pow2i(int v)
+{
+	int p = 8;
+	while (p < v)
+		p <<= 1;
+	return p;
+}
+// los <canvas> que cambiaron: sus píxeles a su textura (cada 3 fotogramas como mucho; reducidos si son grandes)
+static void cv_upload(void)
+{
+	static int tick;
+	if (++tick % 3 || !B.nimg)
+		return;
+	for (int i = 0; i < B.nimg; i++) {
+		PImg *im = &B.img[i];
+		if (im->st != IM_TEX || strncmp(im->url, "canvas:", 7))
+			continue;
+		int w = 0, h = 0;
+		u8 *px = cv_take(atoi(im->url + 7), &w, &h, !im->tex.ok);
+		if (!px)
+			continue;
+		float k = fminf(1, fminf(1024.0f / w, 1024.0f / h));
+		int tw = (int)(w * k), th = (int)(h * k);
+		while (tw > 8 && th > 8 && (long)next_pow2i(tw) * next_pow2i(th) > 512 * 1024)
+			tw = tw * 9 / 10, th = th * 9 / 10;
+		tw = tw < 1 ? 1 : tw, th = th < 1 ? 1 : th;
+		if (tw != w || th != h) { // (al tamaño de la textura: el más cercano)
+			u8 *d = malloc((size_t)tw * th * 4);
+			if (d)
+				for (int y = 0; y < th; y++)
+					for (int x = 0; x < tw; x++)
+						memcpy(d + ((size_t)y * tw + x) * 4, px + ((size_t)(y * h / th) * w + x * w / tw) * 4, 4);
+			free(px);
+			px = d;
+		}
+		if (px && !tex_from_rgba(&im->tex, px, tw, th))
+			im->st = IM_FAIL;
+		im->iw = tw, im->ih = th, im->ow = w, im->oh = h;
+		free(px);
+		B.page_ver++;
 	}
 }
 
@@ -4253,6 +4298,18 @@ static int bl_img(void *u, dom_node *n, const char *src, float *iw, float *ih)
 	(void)u;
 	char abs[1024];
 	int k;
+	if (!strcmp(src, "canvas:")) { // un <canvas>: sus píxeles los pone el hilo principal (cv_upload), no se bajan
+		int id = cv_of(n);
+		if (!id)
+			return -1;
+		snprintf(abs, sizeof abs, "canvas:%d", id);
+		k = img_find_or_add(abs);
+		if (k >= 0 && B.img[k].st == IM_WAIT)
+			B.img[k].st = IM_TEX; // (sin textura aún: no se pinta nada hasta que llegue)
+		if (k >= 0)
+			B.img[k].sized = true;
+		return k;
+	}
 	if (!strncmp(src, "data:", 5)) { // la imagen va dentro de la página (base64): entera, del atributo
 		dom_string *kk = NULL, *v = NULL;
 		k = -1;
@@ -4582,6 +4639,7 @@ static float layout_boxes(void)
 	           .text_w = bl_tw, .line_h = bl_lh, .link = bl_link, .clk = bl_clk, .img = bl_img, .svg = bl_svg, .wdg = bl_wdg,
 	           .bg = bl_bg, .text = bl_text, .box = bl_box, .bgimg = bl_bgimg, .geom = bl_geom, .glyph = bl_glyph, .stop = bl_stop};
 	L.frames = !L.light && B.js;
+	L.canvas = L.frames;
 	uint32_t pbg = 0;
 	geo_reset(B.nel_total);
 	float h = brl_run(&L, B.doc, &pbg);
@@ -4593,7 +4651,7 @@ static float layout_boxes(void)
 		if (!f->doc || !f->css || r[2] < 1 || r[3] < 1)
 			continue;
 		BrLay L2 = L;
-		L2.css = f->css, L2.vw = r[2], L2.vh = r[3], L2.frames = false; // (sin iframes dentro de iframes)
+		L2.css = f->css, L2.vw = r[2], L2.vh = r[3], L2.frames = false, L2.canvas = !L2.light && B.js; // (sin iframes dentro de iframes)
 		FT.on = true, FT.ox = r[0], FT.oy = r[1], FT.x0 = r[0], FT.y0 = r[1], FT.x1 = r[0] + r[2], FT.y1 = r[1] + r[3];
 		DOC_BASE = f->url, DOC_W = r[2];
 		uint32_t fbg = 0;
@@ -5662,6 +5720,7 @@ void br_top(void)
 		(void)X;
 		return;
 	}
+	cv_upload();
 	// texturas de las imágenes ya decodificadas (pocas por fotograma, para no dar tirones)
 	for (int i = 0, up = 0; i < B.nimg && up < 2; i++)
 		if (B.img[i].st == IM_RGBA) {

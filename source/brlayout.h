@@ -73,6 +73,7 @@ typedef struct {
 	/* parar: la página se deja o no queda memoria */
 	bool (*stop)(void *u);
 	bool frames;         /* los <iframe> ocupan su hueco (el navegador pinta su página dentro) */
+	bool canvas;         /* los <canvas> también (los dibuja el JavaScript; img con «canvas:») */
 } BrLay;
 
 /* maqueta la página; devuelve su alto. page_bg: el fondo de la página (de <html> o <body>; 0 si no) */

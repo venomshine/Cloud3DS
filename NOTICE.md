@@ -42,6 +42,7 @@ Las siguientes partes conservan sus propias licencias:
 - `lib/stb/stb_truetype.h` — [stb_truetype](https://github.com/nothings/stb) de Sean Barrett (los iconos de las fuentes propias de las páginas), dominio público o licencia MIT (a elegir).
 - `lib/nanosvg.h`, `lib/nanosvgrast.h` — [NanoSVG](https://github.com/memononen/nanosvg) de Mikko Mononen (leer y pintar imágenes SVG en el navegador), licencia zlib (`lib/nanosvg-LICENSE.txt`).
 - `lib/webp/` — decodificador de [libwebp](https://chromium.googlesource.com/webm/libwebp) 1.4.0 de Google (imágenes WebP de las webs), licencia BSD-3-Clause (`lib/webp/COPYING`, `lib/webp/PATENTS`).
+- `romfs/fonts/LiberationSans-*.ttf` — [Liberation Sans](https://github.com/liberationfonts/liberation-fonts) 2 de Red Hat (el texto de los `<canvas>` de las webs), SIL Open Font License 1.1 (`romfs/fonts/OFL.txt`).
 - `qjs/` — [QuickJS-ng](https://github.com/quickjs-ng/quickjs) de Fabrice Bellard, Charlie Gordon y colaboradores (JavaScript del navegador), licencia MIT (`qjs/LICENSE`).
 - `nsweb/` — librerías de [NetSurf](https://www.netsurf-browser.org/) (libhubbub, libdom, libcss, libparserutils, libwapcaplet) para el navegador, licencia MIT (ver `nsweb/README.md` y el COPYING de cada una).
 - [libctru, citro2d y citro3d](https://github.com/devkitPro) (enlazadas al compilar), licencia zlib.
