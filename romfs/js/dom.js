@@ -34,7 +34,7 @@ function nodeOf(x) { return typeof x === 'string' ? document.createTextNode(x) :
 /* un <script> que la página mete con appendChild/insertBefore se ejecuta (como en un navegador; los de
  * innerHTML no). Los externos, en cuanto se pueda, y luego su evento load (o error) */
 const ran = new Set();
-function jsType(el) { const t = (el.getAttribute('type') || '').toLowerCase(); return !t || /^(text|application)\/(x-)?(java|ecma)script$/.test(t) || t === 'module'; }
+function jsType(el) { const t = (el.getAttribute('type') || '').toLowerCase(); return t === 'module' || (!el.hasAttribute('nomodule') && (!t || /^(text|application)\/(x-)?(java|ecma)script$/.test(t))); }
 function inserted(node) {
 	if (!node || !node._h) return;
 	const scripts = node.nodeType === ELEMENT && node.localName === 'script' ? [node] : node.nodeType === ELEMENT || node.nodeType === FRAG ? qsa(node, 'script') : [];
@@ -42,62 +42,90 @@ function inserted(node) {
 		const id = N.id(sc._h);
 		if (ran.has(id) || !jsType(sc) || !sc.isConnected) continue;
 		ran.add(id);
-		const src = sc.getAttribute('src');
+		const src = sc.getAttribute('src'), mod = (sc.getAttribute('type') || '').toLowerCase() === 'module';
 		if (src) setTimeout(() => {
-			const prev = G.__script; G.__script = sc;
-			const ok = N.runSrc(resolveUrl(location.href, src));
+			const prev = G.__script; G.__script = mod ? null : sc;
+			const ok = mod ? N.runModule(resolveUrl(location.href, src), true) : N.runSrc(resolveUrl(location.href, src));
 			G.__script = prev;
 			sc.dispatchEvent(new Event(ok ? 'load' : 'error'));
 		}, 0);
+		else if (mod) setTimeout(() => N.runModule(sc.textContent, false), 0);
 		else { const prev = G.__script; G.__script = sc; N.runCode(sc.textContent); G.__script = prev; }
 	}
 }
 
 /* ---------- eventos */
+const NONE = 0, CAPTURING = 1, AT_TARGET = 2, BUBBLING = 3;
 class Event {
 	constructor(type, init) {
 		init = init || {};
-		this.type = type; this.bubbles = !!init.bubbles; this.cancelable = !!init.cancelable;
-		this.defaultPrevented = false; this._stop = false; this.target = null; this.currentTarget = null;
-		this.timeStamp = N.now(); this.detail = init.detail;
+		this.type = String(type); this.bubbles = !!init.bubbles; this.cancelable = !!init.cancelable; this.composed = !!init.composed;
+		this.defaultPrevented = false; this._stop = false; this._stopNow = false; this.target = null; this.currentTarget = null;
+		this.eventPhase = NONE; this.isTrusted = false; this.timeStamp = N.now(); this.returnValue = true; this.cancelBubble = false;
+		// lo demás que traiga (detail, data, key, clientX…: CustomEvent, MessageEvent, KeyboardEvent, MouseEvent…)
+		for (const k in init) if (!(k in this)) this[k] = init[k];
 	}
-	preventDefault() { this.defaultPrevented = true; }
-	stopPropagation() { this._stop = true; }
-	stopImmediatePropagation() { this._stop = true; }
+	preventDefault() { if (this.cancelable) { this.defaultPrevented = true; this.returnValue = false; } }
+	stopPropagation() { this._stop = true; this.cancelBubble = true; }
+	stopImmediatePropagation() { this._stop = true; this._stopNow = true; }
+	composedPath() { const p = []; for (let n = this.target; n; n = n === document ? G : n === G ? null : n.parentNode) p.push(n); return p; }
+	get srcElement() { return this.target; }
+	initEvent(type, bubbles, cancelable) { this.type = String(type); this.bubbles = !!bubbles; this.cancelable = !!cancelable; }
+	initCustomEvent(type, bubbles, cancelable, detail) { this.initEvent(type, bubbles, cancelable); this.detail = detail; }
 }
-class CustomEvent extends Event {}
+Event.NONE = NONE; Event.CAPTURING_PHASE = CAPTURING; Event.AT_TARGET = AT_TARGET; Event.BUBBLING_PHASE = BUBBLING;
+class CustomEvent extends Event { constructor(t, i) { super(t, i); if (!('detail' in this)) this.detail = null; } }
+/* escuchas: por nodo (los de libdom, por su id; window y los demás objetos, en un WeakMap) y por tipo, con
+ * captura, once y passive como en un navegador */
+const objListeners = new WeakMap();
+function lmap(t, make) {
+	if (t._h) { const id = N.id(t._h); let m = listeners.get(id); if (!m && make) listeners.set(id, m = {}); return m; }
+	let m = objListeners.get(t); if (!m && make) objListeners.set(t, m = {}); return m;
+}
 class EventTarget {
 	addEventListener(type, fn, opt) {
 		if (!fn) return;
-		const id = this._h ? N.id(this._h) : this === G ? 'window' : 'other';
-		let m = listeners.get(id); if (!m) listeners.set(id, m = {});
-		(m[type] = m[type] || []).push(fn);
+		if (this == null) return G.addEventListener(type, fn, opt); // (suelta: «addEventListener(…)» es la de window)
+		const capture = typeof opt === 'boolean' ? opt : !!(opt && opt.capture), once = !!(opt && opt.once);
+		const m = lmap(this, true), l = m[type] || (m[type] = []);
+		if (l.some(x => x.fn === fn && x.capture === capture)) return;
+		l.push({ fn, capture, once });
+		if (opt && opt.signal && opt.signal.addEventListener) opt.signal.addEventListener('abort', () => this.removeEventListener(type, fn, opt));
 	}
-	removeEventListener(type, fn) {
-		const id = this._h ? N.id(this._h) : this === G ? 'window' : 'other';
-		const m = listeners.get(id); if (!m || !m[type]) return;
-		m[type] = m[type].filter(f => f !== fn);
+	removeEventListener(type, fn, opt) {
+		if (this == null) return G.removeEventListener(type, fn, opt);
+		const capture = typeof opt === 'boolean' ? opt : !!(opt && opt.capture);
+		const m = lmap(this, false); if (!m || !m[type]) return;
+		m[type] = m[type].filter(x => !(x.fn === fn && x.capture === capture));
 	}
 	dispatchEvent(ev) {
-		if (!ev.target) ev.target = this;
-		let node = this;
-		while (node) {
-			const id = node._h ? N.id(node._h) : node === G ? 'window' : 'other';
-			const m = listeners.get(id);
-			ev.currentTarget = node;
-			let on = node['on' + ev.type];
-			if (typeof on !== 'function' && node._h && N.type(node._h) === ELEMENT) { // onclick="…" en el HTML
-				const code = N.getA(node._h, 'on' + ev.type);
-				if (code) try { on = inlineHandler(node, ev.type, code); } catch (e) { report(e); }
+		if (this == null) return G.dispatchEvent(ev);
+		ev.target = this; ev._stop = ev._stopNow = false;
+		// el camino: de window al objetivo (captura), el objetivo y de vuelta hacia arriba (burbuja)
+		const path = [];
+		for (let n = this; n; n = n === document ? G : n === G ? null : n.parentNode) path.push(n);
+		const call = (node, phase) => {
+			ev.currentTarget = node; ev.eventPhase = phase;
+			const m = lmap(node, false);
+			if (phase !== CAPTURING) {
+				let on = node['on' + ev.type];
+				if (typeof on !== 'function' && node._h && N.type(node._h) === ELEMENT) { // onclick="…" en el HTML
+					const code = N.getA(node._h, 'on' + ev.type);
+					if (code) try { on = inlineHandler(node, ev.type, code); } catch (e) { report(e); }
+				}
+				if (typeof on === 'function') try { if (on.call(node, ev) === false) ev.preventDefault(); } catch (e) { report(e); }
 			}
-			if (typeof on === 'function') try { if (on.call(node, ev) === false) ev.preventDefault(); } catch (e) { report(e); }
-			if (m && m[ev.type]) for (const f of m[ev.type].slice()) {
-				try { typeof f === 'function' ? f.call(node, ev) : f.handleEvent(ev); } catch (e) { report(e); }
-				if (ev._stop) break;
+			if (m && m[ev.type]) for (const x of m[ev.type].slice()) {
+				if (phase === CAPTURING && !x.capture || phase === BUBBLING && x.capture) continue;
+				if (x.once) m[ev.type] = m[ev.type].filter(y => y !== x);
+				try { typeof x.fn === 'function' ? x.fn.call(node, ev) : x.fn.handleEvent(ev); } catch (e) { report(e); }
+				if (ev._stopNow) break;
 			}
-			if (!ev.bubbles || ev._stop) break;
-			node = node === document ? G : node.parentNode || (node === G ? null : null);
-		}
+		};
+		for (let i = path.length - 1; i > 0 && !ev._stop; i--) call(path[i], CAPTURING);
+		if (!ev._stop) call(this, AT_TARGET);
+		if (ev.bubbles) for (let i = 1; i < path.length && !ev._stop; i++) call(path[i], BUBBLING);
+		ev.currentTarget = null; ev.eventPhase = NONE;
 		return !ev.defaultPrevented;
 	}
 }
@@ -110,6 +138,12 @@ function inlineHandler(node, type, code) {
 }
 function report(e) { N.log('js: ' + (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e)); }
 
+/* ---------- colecciones: arrays de verdad (forEach, for…of, Array.from) con item(), y su clase
+ * (instanceof NodeList / HTMLCollection) */
+class NodeList extends Array { item(i) { return this[i] ?? null; } }
+class HTMLCollection extends Array { item(i) { return this[i] ?? null; } namedItem(n) { return this.find(e => e.id === n || e.getAttribute('name') === n) || null; } }
+function listOf(C, it) { const a = new C(); for (const x of it) a.push(x); return a; }
+
 /* ---------- nodos */
 class Node extends EventTarget {
 	get nodeType() { return N.type(this._h); }
@@ -120,7 +154,7 @@ class Node extends EventTarget {
 	get lastChild() { return W(N.last(this._h)); }
 	get nextSibling() { return W(N.next(this._h)); }
 	get previousSibling() { return W(N.prev(this._h)); }
-	get childNodes() { const a = []; for (let c = N.first(this._h); c; c = N.next(c)) a.push(W(c)); a.item = i => a[i] || null; return a; }
+	get childNodes() { const a = new NodeList(); for (let c = N.first(this._h); c; c = N.next(c)) a.push(W(c)); return a; }
 	get ownerDocument() { return document; }
 	get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === document; }
 	get textContent() { return N.text(this._h); }
@@ -135,10 +169,33 @@ class Node extends EventTarget {
 	cloneNode(deep) { return W(N.clone(this._h, !!deep)); }
 	contains(o) { for (let n = o; n; n = n.parentNode) if (n === this) return true; return false; }
 	remove() { const p = this.parentNode; if (p) p.removeChild(this); }
-	compareDocumentPosition() { return 0; }
 	getRootNode() { let n = this; while (n.parentNode) n = n.parentNode; return n; }
-	isEqualNode(o) { return o === this; }
+	isEqualNode(o) { return !!o && o.nodeType === this.nodeType && (o === this || (this.nodeType === ELEMENT ? o.outerHTML === this.outerHTML : o.nodeValue === this.nodeValue)); }
 	isSameNode(o) { return o === this; }
+	normalize() {}
+	get baseURI() { return location.href; }
+	lookupNamespaceURI() { return null; }
+	// (el puesto en el documento: DOCUMENT_POSITION_PRECEDING 2, FOLLOWING 4, CONTAINS 8, CONTAINED_BY 16)
+	compareDocumentPosition(o) {
+		if (o === this) return 0;
+		if (this.contains(o)) return 20;
+		if (o.contains && o.contains(this)) return 10;
+		const order = []; walkAll(document, n => { if (n === this || n === o) order.push(n); return order.length === 2; });
+		return order[0] === this ? 4 : order[0] === o ? 2 : 1;
+	}
+}
+for (const [k, v] of Object.entries({ ELEMENT_NODE: 1, ATTRIBUTE_NODE: 2, TEXT_NODE: 3, CDATA_SECTION_NODE: 4, PROCESSING_INSTRUCTION_NODE: 7, COMMENT_NODE: 8, DOCUMENT_NODE: 9, DOCUMENT_TYPE_NODE: 10, DOCUMENT_FRAGMENT_NODE: 11,
+	DOCUMENT_POSITION_DISCONNECTED: 1, DOCUMENT_POSITION_PRECEDING: 2, DOCUMENT_POSITION_FOLLOWING: 4, DOCUMENT_POSITION_CONTAINS: 8, DOCUMENT_POSITION_CONTAINED_BY: 16 })) { Node[k] = v; Node.prototype[k] = v; }
+// todos los nodos en orden (también texto), hasta que fn devuelva true
+function walkAll(root, fn) {
+	const st = []; let h = N.first(root._h);
+	while (h || st.length) {
+		if (!h) { h = N.next(st.pop()); continue; }
+		if (fn(W(h))) return true;
+		const f = N.first(h); if (f) { st.push(h); h = f; continue; }
+		h = N.next(h);
+	}
+	return false;
 }
 class CharacterData extends Node {
 	get data() { return N.data(this._h); }
@@ -146,8 +203,14 @@ class CharacterData extends Node {
 	get length() { return this.data.length; }
 	get nextElementSibling() { return nextEl(this); }
 	get previousElementSibling() { return prevEl(this); }
+	appendData(d) { this.data += d; } deleteData(o, n) { const s = this.data; this.data = s.slice(0, o) + s.slice(o + n); }
+	insertData(o, d) { const s = this.data; this.data = s.slice(0, o) + d + s.slice(o); } substringData(o, n) { return this.data.substr(o, n); }
+	replaceData(o, n, d) { const s = this.data; this.data = s.slice(0, o) + d + s.slice(o + n); }
+	before(...ns) { const p = this.parentNode; if (p) for (const n of ns) p.insertBefore(nodeOf(n), this); }
+	after(...ns) { const p = this.parentNode, nx = this.nextSibling; if (p) for (const n of ns) p.insertBefore(nodeOf(n), nx); }
+	replaceWith(...ns) { this.before(...ns); this.remove(); }
 }
-class Text extends CharacterData { get wholeText() { return this.data; } }
+class Text extends CharacterData { get wholeText() { return this.data; } splitText(o) { const t = document.createTextNode(this.data.slice(o)); this.data = this.data.slice(0, o); this.after(t); return t; } }
 class Comment extends CharacterData {}
 function nextEl(n) { for (let c = N.next(n._h); c; c = N.next(c)) if (N.type(c) === ELEMENT) return W(c); return null; }
 function prevEl(n) { for (let c = N.prev(n._h); c; c = N.prev(c)) if (N.type(c) === ELEMENT) return W(c); return null; }
@@ -246,7 +309,7 @@ function walkEls(root, fn) {
 	}
 	return false;
 }
-function qsa(root, sel) { const out = []; walkEls(root, e => { if (matches(e, sel)) out.push(e); }); out.item = i => out[i] || null; return out; }
+function qsa(root, sel) { const out = new NodeList(); walkEls(root, e => { if (matches(e, sel)) out.push(e); }); return out; }
 function qs(root, sel) { let r = null; walkEls(root, e => { if (matches(e, sel)) { r = e; return true; } }); return r; }
 
 /* --- clases, estilo, data-* */
@@ -323,7 +386,7 @@ class Element extends Node {
 	hasAttribute(n) { return N.getA(this._h, String(n).toLowerCase()) !== null; }
 	toggleAttribute(n, f) { const h = this.hasAttribute(n); const want = f === undefined ? !h : !!f; if (want) this.setAttribute(n, ''); else this.removeAttribute(n); return want; }
 	getAttributeNames() { return N.attrs(this._h).map(x => x[0]); }
-	get children() { const a = []; for (let c = N.first(this._h); c; c = N.next(c)) if (N.type(c) === ELEMENT) a.push(W(c)); a.item = i => a[i] || null; return a; }
+	get children() { const a = new HTMLCollection(); for (let c = N.first(this._h); c; c = N.next(c)) if (N.type(c) === ELEMENT) a.push(W(c)); return a; }
 	get childElementCount() { return this.children.length; }
 	get firstElementChild() { for (let c = N.first(this._h); c; c = N.next(c)) if (N.type(c) === ELEMENT) return W(c); return null; }
 	get lastElementChild() { for (let c = N.last(this._h); c; c = N.prev(c)) if (N.type(c) === ELEMENT) return W(c); return null; }
@@ -392,6 +455,65 @@ class Element extends Node {
 	submit() { navigateForm(this); } reset() {}
 	play() { return Promise.resolve(); } pause() {} load() {}
 	getContext() { return null; } toDataURL() { return ''; }
+	// más de formularios
+	get selected() { return this.hasAttribute('selected'); } set selected(v) { this.toggleAttribute('selected', !!v); }
+	get defaultValue() { return this.localName === 'textarea' ? this.textContent : this.getAttribute('value') || ''; } set defaultValue(v) { this.setAttribute('value', v); }
+	get defaultChecked() { return this.hasAttribute('checked'); } set defaultChecked(v) { this.toggleAttribute('checked', !!v); }
+	get defaultSelected() { return this.hasAttribute('selected'); }
+	get required() { return this.hasAttribute('required'); } set required(v) { this.toggleAttribute('required', !!v); }
+	get readOnly() { return this.hasAttribute('readonly'); } set readOnly(v) { this.toggleAttribute('readonly', !!v); }
+	get multiple() { return this.hasAttribute('multiple'); } set multiple(v) { this.toggleAttribute('multiple', !!v); }
+	get placeholder() { return this.getAttribute('placeholder') || ''; } set placeholder(v) { this.setAttribute('placeholder', v); }
+	get maxLength() { const v = this.getAttribute('maxlength'); return v == null ? -1 : +v; } set maxLength(v) { this.setAttribute('maxlength', v); }
+	get labels() { const id = this.id; return id ? qsa(document, 'label[for="' + id + '"]') : new NodeList(); }
+	get validity() { return { valid: true, valueMissing: false, typeMismatch: false, patternMismatch: false, tooLong: false, tooShort: false, rangeUnderflow: false, rangeOverflow: false, stepMismatch: false, badInput: false, customError: false }; }
+	get validationMessage() { return ''; } get willValidate() { return true; }
+	checkValidity() { return true; } reportValidity() { return true; } setCustomValidity() {} requestSubmit() { this.submit(); }
+	get elements() { return qsa(this, 'input,select,textarea,button,fieldset,output,object'); }
+	setSelectionRange() {} setRangeText() {} get selectionStart() { return 0; } get selectionEnd() { return 0; }
+	// enlaces: las partes de su dirección (<a>, <area>)
+	get protocol() { return this._u().protocol; } get host() { return this._u().host; } get hostname() { return this._u().hostname; }
+	get port() { return this._u().port; } get pathname() { return this._u().pathname; } get search() { return this._u().search; }
+	get hash() { return this._u().hash; } get origin() { return this._u().origin; }
+	_u() { try { return new URL(this.getAttribute('href') || '', location.href); } catch (e) { return new URL(location.href); } }
+	get relList() { const el = this; return Object.assign(new DOMTokenList(el), { _get() { return (el.getAttribute('rel') || '').split(/\s+/).filter(Boolean); }, _set(a) { el.setAttribute('rel', a.join(' ')); }, supports: t => ['preload', 'prefetch', 'modulepreload', 'stylesheet', 'noopener', 'noreferrer'].includes(t) }); }
+	get target() { return this.getAttribute('target') || ''; } set target(v) { this.setAttribute('target', v); }
+	get download() { return this.getAttribute('download') || ''; }
+	get nonce() { return this.getAttribute('nonce') || ''; } set nonce(v) { this.setAttribute('nonce', v); }
+	get async() { return this.hasAttribute('async'); } set async(v) { this.toggleAttribute('async', !!v); }
+	get defer() { return this.hasAttribute('defer'); } set defer(v) { this.toggleAttribute('defer', !!v); }
+	get crossOrigin() { return this.getAttribute('crossorigin'); } set crossOrigin(v) { this.setAttribute('crossorigin', v); }
+	get integrity() { return this.getAttribute('integrity') || ''; } set integrity(v) { this.setAttribute('integrity', v); }
+	get loading() { return this.getAttribute('loading') || 'auto'; } set loading(v) { this.setAttribute('loading', v); }
+	get srcset() { return this.getAttribute('srcset') || ''; } set srcset(v) { this.setAttribute('srcset', v); }
+	get currentSrc() { return this.src; }
+	decode() { return Promise.resolve(); }
+	get width() { return +this.getAttribute('width') || 0; } set width(v) { this.setAttribute('width', v); }
+	get height() { return +this.getAttribute('height') || 0; } set height(v) { this.setAttribute('height', v); }
+	// varios
+	get namespaceURI() { return this.localName === 'svg' || this.closest && this.closest('svg') ? 'http://www.w3.org/2000/svg' : 'http://www.w3.org/1999/xhtml'; }
+	get prefix() { return null; }
+	get tabIndex() { const v = this.getAttribute('tabindex'); return v == null ? (/^(a|button|input|select|textarea)$/.test(this.localName) ? 0 : -1) : +v; } set tabIndex(v) { this.setAttribute('tabindex', v); }
+	get isContentEditable() { return this.getAttribute('contenteditable') === 'true' || this.getAttribute('contenteditable') === ''; }
+	get contentEditable() { return this.getAttribute('contenteditable') || 'inherit'; } set contentEditable(v) { this.setAttribute('contenteditable', v); }
+	get draggable() { return this.getAttribute('draggable') === 'true'; } get spellcheck() { return true; } get translate() { return true; }
+	get slot() { return this.getAttribute('slot') || ''; } get assignedSlot() { return null; } get shadowRoot() { return null; }
+	get role() { return this.getAttribute('role'); } set role(v) { this.setAttribute('role', v); }
+	get ariaLabel() { return this.getAttribute('aria-label'); } set ariaLabel(v) { this.setAttribute('aria-label', v); }
+	get ariaHidden() { return this.getAttribute('aria-hidden'); } set ariaHidden(v) { this.setAttribute('aria-hidden', v); }
+	get ariaExpanded() { return this.getAttribute('aria-expanded'); } set ariaExpanded(v) { this.setAttribute('aria-expanded', v); }
+	get contentWindow() { return null; } get contentDocument() { return null; } // (los iframes aún no tienen su página)
+	webkitMatchesSelector(s) { return this.matches(s); } msMatchesSelector(s) { return this.matches(s); } mozMatchesSelector(s) { return this.matches(s); }
+	getElementsByTagNameNS(ns, t) { return this.getElementsByTagName(t); }
+	getAttributeNS(ns, n) { return this.getAttribute(n); } setAttributeNS(ns, n, v) { this.setAttribute(String(n).replace(/^\w+:/, ''), v); }
+	removeAttributeNS(ns, n) { this.removeAttribute(n); } hasAttributeNS(ns, n) { return this.hasAttribute(n); }
+	hasAttributes() { return N.attrs(this._h).length > 0; }
+	getAttributeNode(n) { const v = this.getAttribute(n); return v == null ? null : { name: n, value: v, nodeName: n, nodeValue: v, specified: true }; }
+	scroll() {} scrollTo() {} scrollBy() {}
+	requestFullscreen() { return Promise.reject(new Error('no')); } requestPointerLock() {}
+	setPointerCapture() {} releasePointerCapture() {} hasPointerCapture() { return false; }
+	getAnimations() { return []; }
+	get clientTop() { return 0; } get clientLeft() { return 0; }
 }
 class Document extends Node {
 	get documentElement() { for (let c = N.first(this._h); c; c = N.next(c)) if (N.type(c) === ELEMENT) return W(c); return null; }
@@ -414,7 +536,6 @@ class Document extends Node {
 	createComment(s) { return W(N.createText('')); }
 	createDocumentFragment() { return W(N.createFrag()); }
 	createEvent() { return new Event(''); }
-	createRange() { return { selectNodeContents() {}, setStart() {}, setEnd() {}, collapse() {}, createContextualFragment: h => { const f = document.createDocumentFragment(); for (const x of N.parse(h)) N.append(f._h, x); return f; } }; }
 	createTreeWalker(root) { const a = []; walkEls(root, e => { a.push(e); }); let i = -1; return { nextNode() { i++; return a[i] || null; }, get currentNode() { return a[i] || root; } }; }
 	getElementById(id) { let r = null; id = String(id); walkEls(this, e => { if (N.getA(e._h, 'id') === id) { r = e; return true; } }); return r; }
 	getElementsByTagName(t) { t = String(t).toLowerCase(); return qsa(this, t === '*' ? '*' : t); }
@@ -446,6 +567,25 @@ class Document extends Node {
 	}
 	hasFocus() { return true; }
 	execCommand() { return false; }
+	get contentType() { return 'text/html'; } get inputEncoding() { return 'UTF-8'; } get charset() { return 'UTF-8'; }
+	get children() { const a = new HTMLCollection(); const d = this.documentElement; if (d) a.push(d); return a; }
+	get firstElementChild() { return this.documentElement; } get lastElementChild() { return this.documentElement; } get childElementCount() { return 1; }
+	get scrollingElement() { return this.documentElement; } get fullscreenElement() { return null; } get pointerLockElement() { return null; }
+	get styleSheets() { return []; } get fonts() { return { ready: Promise.resolve(), check: () => true, load: () => Promise.resolve([]), add() {}, addEventListener() {}, forEach() {}, status: 'loaded' }; }
+	get dir() { return this.documentElement ? this.documentElement.getAttribute('dir') || '' : ''; }
+	get prerendering() { return false; } get wasDiscarded() { return false; } get designMode() { return 'off'; }
+	get lastModified() { return new Date().toLocaleString(); }
+	getSelection() { return selection; }
+	createRange() { return new Range(); }
+	createNodeIterator(root, what, filter) { const a = []; walkAll(root, n => { a.push(n); }); let i = -1; return { nextNode() { i++; return a[i] || null; }, previousNode() { i--; return a[i] || null; }, detach() {} }; }
+	createAttribute(n) { return { name: n, value: '', nodeName: n, nodeValue: '' }; }
+	importNode(n, deep) { return n.cloneNode(deep); }
+	adoptNode(n) { return n; }
+	elementFromPoint() { return this.body; } elementsFromPoint() { return [this.body]; }
+	exitFullscreen() { return Promise.resolve(); }
+	append(...ns) { for (const n of ns) this.appendChild(nodeOf(n)); } prepend(...ns) { const f = this.firstChild; for (const n of ns) this.insertBefore(nodeOf(n), f); }
+	replaceChildren(...ns) { while (this.firstChild) this.removeChild(this.firstChild); this.append(...ns); }
+	startViewTransition(f) { try { f && f(); } catch (e) { report(e); } return { finished: Promise.resolve(), ready: Promise.resolve(), updateCallbackDone: Promise.resolve(), skipTransition() {} }; }
 }
 class DocumentFragment extends Node {
 	querySelector(s) { return qs(this, s); }
@@ -465,7 +605,7 @@ for (const k of ['MouseEvent', 'KeyboardEvent', 'FocusEvent', 'UIEvent', 'InputE
 for (const k of ['HTMLDivElement', 'HTMLSpanElement', 'HTMLAnchorElement', 'HTMLImageElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLFormElement', 'HTMLScriptElement', 'HTMLLinkElement', 'HTMLStyleElement', 'HTMLIFrameElement', 'HTMLVideoElement', 'HTMLAudioElement', 'HTMLMediaElement', 'HTMLCanvasElement', 'HTMLTemplateElement', 'HTMLSelectElement', 'HTMLTextAreaElement', 'HTMLBodyElement', 'HTMLHeadElement', 'HTMLHtmlElement', 'HTMLParagraphElement', 'HTMLUListElement', 'HTMLLIElement', 'HTMLTableElement', 'SVGElement', 'HTMLUnknownElement'])
 	G[k] = Element;
 const proto = EventTarget.prototype;
-G.addEventListener = proto.addEventListener; G.removeEventListener = proto.removeEventListener; G.dispatchEvent = proto.dispatchEvent;
+G.addEventListener = proto.addEventListener.bind(G); G.removeEventListener = proto.removeEventListener.bind(G); G.dispatchEvent = proto.dispatchEvent.bind(G);
 G.__cookies = []; G.__ready = false; G.__script = null;
 
 const loc0 = N.url;
@@ -574,11 +714,81 @@ G.TextEncoder = class { encode(s) { const u = unescape(encodeURIComponent(String
 G.TextDecoder = class { decode(a) { if (!a) return ''; let s = ''; for (const b of new Uint8Array(a.buffer || a)) s += String.fromCharCode(b); try { return decodeURIComponent(escape(s)); } catch (e) { return s; } } };
 G.Blob = class { constructor(parts) { this._t = (parts || []).join(''); this.size = this._t.length; } text() { return Promise.resolve(this._t); } };
 G.FormData = class { constructor(form) { this._p = []; if (form) for (const e of form.querySelectorAll('input[name],select[name],textarea[name]')) this._p.push([e.name, e.value]); } append(k, v) { this._p.push([k, String(v)]); } get(k) { const e = this._p.find(x => x[0] === k); return e ? e[1] : null; } entries() { return this._p[Symbol.iterator](); } };
-G.AbortController = class { constructor() { this.signal = { aborted: false, addEventListener() {}, removeEventListener() {} }; } abort() { this.signal.aborted = true; } };
+class AbortSignal extends EventTarget {
+	constructor() { super(); this.aborted = false; this.reason = undefined; this.onabort = null; }
+	throwIfAborted() { if (this.aborted) throw this.reason; }
+	_abort(r) { if (this.aborted) return; this.aborted = true; this.reason = r === undefined ? new Error('AbortError') : r; this.dispatchEvent(new Event('abort')); }
+	static abort(r) { const s = new AbortSignal(); s._abort(r); return s; }
+	static timeout(ms) { const s = new AbortSignal(); setTimeout(() => s._abort(new Error('TimeoutError')), ms); return s; }
+	static any(list) { const s = new AbortSignal(); for (const x of list) { if (x.aborted) { s._abort(x.reason); break; } x.addEventListener('abort', () => s._abort(x.reason)); } return s; }
+}
+G.AbortSignal = AbortSignal;
+G.AbortController = class { constructor() { this.signal = new AbortSignal(); } abort(r) { this.signal._abort(r); } };
 G.WebSocket = class { constructor() { setTimeout(() => this.onerror && this.onerror(new Event('error')), 0); } send() {} close() {} };
 G.Worker = class { postMessage() {} terminate() {} addEventListener() {} };
 G.BroadcastChannel = class { postMessage() {} close() {} addEventListener() {} };
 G.customElements = { define() {}, get() {}, whenDefined: () => Promise.resolve() };
+
+/* ---------- mensajes entre ventanas y canales (React los usa para repartir su trabajo): llegan después,
+ * como en un navegador, con su MessageEvent */
+G.origin = location.origin;
+G.name = '';
+G.closed = false; G.opener = null; G.frameElement = null; G.length = 0;
+G.isSecureContext = location.protocol === 'https:';
+G.postMessage = (data, targetOrigin) => { setTimeout(() => G.dispatchEvent(new G.MessageEvent('message', { data, origin: location.origin, source: G })), 0); };
+class MessagePort extends EventTarget {
+	constructor() { super(); this._other = null; this._started = false; this._q = []; }
+	postMessage(data) { const o = this._other; if (!o) return; setTimeout(() => { const ev = new G.MessageEvent('message', { data, target: o }); if (typeof o.onmessage === 'function') try { o.onmessage(ev); } catch (e) { report(e); } o.dispatchEvent(ev); }, 0); }
+	start() { this._started = true; } close() { this._other = null; }
+}
+G.MessagePort = MessagePort;
+G.MessageChannel = class { constructor() { this.port1 = new MessagePort(); this.port2 = new MessagePort(); this.port1._other = this.port2; this.port2._other = this.port1; } };
+// copia profunda (lo que cabe en JSON, más fechas, Map y Set)
+G.structuredClone = (v, seen = new Map()) => {
+	if (v === null || typeof v !== 'object') return v;
+	if (seen.has(v)) return seen.get(v);
+	if (v instanceof Date) return new Date(v.getTime());
+	if (v instanceof RegExp) return new RegExp(v.source, v.flags);
+	if (ArrayBuffer.isView(v)) return v.slice();
+	if (v instanceof Map) { const m = new Map(); seen.set(v, m); for (const [k, x] of v) m.set(G.structuredClone(k, seen), G.structuredClone(x, seen)); return m; }
+	if (v instanceof Set) { const m = new Set(); seen.set(v, m); for (const x of v) m.add(G.structuredClone(x, seen)); return m; }
+	const o = Array.isArray(v) ? [] : {}; seen.set(v, o);
+	for (const k of Object.keys(v)) o[k] = G.structuredClone(v[k], seen);
+	return o;
+};
+G.FileReader = class extends EventTarget {
+	constructor() { super(); this.readyState = 0; this.result = null; this.error = null; }
+	_done(r) { this.readyState = 2; this.result = r; setTimeout(() => { const ev = new Event('load'); for (const t of ['load', 'loadend']) { const e = new Event(t); e.target = this; if (typeof this['on' + t] === 'function') try { this['on' + t](e); } catch (x) { report(x); } this.dispatchEvent(e); } }, 0); }
+	readAsText(b) { this._done(b && b._t != null ? b._t : String(b)); }
+	readAsDataURL(b) { this._done('data:' + (b && b.type || 'application/octet-stream') + ';base64,' + G.btoa(unescape(encodeURIComponent(b && b._t != null ? b._t : '')))); }
+	readAsArrayBuffer(b) { this._done(new G.TextEncoder().encode(b && b._t != null ? b._t : '').buffer); }
+	readAsBinaryString(b) { this._done(b && b._t != null ? b._t : ''); }
+	abort() {}
+};
+G.XMLSerializer = class { serializeToString(n) { return n.nodeType === ELEMENT ? n.outerHTML : n.nodeType === DOC ? n.documentElement.outerHTML : n.textContent; } };
+G.clearImmediate = id => clearTimeout(id);
+G.PromiseRejectionEvent = class extends Event {};
+G.Window = function Window() {}; G.Window.prototype = Object.getPrototypeOf(G);
+G.NodeList = NodeList; G.HTMLCollection = HTMLCollection; G.DOMTokenList = DOMTokenList;
+// (las listas del DOM que algunas librerías recorren al empezar: core-js, por ejemplo)
+for (const k of ['CSSRuleList', 'CSSStyleDeclaration', 'CSSValueList', 'ClientRectList', 'DOMRectList', 'DOMStringList', 'DataTransferItemList', 'FileList', 'HTMLAllCollection', 'MediaList', 'MimeTypeArray', 'NamedNodeMap',
+	'PaintRequestList', 'Plugin', 'PluginArray', 'SVGLengthList', 'SVGNumberList', 'SVGPathSegList', 'SVGPointList', 'SVGStringList', 'SVGTransformList', 'SourceBufferList', 'StyleSheetList', 'TextTrackCueList', 'TextTrackList', 'TouchList'])
+	if (!G[k]) G[k] = class extends Array { item(i) { return this[i] ?? null; } };
+G.Storage = class {};
+// rangos y selección: lo básico (sin medidas de verdad)
+class Range {
+	constructor() { this.startContainer = document; this.startOffset = 0; this.endContainer = document; this.endOffset = 0; this.collapsed = true; this.commonAncestorContainer = document; }
+	setStart(n, o) { this.startContainer = n; this.startOffset = o; } setEnd(n, o) { this.endContainer = n; this.endOffset = o; this.collapsed = false; }
+	setStartBefore(n) { this.startContainer = n.parentNode; } setStartAfter(n) { this.startContainer = n.parentNode; } setEndBefore(n) { this.endContainer = n.parentNode; } setEndAfter(n) { this.endContainer = n.parentNode; }
+	selectNode(n) { this.startContainer = this.endContainer = this.commonAncestorContainer = n.parentNode || n; } selectNodeContents(n) { this.startContainer = this.endContainer = this.commonAncestorContainer = n; }
+	collapse() { this.collapsed = true; } cloneRange() { return Object.assign(new Range(), this); } detach() {}
+	createContextualFragment(h) { const f = document.createDocumentFragment(); for (const x of N.parse(String(h))) N.append(f._h, x); return f; }
+	getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; } getClientRects() { return []; }
+	toString() { return ''; } deleteContents() {} extractContents() { return document.createDocumentFragment(); } cloneContents() { return document.createDocumentFragment(); } insertNode() {} surroundContents() {}
+}
+G.Range = Range;
+const selection = { rangeCount: 0, isCollapsed: true, type: 'None', anchorNode: null, focusNode: null, getRangeAt: () => new Range(), addRange() {}, removeAllRanges() {}, removeRange() {}, collapse() {}, selectAllChildren() {}, toString: () => '', empty() {} };
+G.getSelection = () => selection;
 G.speechSynthesis = undefined;
 
 /* ---------- red: fetch y XMLHttpRequest (las respuestas llegan sin esperar: va en su hilo) */
