@@ -149,6 +149,7 @@ struct CssPrep {
 	Map vid;      /* variables marcadas en color y background-color: nombre -> número (1…) */
 	Map dcls;     /* las clases que hay en la página */
 	bool dcls_ok; /* (y ya se sabe cuáles son) */
+	int dropped;  /* reglas que no se dieron a libcss: piden clases que la página no tiene */
 	Map fonts;    /* @font-face: familia (en minúsculas) -> «dirección de su hoja\nurl» (ttf, otf o woff) */
 	const char *base; /* la dirección de la hoja que se está leyendo */
 	Map ivn;      /* las variables que van por elemento: las de los style="" y las que pone una regla de clase */
@@ -3412,7 +3413,27 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 			}
 			if (!first && !sel.bad && p->ivn.n)
 				tpl_add(p, s0, s1, b0, b1);
-			if (!first && !sel.bad) {
+			// una regla que no puede tocar a nada de la página (todos sus selectores piden una clase que la
+			// página no tiene) no se le da a libcss: las hojas de los frameworks traen muchas, y leerlas y
+			// probarlas en cada elemento es buena parte de lo que tarda una página en la consola
+			bool any_here = false;
+			for (const char *q = s0; q < s1 && !any_here;) {
+				const char *c = find_top(q, s1, ",");
+				any_here = classes_here(p, q, c);
+				q = c + 1;
+			}
+#ifdef BRL_DEBUG
+			if (getenv("NODROP")) // (para comparar en el banco de pruebas)
+				any_here = true;
+#endif
+			if (!any_here) {
+				p->dropped++;
+#ifdef BRL_DEBUG
+				if (getenv("BRL_DROP"))
+					fprintf(stderr, "fuera: %.*s\n", (int)(s1 - s0 < 200 ? s1 - s0 : 200), s0);
+#endif
+			}
+			else if (!first && !sel.bad) {
 				Map local = {0};
 				// las de la raíz (html, :root) ya están en su valor final (una regla de @media de después
 				// puede cambiarlas): las propias de la regla, solo en las demás

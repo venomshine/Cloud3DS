@@ -853,10 +853,12 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 	free(ha), free(ba);
 	// las clases que hay en la página (una regla con «.zen-mode .x» no puede tocar a nada si no hay .zen-mode)
 	if (c->prep && doc) {
-		dom_node_internal *st[128];
-		int sp = 0;
+		// (todas: la pila crece; con una fija, lo muy anidado se quedaba fuera y sus reglas se descartarían)
+		int sp = 0, cap = 256;
+		bool full = true;
+		dom_node_internal **st = malloc(sizeof *st * (size_t)cap);
 		dom_element *root = NULL;
-		if (dom_document_get_document_element(doc, &root) == DOM_NO_ERR && root) {
+		if (st && dom_document_get_document_element(doc, &root) == DOM_NO_ERR && root) {
 			st[sp++] = NI(root);
 			while (sp) {
 				dom_node_internal *e = st[--sp];
@@ -867,13 +869,25 @@ void brcss_finish(BrCss *c, dom_document *doc, float width)
 						cssprep_add_class(c->prep, lwc_string_data(cl[k]), lwc_string_length(cl[k]));
 						lwc_string_unref(cl[k]);
 					}
-				for (dom_node_internal *ch = e->last_child; ch; ch = ch->previous)
-					if (ch->type == DOM_ELEMENT_NODE && sp < 128)
-						st[sp++] = ch;
+				for (dom_node_internal *ch = e->last_child; ch; ch = ch->previous) {
+					if (ch->type != DOM_ELEMENT_NODE)
+						continue;
+					if (sp == cap) {
+						dom_node_internal **ns = realloc(st, sizeof *st * (size_t)cap * 2);
+						if (!ns) {
+							full = false;
+							break;
+						}
+						st = ns, cap *= 2;
+					}
+					st[sp++] = ch;
+				}
 			}
 			dom_node_unref(root);
-			cssprep_classes_done(c->prep);
+			if (full) // (si faltó memoria, sin comprobar clases)
+				cssprep_classes_done(c->prep);
 		}
+		free(st);
 	}
 	for (int i = 0; i < c->nraw && c->prep; i++)
 	{
