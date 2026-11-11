@@ -1156,8 +1156,19 @@ static float px_of(const char *v)
  * lee en las rejillas: column-count = cuántas columnas, column-width = ancho fijo de la primera,
  * column-rule-width = el de la última; la zona (grid-area) da el orden (order) y column-span: all
  * si ocupa toda la fila */
-static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val)
-{	if (!strcmp(name, "grid-template-columns") || !strcmp(name, "grid-template")) {
+static bool grid_emit(CssPrep *p, Out *o, const char *name, const char *val0)
+{
+	// (saltos de línea y tabuladores, como espacios: «var(--a)\n  var(--b)» son dos pistas)
+	char vbuf[1024];
+	const char *val = val0;
+	if (strpbrk(val0, "\n\r\t") && strlen(val0) < sizeof vbuf) {
+		size_t k = 0;
+		for (const char *c = val0; *c; c++)
+			vbuf[k++] = *c == '\n' || *c == '\r' || *c == '\t' ? ' ' : *c;
+		vbuf[k] = 0;
+		val = vbuf;
+	}
+	if (!strcmp(name, "grid-template-columns") || !strcmp(name, "grid-template")) {
 		const char *v = val;
 		if (!strcmp(name, "grid-template")) {
 			const char *sl = strchr(val, '/');
