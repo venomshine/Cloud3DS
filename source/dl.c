@@ -371,6 +371,8 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		httpcAddRequestHeaderField(ctx, "Connection", "Keep-Alive");
 		if (t_ua) // el navegador: el idioma, como cualquier navegador
 			httpcAddRequestHeaderField(ctx, "Accept-Language", "es-ES,es;q=0.9,en;q=0.7");
+		if (t_ua && !range_from) // y comprimido: HTML, CSS y JavaScript bajan unas 4 veces menos (lo
+			httpcAddRequestHeaderField(ctx, "Accept-Encoding", "gzip"); // descomprime fetch_net, en el navegador)
 		if (t_ck_get) {
 			char ck[2048];
 			if (t_ck_get(url, ck, sizeof ck))
