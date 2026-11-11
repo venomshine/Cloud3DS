@@ -1453,9 +1453,9 @@ static void intr(Ctx *C, Box *b, float *mn, float *mx)
 		else if (!AUT(s, LH) && !PCT(s, LH) && s->ih > 0) // alto pedido: el ancho por su proporción
 			w = s->iw * LV(s, LH, 0) / s->ih;
 		a = z = w + ex;
-		// con ancho en %, se puede encoger hasta nada: no pide mínimo (como en Chromium; con solo un máximo en
-		// %, sí: una imagen de 1000 px con max-width: 100% pide sus 1000)
-		if (!has && !AUT(s, LW) && PCT(s, LW))
+		// con ancho o máximo en %, se puede encoger hasta nada: no le pide mínimo a lo que la lleva dentro (como
+		// en Chromium; siendo ella misma un item flex, sí pide su tamaño: eso, en flex())
+		if (!has && ((!AUT(s, LW) && PCT(s, LW)) || (!AUT(s, LMAXW) && PCT(s, LMAXW))))
 			a = ex;
 	} else if (has)
 		a = z = sw;
@@ -2350,6 +2350,8 @@ static float flex(Ctx *C, Box *b, float cw, float dh, float cx0, float cy0)
 				f->mn = clamp_w(is, 0, cw);
 			else if (is->ovx == CSS_OVERFLOW_VISIBLE || is->ovx == 0) {
 				float sw = spec_w(is, cw, &has);
+				if (c->kind == K_ATOM && !has) // (una imagen item: su tamaño, que luego limita su máximo)
+					a = z;
 				f->mn = has ? fminf(a, sw) : a;
 				if (!AUT(is, LMAXW) && (!PCT(is, LMAXW) || cw > 0)) // (y no más que su máximo, también en %)
 					f->mn = fminf(f->mn, LV(is, LMAXW, cw) + (is->bbox ? 0 : hx(is)));
