@@ -434,6 +434,7 @@ static float DOC_W;
 #define BASE_W (DOC_W > 0 ? DOC_W : VW_PC)
 static bool ci_has(const char *h, const char *nd);
 static int nojs_find(const char *url);
+static const char *host_of(const char *u, char *out, size_t n);
 /* tras tocar algo con JavaScript: un clic (en un enlace, en lo que sea o en un control) o lo escrito en una caja de texto */
 enum { ACT_CLICK = 0, ACT_WDG, ACT_INPUT };
 static void start_action_k(dom_node *el, int link, int kind, const char *str);
@@ -1572,10 +1573,23 @@ static void load_thread_run(void *arg)
 	} else {
 		long code = 0;
 		int r = fetch_any(B.url, "text/html,application/xhtml+xml,*/*;q=0.8", &b, &code);
+		char *www = strstr(B.url, "://www.");
+		if (r == DLF_NOCONN && dl_last_noresolve() && www && strchr(www + 7, '.') && !B.abort) { // «www.» de más (es.wikipedia.org):
+			memmove(www + 3, www + 7, strlen(www + 7) + 1); // otra vez sin él
+			util_log("web: ese servidor no existe: sin «www.», %.200s", B.url);
+			free(b.p);
+			b = (Buf){0};
+			code = 0;
+			r = fetch_any(B.url, "text/html,application/xhtml+xml,*/*;q=0.8", &b, &code);
+		}
 		B.http_code = (int)code;
 		if (r != DLF_OK || code >= 400) {
+			char host[128];
+			host_of(B.url, host, sizeof host);
 			if (r == DLF_OK)
 				snprintf(B.err, sizeof B.err, "El servidor respondió %ld", code);
+			else if (r == DLF_NOCONN && dl_last_noresolve())
+				snprintf(B.err, sizeof B.err, "No existe esa dirección (%s): revisa cómo está escrita", host);
 			else
 				snprintf(B.err, sizeof B.err, r == DLF_NOCONN ? "No se pudo conectar (o comprobar el certificado)" : "Se cortó la descarga");
 			free(b.p);

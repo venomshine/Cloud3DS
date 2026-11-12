@@ -73,6 +73,12 @@ static Result hc_recv(httpcContext *ctx, u8 *buf, u32 n, int secs)
 	return r;
 }
 
+static __thread bool t_noresolve; /* la última petición con libcurl: el nombre del servidor no existe (DNS) */
+bool dl_last_noresolve(void)
+{
+	return t_noresolve;
+}
+
 const char *dl_last_url(void)
 {
 	return t_final;
@@ -853,6 +859,7 @@ int dl_fetch_curl(const char *url, const char *accept, size_t (*wr)(char *, size
 	curl_slist_free_all(h);
 	util_log("dl: curl %.80s -> %d, HTTP %ld %s", url, (int)r, code, eb);
 	*code_out = code;
+	t_noresolve = r == CURLE_COULDNT_RESOLVE_HOST;
 	return r == CURLE_OK ? DLF_OK : (r == CURLE_COULDNT_RESOLVE_HOST || r == CURLE_COULDNT_CONNECT) ? DLF_NOCONN : DLF_FAIL;
 }
 

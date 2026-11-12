@@ -64,6 +64,8 @@ void dl_set_thread_stop(volatile bool *a, volatile bool *b);
 /* para el hilo que llama: de dónde sacar las cookies que mandar y dónde guardar las que lleguen (NULL, ninguna) */
 void dl_set_thread_cookies(size_t (*get)(const char *url, char *out, size_t n), void (*set)(const char *url, const char *set_cookie));
 const char *dl_last_url(void);
+/* la última petición (libcurl) de este hilo falló porque ese servidor no existe (su nombre no se encuentra) */
+bool dl_last_noresolve(void);
 /* el Content-Type de la última respuesta (de este hilo), con su charset si lo dice; "" si no */
 const char *dl_last_ctype(void);
 /* lo mismo con libcurl (TLS moderno): para webs que no aceptan a httpc */
