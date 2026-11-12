@@ -17,6 +17,7 @@ const wrappers = new Map();          // un objeto por nodo: el mismo siempre (a 
 const listeners = new Map();          // id del nodo -> {tipo: [funciones]}
 const ELEMENT = 1, TEXT = 3, COMMENT = 8, DOC = 9, FRAG = 11;
 
+const urlMemo = new WeakMap(); // enlace -> [su href, la página, su URL] (Element._u)
 function W(h) {
 	if (!h) return null;
 	const id = N.id(h);
@@ -528,7 +529,13 @@ class Element extends Node {
 	get protocol() { return this._u().protocol; } get host() { return this._u().host; } get hostname() { return this._u().hostname; }
 	get port() { return this._u().port; } get pathname() { return this._u().pathname; } get search() { return this._u().search; }
 	get hash() { return this._u().hash; } get origin() { return this._u().origin; }
-	_u() { try { return new URL(this.getAttribute('href') || '', location.href); } catch (e) { return new URL(location.href); } }
+	// (la URL de su href, guardada mientras no cambie: las webs leen hostname, pathname… de cientos de enlaces)
+	_u() { // (en un WeakMap: nada nuevo a la vista en el elemento, que hay webs que recorren sus propiedades)
+		const h = this.getAttribute('href') || '', base = locObj.href, c = urlMemo.get(this);
+		if (c && c[0] === h && c[1] === base) return c[2];
+		let u; try { u = new URL(h, base); } catch (e) { u = new URL(base); }
+		urlMemo.set(this, [h, base, u]); return u;
+	}
 	get relList() { const el = this; return Object.assign(new DOMTokenList(el), { _get() { return (el.getAttribute('rel') || '').split(/\s+/).filter(Boolean); }, _set(a) { el.setAttribute('rel', a.join(' ')); }, supports: t => ['preload', 'prefetch', 'modulepreload', 'stylesheet', 'noopener', 'noreferrer'].includes(t) }); }
 	get target() { return this.getAttribute('target') || ''; } set target(v) { this.setAttribute('target', v); }
 	get download() { return this.getAttribute('download') || ''; }
@@ -654,6 +661,8 @@ class DocumentFragment extends Node {
 /* ---------- window */
 const document = W(N.doc());
 G.window = G; G.self = G; G.globalThis = G; G.top = G; G.parent = G; G.frames = G;
+G.DocumentType = class DocumentType { constructor() { this.name = 'html'; this.publicId = ''; this.systemId = ''; this.nodeType = 10; this.nodeName = 'html'; } };
+if (!('doctype' in document)) Object.defineProperty(document, 'doctype', { value: new G.DocumentType(), configurable: true });
 G.document = document;
 G.Node = Node; G.Element = Element; G.HTMLElement = Element; G.Text = Text; G.Comment = Comment; G.Document = Document; G.HTMLDocument = Document;
 G.DocumentFragment = DocumentFragment; G.CharacterData = CharacterData; G.EventTarget = EventTarget; G.Event = Event; G.CustomEvent = CustomEvent;
