@@ -7286,7 +7286,10 @@ void br_bottom(void)
 		toast_icon(B.dark ? "Modo oscuro" : "Modo claro", IC_BULB, T.accent);
 	}
 	if (tlight || (g_kdown & KEY_Y)) { // modo ligero: sin imágenes ni JavaScript (se recuerda)
-		B.light = !B.light;
+		if (!strcmp(B.reader_url, B.url)) // en modo lectura: de ahí, al ligero (con su diseño); antes recargaba lo mismo
+			B.reader_url[0] = 0, B.light = true;
+		else
+			B.light = !B.light;
 		light_save();
 		toast_icon(B.light ? "Modo ligero: sin imágenes ni JavaScript" : "Modo normal: con imágenes y JavaScript", IC_FEATHER, T.accent);
 		char u2[1024];
@@ -7301,8 +7304,9 @@ void br_bottom(void)
 		tip = B.links[B.hover], tc = T.accent;
 	else if (B.st == ST_ERROR)
 		tip = B.err, tc = T.danger;
-	else if (oom_tip)
-		tip = "Memoria llena · toca aquí para verla en modo lectura", tc = T.warn;
+	else if (oom_tip) // (si fue su JavaScript, la página ya se ve entera: mejor sin él la próxima vez que en modo lectura)
+		tip = B.oom == OOM_JS && !B.nojs ? "Memoria llena · toca aquí para abrirla sin JavaScript" : "Memoria llena · toca aquí para verla en modo lectura",
+		tc = T.warn;
 	// sin desplazarse para leerse entero: cada línea que se desplaza recorta con tijeras y obliga a
 	// vaciar la cola de dibujo de la GPU (lo más caro de esta pantalla)
 	g_clip_ell = true;
@@ -7314,7 +7318,16 @@ void br_bottom(void)
 	g_clip_ell = false;
 	// --- acciones
 	if (oom_tip && tap(0, TP_B, BOT_W, 16)) {
-		oom_reader();
+		if (B.oom == OOM_JS && !B.nojs) { // su JavaScript no cabe: esta web, sin él (se recuerda; el botón «JS» lo vuelve a encender)
+			char h[96], m[160], u2[1024];
+			nojs_toggle(B.url);
+			host_of(B.url, h, sizeof h);
+			snprintf(m, sizeof m, "JavaScript apagado en %s", h);
+			toast_icon(m, IC_CODE, T.text2);
+			util_strlcpy(u2, B.url, sizeof u2);
+			start_load(u2);
+		} else
+			oom_reader();
 		g_kdown = 0;
 		return;
 	}
