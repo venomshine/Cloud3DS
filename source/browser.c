@@ -469,6 +469,7 @@ static void pf_worker(void *arg)
 {
 	(void)arg;
 	browser_thread_net();
+	dl_set_thread_stop(&B.abort, &PF.stop);
 	for (;;) {
 		PfEnt *e = NULL;
 		LightLock_Lock(&PF.lk);
@@ -962,6 +963,7 @@ static void browser_thread_net(void) // cada hilo del navegador: su User-Agent y
 	}
 	dl_set_thread_ua(UA_PC);
 	dl_set_thread_cookies(ck_get, ck_set);
+	dl_set_thread_stop(&B.abort, NULL); // (la página se deja: lo que se esté bajando se corta ya)
 }
 
 /* ------------------------------------------------------------ JavaScript de la página */
@@ -2281,6 +2283,7 @@ static void img_thread(void *arg)
 {
 	(void)arg;
 	browser_thread_net();
+	dl_set_thread_stop(&B.abort, &B.img_quit);
 	for (;;) {
 		if (B.img_quit) {
 			LightLock_Lock(&IMG_LK);

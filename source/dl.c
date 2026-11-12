@@ -49,6 +49,30 @@ void dl_set_thread_cookies(size_t (*get)(const char *, char *, size_t), void (*s
 	t_ck_get = get, t_ck_set = set;
 }
 
+/* cortar las peticiones de este hilo en cuanto alguno de estos se ponga a true (el navegador deja la página): se mira
+ * cada segundo, también esperando a un servidor que no contesta (antes, hasta 30 s por trozo con la red atascada) */
+static __thread volatile bool *t_stop1, *t_stop2;
+void dl_set_thread_stop(volatile bool *a, volatile bool *b)
+{
+	t_stop1 = a, t_stop2 = b;
+}
+static bool t_stopped(void) { return (t_stop1 && *t_stop1) || (t_stop2 && *t_stop2); }
+// httpc, a sorbos de 1 s mirando si se dejó: hasta «secs» segundos sin nada
+static Result hc_status(httpcContext *ctx, u32 *code, int secs)
+{
+	Result r = HTTPC_RESULTCODE_TIMEDOUT;
+	for (int i = 0; i < secs && r == (Result)HTTPC_RESULTCODE_TIMEDOUT && !t_stopped(); i++)
+		r = httpcGetResponseStatusCodeTimeout(ctx, code, 1000000000ull);
+	return r;
+}
+static Result hc_recv(httpcContext *ctx, u8 *buf, u32 n, int secs)
+{
+	Result r = HTTPC_RESULTCODE_TIMEDOUT;
+	for (int i = 0; i < secs && r == (Result)HTTPC_RESULTCODE_TIMEDOUT && !t_stopped(); i++)
+		r = httpcReceiveDataTimeout(ctx, buf, n, 1000000000ull);
+	return r;
+}
+
 const char *dl_last_url(void)
 {
 	return t_final;
@@ -387,7 +411,7 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		}
 		r = httpcBeginRequest(ctx);
 		if (R_SUCCEEDED(r))
-			r = httpcGetResponseStatusCodeTimeout(ctx, code, 30ull * 1000000000ull);
+			r = hc_status(ctx, code, 30);
 		if (R_FAILED(r)) {
 			util_log("dl: httpc %s -> 0x%08lX", url, (unsigned long)r);
 			httpcCloseContext(ctx);
@@ -445,7 +469,7 @@ int dl_fetch(const char *url0, const char *accept, size_t (*wr)(char *, size_t, 
 	int out = buf ? DLF_OK : DLF_FAIL;
 	while (buf) {
 		before = dl;
-		r = httpcReceiveDataTimeout(&ctx, buf, 64 * 1024, 30ull * 1000000000ull);
+		r = hc_recv(&ctx, buf, 64 * 1024, 30);
 		httpcGetDownloadSizeState(&ctx, &dl, &total);
 		if (tot && total)
 			tot(u, total);
@@ -706,7 +730,12 @@ static int hc_get_mem(const char *url0, const char *accept, Mem *m, long *code_o
 static int quit_cb(void *u, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t d)
 {
 	(void)u, (void)a, (void)b, (void)c, (void)d;
-	return D.quit || D.cancel;
+	return D.quit || D.cancel || t_stopped();
+}
+static int stop_cb(void *u, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t d)
+{
+	(void)u, (void)a, (void)b, (void)c, (void)d;
+	return D.quit || t_stopped();
 }
 
 /* más búfer de recepción en el socket: con el de serie, la consola pide los datos a sorbos */
@@ -764,6 +793,8 @@ static void common_opts(CURL *c, char *eb)
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
 	curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
 	curl_easy_setopt(c, CURLOPT_BUFFERSIZE, 256L * 1024);
+	curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L); // (cada segundo, aunque no llegue nada: se corta si se dejó)
+	curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, stop_cb);
 }
 
 static size_t curl_hdr_cb(char *d, size_t sz, size_t nm, void *u)
