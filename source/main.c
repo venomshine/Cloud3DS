@@ -1400,9 +1400,11 @@ static void un_thread(void *arg)
 	else { // los datos extra: primero su copia; sin copia, no se borra nada
 		UN.part = 3;
 		UN.res = extdata_backup(&UN.ti, UN.extra, sizeof UN.extra);
-		if (UN.res == 0)
+		if (UN.res == 0) {
 			UN.part = 4, UN.res = extdata_delete(&UN.ti);
-		else
+			if (UN.res == -4) // compartidos con otro juego: no se borró nada, la copia sobra
+				fsx_rmrf(UN.extra);
+		} else
 			UN.res = -3;
 	}
 	UN.done = true;
@@ -1554,7 +1556,9 @@ static void un_poll(void)
 	UN.busy = false;
 	if (UN.kind != UN_ALL) { // por partes: su aviso
 		const char *ok = UN.kind == UN_UPD ? _("Actualización desinstalada") : UN.kind == UN_DLC ? _("DLC desinstalados") : _("Datos extra borrados (con copia en la SD)");
-		const char *ko = UN.res == -3 ? _("No se pudo copiar: no se ha borrado nada") : _("No se pudo completar");
+		const char *ko = UN.res == -3 ? _("No se pudo copiar: no se ha borrado nada")
+		               : UN.res == -4 ? _("Otro juego instalado usa estos datos extra: no se han borrado")
+		                              : _("No se pudo completar");
 		toast_icon(UN.res == 0 ? ok : ko, UN.res == 0 ? IC_TRASH : IC_CLOSE, UN.res == 0 ? T.ok : T.danger);
 		titles_reload();
 		return;

@@ -425,17 +425,26 @@ int title_uninstall_part(u64 tid, int part)
 	return done && R_SUCCEEDED(r) ? 0 : -2;
 }
 
-// los datos extra de un juego van con su ID único (como en Checkpoint: los 32 bits bajos del título, sin el último byte)
-static FS_ExtSaveDataInfo ext_info(const TitleInfo *t)
+// el ID de los datos extra de un juego: el que declara el propio juego (AM lo lee de su cabecera); si no se puede
+// leer, el de Checkpoint (los 32 bits bajos del título sin el último byte)
+static u32 ext_id_am(u64 tid)
 {
-	FS_ExtSaveDataInfo i = {0};
-	i.mediaType = MEDIATYPE_SD;
-	i.saveId = ((u32)t->tid) >> 8;
-	return i;
+	u64 id = 0;
+	if (R_SUCCEEDED(AM_GetTitleExtDataId(&id, MEDIATYPE_SD, tid)) && (u32)id)
+		return (u32)id;
+	return ((u32)tid) >> 8;
+}
+static u32 ext_id(u64 tid)
+{
+	if (R_FAILED(amInit()))
+		return ((u32)tid) >> 8;
+	u32 id = ext_id_am(tid);
+	amExit();
+	return id;
 }
 static bool ext_open(const TitleInfo *t, FS_Archive *a)
 {
-	u32 path[3] = {MEDIATYPE_SD, ((u32)t->tid) >> 8, 0};
+	u32 path[3] = {MEDIATYPE_SD, ext_id(t->tid), 0};
 	return R_SUCCEEDED(FSUSER_OpenArchive(a, ARCHIVE_EXTDATA, (FS_Path){PATH_BINARY, sizeof path, path}));
 }
 static u64 ext_dir_size(FS_Archive a, const u16 *src, int srclen, int depth)
@@ -509,7 +518,29 @@ int extdata_delete(const TitleInfo *t)
 {
 	if (!t || title_is_self(t->tid))
 		return -1;
-	Result r = FSUSER_DeleteExtSaveData(ext_info(t));
-	util_log("borrar datos extra %016llX: %08lX", (unsigned long long)t->tid, (unsigned long)r);
+	if (R_FAILED(amInit()))
+		return -2;
+	// si otro juego instalado usa los mismos datos extra (algunas series los comparten), no se borran
+	u32 id = ext_id_am(t->tid), n = 0;
+	u64 *ids = NULL;
+	bool shared = false, listed = false;
+	if (R_SUCCEEDED(AM_GetTitleCount(MEDIATYPE_SD, &n)) && n && (ids = malloc(n * sizeof *ids)) && R_SUCCEEDED(AM_GetTitleList(&n, MEDIATYPE_SD, n, ids))) {
+		listed = true;
+		for (u32 i = 0; i < n && !shared; i++)
+			shared = ids[i] != t->tid && (u32)(ids[i] >> 32) == HI_APP && ext_id_am(ids[i]) == id;
+	}
+	free(ids);
+	amExit();
+	if (!listed)
+		return -2;
+	if (shared) {
+		util_log("borrar datos extra %016llX: compartidos (%08lX), no se borran", (unsigned long long)t->tid, (unsigned long)id);
+		return -4;
+	}
+	FS_ExtSaveDataInfo info = {0};
+	info.mediaType = MEDIATYPE_SD;
+	info.saveId = id;
+	Result r = FSUSER_DeleteExtSaveData(info);
+	util_log("borrar datos extra %016llX (%08lX): %08lX", (unsigned long long)t->tid, (unsigned long)id, (unsigned long)r);
 	return R_SUCCEEDED(r) ? 0 : -2;
 }
