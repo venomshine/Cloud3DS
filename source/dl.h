@@ -58,6 +58,7 @@ bool dl_url_ok(const char *url);
 /* GET con el servicio HTTP del sistema (comprobando el certificado), para el actualizador.
  * DLF_NOCONN: no conectó (se puede probar con libcurl); con DLF_OK, *code es el estado HTTP */
 enum { DLF_OK, DLF_NOCONN, DLF_FAIL };
+#define DL_METHOD_PATCH 0x100 /* PATCH (el servicio HTTP del sistema no lo tiene: siempre con libcurl) */
 /* para el hilo que llama: User-Agent propio (NULL, el de Cloud3DS) y la dirección final de su último dl_fetch */
 void dl_set_thread_ua(const char *ua);
 /* las peticiones de este hilo se cortan (en ~1 s) en cuanto *a o *b sea true (NULL: no se mira) */

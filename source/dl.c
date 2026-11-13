@@ -557,7 +557,7 @@ int dl_request(int method, const char *url0, const char *const *headers, const v
                size_t (*wr)(char *, size_t, size_t, void *), void *u, long *code_out)
 {
 	int r = DLF_NOCONN;
-	bool skip = nohc_has(url0);
+	bool skip = nohc_has(url0) || method == DL_METHOD_PATCH;
 	if (!skip && hc_ready)
 		r = dl_request_hc(method, url0, headers, body, blen, wr, u, code_out);
 	if (r != DLF_NOCONN)
@@ -595,13 +595,15 @@ static int dl_request_curl(int method, const char *url, const char *const *heade
 	curl_easy_setopt(c, CURLOPT_URL, url);
 	curl_easy_setopt(c, CURLOPT_HTTPHEADER, h);
 	curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, method == HTTPC_METHOD_GET ? 1L : 0L);
-	if (method == HTTPC_METHOD_POST || method == HTTPC_METHOD_PUT) {
+	if (method == HTTPC_METHOD_POST || method == HTTPC_METHOD_PUT || method == DL_METHOD_PATCH) {
 		curl_easy_setopt(c, CURLOPT_POST, 1L);
 		curl_easy_setopt(c, CURLOPT_POSTFIELDS, body ? body : "");
 		curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)(body ? blen : 0));
 	}
 	if (method == HTTPC_METHOD_PUT)
 		curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "PUT");
+	else if (method == DL_METHOD_PATCH)
+		curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "PATCH");
 	else if (method == HTTPC_METHOD_DELETE)
 		curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "DELETE");
 	else if (method == HTTPC_METHOD_HEAD)

@@ -131,7 +131,22 @@ static struct {
 	int hm_sel;
 	bool bk;          // página «Capturas en la nube»
 	int bk_sel;
+	int want_ren;     // cambiar el nombre del elemento want_ren - 1 (el teclado, fuera del dibujo)
+	bool want_mkdir;  // carpeta nueva
 } CLU;
+
+// portapapeles de la nube: lo copiado o cortado en OneDrive. Se pega en otra carpeta de la nube (copiar o
+// mover) o, copiado, en una carpeta de Archivos (se descarga ahí). Con el de Archivos (FP) es uno solo: lo
+// último que se copia, de un sitio o de otro, es lo que se pega
+enum { CC_NONE, CC_COPY, CC_CUT };
+static struct {
+	int mode;
+	int n;
+	CloudItem it[8];
+} CC;
+static int fp_count(void);                 // cuántos hay copiados en Archivos (0: nada)
+static void fp_clear(void);
+static int fp_upload(const char *parent);  // sube lo copiado en Archivos a esa carpeta de la nube
 static void cl_top(void);
 static void cl_bottom(void);
 
@@ -1776,9 +1791,11 @@ static List *cur_list(void)
 	return &U.list[U.tab];
 }
 
+static float g_list_bar; // lo que tapa una barra al pie de la lista (la de pegar, por ejemplo): se puede bajar hasta verlo todo
 static void list_update(List *l, int count, float rh)
 {
-	float max = count * rh + QR_PAD - VIEW_H; // al final, sitio para que la última fila no quede bajo el botón del QR
+	float vh = VIEW_H - g_list_bar;
+	float max = count * rh + QR_PAD - vh; // al final, un poco de aire
 	if (max < 0)
 		max = 0;
 	if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && g_touch.sy < VIEW_Y + VIEW_H) {
@@ -1793,7 +1810,7 @@ static void list_update(List *l, int count, float rh)
 		if (g_krepeat & (KEY_UP | KEY_DOWN)) {
 			float y = l->sel * rh;
 			if (y < l->target) l->target = y;
-			if (y + rh > l->target + VIEW_H) l->target = y + rh - VIEW_H;
+			if (y + rh > l->target + vh) l->target = y + rh - vh;
 		}
 	}
 	l->target = clampf(l->target, 0, max);
@@ -2141,7 +2158,10 @@ static void cl_top(void)
 				yy = info_row(rx2, yy, rw, _("Modificado"), v, T.text2, 1);
 			}
 			char hint[96];
-			snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, c->dir ? _("Abrir") : _("Descargar"), GLYPH_Y, _("Opciones"));
+			if (c->dir)
+				snprintf(hint, sizeof hint, "%s %s   %s %s", GLYPH_A, _("Abrir"), GLYPH_Y, _("Opciones"));
+			else
+				snprintf(hint, sizeof hint, "%s %s", GLYPH_A, _("Opciones"));
 			text_draw_right(hint, X + W, y0 + hh - 10 - text_lineh(TS_SUB), TS_SUB, T.text2);
 		}
 		toast_draw_top();
@@ -2158,29 +2178,49 @@ static void cl_top(void)
 	toast_draw_top();
 }
 
+static const char *cl_parent(void) // la carpeta que se ve, para subir, crear o pegar ("root": la raíz)
+{
+	const char *id = cloud_folder_id();
+	return id[0] ? id : "root";
+}
+
 static void cl_options(void)
 {
 	// opciones de un elemento
 	const CloudItem *c = CLU.om_item >= 0 && CLU.om_item < CLU.n ? &CLU.it[CLU.om_item] : NULL;
 	if (!c && CLU.om)
 		CLU.om = false;
-	IconId ic[3];
-	const char *lab[3];
-	u32 col[3];
-	int act[3], n = 0;
+	IconId ic[7];
+	const char *lab[7];
+	u32 col[7];
+	int act[7], n = 0;
 	if (c && c->dir)
 		ic[n] = IC_FOLDER, lab[n] = _("Abrir"), col[n] = T.text, act[n++] = 0;
-	if (c && !c->dir)
-		ic[n] = IC_DOWNLOAD, lab[n] = _("Descargar a la SD"), col[n] = T.ok, act[n++] = 1;
+	ic[n] = IC_DOWNLOAD, lab[n] = _("Descargar a la SD"), col[n] = T.ok, act[n++] = 1;
+	ic[n] = IC_DUP, lab[n] = _("Copiar"), col[n] = T.text, act[n++] = 3;
+	ic[n] = IC_FOLDER, lab[n] = _("Cortar"), col[n] = T.text, act[n++] = 4;
+	ic[n] = IC_PEN, lab[n] = _("Cambiar el nombre"), col[n] = T.text, act[n++] = 5;
 	ic[n] = IC_TRASH, lab[n] = _("Eliminar"), col[n] = T.danger, act[n++] = 2;
 	int r = sheet_list(&CLU.om, &CLU.om_just, &CLU.om_anim, &CLU.om_sel, c ? c->name : "", ic, lab, col, n);
 	if (r >= 0 && c) {
 		if (act[r] == 0)
 			cloud_list(c->id, c->name);
 		else if (act[r] == 1) {
-			cloud_download(c);
-			toast_icon(_("Descargando: lo verás en Conectar, en «Actividad»"), IC_DOWNLOAD, T.ok);
-		} else {
+			if (c->dir)
+				cloud_download_to(c, "/Descargas");
+			else
+				cloud_download(c); // (un .cia, a /cias, y se instala mientras baja)
+			toast_icon(c->dir ? _("Descargando la carpeta en /Descargas: lo verás en Descargas") : _("Descargando: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+		} else if (act[r] == 3 || act[r] == 4) {
+			fp_clear(); // un solo portapapeles: lo de Archivos se sustituye
+			CC.mode = act[r] == 3 ? CC_COPY : CC_CUT;
+			CC.n = 1;
+			CC.it[0] = *c;
+			toast_icon(act[r] == 3 ? _("Copiado: pégalo con X en otra carpeta de la nube o en Archivos") : _("Cortado: pégalo con X en otra carpeta de la nube"),
+			           IC_DUP, T.accent2);
+		} else if (act[r] == 5)
+			CLU.want_ren = CLU.om_item + 1;
+		else {
 			char msg[260];
 			snprintf(msg, sizeof msg, _("«%s» irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive."), c->name);
 			U.dlg_arg = CLU.om_item;
@@ -2277,12 +2317,17 @@ static void cl_bottom(void)
 		const char *fname = cloud_folder_name();
 		bool sub = cloud_depth() > 1;
 		tab_header_w(sub ? fname : "OneDrive", true, 170);
-		// a la derecha: opciones de la cuenta
-		float hx = BOT_W - 24, hy = 16;
+		// a la derecha: carpeta nueva y opciones de la cuenta
+		float hx = BOT_W - 24, hy = 16, px = hx - 32;
 		draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(IC_DOTS, hx, hy, 14, T.text2);
+		draw_circle(px, hy, 12, touch_in(px - 14, hy - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+		draw_icon(IC_PLUS, px, hy, 13, 0xFFFFFFFF);
+		bool clip = CC.mode || fp_count();
 		if (tap(hx - 14, hy - 14, 28, 28))
 			CLU.hm = CLU.hm_just = true, CLU.hm_sel = 0;
+		else if (tap(px - 14, hy - 14, 28, 28) || (!clip && (g_kdown & KEY_X)))
+			CLU.want_mkdir = true;
 		else if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B)) {
 			if (sub)
 				cloud_up();
@@ -2290,7 +2335,9 @@ static void cl_bottom(void)
 				close = true;
 		}
 		const float RH = 40;
+		g_list_bar = clip ? 42 : 0;
 		list_update(&CLU.l, CLU.n, RH);
+		g_list_bar = 0;
 		gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
 		if (!CLU.n) {
 			if (CLU.loading) {
@@ -2298,7 +2345,7 @@ static void cl_bottom(void)
 				text_draw_center(_("Cargando…"), BOT_W / 2, VIEW_Y + 92, TS_SUB, T.text3);
 			} else
 				empty_state(IC_CLOUD, ci->err[0] ? _("No se pudo cargar") : _("Carpeta vacía"),
-				            ci->err[0] ? cl_err_text(ci->err) : _("Sube algo desde Archivos con «Subir a OneDrive»."));
+				            ci->err[0] ? cl_err_text(ci->err) : _("Copia algo en Archivos y pégalo aquí con X, o crea una carpeta con «+»."));
 		}
 		for (int i = 0; i < CLU.n; i++) {
 			float y = VIEW_Y + i * RH - CLU.l.off;
@@ -2343,6 +2390,40 @@ static void cl_bottom(void)
 		gfx_clip_off();
 		if ((g_kdown & KEY_Y) && CLU.n && !CLU.om)
 			CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = CLU.l.sel;
+		// lo copiado (en la nube o en Archivos): «Pegar aquí», como en Archivos
+		if (clip) {
+			int cn = CC.mode ? CC.n : fp_count();
+			float y = SCR_H - 40, w = BOT_W - 20;
+			draw_rrect(10, y + 2, w, 30, 15, T.shadow);
+			draw_rrect(10, y, w, 30, 15, T.accent);
+			char t[96];
+			const char *what = CC.mode == CC_CUT ? _("Mover aquí") : CC.mode ? _("Pegar aquí") : _("Subir aquí");
+			if (cn > 1)
+				snprintf(t, sizeof t, "%s %s (%d)", GLYPH_X, what, cn);
+			else
+				snprintf(t, sizeof t, "%s %s", GLYPH_X, what);
+			text_draw_center(t, BOT_W / 2 - 30, y + (30 - text_lineh(0.46f)) / 2, 0.46f, 0xFFFFFFFF);
+			draw_rect(BOT_W - 70, y + 6, 1, 18, col_alpha(0xFFFFFFFF, 0.4f));
+			text_draw_center(_("Vaciar"), BOT_W - 42, y + (30 - text_lineh(TS_SUB)) / 2, TS_SUB, 0xFFFFFFFF);
+			if (tap(BOT_W - 70, y, 60, 30)) {
+				CC.mode = CC.n = 0;
+				fp_clear();
+			} else if ((g_kdown & KEY_X) || tap(10, y, w - 60, 30)) {
+				const char *par = cl_parent();
+				if (CC.mode) {
+					for (int k = 0; k < CC.n; k++)
+						CC.mode == CC_CUT ? cloud_move(&CC.it[k], par) : cloud_copy(&CC.it[k], par);
+					toast_icon(CC.mode == CC_CUT ? _("Moviendo a esta carpeta") : _("Copiando en esta carpeta: OneDrive tarda unos segundos"), IC_DUP, T.accent);
+					if (CC.mode == CC_CUT) // lo cortado ya no está donde estaba; lo copiado se puede volver a pegar
+						CC.mode = CC.n = 0;
+				} else {
+					int k = fp_upload(par);
+					char m[96];
+					snprintf(m, sizeof m, k == 1 ? _("Subiendo a OneDrive: lo verás en Conectar, en «Actividad»") : _("Subiendo %d elementos a OneDrive"), k);
+					toast_icon(m, IC_UPLOAD, T.ok);
+				}
+			}
+		}
 	} else if (ci->st == CLS_CODE) {
 		tab_header(_("Nube"), true);
 		float x = 10, w = BOT_W - 20, y = VIEW_Y + 4;
@@ -3667,6 +3748,29 @@ static struct {
 	int n;             // varios a la vez (selección múltiple): sus rutas en list
 	char (*list)[512];
 } FP;
+
+static int fp_count(void)
+{
+	return FP.mode ? (FP.n > 1 ? FP.n : 1) : 0;
+}
+static void fp_clear(void)
+{
+	FP.mode = 0;
+	FP.n = 0;
+}
+// pegar en la nube lo copiado (o cortado) en Archivos: se sube; el original sigue en la SD
+static int fp_upload(const char *parent)
+{
+	int k = 0;
+	if (FP.n > 1)
+		for (int i = 0; i < FP.n; i++)
+			k += cloud_upload(FP.list[i], parent);
+	else if (FP.mode)
+		k += cloud_upload(FP.src, parent);
+	if (FP.mode == FA_MOVE) // (cortar de la SD a la nube no borra nada: se sube y ya)
+		fp_clear();
+	return k;
+}
 
 
 // copias en cola: se lanzan de una en una cuando termina la anterior
@@ -5000,6 +5104,7 @@ static void ms_copy_move(int mode)
 			FP.n++;
 		}
 	FP.mode = mode;
+	CC.mode = CC.n = 0; // (un solo portapapeles: lo copiado en la nube se sustituye)
 	ms_end();
 	toast_icon(_("En el portapapeles: ve a otra carpeta y pulsa X para pegar"), IC_DUP, T.accent);
 }
@@ -6043,7 +6148,7 @@ static void tab_files(void)
 		draw_icon(IC_SORT, sx, ny, 14, T.text2);
 		draw_circle(nx, ny, 12, np ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
 		draw_icon(IC_PLUS, nx, ny, 13, 0xFFFFFFFF);
-		if (!g_dialog.open && (tap(nx - 14, ny - 14, 28, 28) || (U.buttons && !FP.mode && (g_kdown & KEY_X)))) {
+		if (!g_dialog.open && (tap(nx - 14, ny - 14, 28, 28) || (U.buttons && !FP.mode && !CC.mode && (g_kdown & KEY_X)))) {
 			f_new_menu();
 			return;
 		}
@@ -6065,8 +6170,8 @@ static void tab_files(void)
 			f_up();
 		return;
 	}
-	// desplazamiento con el dedo o siguiendo la selección
-	float max = fmaxf(0, F.total - VIEW_H);
+	// desplazamiento con el dedo o siguiendo la selección (con lo copiado, la barra de pegar tapa el final)
+	float barh = FP.mode || CC.mode ? 42 : 0, max = fmaxf(0, F.total + barh - VIEW_H);
 	if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && g_touch.sy < VIEW_Y + VIEW_H) {
 		float dy = g_touch.y - g_touch.py;
 		if (!f_chips_shown() && F.target <= 0 && (dy > 0 || F.pull > 0)) {
@@ -6113,8 +6218,8 @@ static void tab_files(void)
 		const FView *v = &F.v[F.sel];
 		if (v->y < F.target)
 			F.target = v->y;
-		if (v->y + v->h > F.target + VIEW_H)
-			F.target = v->y + v->h - VIEW_H;
+		if (v->y + v->h > F.target + VIEW_H - barh)
+			F.target = v->y + v->h - VIEW_H + barh;
 	}
 	if (U.buttons && !g_dialog.open && f_on_chips() && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
 		F.chip = (F.chip + ((g_krepeat & KEY_RIGHT) ? 1 : CH_SHOWN - 1)) % CH_SHOWN;
@@ -6770,6 +6875,7 @@ static void fa_run(int a)
 	} else if (a == FA_MOVE || a == FA_COPY) {
 		FP.mode = a;
 		FP.n = 0;
+		CC.mode = CC.n = 0;
 		util_strlcpy(FP.src, full, sizeof FP.src);
 		util_strlcpy(FP.name, e->name, sizeof FP.name);
 		FP.src_dir = e->dir;
@@ -6984,6 +7090,29 @@ static void f_pick_do(const char *dst);
 // ---- mover o copiar: se elige la carpeta navegando y se confirma con X o con el botón
 static void f_pick_bar(void)
 {
+	if (!FP.mode && CC.mode && !F.trash && !F.search && !F.titles && !F.nosaves && F.path[0] == '/') { // de la nube: se descarga aquí
+		float y = VIEW_Y + VIEW_H - QR_PAD - 34, w = BOT_W - 20;
+		draw_rrect(10, y + 2, w, 30, 15, T.shadow);
+		draw_rrect(10, y, w, 30, 15, T.accent);
+		char t[96];
+		if (CC.n > 1)
+			snprintf(t, sizeof t, "%s %s (%d)", GLYPH_X, _("Descargar aquí"), CC.n);
+		else
+			snprintf(t, sizeof t, "%s %s", GLYPH_X, _("Descargar aquí"));
+		text_draw_center(t, BOT_W / 2 - 30, y + (30 - text_lineh(0.46f)) / 2, 0.46f, 0xFFFFFFFF);
+		draw_rect(BOT_W - 70, y + 6, 1, 18, col_alpha(0xFFFFFFFF, 0.4f));
+		text_draw_center(_("Vaciar"), BOT_W - 42, y + (30 - text_lineh(TS_SUB)) / 2, TS_SUB, 0xFFFFFFFF);
+		if (tap(BOT_W - 70, y, 60, 30))
+			CC.mode = CC.n = 0;
+		else if ((g_kdown & KEY_X) || tap(10, y, w - 60, 30)) {
+			for (int k = 0; k < CC.n; k++)
+				cloud_download_to(&CC.it[k], F.path);
+			toast_icon(_("Descargando de OneDrive a esta carpeta: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+			if (CC.mode == CC_CUT) // (en la nube no se borra: de la nube a la SD siempre es una copia)
+				CC.mode = CC.n = 0;
+		}
+		return;
+	}
 	if (!FP.mode)
 		return;
 	float y = VIEW_Y + VIEW_H - QR_PAD - 34, w = BOT_W - 20; // por encima del botón del QR
@@ -8227,7 +8356,7 @@ static const char *ap_desc(int i)
 	case AP_CONNECT: return _("Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.");
 	case AP_DL: return _("Descarga desde un enlace o escaneando un código QR. Los CIA se instalan durante la descarga.");
 	case AP_CLOUD:
-		return cl_connected() ? _("Tu OneDrive desde la consola, con copia automática de partidas y capturas.")
+		return cl_connected() ? _("Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben solas.")
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
 	case AP_MUSIC: return _("Reproduce la música de la tarjeta SD, también en segundo plano.");
@@ -8488,10 +8617,10 @@ static void hm_bottom(void)
 		text_draw(pin, x + 9, 15 - text_lineh(0.38f) / 2, 0.38f, T.text);
 	}
 	// el portapapeles: archivos (tocar lleva a Archivos, a pegarlos) o un enlace
-	if (FP.mode || clip_text()[0]) {
+	if (FP.mode || CC.mode || clip_text()[0]) {
 		char cb[40];
-		if (FP.mode)
-			snprintf(cb, sizeof cb, "%d", FP.n > 1 ? FP.n : 1);
+		if (FP.mode || CC.mode)
+			snprintf(cb, sizeof cb, "%d", CC.mode ? CC.n : FP.n > 1 ? FP.n : 1);
 		else
 			util_strlcpy(cb, _("Enlace"), sizeof cb);
 		float cw2 = text_width(cb, 0.38f) + 30, cx2 = BOT_W - 70 - cw2;
@@ -8500,7 +8629,7 @@ static void hm_bottom(void)
 			draw_icon(IC_DUP, cx2 + 12, 15, 11, T.accent2);
 			text_draw(cb, cx2 + 22, 15 - text_lineh(0.38f) / 2, 0.38f, T.accent2);
 			if (!modal && tap(cx2, 0, cw2, HM_BAR)) {
-				if (FP.mode)
+				if (FP.mode || CC.mode)
 					hm_launch(AP_FILES);
 				else
 					toast_icon(clip_text(), IC_DUP, T.accent2);
@@ -9308,6 +9437,29 @@ static void update(void)
 		}
 		return;
 	}
+	if (CLU.want_ren || CLU.want_mkdir) { // la nube: cambiar el nombre o carpeta nueva
+		int i = CLU.want_ren - 1;
+		bool mk = CLU.want_mkdir;
+		CLU.want_ren = 0, CLU.want_mkdir = false;
+		char nm[160];
+		if (mk) {
+			if (kb_input(_("Nombre de la carpeta nueva"), _("Carpeta nueva"), nm, sizeof nm, false, false) && nm[0] && !strpbrk(nm, "/\\:*?\"<>|")) {
+				cloud_mkdir(cl_parent(), nm);
+				toast_icon(_("Creando la carpeta en OneDrive"), IC_FOLDER, T.accent);
+			}
+		} else if (i >= 0 && i < CLU.n) {
+			CloudItem it = CLU.it[i];
+			if (kb_input(_("Nombre nuevo"), it.name, nm, sizeof nm, false, false) && nm[0] && strcmp(nm, it.name)) {
+				if (strpbrk(nm, "/\\:*?\"<>|"))
+					toast_icon(_("El nombre no puede llevar / \\ : * ? \" < > |"), IC_CLOSE, T.danger);
+				else {
+					cloud_rename(&it, nm);
+					toast_icon(_("Cambiando el nombre en OneDrive"), IC_PEN, T.accent);
+				}
+			}
+		}
+		return;
+	}
 	if (U.want_rename >= 0) {
 		int i = U.want_rename;
 		U.want_rename = -1;
@@ -9348,6 +9500,11 @@ static void update(void)
 	if (g_dialog.open)
 		return;
 	br_poll(); // el navegador cerrado a media carga: se suelta al acabar
+	if (CLU.open && (g_kdown & KEY_SELECT) && !CLU.om && !CLU.hm) { // la nube también: SELECT, al inicio
+		CLU.open = false;
+		hm_show();
+		return;
+	}
 	if (br_is_open() || CLU.open) // el navegador y la nube usan todos los botones (L/R, START…)
 		return;
 	if (!hm_is_open() && U.app == AP_CONNECT && (U.tab == TAB_ACTIVITY || U.tab == TAB_DEVICES) && (g_kdown & (KEY_L | KEY_R | KEY_ZL | KEY_ZR)))

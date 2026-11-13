@@ -2803,4 +2803,94 @@ TR = {
     'SD':
         ('SD',
          'SD'),
+    'La última subida no terminó':
+        ("The last upload didn't finish",
+         '前回のアップロードは完了しませんでした'),
+    'Tus capturas se suben solas':
+        ('Your screenshots upload automatically',
+         'スクリーンショットは自動でアップロードされます'),
+    'Las capturas no se suben':
+        ("Screenshots aren't uploaded",
+         'スクリーンショットはアップロードされません'),
+    'Cada captura nueva que hagas desde el menú de Rosalina se sube a /Cloud3DS/Capturas.':
+        ('Every new screenshot you take from the Rosalina menu is uploaded to /Cloud3DS/Capturas.',
+         'Rosalinaメニューで撮った新しいスクリーンショットは /Cloud3DS/Capturas にアップロードされます。'),
+    'Actívalo abajo para subir cada captura nueva a /Cloud3DS/Capturas.':
+        ('Turn it on below to upload every new screenshot to /Cloud3DS/Capturas.',
+         '下でオンにすると、新しいスクリーンショットを /Cloud3DS/Capturas にアップロードします。'),
+    'Nada pendiente.':
+        ('Nothing pending.',
+         '保留中のものはありません。'),
+    'Tus archivos de OneDrive en la consola, con subida automática de tus capturas. Se conecta con un QR y un código, sin contraseñas.':
+        ('Your OneDrive files on the console, with automatic upload of your screenshots. Connect with a QR code and a code, no passwords.',
+         '本体でOneDriveのファイルを利用でき、スクリーンショットも自動でアップロードされます。QRコードとコードで接続でき、パスワードは不要です。'),
+    'Descargando la carpeta en /Descargas: lo verás en Descargas':
+        ('Downloading the folder to /Descargas: see Downloads',
+         'フォルダを /Descargas にダウンロード中:「ダウンロード」で確認できます'),
+    'Copiado: pégalo con X en otra carpeta de la nube o en Archivos':
+        ('Copied: paste it with X in another cloud folder or in Files',
+         'コピーしました。クラウドの別のフォルダか「ファイル」でXを押すと貼り付けます'),
+    'Cortado: pégalo con X en otra carpeta de la nube':
+        ('Cut: paste it with X in another cloud folder',
+         '切り取りました。クラウドの別のフォルダでXを押すと移動します'),
+    'Capturas en la nube':
+        ('Screenshots in the cloud',
+         'クラウドのスクリーンショット'),
+    'Subir las capturas nuevas':
+        ('Upload new screenshots',
+         '新しいスクリーンショットをアップロード'),
+    'Subir ahora':
+        ('Upload now',
+         '今すぐアップロード'),
+    'Al momento, a /Cloud3DS/Capturas':
+        ('Right away, to /Cloud3DS/Capturas',
+         'すぐに /Cloud3DS/Capturas へ'),
+    'Las capturas que aún no se han subido':
+        ("Screenshots that haven't been uploaded yet",
+         'まだアップロードしていないスクリーンショット'),
+    'Subiendo las capturas pendientes a OneDrive':
+        ('Uploading pending screenshots to OneDrive',
+         '保留中のスクリーンショットをOneDriveにアップロード中'),
+    'Copia algo en Archivos y pégalo aquí con X, o crea una carpeta con «+».':
+        ('Copy something in Files and paste it here with X, or create a folder with "+".',
+         '「ファイル」でコピーしてここでXを押すと貼り付けます。「+」でフォルダを作成できます。'),
+    'Subir aquí':
+        ('Upload here',
+         'ここにアップロード'),
+    'Moviendo a esta carpeta':
+        ('Moving to this folder',
+         'このフォルダに移動中'),
+    'Copiando en esta carpeta: OneDrive tarda unos segundos':
+        ('Copying to this folder: OneDrive takes a few seconds',
+         'このフォルダにコピー中:OneDriveの処理に数秒かかります'),
+    'Subiendo a OneDrive: lo verás en Conectar, en «Actividad»':
+        ('Uploading to OneDrive: see Connect > Activity',
+         'OneDriveにアップロード中:「接続」の「アクティビティ」で確認できます'),
+    'Subiendo %d elementos a OneDrive':
+        ('Uploading %d items to OneDrive',
+         '%d件をOneDriveにアップロード中'),
+    'Descargar aquí':
+        ('Download here',
+         'ここにダウンロード'),
+    'Descargando de OneDrive a esta carpeta: lo verás en Descargas':
+        ('Downloading from OneDrive to this folder: see Downloads',
+         'OneDriveからこのフォルダにダウンロード中:「ダウンロード」で確認できます'),
+    'Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben solas.':
+        ('Your OneDrive on the console: browse, upload, download and organize your files. New screenshots upload automatically.',
+         '本体でOneDriveを利用:ファイルの閲覧、アップロード、ダウンロード、整理ができます。新しいスクリーンショットは自動でアップロードされます。'),
+    'Nombre de la carpeta nueva':
+        ('Name of the new folder',
+         '新しいフォルダの名前'),
+    'Creando la carpeta en OneDrive':
+        ('Creating the folder in OneDrive',
+         'OneDriveにフォルダを作成中'),
+    'Nombre nuevo':
+        ('New name',
+         '新しい名前'),
+    'El nombre no puede llevar / \\ : * ? " < > |':
+        ('The name can\'t contain / \\ : * ? " < > |',
+         '名前に / \\ : * ? " < > | は使えません'),
+    'Cambiando el nombre en OneDrive':
+        ('Renaming in OneDrive',
+         'OneDriveで名前を変更中'),
 }

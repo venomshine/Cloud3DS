@@ -59,8 +59,14 @@ const char *cloud_folder_id(void);
 int  cloud_items(CloudItem *out, int max, bool *loading);
 
 void cloud_download(const CloudItem *it);           /* a la cola de descargas (un .cia se instala al bajar) */
-void cloud_upload(const char *sd_path, const char *parent_id); /* "" en parent: la carpeta Cloud3DS */
+bool cloud_upload(const char *sd_path, const char *parent_id); /* archivo o carpeta. "" en parent: la carpeta Cloud3DS; "root": la raíz */
 void cloud_delete(const CloudItem *it);             /* a la papelera de OneDrive */
+/* gestionar, como en Archivos. parent_id: el de cloud_folder_id(); "" es la raíz. Si el nombre ya existe, se usa otro */
+void cloud_mkdir(const char *parent_id, const char *name);
+void cloud_rename(const CloudItem *it, const char *name);
+void cloud_move(const CloudItem *it, const char *parent_id);  /* cortar y pegar */
+void cloud_copy(const CloudItem *it, const char *parent_id);  /* la copia la hace OneDrive (tarda un poco en verse) */
+void cloud_download_to(const CloudItem *it, const char *sd_dir); /* a esa carpeta de la SD; una carpeta, entera */
 
 /* capturas en la nube: las nuevas de Luma se suben solas a /Cloud3DS/Capturas */
 void cloud_set_caps(bool on);
