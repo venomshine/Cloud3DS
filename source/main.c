@@ -2703,7 +2703,7 @@ typedef struct {
 	short n;     // cabecera de grupo: cuántos tiene
 } FView;
 enum { CH_HOME, CH_SHOTS, CH_PHOTOS, CH_CIAS, CH_HB, CH_SAVES, CH_TITLES, CH_COUNT };
-#define CH_SHOWN (CH_COUNT - 1) /* (los títulos instalados son su propia aplicación: fuera de los accesos rápidos) */
+#define CH_SHOWN CH_SAVES /* (fuera de los accesos rápidos: las partidas se gestionan con Checkpoint y los títulos son su propia aplicación) */
 static const char *const CHIP_PATH[CH_COUNT] = {"/", "/luma/screenshots", "/DCIM", "/cias", "/3ds", "@saves", "@titles"};
 static const char *const SAVE_DIRS[3] = {"/3ds/Checkpoint/saves", "/JKSV/Saves", "/JKSV"};
 

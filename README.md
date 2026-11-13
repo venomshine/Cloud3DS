@@ -51,7 +51,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 
 - **Conectar en un segundo:** QR en la consola para el móvil y dirección + PIN para el PC. El PIN es siempre el mismo para que te lo aprendas; puedes elegir el tuyo o pedir uno al azar en Ajustes. Tras varios intentos fallidos se bloquea un rato.
 - **Dispositivos con su nombre real:** la consola lo pregunta a la red («Mi-iPhone», «DESKTOP-ABC123»), y si no lo encuentra se ve el modelo («iPhone · Safari»). Puedes renombrarlos desde la consola o desde la web, ver quién está conectado y **desvincular** a cualquiera; en su navegador aparece al momento.
-- **Explorador de la SD** en el navegador: accesos rápidos a **Capturas** (Luma), **Fotos** (cámara), **CIAs**, **Homebrew** y **Partidas** (las copias de Checkpoint o JKSM); lista o cuadrícula con miniaturas; búsqueda y orden por nombre, fecha o tamaño.
+- **Explorador de la SD** en el navegador: accesos rápidos a **Capturas** (Luma), **Fotos** (cámara), **CIAs**, **Homebrew** y **Títulos** (los juegos y aplicaciones instalados); lista o cuadrícula con miniaturas; búsqueda y orden por nombre, fecha o tamaño.
 - **Carpetas destacadas:** marca cualquier carpeta con uno de seis colores para encontrarla enseguida; sale la primera. Las **carpetas del sistema** van aparte, en su propio grupo plegable.
 - **Subir arrastrando** archivos sueltos o carpetas enteras, con cola, progreso, velocidad y tiempo restante.
 - **Copiar y mover** archivos y carpetas dentro de la SD, también varios a la vez, eligiendo el destino en un selector de carpetas.

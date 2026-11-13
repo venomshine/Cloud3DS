@@ -700,7 +700,7 @@ async function tryPin(pin){
 /* ---------- app ---------- */
 const S={titles:null,find:null,trash:false,tr:null,nosaves:false,path:"/",items:[],sort:"name",asc:true,view:"list",sel:new Set(),info:{},filter:"",missing:false,system:false,loading:false};
 try{S.view=localStorage.getItem("c3d_view")||"list";S.sort=localStorage.getItem("c3d_sort")||"name";S.sysOpen=localStorage.getItem("c3d_sys")!=="0";S.sysApart=localStorage.getItem("c3d_sysapart")!=="0"}catch(e){S.sysOpen=true;S.sysApart=true}
-const PLACES=[["/","home","home"],["/luma/screenshots","shots","cam"],["/DCIM","photos","pic"],["/cias","cias","box"],["/3ds","hb","game"],["@titles","titles","app"],["@saves","saves","save"],["@trash","trash","trash"]];
+const PLACES=[["/","home","home"],["/luma/screenshots","shots","cam"],["/DCIM","photos","pic"],["/cias","cias","box"],["/3ds","hb","game"],["@titles","titles","app"],["@trash","trash","trash"]];
 // las partidas solo existen como archivos si se copian con un gestor: se abre el que haya en la SD
 const SAVE_DIRS=["/3ds/Checkpoint/saves","/JKSV/Saves","/JKSV"];
 const inSaves=p=>S.nosaves||SAVE_DIRS.some(d=>p===d||p.startsWith(d+"/"));
