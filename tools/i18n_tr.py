@@ -2917,4 +2917,28 @@ TR = {
     'Abriendo «%s»':
         ('Opening "%s"',
          '「%s」を開いています'),
+    'Combinar las carpetas':
+        ('Merge the folders',
+         'フォルダを統合'),
+    'Reemplazar':
+        ('Replace',
+         '置き換える'),
+    'Reemplazar todos (las carpetas se combinan)':
+        ('Replace all (folders are merged)',
+         'すべて置き換える(フォルダは統合)'),
+    'Conservar ambos (con otro nombre)':
+        ('Keep both (with another name)',
+         '両方残す(別の名前で)'),
+    'Omitir':
+        ('Skip',
+         'スキップ'),
+    'Omitir los que ya existen':
+        ('Skip the ones that already exist',
+         '既にあるものはスキップ'),
+    'Ya existe «%s» aquí':
+        ('"%s" already exists here',
+         '「%s」は既にあります'),
+    'Ya existen %d elementos aquí':
+        ('%d items already exist here',
+         '%d件は既にあります'),
 }

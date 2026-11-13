@@ -7404,6 +7404,8 @@ static void f_menu(void)
 }
 
 static void f_pick_do(const char *dst);
+enum { XP_ASK, XP_REPLACE, XP_KEEP, XP_SKIP }; // al pegar, lo que ya exista: preguntar, sustituir, los dos u omitir
+static void f_paste(int policy);
 
 // ---- mover o copiar: se elige la carpeta navegando y se confirma con X o con el botón
 static void f_pick_bar(void)
@@ -7454,7 +7456,45 @@ static void f_pick_bar(void)
 	}
 	if (!go)
 		return;
-	if (FP.n > 1) { // varios: cada uno con su nombre; si ya existe, con uno libre («nombre (2)»)
+	f_paste(XP_ASK);
+}
+
+// pegar lo copiado aquí. policy: qué hacer con lo que ya exista; XP_ASK pregunta antes (si hay algo repetido)
+static struct {
+	bool open, just;
+	float anim;
+	int sel, n;      // cuántos ya existen
+	bool dir;        // (uno solo, y es una carpeta: «Combinar»)
+	char name[128];
+} XS;
+static int f_paste_conflicts(bool *one_dir, char *one, size_t on)
+{
+	int c = 0;
+	for (int k = 0; k < (FP.n > 1 ? FP.n : 1); k++) {
+		const char *src = FP.n > 1 ? FP.list[k] : FP.src, *nm = strrchr(src, '/') + 1;
+		char dst[1100];
+		snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
+		bool d;
+		u64 sz;
+		if (strcasecmp(dst, src) && fsx_stat(dst, &d, &sz) == 0) {
+			if (!c)
+				*one_dir = d, util_strlcpy(one, nm, on);
+			c++;
+		}
+	}
+	return c;
+}
+static void f_paste(int policy)
+{
+	if (policy == XP_ASK) {
+		XS.n = f_paste_conflicts(&XS.dir, XS.name, sizeof XS.name);
+		if (XS.n) {
+			XS.open = XS.just = true, XS.sel = 0;
+			return;
+		}
+		policy = XP_REPLACE; // (nada repetido)
+	}
+	if (FP.n > 1) { // varios: lo que ya exista, según lo elegido (sustituir, los dos u omitir)
 		if (V.protect_sys && fsx_is_system(F.path) && strcmp(F.path, "/")) {
 			toast_icon(_("Carpeta protegida: elige otra"), IC_LOCK, T.warn);
 			return;
@@ -7484,10 +7524,15 @@ static void f_pick_bar(void)
 				continue; // una carpeta dentro de sí misma
 			char dst[700];
 			snprintf(dst, sizeof dst, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", nm);
-			bool d;
+			bool d, sdir = false;
 			u64 sz;
-			if (fsx_stat(dst, &d, &sz) == 0)
-				ops_free_name(dst, sizeof dst, F.path, nm);
+			if (fsx_stat(dst, &d, &sz) == 0) {
+				if (policy == XP_SKIP)
+					continue;
+				fsx_stat(src, &sdir, &sz);
+				if (policy == XP_KEEP || (FP.mode == FA_COPY && here) || d != sdir) // (carpeta y archivo con el mismo nombre: los dos)
+					ops_free_name(dst, sizeof dst, F.path, nm);
+			}
 			if (FP.mode == FA_MOVE) {
 				if (ops_move(src, dst) == OPS_OK) {
 					state_lock();
@@ -7528,12 +7573,32 @@ static void f_pick_bar(void)
 			FP.mode = 0; // ya está aquí
 			return;
 		}
-		char msg[200];
-		snprintf(msg, sizeof msg, _("Ya existe «%s» aquí. Se guardará con otro nombre, como «%s (2)»."), FP.name, FP.name);
-		dialog_open(DLG_FEXISTS, _("Ya existe"), msg, _("Conservar ambos"), false);
-		return;
+		if (policy == XP_SKIP)
+			return;
+		if (policy == XP_KEEP || (FP.mode == FA_COPY && !strcasecmp(dst, FP.src)) || d != FP.src_dir) {
+			char dir[512];
+			util_strlcpy(dir, F.path, sizeof dir);
+			ops_free_name(dst, sizeof dst, dir, FP.name);
+		}
 	}
 	f_pick_do(dst);
+}
+
+// la hoja de «Ya existe»: sustituir (o combinar, si son carpetas), conservar los dos u omitir; vale para todos
+static void xs_draw(void)
+{
+	static const IconId ic[3] = {IC_REFRESH, IC_DUP, IC_CLOSE};
+	const char *lab[3] = {XS.n == 1 && XS.dir ? _("Combinar las carpetas") : XS.n == 1 ? _("Reemplazar") : _("Reemplazar todos (las carpetas se combinan)"),
+	                      _("Conservar ambos (con otro nombre)"), XS.n == 1 ? _("Omitir") : _("Omitir los que ya existen")};
+	const u32 col[3] = {T.warn, T.text, T.text2};
+	char t[200];
+	if (XS.n == 1)
+		snprintf(t, sizeof t, _("Ya existe «%s» aquí"), XS.name);
+	else
+		snprintf(t, sizeof t, _("Ya existen %d elementos aquí"), XS.n);
+	int r = sheet_list(&XS.open, &XS.just, &XS.anim, &XS.sel, t, ic, lab, col, 3);
+	if (r >= 0)
+		f_paste(r == 0 ? XP_REPLACE : r == 1 ? XP_KEEP : XP_SKIP);
 }
 
 static void f_pick_do(const char *dst)
@@ -8715,7 +8780,7 @@ static void hm_show(void)
 {
 	hm_load();
 	// las hojas abiertas en una aplicación se cierran: si no, al abrir otra seguirían tapando su entrada sin verse
-	QA.open = DVS.open = UL.open = FM.open = PM.open = TY.open = VS.open = MA.open = MC.open = TS.open = HS.open = ZS.open = DS.open = TT.open = false;
+	XS.open = QA.open = DVS.open = UL.open = FM.open = PM.open = TY.open = VS.open = MA.open = MC.open = TS.open = HS.open = ZS.open = DS.open = TT.open = false;
 	HM.open = true;
 	HM.fade = 0;
 	HM.page_pos = HM.sel / hm_per_page();
@@ -9091,7 +9156,7 @@ static void draw_bottom(void)
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	bool viewer = U.tab == TAB_FILES && VW.kind;
-	bool overlay = QA.open || DVS.open || UL.open || FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
+	bool overlay = QA.open || DVS.open || UL.open || FM.open || PM.open || TY.open || VS.open || MA.open || MC.open || TS.open || HS.open || XS.open || ZS.open || DS.open || QRS.open || TT.open || MU.open || U.ins_pend || viewer;
 	if (overlay) {
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
@@ -9140,6 +9205,7 @@ static void draw_bottom(void)
 		mc_draw();
 		ts_draw();
 		hs_draw();
+		xs_draw();
 		zs_draw();
 		tt_draw();
 	}
@@ -9282,12 +9348,7 @@ static void handle_dialog(int ctx, bool ok)
 		ms_end();
 	if (ctx == DLG_FDELETE || ctx == DLG_FDELMULTI || ctx == DLG_TRASHEMPTY || ctx == DLG_TRASHDEL)
 		f_reload();
-	if (ctx == DLG_FEXISTS) {
-		char dir[512], dst[1100];
-		util_strlcpy(dir, F.path, sizeof dir);
-		ops_free_name(dst, sizeof dst, dir, FP.name);
-		f_pick_do(dst);
-	}
+
 }
 
 static void watch_events(void)
