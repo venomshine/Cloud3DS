@@ -2959,4 +2959,145 @@ TR = {
     'Descarga desde un enlace o un código QR, y abre lo descargado (carpeta /Downloads). Los CIA se instalan durante la descarga.':
         ('Download from a link or a QR code, and open what you downloaded (/Downloads folder). CIA files are installed during the download.',
          'リンクやQRコードからダウンロードし、ダウンロードしたものを開けます(/Downloadsフォルダ)。CIAはダウンロード中にインストールされます。'),
+    'Artista desconocido':
+        ('Unknown artist',
+         '不明なアーティスト'),
+    'Álbum desconocido':
+        ('Unknown album',
+         '不明なアルバム'),
+    'Tu música':
+        ('Your music',
+         'あなたの音楽'),
+    '%d canciones · %d artistas · %d álbumes':
+        ('%d songs · %d artists · %d albums',
+         '%d曲 · %dアーティスト · %dアルバム'),
+    'Buscando música en la SD… %d':
+        ('Looking for music on the SD card… %d',
+         'SDカードの音楽を検索中… %d'),
+    '%d canciones no tienen datos (título, artista o álbum): están en «Sin datos», donde puedes ocultarlas o eliminarlas si quieres.':
+        ('%d songs have no details (title, artist or album): they\'re in "No details", where you can hide or delete them if you want.',
+         '%d曲には情報(タイトル・アーティスト・アルバム)がありません。「情報なし」で非表示や削除ができます。'),
+    'Las canciones se agrupan por artista y álbum según sus etiquetas.':
+        ('Songs are grouped by artist and album using their tags.',
+         '曲はタグに従ってアーティストとアルバムごとにまとめられます。'),
+    '%s Reproducir · %s Opciones · L R Pestañas':
+        ('%s Play · %s Options · L R Tabs',
+         '%s 再生 · %s オプション · L R タブ'),
+    'Canciones':
+        ('Songs',
+         '曲'),
+    'Artistas':
+        ('Artists',
+         'アーティスト'),
+    'Álbumes':
+        ('Albums',
+         'アルバム'),
+    'Sin datos':
+        ('No details',
+         '情報なし'),
+    'Buscando música…':
+        ('Looking for music…',
+         '音楽を検索中…'),
+    'No hay música':
+        ('No music',
+         '音楽がありません'),
+    'Se busca en toda la SD; la primera vez puede tardar un poco.':
+        ('The whole SD card is searched; the first time may take a while.',
+         'SDカード全体を検索します。初回は少し時間がかかることがあります。'),
+    'Copia canciones MP3, OGG o WAV a la SD (por ejemplo, a /Music) y aparecerán aquí.':
+        ('Copy MP3, OGG or WAV songs to the SD card (for example, to /Music) and they will show up here.',
+         'MP3・OGG・WAVの曲をSDカード(例:/Music)にコピーするとここに表示されます。'),
+    'Todas las canciones':
+        ('All songs',
+         'すべての曲'),
+    '1 canción':
+        ('1 song',
+         '1曲'),
+    '%d canciones':
+        ('%d songs',
+         '%d曲'),
+    '%s · 1 canción':
+        ('%s · 1 song',
+         '%s · 1曲'),
+    '%s · %d canciones':
+        ('%s · %d songs',
+         '%s · %d曲'),
+    'Oculta':
+        ('Hidden',
+         '非表示'),
+    'Reproducir':
+        ('Play',
+         '再生'),
+    'Reproducir en aleatorio':
+        ('Shuffle',
+         'シャッフル再生'),
+    'Volver a mostrar':
+        ('Show again',
+         '再表示'),
+    'Ocultar de la biblioteca':
+        ('Hide from the library',
+         'ライブラリから非表示'),
+    'Eliminar (a la papelera)':
+        ('Delete (to the trash)',
+         '削除(ゴミ箱へ)'),
+    'Vuelve a estar en la biblioteca':
+        ("It's back in the library",
+         'ライブラリに戻しました'),
+    'Oculta: la verás con «Ver las ocultas»':
+        ('Hidden: you\'ll see it with "Show hidden"',
+         '非表示にしました。「非表示を表示」で見られます'),
+    '«%s» irá a la papelera de la SD. Podrás recuperarla durante unos días.':
+        ('"%s" will go to the SD trash. You can restore it for a few days.',
+         '「%s」はSDのゴミ箱に移動します。数日間は復元できます。'),
+    '¿Eliminar la canción?':
+        ('Delete the song?',
+         '曲を削除しますか?'),
+    'Buscar música otra vez':
+        ('Search for music again',
+         '音楽を再検索'),
+    'Buscar solo en /Music':
+        ('Search only in /Music',
+         '/Musicだけを検索'),
+    'Buscar en toda la SD':
+        ('Search the whole SD card',
+         'SDカード全体を検索'),
+    'No ver las ocultas':
+        ("Don't show hidden",
+         '非表示を隠す'),
+    'Ver las ocultas':
+        ('Show hidden',
+         '非表示を表示'),
+    'Ocultar todas las sin datos':
+        ('Hide all without details',
+         '情報なしをすべて非表示'),
+    'Eliminar todas las sin datos':
+        ('Delete all without details',
+         '情報なしをすべて削除'),
+    'Buscando música en la SD…':
+        ('Looking for music on the SD card…',
+         'SDカードの音楽を検索中…'),
+    'Buscando en toda la SD…':
+        ('Searching the whole SD card…',
+         'SDカード全体を検索中…'),
+    'Buscando solo en las carpetas de música…':
+        ('Searching only the music folders…',
+         '音楽フォルダだけを検索中…'),
+    'Ocultas. Puedes volver a verlas desde ⋮':
+        ('Hidden. You can show them again from ⋮',
+         '非表示にしました。⋮から再表示できます'),
+    'Las %d canciones sin datos irán a la papelera de la SD. Podrás recuperarlas durante unos días.':
+        ('The %d songs without details will go to the SD trash. You can restore them for a few days.',
+         '情報なしの%d曲はSDのゴミ箱に移動します。数日間は復元できます。'),
+    '¿Eliminar las canciones sin datos?':
+        ('Delete the songs without details?',
+         '情報なしの曲を削除しますか?'),
+    'Toda la música de la SD, por canciones, artistas y álbumes. Sigue sonando en segundo plano.':
+        ('All the music on the SD card, by songs, artists and albums. Keeps playing in the background.',
+         'SDカードのすべての音楽を曲・アーティスト・アルバム別に。バックグラウンドでも再生できます。'),
+    '1 canción a la papelera':
+        ('1 song moved to the trash',
+         '1曲をゴミ箱へ移動しました'),
+    '%d canciones a la papelera':
+        ('%d songs moved to the trash',
+         '%d曲をゴミ箱へ移動しました'),
 }

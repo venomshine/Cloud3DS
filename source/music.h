@@ -31,13 +31,14 @@ typedef struct {
 } MusicState;
 
 bool music_is_audio(const char *name);
-/* empieza por start, con names (de dir) como lista */
+/* empieza por start, con names (de dir) como lista. Con dir "", names son rutas enteras (de carpetas distintas) */
 bool music_play(const char *dir, char (*names)[256], int n, int start);
 void music_toggle(void);
 void music_next(void);
 void music_prev(void);
 void music_stop(void);
 void music_shuffle(void);
+void music_set_shuffle(bool on); /* para la próxima lista (music_play): sin reordenar la que suena */
 void music_repeat(void);
 void music_get(MusicState *s);
 bool music_playing(void);  /* sonando (no en pausa) */

@@ -343,7 +343,10 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 	char path[800];
 	MusicState st = {0};
 	LightLock_Lock(&M.lock);
-	snprintf(path, sizeof path, "%s%s%s", M.s.dir, strcmp(M.s.dir, "/") ? "/" : "", M.list[idx]);
+	if (!M.s.dir[0]) // (la biblioteca: cada una con su ruta entera)
+		snprintf(path, sizeof path, "%s", M.list[idx]);
+	else
+		snprintf(path, sizeof path, "%s%s%s", M.s.dir, strcmp(M.s.dir, "/") ? "/" : "", M.list[idx]);
 	free(M.cover);
 	M.cover = NULL, M.cover_ok = false;
 	LightLock_Unlock(&M.lock);
@@ -352,7 +355,8 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 	LightLock_Lock(&M.lock);
 	snprintf(M.s.name, sizeof M.s.name, "%s", M.list[idx]);
 	if (!st.title[0]) { // sin etiquetas: el nombre del archivo, sin extensión
-		snprintf(st.title, sizeof st.title, "%s", M.list[idx]);
+		const char *bn = strrchr(M.list[idx], '/');
+		snprintf(st.title, sizeof st.title, "%s", bn ? bn + 1 : M.list[idx]);
 		char *dot = strrchr(st.title, '.');
 		if (dot)
 			*dot = 0;
@@ -552,6 +556,18 @@ void music_toggle(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_TOGGLE); }
 void music_next(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_NEXT); }
 void music_prev(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_PREV); }
 void music_stop(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_STOP); }
+
+void music_set_shuffle(bool on)
+{
+	if (!M.thr) {
+		LightLock_Init(&M.lock);
+		M.s.shuffle = on;
+		return;
+	}
+	LightLock_Lock(&M.lock);
+	M.s.shuffle = on;
+	LightLock_Unlock(&M.lock);
+}
 
 void music_shuffle(void)
 {

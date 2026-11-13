@@ -20,6 +20,7 @@
 #include "dl.h"
 #include "hash.h"
 #include "music.h"
+#include "mlib.h"
 #include "live.h"
 #include "titles.h"
 #include "remote.h"
@@ -107,7 +108,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLDELN, DLG_CLOUT, DLG_UNUPD, DLG_UNDLC, DLG_EXTDEL };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLDELN, DLG_CLOUT, DLG_MLDEL, DLG_UNUPD, DLG_UNDLC, DLG_EXTDEL };
 
 typedef struct {
 	float off, target;
@@ -1659,6 +1660,7 @@ static void dl_top(void)
 }
 static void titles_space_bar(void);
 static bool f_is_titles(void);
+static void ml_top(void);
 
 static void draw_top(void)
 {
@@ -1728,6 +1730,8 @@ static void draw_top(void)
 			conn_top();
 	} else if (U.app == AP_DL)
 		dl_top();
+	else if (U.app == AP_MUSIC)
+		ml_top();
 	else if (MU.open)
 		music_top(1);
 	else if (U.tab == TAB_FILES) {
@@ -1772,7 +1776,10 @@ static List *cur_list(void)
 	return &U.list[U.tab];
 }
 
-static bool hdr_enter(void); // (↑ en lo primero de una lista: a los botones de la cabecera)
+static bool hdr_enter(void);
+static void ml_top(void);    // la app Música: su biblioteca
+static void ml_bottom(void);
+static void hm_launch(int i); // (↑ en lo primero de una lista: a los botones de la cabecera)
 static float g_list_bar; // lo que tapa una barra al pie de la lista (la de pegar, por ejemplo): se puede bajar hasta verlo todo
 static void list_update(List *l, int count, float rh)
 {
@@ -4632,8 +4639,6 @@ static void cl_open_item(int i)
 // cuando termina de bajarse, se abre
 static void cl_open_poll(void)
 {
-	if (CO.mu_wait > 0 && (--CO.mu_wait, mu_on()))
-		MU.open = MU.just = true, MU.sel = 2, CO.mu_wait = 0;
 	if (CLU.info.open_rev == CO.seen)
 		return;
 	CO.seen = CLU.info.open_rev;
@@ -6236,6 +6241,8 @@ static void ds_draw(void)
 // la hoja del reproductor: aleatorio, anterior, play/pausa, siguiente, repetir; parar e ir a la carpeta
 static void music_sheet(void)
 {
+	if (CO.mu_wait > 0 && (--CO.mu_wait, mu_on())) // recién pedida: el reproductor sale en cuanto suena
+		MU.open = MU.just = true, MU.sel = 2, CO.mu_wait = 0;
 	MU.anim = approach(MU.anim, MU.open ? 1 : 0, 16);
 	if (MU.anim < 0.01f)
 		return;
@@ -6247,7 +6254,7 @@ static void music_sheet(void)
 		return;
 	bool fresh = MU.just;
 	MU.just = false;
-	if (!mu_on()) {
+	if (MU.s.st == MU_OFF) { // (con un archivo que falla, sigue abierta: pasa a la siguiente)
 		MU.open = false;
 		return;
 	}
@@ -6309,6 +6316,16 @@ static void music_sheet(void)
 		char dir[512], nm[256];
 		util_strlcpy(dir, MU.s.dir, sizeof dir);
 		util_strlcpy(nm, MU.s.name, sizeof nm);
+		if (!dir[0]) { // (de la biblioteca: la ruta entera, en el nombre)
+			util_strlcpy(dir, MU.s.name, sizeof dir);
+			char *sl = strrchr(dir, '/');
+			util_strlcpy(nm, sl ? sl + 1 : dir, sizeof nm);
+			if (sl)
+				*sl = 0;
+			if (!dir[0])
+				util_strlcpy(dir, "/", sizeof dir);
+			hm_launch(AP_FILES); // (a Archivos, a su carpeta)
+		}
 		f_load(dir);
 		for (int i = 0; i < F.nv; i++)
 			if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, nm))
@@ -6327,6 +6344,497 @@ static void music_sheet(void)
 		MU.open = false;
 	g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y);
 	g_touch.up = false;
+}
+
+// ---- Música: la biblioteca (mlib) por canciones, artistas, álbumes y lo que no tiene etiquetas. A reproduce desde ahí
+// la lista que se ve; Y, las opciones (ocultar, eliminar, ir a la carpeta); ⋮ en la cabecera, buscar de nuevo, dónde
+// buscar y ver las ocultas. Todo lo de ocultar o borrar es opcional: la biblioteca solo lo apunta
+enum { MLT_SONGS, MLT_ARTISTS, MLT_ALBUMS, MLT_NOTAG };
+static struct {
+	bool init;
+	int tab, level;       // level 0: la lista de la pestaña; 1: los álbumes de un artista; 2: las canciones de un álbum
+	char artist[64], album[64];
+	List l[3];
+	u32 rev, built;       // de qué biblioteca y de qué vista son las listas
+	MSong *lib;           // copia de la biblioteca
+	int nlib, nnotag, nhidden;
+	int *ix, n;           // las canciones a la vista (índices de lib)
+	char (*grp)[64];      // artistas o álbumes a la vista
+	char (*gsub)[64];     // (de cada álbum: su artista)
+	int *gcnt, ng;
+	bool show_hidden;
+	bool om, om_just;     // opciones de una canción o de un grupo
+	float om_anim;
+	int om_sel, om_i;     // om_i: fila de la lista
+	bool hm, hm_just;     // opciones de la cabecera
+	float hm_anim;
+	int hm_sel;
+	char del_path[256];   // (lo que se va a eliminar)
+} ML;
+
+static const char *ml_title(const MSong *m, char *buf, size_t n)
+{
+	if (m->title[0])
+		return m->title;
+	const char *b = strrchr(m->path, '/');
+	util_strlcpy(buf, b ? b + 1 : m->path, n);
+	char *dot = strrchr(buf, '.');
+	if (dot)
+		*dot = 0;
+	return buf;
+}
+
+static const MSong *ML_SORT; // (para qsort)
+static int ml_cmp_title(const void *a, const void *b)
+{
+	char x[96], y[96];
+	return strcasecmp(ml_title(&ML_SORT[*(const int *)a], x, sizeof x), ml_title(&ML_SORT[*(const int *)b], y, sizeof y));
+}
+static int ml_cmp_track(const void *a, const void *b)
+{
+	const MSong *x = &ML_SORT[*(const int *)a], *y = &ML_SORT[*(const int *)b];
+	if (x->track != y->track)
+		return (x->track ? x->track : 9999) - (y->track ? y->track : 9999);
+	return ml_cmp_title(a, b);
+}
+
+static bool ml_grouping(void) // ¿la lista que se ve es de grupos (artistas o álbumes)?
+{
+	return (ML.tab == MLT_ARTISTS && ML.level <= 1) || (ML.tab == MLT_ALBUMS && ML.level == 0);
+}
+
+// rehace la vista: de la biblioteca (si cambió), las canciones o los grupos que tocan
+static void ml_build(void)
+{
+	u32 r = mlib_rev();
+	if (!ML.lib) {
+		ML.lib = malloc(sizeof(MSong) * MLIB_MAX);
+		ML.ix = malloc(sizeof(int) * MLIB_MAX);
+		ML.grp = malloc(sizeof *ML.grp * MLIB_MAX);
+		ML.gsub = malloc(sizeof *ML.gsub * MLIB_MAX);
+		ML.gcnt = malloc(sizeof(int) * MLIB_MAX);
+		if (!ML.lib || !ML.ix || !ML.grp || !ML.gsub || !ML.gcnt)
+			return;
+		ML.rev = r - 1;
+	}
+	u32 key = (u32)ML.tab * 7919u + (u32)ML.level * 31u + (ML.show_hidden ? 1u : 0u) + (u32)strlen(ML.artist) * 131u + (u32)strlen(ML.album) * 977u;
+	if (r == ML.rev && key == ML.built)
+		return;
+	if (r != ML.rev) {
+		const MSong *src;
+		int n = mlib_lock(&src);
+		memcpy(ML.lib, src, sizeof(MSong) * n);
+		mlib_unlock();
+		ML.nlib = n, ML.rev = r;
+		ML.nnotag = ML.nhidden = 0;
+		for (int i = 0; i < n; i++)
+			ML.nnotag += ML.lib[i].notag && !ML.lib[i].hidden, ML.nhidden += ML.lib[i].hidden;
+		if (ML.tab == MLT_NOTAG && !ML.nnotag)
+			ML.tab = MLT_SONGS, ML.level = 0;
+	}
+	ML.built = key;
+	ML.n = ML.ng = 0;
+	const char *art_unknown = _("Artista desconocido"), *alb_unknown = _("Álbum desconocido");
+	for (int i = 0; i < ML.nlib; i++) {
+		const MSong *m = &ML.lib[i];
+		if (m->hidden && !ML.show_hidden)
+			continue;
+		const char *ar = m->artist[0] ? m->artist : art_unknown, *al = m->album[0] ? m->album : alb_unknown;
+		bool group = false;
+		const char *gname = NULL, *gsub = "";
+		switch (ML.tab) {
+		case MLT_SONGS: ML.ix[ML.n++] = i; break;
+		case MLT_NOTAG:
+			if (m->notag)
+				ML.ix[ML.n++] = i;
+			break;
+		case MLT_ARTISTS:
+			if (m->notag)
+				break;
+			if (ML.level == 0)
+				group = true, gname = ar;
+			else if (strcmp(ar, ML.artist))
+				break;
+			else if (ML.level == 1)
+				group = true, gname = al;
+			else if (!ML.album[0] || !strcmp(al, ML.album)) // (album vacío: todas las del artista)
+				ML.ix[ML.n++] = i;
+			break;
+		case MLT_ALBUMS:
+			if (m->notag)
+				break;
+			if (ML.level == 0)
+				group = true, gname = al, gsub = ar;
+			else if (!strcmp(al, ML.album))
+				ML.ix[ML.n++] = i;
+			break;
+		}
+		if (group) {
+			int g = 0;
+			while (g < ML.ng && strcmp(ML.grp[g], gname))
+				g++;
+			if (g == ML.ng && ML.ng < MLIB_MAX) {
+				util_strlcpy(ML.grp[g], gname, sizeof ML.grp[0]);
+				util_strlcpy(ML.gsub[g], gsub, sizeof ML.gsub[0]);
+				ML.gcnt[g] = 0;
+				ML.ng++;
+			}
+			if (g < ML.ng)
+				ML.gcnt[g]++;
+		}
+	}
+	ML_SORT = ML.lib;
+	qsort(ML.ix, ML.n, sizeof *ML.ix, ML.level == 2 ? ml_cmp_track : ml_cmp_title);
+	// los grupos, por nombre (los «desconocidos», al final); con sus contadores y subtítulos a la par
+	for (int a = 1; a < ML.ng; a++)
+		for (int b = a; b > 0; b--) {
+			bool ua = !strcmp(ML.grp[b - 1], art_unknown) || !strcmp(ML.grp[b - 1], alb_unknown);
+			bool ub = !strcmp(ML.grp[b], art_unknown) || !strcmp(ML.grp[b], alb_unknown);
+			if (ua == ub ? strcasecmp(ML.grp[b - 1], ML.grp[b]) <= 0 : ub)
+				break;
+			char t[64], u[64];
+			memcpy(t, ML.grp[b], 64), memcpy(ML.grp[b], ML.grp[b - 1], 64), memcpy(ML.grp[b - 1], t, 64);
+			memcpy(u, ML.gsub[b], 64), memcpy(ML.gsub[b], ML.gsub[b - 1], 64), memcpy(ML.gsub[b - 1], u, 64);
+			int c = ML.gcnt[b];
+			ML.gcnt[b] = ML.gcnt[b - 1], ML.gcnt[b - 1] = c;
+		}
+	List *l = &ML.l[ML.level];
+	int cnt = ml_grouping() ? ML.ng + (ML.tab == MLT_ARTISTS && ML.level == 1) : ML.n;
+	if (l->sel >= cnt)
+		l->sel = cnt ? cnt - 1 : 0;
+}
+
+// reproducir las canciones a la vista, empezando por start (aleatorio: en otro orden)
+static void ml_play(int start, bool shuffle)
+{
+	static char (*names)[256];
+	if (!names && !(names = malloc(sizeof *names * MLIB_MAX)))
+		return;
+	if (!ML.n)
+		return;
+	for (int k = 0; k < ML.n; k++)
+		util_strlcpy(names[k], ML.lib[ML.ix[k]].path, sizeof names[0]);
+	music_set_shuffle(shuffle); // (antes de empezar: la elegida suena la primera)
+	if (!music_play("", names, ML.n, start)) {
+		MusicState ms;
+		music_get(&ms);
+		toast_icon(!strcmp(ms.err, "no_dsp") ? _("Sin sonido: falta el firmware DSP (dspfirm.cdc)") : _("No se pudo reproducir"), IC_CLOSE, T.danger);
+		return;
+	}
+	CO.mu_wait = 300; // el reproductor, en cuanto suene
+}
+
+// las canciones de un grupo (artista o álbum) a la vista, para reproducirlas sin entrar
+static void ml_enter(int i, bool play, bool shuffle)
+{
+	if (ML.tab == MLT_ARTISTS && ML.level == 0)
+		util_strlcpy(ML.artist, ML.grp[i], sizeof ML.artist), ML.album[0] = 0, ML.level = 1;
+	else if (ML.tab == MLT_ARTISTS && ML.level == 1) {
+		if (i == 0) // «Todas las canciones»
+			ML.album[0] = 0;
+		else
+			util_strlcpy(ML.album, ML.grp[i - 1], sizeof ML.album);
+		ML.level = 2;
+	} else if (ML.tab == MLT_ALBUMS && ML.level == 0)
+		util_strlcpy(ML.album, ML.grp[i], sizeof ML.album), ML.level = 2;
+	ML.l[ML.level].sel = 0, ML.l[ML.level].off = ML.l[ML.level].target = 0;
+	ml_build();
+	if (play) { // (sin quedarse dentro)
+		ml_play(0, shuffle);
+		ML.level = ML.tab == MLT_ARTISTS && ML.level == 2 && i == 0 ? 1 : ML.level - (ML.tab == MLT_ALBUMS ? 2 : 1);
+		if (ML.level < 0)
+			ML.level = 0;
+		ml_build();
+	}
+}
+
+static void ml_top(void)
+{
+	if (mu_on()) { // sonando: el reproductor
+		music_top(1);
+		return;
+	}
+	float y0 = BODY_Y, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
+	const float X = CARD_X + 16, W = CARD_W - 32;
+	draw_circle(X + 30, y0 + 40, 26, col_alpha(T.accent, 0.16f));
+	draw_icon(IC_SPEAKER, X + 30, y0 + 40, 24, T.accent);
+	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
+	text_draw_clip(_("Tu música"), tx, y, tw, TS_TITLE, T.text);
+	y += text_lineh(TS_TITLE) + 4;
+	int na = 0, nb = 0;
+	{ // (artistas y álbumes distintos)
+		static u32 seen = 0xFFFFFFFF;
+		static int ca, cb;
+		if (seen != ML.rev) {
+			seen = ML.rev, ca = cb = 0;
+			for (int i = 0; i < ML.nlib; i++) {
+				const MSong *m = &ML.lib[i];
+				if (m->hidden || m->notag)
+					continue;
+				bool na1 = true, nb1 = true;
+				for (int k = 0; k < i && (na1 || nb1); k++) {
+					const MSong *o = &ML.lib[k];
+					if (o->hidden || o->notag)
+						continue;
+					if (!strcmp(o->artist, m->artist))
+						na1 = false;
+					if (!strcmp(o->album, m->album))
+						nb1 = false;
+				}
+				ca += na1, cb += nb1;
+			}
+		}
+		na = ca, nb = cb;
+	}
+	char l1[160];
+	snprintf(l1, sizeof l1, _("%d canciones · %d artistas · %d álbumes"), ML.nlib - ML.nhidden, na, nb);
+	text_draw_clip(l1, tx, y, tw, TS_SUB, T.text2);
+	y += text_lineh(TS_SUB) + 4;
+	int found;
+	if (mlib_scanning(&found)) {
+		char l2[96];
+		snprintf(l2, sizeof l2, _("Buscando música en la SD… %d"), found);
+		text_draw_clip(l2, tx, y, tw, TS_SUB, T.accent);
+		y += text_lineh(TS_SUB) + 4;
+	}
+	y = fmaxf(y, y0 + 76) + 8;
+	draw_rect(X, y, W, 1, T.divider);
+	y += 10;
+	char l3[200];
+	if (ML.nnotag)
+		snprintf(l3, sizeof l3, _("%d canciones no tienen datos (título, artista o álbum): están en «Sin datos», donde puedes ocultarlas o eliminarlas si quieres."), ML.nnotag);
+	else
+		snprintf(l3, sizeof l3, "%s", _("Las canciones se agrupan por artista y álbum según sus etiquetas."));
+	y += text_wrap_lines(l3, W, TS_SUB, 3, X, y, T.text2, true) * text_lineh(TS_SUB) + 8;
+	char hint[160];
+	snprintf(hint, sizeof hint, _("%s Reproducir · %s Opciones · L R Pestañas"), GLYPH_A, GLYPH_Y);
+	text_draw_right(hint, X + W, y0 + h - 10 - text_lineh(TS_SUB), TS_SUB, T.text3);
+}
+
+static void ml_bottom(void)
+{
+	if (!ML.init) {
+		ML.init = true;
+		mlib_init();
+	}
+	ml_build();
+	if (!ML.lib)
+		return;
+	bool sheet = ML.om || ML.hm || g_dialog.open;
+	u32 kd = g_kdown, kr = g_krepeat;
+	Touch tc = g_touch;
+	if (sheet) {
+		g_kdown = g_krepeat = 0;
+		memset(&g_touch, 0, sizeof g_touch);
+	}
+	// cabecera: en la lista, las pestañas; dentro de un artista o un álbum, atrás y su nombre
+	if (ML.level == 0) {
+		tab_header_w("", false, 0);
+		const char *opts[4] = {_("Canciones"), _("Artistas"), _("Álbumes"), _("Sin datos")};
+		int nt = ML.nnotag ? 4 : 3;
+		float sw = (BOT_W - 40 - 36) / nt;
+		int r = segmented(40, 5, sw * nt, 22, opts, nt, ML.tab, false);
+		for (int k = 0; k < nt; k++)
+			if (hdr_hit(40 + k * sw, 5, sw, 22))
+				r = k;
+		if ((g_kdown & (KEY_L | KEY_ZL)) && ML.tab > 0)
+			r = ML.tab - 1;
+		if ((g_kdown & (KEY_R | KEY_ZR)) && ML.tab < nt - 1)
+			r = ML.tab + 1;
+		if (r >= 0 && r != ML.tab)
+			ML.tab = r, ML.l[0].sel = 0, ML.l[0].off = ML.l[0].target = 0;
+		if ((g_kdown & KEY_B) && !g_dialog.open) {
+			hm_show();
+			return;
+		}
+	} else {
+		tab_header_w(ML.level == 2 && ML.album[0] ? ML.album : ML.artist, true, 230);
+		if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
+			ML.level = ML.tab == MLT_ARTISTS ? ML.level - 1 : 0;
+	}
+	float hx = BOT_W - 24, hy = 16;
+	draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? T.surface2 : T.surface);
+	draw_icon(IC_DOTS, hx, hy, 14, T.text2);
+	if (hdr_hit(hx - 13, hy - 13, 26, 26))
+		ML.hm = ML.hm_just = true, ML.hm_sel = 0;
+	ml_build();
+	List *l = &ML.l[ML.level];
+	bool grp = ml_grouping();
+	bool all_row = ML.tab == MLT_ARTISTS && ML.level == 1; // «Todas las canciones» del artista, la primera
+	int cnt = grp ? ML.ng + all_row : ML.n;
+	const float RH = 40;
+	list_update(l, cnt, RH);
+	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+	if (!cnt) {
+		int found;
+		bool sc = mlib_scanning(&found);
+		empty_state(IC_SPEAKER, sc ? _("Buscando música…") : _("No hay música"),
+		            sc ? _("Se busca en toda la SD; la primera vez puede tardar un poco.") : _("Copia canciones MP3, OGG o WAV a la SD (por ejemplo, a /Music) y aparecerán aquí."));
+	}
+	for (int i = 0; i < cnt; i++) {
+		float y = VIEW_Y + i * RH - l->off;
+		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
+			continue;
+		bool was = l->sel == i;
+		bool t = row(l, i, y, RH);
+		if (!U.buttons && l->sel == i)
+			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
+		char t1[128], t2[160];
+		IconId ic = IC_SPEAKER;
+		u32 col = T.accent;
+		bool dim = false;
+		if (grp && all_row && i == 0) {
+			util_strlcpy(t1, _("Todas las canciones"), sizeof t1);
+			int c = 0;
+			for (int g = 0; g < ML.ng; g++)
+				c += ML.gcnt[g];
+			snprintf(t2, sizeof t2, c == 1 ? _("1 canción") : _("%d canciones"), c);
+			ic = IC_LIST, col = T.accent2;
+		} else if (grp) {
+			int g = i - all_row;
+			util_strlcpy(t1, ML.grp[g], sizeof t1);
+			if (ML.tab == MLT_ALBUMS && ML.gsub[g][0])
+				snprintf(t2, sizeof t2, ML.gcnt[g] == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), ML.gsub[g], ML.gcnt[g]);
+			else
+				snprintf(t2, sizeof t2, ML.gcnt[g] == 1 ? _("1 canción") : _("%d canciones"), ML.gcnt[g]);
+			ic = ML.tab == MLT_ARTISTS && ML.level == 0 ? IC_USER : IC_STAR, col = ML.tab == MLT_ARTISTS && ML.level == 0 ? T.accent2 : T.warn;
+		} else {
+			const MSong *m = &ML.lib[ML.ix[i]];
+			char tb[128];
+			util_strlcpy(t1, ml_title(m, tb, sizeof tb), sizeof t1);
+			if (m->notag) {
+				util_strlcpy(t2, m->path, sizeof t2);
+				char *sl = strrchr(t2, '/');
+				if (sl && sl != t2)
+					*sl = 0;
+			} else if (ML.level == 2 && m->track)
+				snprintf(t2, sizeof t2, "%d · %s", m->track, m->artist[0] ? m->artist : _("Artista desconocido"));
+			else
+				snprintf(t2, sizeof t2, "%s%s%s", m->artist, m->artist[0] && m->album[0] ? " · " : "", m->album);
+			dim = m->hidden;
+			if (m->notag)
+				col = T.text3;
+		}
+		draw_rrect(14, y + (RH - 26) / 2, 26, 26, 8, col_alpha(col, 0.16f));
+		draw_icon(ic, 27, y + RH / 2, 14, col);
+		g_clip_ell = l->sel != i;
+		text_draw_clip(t1, 50, y + 5, BOT_W - 90, TS_BODY, dim ? T.text3 : T.text);
+		if (dim) {
+			char t3[200];
+			snprintf(t3, sizeof t3, "%s · %s", _("Oculta"), t2);
+			util_strlcpy(t2, t3, sizeof t2);
+		}
+		text_draw_clip(t2, 50, y + 22, BOT_W - 90, TS_SUB, T.text3);
+		g_clip_ell = false;
+		if (l->sel == i) {
+			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
+			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
+		}
+		bool open = (t && was) || activate(l, i);
+		if (t && was && g_touch.px > BOT_W - 44)
+			ML.om = ML.om_just = true, ML.om_sel = 0, ML.om_i = i;
+		else if (open) {
+			if (grp && all_row && i == 0)
+				ml_enter(0, false, false);
+			else if (grp)
+				ml_enter(i, false, false);
+			else
+				ml_play(i, false);
+		}
+	}
+	gfx_clip_off();
+	if ((g_kdown & KEY_Y) && cnt && !ML.om)
+		ML.om = ML.om_just = true, ML.om_sel = 0, ML.om_i = l->sel;
+	if (sheet)
+		g_kdown = kd, g_krepeat = kr, g_touch = tc;
+	// opciones de lo elegido
+	{
+		IconId ic[6];
+		const char *lab[6];
+		u32 col[6];
+		int act[6], n = 0;
+		char title[128] = "";
+		const MSong *m = !grp && ML.om_i >= 0 && ML.om_i < ML.n ? &ML.lib[ML.ix[ML.om_i]] : NULL;
+		if (grp) {
+			util_strlcpy(title, all_row && ML.om_i == 0 ? _("Todas las canciones") : ML.om_i - all_row >= 0 && ML.om_i - all_row < ML.ng ? ML.grp[ML.om_i - all_row] : "", sizeof title);
+			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = T.accent, act[n++] = 0;
+			ic[n] = IC_SPARK, lab[n] = _("Reproducir en aleatorio"), col[n] = T.text, act[n++] = 1;
+			ic[n] = IC_FOLDER, lab[n] = _("Abrir"), col[n] = T.text, act[n++] = 2;
+		} else if (m) {
+			char tb[128];
+			util_strlcpy(title, ml_title(m, tb, sizeof tb), sizeof title);
+			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = T.accent, act[n++] = 3;
+			ic[n] = IC_SPARK, lab[n] = _("Reproducir en aleatorio"), col[n] = T.text, act[n++] = 4;
+			ic[n] = m->hidden ? IC_CHECK : IC_CLOSE, lab[n] = m->hidden ? _("Volver a mostrar") : _("Ocultar de la biblioteca"), col[n] = T.text, act[n++] = 5;
+			ic[n] = IC_FOLDER, lab[n] = _("Ir a la carpeta"), col[n] = T.text, act[n++] = 6;
+			ic[n] = IC_TRASH, lab[n] = _("Eliminar (a la papelera)"), col[n] = T.danger, act[n++] = 7;
+		}
+		if (!n)
+			ML.om = false;
+		int r = sheet_list(&ML.om, &ML.om_just, &ML.om_anim, &ML.om_sel, title, ic, lab, col, n);
+		if (r >= 0) {
+			int a = act[r];
+			if (a <= 2)
+				ml_enter(all_row ? ML.om_i : ML.om_i, a != 2, a == 1);
+			else if (m && (a == 3 || a == 4)) {
+				ml_play(ML.om_i, a == 4);
+			} else if (m && a == 5) {
+				mlib_hide(m->path, !m->hidden);
+				toast_icon(m->hidden ? _("Vuelve a estar en la biblioteca") : _("Oculta: la verás con «Ver las ocultas»"), IC_CHECK, T.text2);
+			} else if (m && a == 6) {
+				char dir[256];
+				util_strlcpy(dir, m->path, sizeof dir);
+				char *sl = strrchr(dir, '/');
+				if (sl)
+					*sl = 0;
+				hm_launch(AP_FILES);
+				f_load(dir[0] ? dir : "/");
+			} else if (m && a == 7) {
+				util_strlcpy(ML.del_path, m->path, sizeof ML.del_path);
+				char msg[300], tb[96];
+				snprintf(msg, sizeof msg, _("«%s» irá a la papelera de la SD. Podrás recuperarla durante unos días."), ml_title(m, tb, sizeof tb));
+				dialog_open(DLG_MLDEL, _("¿Eliminar la canción?"), msg, _("Eliminar"), true);
+			}
+		}
+	}
+	// opciones de la cabecera: buscar otra vez, dónde, las ocultas y lo que no tiene datos
+	{
+		IconId ic[6];
+		const char *lab[6];
+		u32 col[6];
+		int act[6], n = 0;
+		ic[n] = IC_REFRESH, lab[n] = _("Buscar música otra vez"), col[n] = T.text, act[n++] = 0;
+		ic[n] = IC_FOLDER, lab[n] = mlib_where() == MLS_ALL ? _("Buscar solo en /Music") : _("Buscar en toda la SD"), col[n] = T.text, act[n++] = 1;
+		ic[n] = ML.show_hidden ? IC_CLOSE : IC_CHECK, lab[n] = ML.show_hidden ? _("No ver las ocultas") : _("Ver las ocultas"), col[n] = T.text, act[n++] = 2;
+		if (ML.tab == MLT_NOTAG && ML.n) {
+			ic[n] = IC_CLOSE, lab[n] = _("Ocultar todas las sin datos"), col[n] = T.text, act[n++] = 3;
+			ic[n] = IC_TRASH, lab[n] = _("Eliminar todas las sin datos"), col[n] = T.danger, act[n++] = 4;
+		}
+		int r = sheet_list(&ML.hm, &ML.hm_just, &ML.hm_anim, &ML.hm_sel, _("Música"), ic, lab, col, n);
+		if (r >= 0) {
+			int a = act[r];
+			if (a == 0) {
+				mlib_scan();
+				toast_icon(_("Buscando música en la SD…"), IC_REFRESH, T.accent);
+			} else if (a == 1) {
+				mlib_set_where(mlib_where() == MLS_ALL ? MLS_MUSIC : MLS_ALL);
+				toast_icon(mlib_where() == MLS_ALL ? _("Buscando en toda la SD…") : _("Buscando solo en las carpetas de música…"), IC_REFRESH, T.accent);
+			} else if (a == 2)
+				ML.show_hidden = !ML.show_hidden, ML.built = 0xFFFFFFFF;
+			else if (a == 3) {
+				for (int k = 0; k < ML.n; k++)
+					mlib_hide(ML.lib[ML.ix[k]].path, true);
+				toast_icon(_("Ocultas. Puedes volver a verlas desde ⋮"), IC_CHECK, T.text2);
+			} else if (a == 4) {
+				char msg[200];
+				snprintf(msg, sizeof msg, _("Las %d canciones sin datos irán a la papelera de la SD. Podrás recuperarlas durante unos días."), ML.n);
+				ML.del_path[0] = 0;
+				dialog_open(DLG_MLDEL, _("¿Eliminar las canciones sin datos?"), msg, _("Eliminar"), true);
+			}
+		}
+	}
 }
 
 // copias en cola: una por frame como mucho, cuando la anterior terminó
@@ -8808,7 +9316,7 @@ static const char *ap_desc(int i)
 		return cl_connected() ? _("Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben solas.")
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
-	case AP_MUSIC: return _("Reproduce la música de la tarjeta SD, también en segundo plano.");
+	case AP_MUSIC: return _("Toda la música de la SD, por canciones, artistas y álbumes. Sigue sonando en segundo plano.");
 	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
 	}
 }
@@ -8862,10 +9370,7 @@ static void hm_launch(int i)
 	case AP_CLOUD: cl_open(); return;
 	case AP_WEB: U.want_web = true; return;
 	case AP_MUSIC:
-		if (MU.s.st != MU_OFF) { // ya hay algo: el reproductor
-			MU.open = MU.just = true, MU.sel = 2;
-			return;
-		}
+		mlib_init(); // (la biblioteca: busca lo nuevo en segundo plano)
 		break;
 	default: break;
 	}
@@ -8897,20 +9402,9 @@ static void hm_launch(int i)
 		util_strlcpy(U.app_root, "@titles", sizeof U.app_root);
 		return;
 	}
-	if (i == AP_MUSIC) { // sin nada sonando: la carpeta de música (si la hay), para elegir una canción
-		static const char *const MD[] = {"/Music", "/music", "/Música", "/música", "/MP3", "/mp3"};
-		struct stat st;
-		const char *dir = "/";
-		for (unsigned k = 0; k < sizeof MD / sizeof *MD && !strcmp(dir, "/"); k++) {
-			char sp[64];
-			snprintf(sp, sizeof sp, "sdmc:%s", MD[k]);
-			if (!stat(sp, &st) && S_ISDIR(st.st_mode))
-				dir = MD[k];
-		}
-		f_load(dir);
-		util_strlcpy(U.app_root, F.path, sizeof U.app_root);
-		toast_icon(_("Elige una canción para reproducirla"), IC_SPEAKER, T.accent);
-	} else if (F.path[0] == '@' && !F.trash) // (Archivos: donde se estaba, salvo en Títulos)
+	if (i == AP_MUSIC) // su biblioteca (ml_bottom)
+		return;
+	if (F.path[0] == '@' && !F.trash) // (Archivos: donde se estaba, salvo en Títulos)
 		f_load("/");
 }
 
@@ -9239,7 +9733,9 @@ static void draw_bottom(void)
 		if (!FM.open && !TY.open && !U.ins_pend && !g_dialog.open)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
 		vw_bottom();
-	} else if (U.tab == TAB_FILES) {
+	} else if (U.app == AP_MUSIC)
+		ml_bottom();
+	else if (U.tab == TAB_FILES) {
 		tab_files();
 		f_pick_bar();
 	} else if (U.tab == TAB_ACTIVITY)
@@ -9339,6 +9835,21 @@ static void handle_dialog(int ctx, bool ok)
 				vw_close(); // (el que se estaba viendo)
 			cloud_delete(&CLU.it[U.dlg_arg]);
 		}
+	} else if (ctx == DLG_MLDEL) { // canciones: una (del_path) o todas las sin datos
+		int done = 0;
+		if (ML.del_path[0]) {
+			if (trash_put(ML.del_path, G.console, 0) == 0)
+				mlib_forget(ML.del_path), done++;
+		} else
+			for (int k = 0; k < ML.n; k++) {
+				char p[256];
+				util_strlcpy(p, ML.lib[ML.ix[k]].path, sizeof p);
+				if (trash_put(p, G.console, 0) == 0)
+					mlib_forget(p), done++;
+			}
+		char m[64];
+		snprintf(m, sizeof m, done == 1 ? _("1 canción a la papelera") : _("%d canciones a la papelera"), done);
+		toast_icon(m, IC_TRASH, T.text2);
 	} else if (ctx == DLG_CLDELN) {
 		for (int i = 0; i < CLU.n; i++)
 			if (CLU.ms && CLU.mark[i])
@@ -10140,6 +10651,7 @@ int main(int argc, char **argv)
 	br_exit();
 	cloud_exit();
 	music_exit();
+	mlib_exit();
 	dl_exit();
 	ops_exit();
 	th_exit();
