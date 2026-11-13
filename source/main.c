@@ -367,6 +367,23 @@ static void toggle(float x, float y, float anim)
 	draw_circle(x + 10 + (w - 20) * anim, y + h / 2, 7.5f, 0xFFFFFFFF);
 }
 
+// el espacio libre de la SD, para dibujar: preguntar a la tarjeta en cada fotograma frena el dibujo (y mientras la
+// consola instala o borra, la tarjeta tarda en contestar): se pregunta como mucho cada 2 s, y nunca con la pantalla
+// de espera puesta (entonces vale lo último que se supo)
+static bool guard_on(void);
+static bool sd_space(u64 *fr, u64 *tot)
+{
+	static u64 f, t, at;
+	static bool ok;
+	u64 now = util_ms();
+	if ((!at || now - at > 2000) && !guard_on()) {
+		ok = fsx_space(&f, &t);
+		at = now;
+	}
+	*fr = f, *tot = t;
+	return ok;
+}
+
 // la tarjeta de la SD, al pie de la pantalla de arriba: lo libre y una barra con lo usado.
 // Si algo se está guardando en la SD, una marca más clara muestra lo que ocupará al terminar
 static int visible_xfers(const Xfer **out, int max);
@@ -376,7 +393,7 @@ static void sd_bar(float a)
 	static float t = -100;
 	if (g_time - t > 3) {
 		t = g_time;
-		if (!fsx_space(&fr, &tot))
+		if (!sd_space(&fr, &tot))
 			fr = tot = 0;
 	}
 	float x = CARD_X, y = SCR_H - 8 - SDB_H, w = CARD_W;
@@ -1409,7 +1426,7 @@ static void un_title(const char *t, float cx, float y, float a)
 static void un_top(void)
 {
 	float a = ease_out_cubic(UN.anim);
-	draw_rect(0, 0, TOP_W, SCR_H, col_alpha(T.bg, a));
+	draw_rect(0, 0, TOP_W, SCR_H, guard_on() ? T.bg : col_alpha(T.bg, a)); // (puesta, se dibuja sola: el fondo, entero)
 	const float cx = TOP_W / 2, cy = 92;
 	draw_halo(cx, cy, 110, 0.35f * a);
 	float pulse = 1 + 0.04f * sinf(g_time * 3);
@@ -1507,7 +1524,7 @@ static void un_card(void)
 	if (UN.anim < 0.01f)
 		return;
 	float a = ease_out_cubic(UN.anim);
-	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, a * 0.93f)); // se adivina lo de debajo
+	draw_rect(0, 0, BOT_W, SCR_H, guard_on() ? T.bg : col_alpha(T.bg, a * 0.93f)); // (al irse, se adivina lo de debajo)
 	un_tape(0, 18, a);
 	un_tape(SCR_H - 18, 18, a);
 	const float cx = BOT_W / 2;
@@ -1703,7 +1720,7 @@ static void draw_top(void)
 		splash_top(1);
 		return;
 	}
-	if (UN.anim > 0.99f) { // instalando o borrando: solo la pantalla de espera
+	if (UN.anim > 0.99f || guard_on()) { // instalando o borrando: solo la pantalla de espera (lo de debajo podría esperar a la SD)
 		un_top();
 		return;
 	}
@@ -2848,7 +2865,7 @@ static void titles_space_bar(void)
 	u64 g = 0, up = 0, dl = 0, fr = 0, tot = 0;
 	for (int i = 0; i < TI_n; i++)
 		g += TI[i].size, up += TI[i].upd_size, dl += TI[i].dlc_size;
-	fsx_space(&fr, &tot);
+	sd_space(&fr, &tot);
 	float x = CARD_X, y = SCR_H - 8 - SDB_H, w = CARD_W;
 	draw_rrect(x, y + 3, w, SDB_H, 14, T.shadow);
 	draw_rrect(x, y, w, SDB_H, 14, T.surface);
@@ -5829,7 +5846,7 @@ static void zip_top(float a)
 		y = info_row(rx, y, rw, _("Aviso"), ZS.z.encrypted ? _("Protegido con contraseña: no se puede extraer") : _("Formato de compresión no compatible"), T.danger, a);
 	} else {
 		u64 fr = 0, tot = 0;
-		fsx_space(&fr, &tot);
+		sd_space(&fr, &tot);
 		util_fmt_size(s1, sizeof s1, fr);
 		bool fits = fr > ZS.z.usize + 1024 * 1024;
 		if (fits)
@@ -5982,7 +5999,7 @@ static void titles_top(float a)
 		u64 g = 0, up = 0, dl = 0, fr = 0, tot = 0;
 		for (int i = 0; i < TI_n; i++)
 			g += TI[i].size, up += TI[i].upd_size, dl += TI[i].dlc_size;
-		fsx_space(&fr, &tot);
+		sd_space(&fr, &tot);
 		float y = y0 + 14;
 		text_draw(_("Espacio en la tarjeta SD"), X, y, TS_TITLE, col_alpha(T.text, a));
 		y += text_lineh(TS_TITLE) + 10;
@@ -8826,7 +8843,7 @@ static void hm_top(void)
 	u32 c1 = T.text3;
 	if (i == AP_FILES) {
 		u64 fr = 0, tot = 0;
-		if (fsx_space(&fr, &tot) && tot) {
+		if (sd_space(&fr, &tot) && tot) {
 			float f = 1 - (float)((double)fr / tot);
 			draw_rrect(tx, y, tw, 6, 3, col_alpha(T.surface2, a));
 			draw_grad_h(tx, y, fmaxf(6, tw * f), 6, col_alpha(T.accent, a), col_alpha(T.accent2, a));
@@ -9026,7 +9043,7 @@ static void draw_bottom(void)
 		splash_bot(1);
 		return;
 	}
-	if (UN.anim > 0.99f || (guard_on() && (br_is_open() || CLU.open))) {
+	if (UN.anim > 0.99f || guard_on()) {
 		un_card();
 		return;
 	}
@@ -9932,15 +9949,18 @@ int main(int argc, char **argv)
 
 		// la copia se rehace si algo cambió, durante las transferencias y cada segundo
 		// (para que «conectado ahora» esté al día)
-		state_lock();
 		u64 now = util_ms();
-		if (G.rev != s_rev || xfer_active() || now - s_copy_t > 1000) {
-			memcpy(&V, &G, sizeof G);
-			s_rev = G.rev;
-			s_copy_t = now;
+		bool dirty = false;
+		// con la pantalla de espera, sin esperar a otro hilo: si el estado está ocupado, se copia en la vuelta siguiente
+		if (guard_on() ? state_trylock() : (state_lock(), true)) {
+			if (G.rev != s_rev || xfer_active() || now - s_copy_t > 1000) {
+				memcpy(&V, &G, sizeof G);
+				s_rev = G.rev;
+				s_copy_t = now;
+			}
+			dirty = G.dirty_cfg;
+			state_unlock();
 		}
-		bool dirty = G.dirty_cfg;
-		state_unlock();
 
 		watch_events();
 		s_events_seen = true;
@@ -9972,7 +9992,7 @@ int main(int argc, char **argv)
 		draw_bottom();
 		gfx_frame_end();
 
-		if (dirty && now - last_save > 3000 && !xfer_active()) {
+		if (dirty && now - last_save > 3000 && !xfer_active() && !guard_on()) {
 			state_lock();
 			config_save();
 			state_unlock();

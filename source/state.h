@@ -140,6 +140,7 @@ extern AppState G;
 void state_init(void);
 void state_lock(void);
 void state_unlock(void);
+bool state_trylock(void); /* sin esperar: false si otro hilo lo tiene */
 
 /* Llamar con el cerrojo tomado */
 int    xfer_begin(XferKind k, const char *name, const char *device, u64 total);

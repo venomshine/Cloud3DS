@@ -38,6 +38,11 @@ void state_lock(void)
 	LightLock_Lock(&lock);
 }
 
+bool state_trylock(void)
+{
+	return LightLock_TryLock(&lock) == 0;
+}
+
 void state_unlock(void)
 {
 	LightLock_Unlock(&lock);
