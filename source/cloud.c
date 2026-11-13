@@ -41,7 +41,7 @@
 #define CHUNK     (640 * 1024) /* múltiplo de 320 KiB, como pide OneDrive */
 #define DEPTH     16
 
-enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME, J_SAVES, J_CAPS };
+enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME, J_CAPS };
 #define SHOTS "/luma/screenshots"
 typedef struct {
 	int type;
@@ -71,7 +71,6 @@ static struct {
 	int nitems;
 	bool loading;
 	char folder_id[64]; /* la carpeta Cloud3DS, cuando ya se sabe */
-	cJSON *hashes;      /* huella de la última partida subida de cada juego */
 	cJSON *shots;       /* capturas ya subidas */
 	u64 next_caps;      /* ms: próxima mirada a las capturas */
 } C;
@@ -148,13 +147,7 @@ static void save_tokens(void)
 	cJSON_AddStringToObject(j, "refresh", C.refresh);
 	cJSON_AddStringToObject(j, "name", C.info.name);
 	cJSON_AddStringToObject(j, "email", C.info.email);
-	cJSON_AddNumberToObject(j, "saves_mode", C.info.saves_mode);
 	cJSON_AddBoolToObject(j, "caps", C.info.caps);
-	cJSON_AddNumberToObject(j, "last_backup", (double)C.info.last_backup);
-	cJSON_AddNumberToObject(j, "last_titles", C.info.last_titles);
-	cJSON_AddNumberToObject(j, "last_bytes", (double)C.info.last_bytes);
-	if (C.hashes)
-		cJSON_AddItemToObject(j, "hashes", cJSON_Duplicate(C.hashes, true));
 	if (C.shots)
 		cJSON_AddItemToObject(j, "shots", cJSON_Duplicate(C.shots, true));
 	char *s = cJSON_PrintUnformatted(j);
@@ -355,7 +348,6 @@ static void poll_code(void)
 		lock();
 		C.info.st = CLS_ON;
 		C.info.err[0] = 0;
-		C.info.saves_mode = CLB_OPEN;
 		C.info.caps = true;
 		bump();
 		unlock();
@@ -656,151 +648,6 @@ typedef struct {
 	u64 bytes;
 } TreeList;
 
-static bool tree_cb(const FsxEntry *e, void *u)
-{
-	TreeList *t = u;
-	if (e->dir) {
-		if (t->nd < 16)
-			util_strlcpy(t->dirs[t->nd++], e->name, sizeof t->dirs[0]);
-	} else if (t->nf < 64) {
-		util_strlcpy(t->files[t->nf++], e->name, sizeof t->files[0]);
-		t->bytes += e->size;
-	}
-	return true;
-}
-
-static u64 tree_bytes(const char *dir)
-{
-	TreeList *t = calloc(1, sizeof *t);
-	if (!t)
-		return 0;
-	fsx_list(dir, false, tree_cb, t);
-	u64 b = t->bytes;
-	for (int i = 0; i < t->nd; i++) {
-		char p[700];
-		snprintf(p, sizeof p, "%s/%s", dir, t->dirs[i]);
-		b += tree_bytes(p);
-	}
-	free(t);
-	return b;
-}
-
-/* sube una carpeta de la SD (con sus subcarpetas) dentro de la carpeta parent de OneDrive */
-static bool upload_tree(const char *dir, const char *parent, const char *remote_rel, int xid, u64 *done)
-{
-	TreeList *t = calloc(1, sizeof *t);
-	if (!t)
-		return false;
-	fsx_list(dir, false, tree_cb, t);
-	bool ok = true;
-	for (int i = 0; i < t->nf && ok; i++) {
-		char p[700];
-		snprintf(p, sizeof p, "%s/%s", dir, t->files[i]);
-		bool d;
-		u64 sz = 0;
-		fsx_stat(p, &d, &sz);
-		ok = upload_file(p, parent, xid, *done);
-		*done += sz;
-	}
-	for (int i = 0; i < t->nd && ok; i++) {
-		char p[700], rel[700], id[64];
-		snprintf(p, sizeof p, "%s/%s", dir, t->dirs[i]);
-		snprintf(rel, sizeof rel, "%s/%s", remote_rel, t->dirs[i]);
-		ok = ensure_path(rel, id, sizeof id) && upload_tree(p, id, rel, xid, done);
-	}
-	free(t);
-	return ok;
-}
-
-/* copia en la nube de las partidas que cambiaron desde la última vez (formato de Checkpoint) */
-static void do_saves(void)
-{
-	TitleInfo *ti = NULL;
-	int n = titles_list(&ti);
-	if (n <= 0) {
-		free(ti);
-		return;
-	}
-	lock();
-	C.info.backing_up = true;
-	bump();
-	unlock();
-	if (!C.hashes)
-		C.hashes = cJSON_CreateObject();
-	int done_titles = 0;
-	u64 done_bytes = 0;
-	bool any_err = false;
-	state_lock();
-	int xid = xfer_begin(XF_DOWNLOAD, "Partidas", "OneDrive", 0);
-	state_unlock();
-	lock();
-	C.info.bk_xid = xid;
-	unlock();
-	for (int i = 0; i < n && !C.quit; i++) {
-		const TitleInfo *t = &ti[i];
-		char key[20], fp[40];
-		snprintf(key, sizeof key, "%016llX", (unsigned long long)t->tid);
-		if (save_fingerprint(t, fp) < 0)
-			continue; // sin partida
-		const cJSON *old = cJSON_GetObjectItemCaseSensitive(C.hashes, key);
-		if (cJSON_IsString(old) && !strcmp(old->valuestring, fp))
-			continue; // igual que la última copia
-		lock();
-		util_strlcpy(C.info.backing, t->title, sizeof C.info.backing);
-		bump();
-		unlock();
-		char out[600];
-		if (save_backup(t, out, sizeof out) < 0) { // también queda la copia en la SD
-			any_err = true;
-			continue;
-		}
-		// /Cloud3DS/Partidas/<carpeta del juego>/<fecha>
-		const char *stamp = strrchr(out, '/');
-		char gdir[600];
-		util_strlcpy(gdir, out, sizeof gdir);
-		char *sl = strrchr(gdir, '/');
-		if (sl)
-			*sl = 0;
-		const char *game = strrchr(gdir, '/');
-		char rel[700], id[64];
-		snprintf(rel, sizeof rel, OD_FOLDER "/Partidas/%s/%s", game ? game + 1 : gdir, stamp ? stamp + 1 : out);
-		u64 before = done_bytes;
-		lock();
-		C.info.bk_base = done_bytes;
-		C.info.bk_total = tree_bytes(out);
-		bump();
-		unlock();
-		bool ok = ensure_path(rel, id, sizeof id) && upload_tree(out, id, rel, xid, &done_bytes);
-		if (ok) {
-			cJSON_DeleteItemFromObjectCaseSensitive(C.hashes, key);
-			cJSON_AddStringToObject(C.hashes, key, fp);
-			done_titles++;
-		} else {
-			any_err = true;
-			done_bytes = before;
-		}
-	}
-	free(ti);
-	state_lock();
-	xfer_end(xid, any_err ? XS_FAILED : XS_DONE);
-	state_unlock();
-	lock();
-	C.info.backing_up = false;
-	C.info.backing[0] = 0;
-	C.info.bk_xid = -1;
-	if (!any_err) {
-		C.info.last_backup = util_unix_now();
-		C.info.last_titles = done_titles;
-		C.info.last_bytes = done_bytes;
-	}
-	if (any_err)
-		util_strlcpy(C.info.err, "backup", sizeof C.info.err);
-	bump();
-	unlock();
-	util_log("nube: copia de partidas: %d subidas%s", done_titles, any_err ? " (con errores)" : "");
-	save_tokens();
-}
-
 static bool shot_cb(const FsxEntry *e, void *u)
 {
 	TreeList *t = u;
@@ -933,12 +780,10 @@ static void thread_main(void *arg)
 			bool queued = false;
 			lock();
 			for (int k = 0; k < C.nq; k++)
-				queued |= C.q[k].type == J_CAPS || C.q[k].type == J_SAVES;
+				queued |= C.q[k].type == J_CAPS;
 			unlock();
 			if (!queued && C.info.caps)
 				push(J_CAPS, NULL, NULL);
-			if (!queued && C.info.saves_mode == CLB_DAILY && util_unix_now() > C.info.last_backup + 86400)
-				push(J_SAVES, NULL, NULL);
 		}
 		Job j;
 		lock();
@@ -958,7 +803,6 @@ static void thread_main(void *arg)
 		case J_DOWNLOAD: do_download(j.a, j.b); break;
 		case J_UPLOAD: do_upload(j.a, j.b); break;
 		case J_DELETE: do_delete(j.a); break;
-		case J_SAVES: do_saves(); break;
 		case J_CAPS: do_caps(); break;
 		}
 		lock();
@@ -973,7 +817,6 @@ void cloud_init(void)
 {
 	LightLock_Init(&C.lock);
 	LightEvent_Init(&C.ev, RESET_ONESHOT);
-	C.info.bk_xid = -1;
 	C.info.st = OD_CLIENT_ID[0] ? CLS_OFF : CLS_NOCFG;
 	FILE *f = fopen(OD_FILE, "rb");
 	if (f && C.info.st == CLS_OFF) {
@@ -989,17 +832,9 @@ void cloud_init(void)
 		free(buf);
 		const cJSON *r = cJSON_GetObjectItemCaseSensitive(j, "refresh"), *nm = cJSON_GetObjectItemCaseSensitive(j, "name"),
 		            *em = cJSON_GetObjectItemCaseSensitive(j, "email");
-		const cJSON *sm = cJSON_GetObjectItemCaseSensitive(j, "saves_mode"), *cp = cJSON_GetObjectItemCaseSensitive(j, "caps"),
-		            *lb = cJSON_GetObjectItemCaseSensitive(j, "last_backup"), *lt = cJSON_GetObjectItemCaseSensitive(j, "last_titles"),
-		            *ly = cJSON_GetObjectItemCaseSensitive(j, "last_bytes");
-		C.info.saves_mode = cJSON_IsNumber(sm) ? sm->valueint : CLB_OPEN;
+		const cJSON *cp = cJSON_GetObjectItemCaseSensitive(j, "caps");
 		C.info.caps = cJSON_IsBool(cp) ? cJSON_IsTrue(cp) : true;
-		C.info.last_backup = cJSON_IsNumber(lb) ? (u64)lb->valuedouble : 0;
-		C.info.last_titles = cJSON_IsNumber(lt) ? lt->valueint : 0;
-		C.info.last_bytes = cJSON_IsNumber(ly) ? (u64)ly->valuedouble : 0;
-		cJSON *h = cJSON_DetachItemFromObjectCaseSensitive(j, "hashes"), *sh = cJSON_DetachItemFromObjectCaseSensitive(j, "shots");
-		if (h)
-			C.hashes = h;
+		cJSON *sh = cJSON_DetachItemFromObjectCaseSensitive(j, "shots");
 		if (sh)
 			C.shots = sh;
 		if (cJSON_IsString(r) && r->valuestring[0]) {
@@ -1019,8 +854,6 @@ void cloud_init(void)
 	C.thr = threadCreate(thread_main, NULL, 64 * 1024, prio + 1, -2, false);
 	if (C.info.st == CLS_ON) {
 		push(J_ME, NULL, NULL);
-		if (C.info.saves_mode == CLB_OPEN)
-			push(J_SAVES, NULL, NULL);
 	}
 	C.next_caps = util_ms() + 20000;
 }
@@ -1152,15 +985,6 @@ void cloud_delete(const CloudItem *it)
 	push(J_DELETE, it->id, NULL);
 }
 
-void cloud_set_saves_mode(int mode)
-{
-	lock();
-	C.info.saves_mode = mode;
-	bump();
-	unlock();
-	save_tokens();
-}
-
 void cloud_set_caps(bool on)
 {
 	lock();
@@ -1172,6 +996,5 @@ void cloud_set_caps(bool on)
 
 void cloud_backup_now(void)
 {
-	push(J_SAVES, NULL, NULL);
 	push(J_CAPS, NULL, NULL);
 }

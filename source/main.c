@@ -129,7 +129,7 @@ static struct {
 	bool hm, hm_just; // opciones de la cuenta (cabecera)
 	float hm_anim;
 	int hm_sel;
-	bool bk;          // página «Copias en la nube»
+	bool bk;          // página «Capturas en la nube»
 	int bk_sel;
 } CLU;
 static void cl_top(void);
@@ -2003,7 +2003,7 @@ static void cl_item_icon(const CloudItem *c, IconId *ic, u32 *col)
 }
 
 
-// arriba, con «Copias en la nube» abierta: la última copia y lo que se sube ahora
+// arriba, con «Capturas en la nube» abierta: si se suben solas y lo que hay pendiente
 static void cl_backups_top(void)
 {
 	const CloudInfo *ci = &CLU.info;
@@ -2011,84 +2011,30 @@ static void cl_backups_top(void)
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
 	const float X = CARD_X + 16, W = CARD_W - 32;
-	bool err = !strcmp(ci->err, "backup"), never = !ci->last_backup;
-	u32 sc = err ? T.danger : never ? T.text3 : T.ok;
+	bool err = !strcmp(ci->err, "backup");
+	u32 sc = err ? T.danger : ci->caps ? T.ok : T.text3;
 	float y = y0 + 14;
 	draw_circle(X + 20, y + 20, 20, col_alpha(sc, 0.16f));
-	draw_icon(IC_SHIELD, X + 20, y + 20, 20, sc);
+	draw_icon(IC_CAMERA, X + 20, y + 20, 20, sc);
 	float tx = X + 52, tw = X + W - tx;
-	const char *t1 = err ? _("La última copia no terminó") : never ? _("Aún no hay copias en la nube") : _("Tus partidas están a salvo");
+	const char *t1 = err ? _("La última subida no terminó") : ci->caps ? _("Tus capturas se suben solas") : _("Las capturas no se suben");
 	text_draw_clip(t1, tx, y + 3, tw, TS_TITLE, T.text);
-	char sub[160];
-	if (never && !err)
-		snprintf(sub, sizeof sub, "%s", _("La primera copia sube todas las partidas; las siguientes, solo las que cambien."));
-	else if (err)
-		snprintf(sub, sizeof sub, "%s", _("Se volverá a intentar. Comprueba el Wi-Fi y el espacio de OneDrive."));
-	else {
-		char when[48], sz[24];
-		util_fmt_when(when, sizeof when, ci->last_backup);
-		util_fmt_size(sz, sizeof sz, ci->last_bytes);
-		if (ci->last_titles == 1)
-			snprintf(sub, sizeof sub, _("Última copia: %s · 1 juego · %s subidos"), when, sz);
-		else if (ci->last_titles)
-			snprintf(sub, sizeof sub, _("Última copia: %s · %d juegos · %s subidos"), when, ci->last_titles, sz);
-		else
-			snprintf(sub, sizeof sub, _("Última copia: %s · no había cambios"), when);
-	}
-	int nl = text_wrap_lines(sub, tw, TS_SUB, 2, tx, y + 3 + text_lineh(TS_TITLE) + 2, T.text3, true);
+	const char *sub = err ? _("Se volverá a intentar. Comprueba el Wi-Fi y el espacio de OneDrive.")
+	                : ci->caps ? _("Cada captura nueva que hagas desde el menú de Rosalina se sube a /Cloud3DS/Capturas.")
+	                           : _("Actívalo abajo para subir cada captura nueva a /Cloud3DS/Capturas.");
+	int nl = text_wrap_lines(sub, tw, TS_SUB, 3, tx, y + 3 + text_lineh(TS_TITLE) + 2, T.text3, true);
 	y += fmaxf(44, 3 + text_lineh(TS_TITLE) + 2 + nl * text_lineh(TS_SUB)) + 10;
 	draw_rect(X, y, W, 1, T.divider);
 	y += 10;
-	bool caps = ci->caps_queue > 0;
-	text_draw(ci->backing_up || caps ? _("Subiendo ahora") : _("Ahora"), X, y, TS_SUB, T.text3);
-	y += text_lineh(TS_SUB) + 8;
-	if (ci->backing_up) {
-		u64 d = 0;
-		state_lock();
-		Xfer *x = ci->bk_xid >= 0 ? xfer_get(ci->bk_xid) : NULL;
-		if (x)
-			d = x->done;
-		state_unlock();
-		u64 got = d > ci->bk_base ? d - ci->bk_base : 0;
-		if (ci->bk_total && got > ci->bk_total)
-			got = ci->bk_total;
-		float f = ci->bk_total ? (float)((double)got / ci->bk_total) : 0;
-		draw_rrect(X, y, 34, 34, 9, col_alpha(T.ok, 0.18f));
-		draw_icon(IC_GAMEPAD, X + 17, y + 17, 18, T.ok);
-		float rx = X + 46, rw = X + W - rx;
-		char nm[128], pc[16];
-		snprintf(nm, sizeof nm, _("%s · partida"), ci->backing[0] ? ci->backing : "…");
-		snprintf(pc, sizeof pc, "%d %%", (int)(f * 100));
-		float pw = text_width(pc, TS_SUB) + 8;
-		g_clip_ell = true;
-		text_draw_clip(nm, rx, y, rw - pw, TS_SUB, T.text);
-		g_clip_ell = false;
-		text_draw_right(pc, rx + rw, y, TS_SUB, T.accent);
-		float by = y + text_lineh(TS_SUB) + 4;
-		draw_rrect(rx, by, rw, 6, 3, T.surface2);
-		draw_rrect(rx, by, fmaxf(6, rw * clampf(f, 0, 1)), 6, 3, T.accent);
-		char a[24], b[24], l[96];
-		util_fmt_size(a, sizeof a, got);
-		util_fmt_size(b, sizeof b, ci->bk_total);
-		snprintf(l, sizeof l, _("%s de %s · /Cloud3DS/Partidas/"), a, b);
-		text_draw_clip(l, rx, by + 10, rw, TS_SUB, T.text3);
-		y += 50;
-	}
-	if (caps) {
+	if (ci->caps_queue > 0) {
 		draw_rrect(X, y, 34, 34, 9, col_alpha(T.accent, 0.18f));
-		draw_icon(IC_CAMERA, X + 17, y + 17, 18, T.accent);
+		draw_icon(IC_UPLOAD, X + 17, y + 17, 18, T.accent);
 		char l[64];
 		snprintf(l, sizeof l, ci->caps_queue == 1 ? _("1 captura nueva") : _("%d capturas nuevas"), ci->caps_queue);
 		text_draw_clip(l, X + 46, y + 2, W - 46, TS_SUB, T.text);
-		text_draw_clip(ci->backing_up ? _("En cola") : _("Subiendo a /Cloud3DS/Capturas/"), X + 46, y + 4 + text_lineh(TS_SUB), W - 46, TS_SUB, T.text3);
-		y += 44;
-	}
-	if (!ci->backing_up && !caps) {
-		const char *m = ci->saves_mode == CLB_OPEN    ? _("Nada pendiente. Las partidas que cambien se copian al abrir Cloud3DS.")
-		                : ci->saves_mode == CLB_DAILY ? _("Nada pendiente. Las partidas que cambien se copian una vez al día.")
-		                                              : _("Nada pendiente. Las partidas se copian solo con «Copiar ahora».");
-		text_wrap_lines(m, W, TS_SUB, 3, X, y, T.text2, true);
-	}
+		text_draw_clip(_("Subiendo a /Cloud3DS/Capturas/"), X + 46, y + 4 + text_lineh(TS_SUB), W - 46, TS_SUB, T.text3);
+	} else
+		text_wrap_lines(_("Nada pendiente."), W, TS_SUB, 2, X, y, T.text2, true);
 	toast_draw_top();
 }
 
@@ -2206,7 +2152,7 @@ static void cl_top(void)
 		explain_top(1, IC_CLOUD, T.text3, _("Nube"), _("Esta versión de prueba aún no tiene configurada la conexión con Microsoft."), NULL, 0);
 	else
 		explain_top(1, IC_CLOUD, T.accent, _("Conecta tu OneDrive"),
-		            _("Tus archivos de OneDrive en la consola y copias automáticas de tus partidas y capturas. Se conecta con un QR y un código, sin contraseñas."),
+		            _("Tus archivos de OneDrive en la consola, con subida automática de tus capturas. Se conecta con un QR y un código, sin contraseñas."),
 		            ci->err[0] ? cl_err_text(ci->err) : _("Solo hace falta una vez: el permiso se guarda y se renueva solo."), ci->err[0] ? T.danger : T.text3);
 	sd_bar(1);
 	toast_draw_top();
@@ -2243,7 +2189,7 @@ static void cl_options(void)
 	}
 	// opciones de la cuenta
 	static const IconId hic[3] = {IC_SHIELD, IC_REFRESH, IC_LOGOUT};
-	const char *hlab[3] = {_("Copias en la nube"), _("Actualizar"), _("Desconectar OneDrive")};
+	const char *hlab[3] = {_("Capturas en la nube"), _("Actualizar"), _("Desconectar OneDrive")};
 	const u32 hcol[3] = {T.ok, T.text, T.danger};
 	int hr = sheet_list(&CLU.hm, &CLU.hm_just, &CLU.hm_anim, &CLU.hm_sel, CLU.info.email[0] ? CLU.info.email : "OneDrive", hic, hlab, hcol, 3);
 	if (hr == 0)
@@ -2254,20 +2200,20 @@ static void cl_options(void)
 		dialog_open(DLG_CLOUT, _("¿Desconectar OneDrive?"), _("Cloud3DS dejará de poder entrar en tu OneDrive. Tus archivos siguen en la nube."), _("Desconectar"), true);
 }
 
-// abajo: los ajustes de las copias (cuándo, capturas, copiar ahora, desconectar)
+// abajo: las capturas en la nube (subir solas, subir ahora) y desconectar
 static bool cl_backups_bottom(void)
 {
 	const CloudInfo *ci = &CLU.info;
-	tab_header(_("Copias en la nube"), true);
+	tab_header(_("Capturas en la nube"), true);
 	bool back = tap(0, 0, 200, VIEW_Y) || (g_kdown & KEY_B);
-	const int N = 4;
+	const int N = 3;
 	if (g_krepeat & KEY_DOWN)
 		CLU.bk_sel = CLU.bk_sel < N - 1 ? CLU.bk_sel + 1 : CLU.bk_sel;
 	if (g_krepeat & KEY_UP)
 		CLU.bk_sel = CLU.bk_sel > 0 ? CLU.bk_sel - 1 : 0;
 	const float RH = 38;
-	static const IconId ic[4] = {IC_SHIELD, IC_CAMERA, IC_UPLOAD, IC_LOGOUT};
-	const u32 col[4] = {T.ok, T.accent, T.warn, T.danger};
+	static const IconId ic[3] = {IC_CAMERA, IC_UPLOAD, IC_LOGOUT};
+	const u32 col[3] = {T.accent, T.warn, T.danger};
 	for (int i = 0; i < N; i++) {
 		float y = VIEW_Y + 2 + i * RH;
 		bool p = touch_in(6, y, BOT_W - 12, RH);
@@ -2276,37 +2222,19 @@ static bool cl_backups_bottom(void)
 		draw_circle(27, y + RH / 2, 13, col_alpha(col[i], 0.18f));
 		draw_icon(ic[i], 27, y + RH / 2, 14, col[i]);
 		float tx = 50, tw = BOT_W - 64;
-		if (i == 0) { // cuándo se copian las partidas
-			text_draw(_("Partidas"), tx, y + 2, TS_BODY, T.text);
-			const char *opts[3] = {_("A mano"), _("Al abrir"), _("Cada día")};
-			int hit = segmented(tx, y + 18, tw, 18, opts, 3, ci->saves_mode, false);
-			if (CLU.bk_sel == 0 && (g_krepeat & KEY_LEFT) && ci->saves_mode > 0)
-				hit = ci->saves_mode - 1;
-			if (CLU.bk_sel == 0 && ((g_krepeat & KEY_RIGHT) || (g_kdown & KEY_A)) && ci->saves_mode < 2)
-				hit = ci->saves_mode + 1;
-			else if (CLU.bk_sel == 0 && (g_kdown & KEY_A))
-				hit = 0;
-			if (hit >= 0 && hit != ci->saves_mode) {
-				cloud_set_saves_mode(hit);
-				CLU.info.saves_mode = hit;
-			}
-			if (tap(6, y, BOT_W - 12, RH))
-				CLU.bk_sel = 0;
-			continue;
-		}
-		const char *t = i == 1 ? _("Capturas") : i == 2 ? _("Copiar ahora") : _("Desconectar OneDrive");
+		const char *t = i == 0 ? _("Subir las capturas nuevas") : i == 1 ? _("Subir ahora") : _("Desconectar OneDrive");
 		char sb[200];
-		if (i == 1)
-			snprintf(sb, sizeof sb, "%s", ci->caps ? _("Las nuevas, al momento") : _("No se suben"));
-		else if (i == 2)
-			snprintf(sb, sizeof sb, "%s", ci->backing_up ? _("Copiando…") : _("Todas las partidas que cambiaron"));
+		if (i == 0)
+			snprintf(sb, sizeof sb, "%s", ci->caps ? _("Al momento, a /Cloud3DS/Capturas") : _("Desactivado"));
+		else if (i == 1)
+			snprintf(sb, sizeof sb, "%s", _("Las capturas que aún no se han subido"));
 		else
 			snprintf(sb, sizeof sb, _("%s · tus archivos siguen en la nube"), ci->email[0] ? ci->email : ci->name);
-		text_draw_clip(t, tx, y + 3, tw - (i == 1 ? 44 : 0), TS_BODY, i == 3 ? col_lerp(T.danger, T.text, 0.35f) : i == 2 && ci->backing_up ? T.text3 : T.text);
+		text_draw_clip(t, tx, y + 3, tw - (i == 0 ? 44 : 0), TS_BODY, i == 2 ? col_lerp(T.danger, T.text, 0.35f) : T.text);
 		g_clip_ell = true;
-		text_draw_clip(sb, tx, y + 20, tw - (i == 1 ? 44 : 0), TS_SUB, T.text3);
+		text_draw_clip(sb, tx, y + 20, tw - (i == 0 ? 44 : 0), TS_SUB, T.text3);
 		g_clip_ell = false;
-		if (i == 1)
+		if (i == 0)
 			toggle(BOT_W - 52, y + (RH - 20) / 2, ci->caps ? 1 : 0);
 		bool go = tap(6, y, BOT_W - 12, RH);
 		if (go)
@@ -2314,14 +2242,12 @@ static bool cl_backups_bottom(void)
 		go = go || (CLU.bk_sel == i && (g_kdown & KEY_A));
 		if (!go)
 			continue;
-		if (i == 1) {
+		if (i == 0) {
 			cloud_set_caps(!ci->caps);
 			CLU.info.caps = !ci->caps;
-		} else if (i == 2) {
-			if (!ci->backing_up) {
-				cloud_backup_now();
-				toast_icon(_("Copiando las partidas a OneDrive"), IC_UPLOAD, T.ok);
-			}
+		} else if (i == 1) {
+			cloud_backup_now();
+			toast_icon(_("Subiendo las capturas pendientes a OneDrive"), IC_UPLOAD, T.ok);
 		} else
 			dialog_open(DLG_CLOUT, _("¿Desconectar OneDrive?"), _("Cloud3DS dejará de poder entrar en tu OneDrive. Tus archivos siguen en la nube."), _("Desconectar"),
 			            true);
