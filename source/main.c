@@ -42,6 +42,7 @@ u32 __stacksize__ = 256 * 1024;
 #include <arpa/inet.h>
 #include <math.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <string.h>
 
 // escalas de texto: siempre las mismas en toda la interfaz
@@ -1484,6 +1485,10 @@ static void un_poll(void)
 	titles_reload();
 }
 
+static bool hm_is_open(void);
+static void hm_top(void);
+static void hm_bottom(void);
+static void hm_show(void);
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
@@ -1503,6 +1508,16 @@ static void draw_top(void)
 	if (qrs_is_open()) { // escáner de QR: la cámara a pantalla completa
 		qr_top();
 		toast_draw_top();
+		return;
+	}
+	if (hm_is_open()) { // el inicio por aplicaciones
+		hm_top();
+		if (UN.anim > 0.01f)
+			un_top();
+		if (U.fade > 0) {
+			draw_rect(0, 0, TOP_W, SCR_H, col_alpha(T.bg, U.fade));
+			splash_top(U.fade);
+		}
 		return;
 	}
 	if (U.tab == TAB_FILES && vw_is_open()) { // visor: pantalla completa, sin cabecera
@@ -7921,6 +7936,405 @@ static void qa_top(float a)
 	text_wrap_lines(note, rw, TS_SUB, 2, rx, y, col_alpha(T.text3, a), true);
 }
 
+/* ------------------------------------------------------------ inicio por aplicaciones
+ * La pantalla de inicio: cada función de Cloud3DS es una aplicación con su icono. Arriba, la elegida en grande con
+ * lo más útil de ella (espacio libre, la cuenta de la nube, el QR para conectar…); abajo, la cuadrícula (dos tamaños,
+ * como en el menú de la consola). Al abrir una, se muestra la pantalla de siempre de esa función; el botón central de
+ * la barra (o SELECT) vuelve aquí. Lo que se abre encima (la nube, el navegador, el escáner, la música) vuelve solo. */
+enum { AP_FILES, AP_CLOUD, AP_WEB, AP_DL, AP_TITLES, AP_SAVES, AP_SHOTS, AP_MUSIC, AP_CONNECT, AP_SCAN, AP_SEARCH, AP_TRASH,
+       AP_ACTIVITY, AP_DEVICES, AP_SHARE, AP_SETTINGS, AP_N };
+#define HM_CFG APP_DIR "/inicio.cfg"
+#define HM_BAR 30
+static struct {
+	bool open, small, loaded;
+	int sel;
+	float page_pos;  // página a la vista (animada hacia la de la elegida)
+	float fade;      // entrada al abrir el inicio
+	bool dragging;
+	float drag_dx;
+} HM = {.open = true};
+
+static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_CLOUD, IC_GLOBE, IC_DOWNLOAD, IC_GAMEPAD, IC_SHIELD, IC_IMAGE, IC_SPEAKER,
+                                   IC_LAPTOP, IC_CAMERA, IC_SEARCH, IC_TRASH, IC_CLOCK, IC_DEVICES, IC_SEND, IC_GEAR};
+static u32 ap_col(int i)
+{
+	static const u32 hex[AP_N] = {0x3B9CFF, 0x7A5CFF, 0x2BC0D6, 0x2EC47A, 0xF5B02E, 0x3FD0A0, 0xFF5E8A, 0xFF7A59,
+	                              0x5FB4FF, 0x3B9CFF, 0x8FB8FF, 0xF04A5A, 0x6FD3FF, 0x8FA3C2, 0x21C7A8, 0x9AA6BA};
+	return col_hex(hex[i]);
+}
+static const char *ap_name(int i)
+{
+	switch (i) {
+	case AP_FILES: return _("Archivos");
+	case AP_CLOUD: return _("Nube");
+	case AP_WEB: return _("Navegador");
+	case AP_DL: return _("Descargar");
+	case AP_TITLES: return _("Títulos");
+	case AP_SAVES: return _("Partidas");
+	case AP_SHOTS: return _("Capturas");
+	case AP_MUSIC: return _("Música");
+	case AP_CONNECT: return _("Conectar");
+	case AP_SCAN: return _("Escáner QR");
+	case AP_SEARCH: return _("Buscar");
+	case AP_TRASH: return _("Papelera");
+	case AP_ACTIVITY: return _("Actividad");
+	case AP_DEVICES: return _("Dispositivos");
+	case AP_SHARE: return _("Compartir");
+	default: return _("Ajustes");
+	}
+}
+static const char *ap_desc(int i)
+{
+	switch (i) {
+	case AP_FILES: return _("Explora y gestiona la tarjeta SD: carpetas, títulos, capturas y archivos recibidos.");
+	case AP_CLOUD:
+		return cl_connected() ? _("Tu OneDrive desde la consola, con copia automática de partidas y capturas.")
+		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
+	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
+	case AP_DL: return _("Descarga un archivo o la última versión de un proyecto de GitHub a partir de su enlace. Los CIA se instalan durante la descarga.");
+	case AP_TITLES: return _("Títulos instalados: tamaño, actualizaciones, DLC y desinstalación.");
+	case AP_SAVES: return _("Copias de seguridad de partidas de Checkpoint y JKSM.");
+	case AP_SHOTS: return _("Capturas de pantalla de tus títulos, para verlas o enviarlas a otros dispositivos.");
+	case AP_MUSIC: return _("Reproduce la música de la tarjeta SD, también en segundo plano.");
+	case AP_CONNECT: return _("Conecta un móvil o un ordenador de tu misma red escaneando el código QR o con la dirección y el PIN.");
+	case AP_SCAN: return _("Escanea un código QR con la cámara para descargar e instalar su contenido.");
+	case AP_SEARCH: return _("Busca archivos y carpetas en toda la tarjeta SD.");
+	case AP_TRASH: return _("Elementos eliminados: puedes restaurarlos o eliminarlos definitivamente.");
+	case AP_ACTIVITY: return _("Historial de transferencias, descargas, instalaciones y conexiones.");
+	case AP_DEVICES: return _("Móviles y ordenadores vinculados: estado, permisos y revocación del acceso.");
+	case AP_SHARE: return _("Transfiere aplicaciones homebrew a otra consola. Disponible próximamente.");
+	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
+	}
+}
+
+static void hm_load(void)
+{
+	if (HM.loaded)
+		return;
+	HM.loaded = true;
+	FILE *f = fopen(HM_CFG, "r");
+	char ln[64];
+	while (f && fgets(ln, sizeof ln, f)) {
+		if (!strncmp(ln, "small=", 6))
+			HM.small = atoi(ln + 6) != 0;
+		else if (!strncmp(ln, "sel=", 4))
+			HM.sel = clampf(atoi(ln + 4), 0, AP_N - 1);
+	}
+	if (f)
+		fclose(f);
+}
+static void hm_save(void)
+{
+	FILE *f = fopen(HM_CFG, "w");
+	if (f)
+		fprintf(f, "small=%d\nsel=%d\n", HM.small ? 1 : 0, HM.sel), fclose(f);
+}
+
+static bool hm_is_open(void) { return HM.open && !U.ins_pend; }
+static int hm_cols(void) { return HM.small ? 6 : 4; }
+static int hm_rows(void) { return HM.small ? 3 : 2; }
+static int hm_per_page(void) { return hm_cols() * hm_rows(); }
+static int hm_pages(void) { return (AP_N + hm_per_page() - 1) / hm_per_page(); }
+
+static void hm_show(void)
+{
+	hm_load();
+	HM.open = true;
+	HM.fade = 0;
+	HM.page_pos = HM.sel / hm_per_page();
+	U.nav_eat = true;
+}
+
+// abrir una aplicación: lo que tiene pantalla propia encima del inicio (vuelve sola aquí); el resto, su pestaña
+static void hm_launch(int i)
+{
+	hm_save();
+	switch (i) {
+	case AP_CLOUD: cl_open(); return;
+	case AP_WEB: U.want_web = true; return;
+	case AP_DL: U.want_dlurl = true; return;
+	case AP_SCAN: qrs_open(); return;
+	case AP_MUSIC:
+		if (MU.s.st != MU_OFF) { // ya hay algo: el reproductor
+			MU.open = MU.just = true, MU.sel = 2;
+			return;
+		}
+		break;
+	case AP_SHARE: toast_icon(_("Compartir estará disponible en una próxima versión"), IC_SEND, T.text2); return;
+	default: break;
+	}
+	HM.open = false;
+	U.page = PAGE_MAIN;
+	U.buttons = false;
+	if (i == AP_ACTIVITY || i == AP_CONNECT) {
+		U.tab = TAB_ACTIVITY;
+		if (i == AP_CONNECT) {
+			if (V.srv_off)
+				srv_set(true);
+			qr_show(true);
+		}
+		return;
+	}
+	if (i == AP_DEVICES) {
+		U.tab = TAB_DEVICES;
+		return;
+	}
+	if (i == AP_SETTINGS) {
+		U.tab = TAB_SETTINGS;
+		return;
+	}
+	U.tab = TAB_FILES;
+	const char *to = i == AP_TITLES ? "@titles" : i == AP_SAVES ? "@saves" : i == AP_SHOTS ? "/luma/screenshots" : i == AP_TRASH ? "@trash" : NULL;
+	if (to)
+		f_load(to);
+	else if (F.path[0] == '@' || i == AP_SEARCH) // (Archivos: donde se estaba, salvo una vista especial)
+		f_load("/");
+	if (i == AP_SEARCH)
+		U.want_search = true;
+	if (i == AP_MUSIC) { // sin nada sonando: la carpeta de música (si la hay), para elegir una canción
+		static const char *const MD[] = {"/Music", "/music", "/Música", "/música", "/MP3", "/mp3"};
+		struct stat st;
+		const char *dir = "/";
+		for (unsigned k = 0; k < sizeof MD / sizeof *MD && !strcmp(dir, "/"); k++) {
+			char sp[64];
+			snprintf(sp, sizeof sp, "sdmc:%s", MD[k]);
+			if (!stat(sp, &st) && S_ISDIR(st.st_mode))
+				dir = MD[k];
+		}
+		f_load(dir);
+		toast_icon(_("Elige una canción para reproducirla"), IC_SPEAKER, T.accent);
+	}
+}
+
+// un icono de aplicación: cuadrado redondeado con el color de la app; elegido, con su borde y su brillo
+static void hm_tile(int i, float x, float y, float s, bool sel, bool label, float a)
+{
+	u32 c = ap_col(i);
+	float r = s * 0.30f;
+	if (sel) {
+		draw_rrect(x - 4, y - 4, s + 8, s + 8, r + 4, col_alpha(T.accent, 0.22f * a));
+		draw_rrect(x - 2, y - 2, s + 4, s + 4, r + 2, col_alpha(T.accent, a));
+	}
+	draw_rrect(x, y, s, s, r, col_alpha(col_lerp(T.bg, c, 0.20f), a)); // (su color, sobre el fondo)
+	draw_rrect(x + 2, y + 2, s - 4, s * 0.5f, r - 2, col_alpha(c, 0.07f * a)); // un poco más de luz arriba
+	draw_rrect_outline(x, y, s, s, r, 1, col_alpha(c, 0.45f * a));
+	draw_icon(AP_IC[i], x + s / 2, y + s / 2, s * 0.46f, col_alpha(c, a));
+	// aviso: lo que está en marcha (Actividad) o lo que falta por hacer
+	int badge = 0;
+	if (i == AP_ACTIVITY) {
+		for (int k = 0; k < MAX_XFERS; k++)
+			badge += V.xfers[k].st == XS_RUNNING;
+	} else if (i == AP_DEVICES)
+		badge = online_count();
+	if (badge > 0) {
+		char b[8];
+		snprintf(b, sizeof b, "%d", badge > 9 ? 9 : badge);
+		float bw = fmaxf(15, text_width(b, 0.36f) + 8), bx = x + s - bw + 5, by = y - 5;
+		u32 bc = i == AP_DEVICES ? T.ok : T.danger;
+		draw_rrect(bx - 2, by - 2, bw + 4, 19, 9.5f, col_alpha(T.bg, a));
+		draw_rrect(bx, by, bw, 15, 7.5f, col_alpha(bc, a));
+		text_draw_center(b, bx + bw / 2, by + 7.5f - text_lineh(0.36f) / 2, 0.36f, col_alpha(0xFFFFFFFF, a));
+	}
+	if (label) {
+		const char *n = ap_name(i);
+		float lw = fminf(text_width(n, 0.36f), s + 22);
+		text_draw_clip(n, x + s / 2 - lw / 2, y + s + 4, s + 22, 0.36f, col_alpha(sel ? T.text : T.text2, a));
+	}
+}
+
+// arriba: la aplicación elegida, en grande, con lo más útil de ella
+static void hm_top(void)
+{
+	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+	draw_cloud_glow(80, 104, 52, 0.30f);
+	draw_header();
+	HM.fade = approach(HM.fade, 1, 8);
+	float a = ease_out_cubic(HM.fade);
+	if (MU.open) { // la música abierta desde aquí: su pantalla de siempre
+		music_top(1);
+		toast_draw_top();
+		return;
+	}
+	int i = HM.sel;
+	u32 c = ap_col(i);
+	const float IX = 24, IY = 46, IS = 112;
+	float yo = (1 - a) * 8;
+	draw_rrect(IX - 6, IY - 6 + yo, IS + 12, IS + 12, IS * 0.30f + 6, col_alpha(c, 0.10f * a));
+	draw_rrect(IX, IY + yo, IS, IS, IS * 0.30f, col_alpha(col_lerp(T.bg, c, 0.22f), a));
+	draw_rrect(IX + 3, IY + 3 + yo, IS - 6, IS * 0.5f, IS * 0.30f - 3, col_alpha(c, 0.08f * a));
+	draw_rrect_outline(IX, IY + yo, IS, IS, IS * 0.30f, 1.5f, col_alpha(c, 0.5f * a));
+	draw_icon(AP_IC[i], IX + IS / 2, IY + IS / 2 + yo, 56, col_alpha(c, a));
+	float tx = IX + IS + 22, tw = TOP_W - tx - 20, y = IY + 2 + yo;
+	text_draw_clip(ap_name(i), tx, y, tw, 0.9f, col_alpha(T.text, a));
+	y += text_lineh(0.9f) + 4;
+	y += text_wrap_lines(ap_desc(i), tw, TS_SUB, 4, tx, y, col_alpha(T.text2, a), true) * text_lineh(TS_SUB) + 10;
+	// lo de cada una
+	char s1[160] = "", s2[96] = "";
+	u32 c1 = T.text3;
+	if (i == AP_FILES || i == AP_SEARCH) {
+		u64 fr = 0, tot = 0;
+		if (fsx_space(&fr, &tot) && tot) {
+			float f = 1 - (float)((double)fr / tot);
+			draw_rrect(tx, y, tw, 6, 3, col_alpha(T.surface2, a));
+			draw_grad_h(tx, y, fmaxf(6, tw * f), 6, col_alpha(T.accent, a), col_alpha(T.accent2, a));
+			char fs[24], ts[24];
+			util_fmt_size(fs, sizeof fs, fr), util_fmt_size(ts, sizeof ts, tot);
+			snprintf(s1, sizeof s1, _("%s libres de %s"), fs, ts);
+			y += 12;
+		}
+	} else if (i == AP_CLOUD) {
+		CloudInfo ci;
+		cloud_get(&ci);
+		if (ci.st == CLS_ON)
+			snprintf(s1, sizeof s1, "%s", ci.email[0] ? ci.email : ci.name), c1 = T.ok;
+		else
+			util_strlcpy(s1, _("Sin conectar"), sizeof s1);
+	} else if (i == AP_MUSIC) {
+		if (MU.s.st == MU_PLAY || MU.s.st == MU_PAUSE)
+			snprintf(s1, sizeof s1, "%s %s", MU.s.st == MU_PLAY ? _("Reproduciendo:") : _("En pausa:"), MU.s.title), c1 = T.text2;
+	} else if (i == AP_DEVICES || i == AP_CONNECT) {
+		int on = online_count();
+		if (on)
+			snprintf(s1, sizeof s1, on == 1 ? _("%d dispositivo conectado") : _("%d dispositivos conectados"), on), c1 = T.ok;
+		else
+			util_strlcpy(s1, _("Ningún dispositivo conectado"), sizeof s1);
+		if (i == AP_CONNECT && V.ip && !V.srv_off) {
+			char url[64];
+			url_text(url, sizeof url, false);
+			snprintf(s2, sizeof s2, "%s · PIN %s", url, V.pin);
+		}
+	} else if (i == AP_TRASH) {
+		int tc = 0;
+		u64 sz = trash_size(&tc);
+		char zs[24];
+		util_fmt_size(zs, sizeof zs, sz);
+		if (tc)
+			snprintf(s1, sizeof s1, tc == 1 ? _("1 elemento · %s") : _("%d elementos · %s"), tc, zs);
+		else
+			util_strlcpy(s1, _("La papelera está vacía"), sizeof s1);
+	} else if (i == AP_ACTIVITY) {
+		int run = 0;
+		for (int k = 0; k < MAX_XFERS; k++)
+			run += V.xfers[k].st == XS_RUNNING;
+		if (run)
+			snprintf(s1, sizeof s1, run == 1 ? _("1 transferencia en curso") : _("%d transferencias en curso"), run), c1 = T.accent;
+	}
+	if (s1[0])
+		text_draw_clip(s1, tx, y, tw, TS_SUB, col_alpha(c1, a)), y += text_lineh(TS_SUB) + 2;
+	if (s2[0])
+		text_draw_clip(s2, tx, y, tw, TS_SUB, col_alpha(T.accent, a));
+	char hint[120];
+	snprintf(hint, sizeof hint, _("%s Abrir · %s Cambiar de página · %s Tamaño de los iconos"), GLYPH_A, "L R", GLYPH_Y);
+	text_draw_center(hint, TOP_W / 2, SCR_H - 18, 0.36f, T.text3);
+	toast_draw_top();
+}
+
+// abajo: la barra (dirección, PIN y el tamaño de los iconos) y la cuadrícula, por páginas
+static void hm_bottom(void)
+{
+	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
+	bool modal = g_dialog.open || MU.open || QRS.open || U.ins_pend;
+	// barra
+	draw_rect(0, 0, BOT_W, HM_BAR, T.surface);
+	draw_rect(0, HM_BAR - 1, BOT_W, 1, T.divider);
+	float x = 8;
+	char ip[48] = "", pin[24];
+	if (V.ip && !V.srv_off)
+		url_text(ip, sizeof ip, false);
+	else
+		util_strlcpy(ip, V.srv_off ? _("Servidor apagado") : _("Sin red"), sizeof ip);
+	float w = text_width(ip, 0.38f) + 28;
+	draw_rrect(x, 5, w, 20, 10, T.surface2);
+	draw_circle(x + 11, 15, 3.5f, V.ip && !V.srv_off ? T.ok : T.text3);
+	text_draw(ip, x + 20, 15 - text_lineh(0.38f) / 2, 0.38f, T.text2);
+	x += w + 6;
+	if (V.ip && !V.srv_off) {
+		snprintf(pin, sizeof pin, "PIN %s", V.pin);
+		w = text_width(pin, 0.38f) + 18;
+		draw_rrect(x, 5, w, 20, 10, T.surface2);
+		text_draw(pin, x + 9, 15 - text_lineh(0.38f) / 2, 0.38f, T.text);
+	}
+	// el tamaño de los iconos: grandes o pequeños
+	for (int k = 0; k < 2; k++) {
+		float bx = BOT_W - 64 + k * 30, on = (k == 1) == HM.small;
+		draw_rrect(bx, 5, 26, 20, 10, on ? col_alpha(T.accent, 0.25f) : T.surface2);
+		u32 ic = on ? T.accent : T.text3;
+		if (k == 0)
+			draw_rrect_outline(bx + 8, 10, 10, 10, 2.5f, 1.5f, ic);
+		else
+			for (int q = 0; q < 4; q++)
+				draw_rrect(bx + 8 + (q % 2) * 6, 9 + (q / 2) * 6, 4.5f, 4.5f, 1.2f, ic);
+		if (!modal && tap(bx, 0, 28, HM_BAR) && HM.small != (k == 1)) {
+			HM.small = k == 1;
+			HM.page_pos = HM.sel / hm_per_page();
+			hm_save();
+		}
+	}
+	// la cuadrícula
+	int cols = hm_cols(), rows = hm_rows(), per = hm_per_page(), pages = hm_pages();
+	float s = HM.small ? 38 : 50, cw = (BOT_W - 12) / (float)cols, gy = HM.small ? HM_BAR + 14 : HM_BAR + 16, rh = HM.small ? 54 : 80;
+	if (!modal) {
+		int sel = HM.sel;
+		if (g_krepeat & KEY_RIGHT) sel = sel % cols == cols - 1 || sel + 1 >= AP_N ? (sel / per + 1 < pages ? (sel / per + 1) * per + (sel % per) / cols * cols : sel) : sel + 1;
+		if (g_krepeat & KEY_LEFT) sel = sel % cols == 0 ? (sel / per > 0 ? (sel / per - 1) * per + (sel % per) / cols * cols + cols - 1 : sel) : sel - 1;
+		if (g_krepeat & KEY_DOWN) sel = (sel % per) / cols < rows - 1 && sel + cols < AP_N ? sel + cols : sel;
+		if (g_krepeat & KEY_UP) sel = (sel % per) / cols > 0 ? sel - cols : sel;
+		if (g_kdown & (KEY_R | KEY_ZR)) sel = (sel / per + 1 < pages) ? (sel / per + 1) * per : sel;
+		if (g_kdown & (KEY_L | KEY_ZL)) sel = sel / per > 0 ? (sel / per - 1) * per : sel;
+		if (sel >= AP_N) sel = AP_N - 1;
+		if (sel != HM.sel)
+			HM.sel = sel, U.buttons = true;
+		if (g_kdown & KEY_Y) {
+			HM.small = !HM.small;
+			hm_save();
+		}
+		// deslizar para cambiar de página
+		if (g_touch.held && g_touch.drag && g_touch.sy > HM_BAR)
+			HM.dragging = true, HM.drag_dx += g_touch.x - g_touch.px;
+		if (HM.dragging && !g_touch.held) {
+			int pg = HM.sel / per;
+			if (HM.drag_dx < -40 && pg + 1 < pages)
+				HM.sel = (pg + 1) * per;
+			else if (HM.drag_dx > 40 && pg > 0)
+				HM.sel = (pg - 1) * per;
+			HM.dragging = false, HM.drag_dx = 0;
+		}
+	}
+	int page = HM.sel / per;
+	HM.page_pos = approach(HM.page_pos, page, 14);
+	float shift = (HM.dragging ? HM.drag_dx : 0) - HM.page_pos * BOT_W;
+	for (int i = 0; i < AP_N; i++) {
+		int p = i / per, k = i % per;
+		float tx = 6 + p * BOT_W + (k % cols) * cw + (cw - s) / 2 + shift, ty = gy + (k / cols) * rh;
+		if (tx + s < -10 || tx > BOT_W + 10)
+			continue;
+		hm_tile(i, tx, ty, s, i == HM.sel, !HM.small, 1);
+		if (!modal && !g_touch.drag && tap(tx - 4, ty - 4, s + 8, s + (HM.small ? 8 : 22))) {
+			if (HM.sel == i || HM.small) // (como en el menú de la consola: tocar la elegida la abre)
+				hm_launch(i);
+			HM.sel = i, U.buttons = false;
+		}
+	}
+	// pie: páginas o el nombre de la elegida (con los iconos pequeños no se ven los nombres)
+	if (HM.small)
+		text_draw_center(ap_name(HM.sel), BOT_W / 2, SCR_H - 22, TS_BODY, T.text);
+	else if (pages > 1) {
+		float dx = BOT_W / 2 - (pages * 10 + 6) / 2.0f;
+		for (int p = 0; p < pages; p++) {
+			bool on = p == page;
+			draw_rrect(dx, SCR_H - 14, on ? 16 : 6, 6, 3, on ? T.accent : T.divider);
+			dx += on ? 22 : 12;
+		}
+	}
+	if (!modal && (g_kdown & KEY_A))
+		hm_launch(HM.sel);
+	music_sheet();
+	qrs_draw();
+	install_card();
+	un_card();
+	dialog_draw();
+}
+
 // barra de abajo: dos pestañas a cada lado y, en el centro, el botón del QR (como SELECT)
 #define QR_FAB 52.0f
 static float tab_x(int i)
@@ -7953,30 +8367,20 @@ static void draw_tabbar(void)
 			U.page = PAGE_MAIN;
 		}
 	}
-	// botón del QR: redondo y elevado sobre la barra, con el degradado de la marca si está abierto
+	// botón central: el inicio (todas las aplicaciones), redondo y elevado sobre la barra, con el degradado de la marca
 	float cx = BOT_W / 2, cy = y + 8, r = 21;
-	bool open = !V.qr_min, p = touch_in(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4));
+	bool p = touch_in(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4));
 	draw_circle(cx, cy + 2, r + 3, T.shadow);
 	draw_circle(cx, cy, r + 3, T.bg);
-	if (open) {
-		draw_circle(cx, cy, r, brand_grad(g_time * 0.05f));
-		draw_circle(cx, cy, r - 2, col_lerp(T.accent, T.accent2, 0.5f));
-	} else {
-		draw_circle(cx, cy, r, p ? T.surface2 : T.surface);
-		draw_arc(cx, cy, r, 1.5f, 0, 6.2832f, T.divider);
-	}
-	if (QA.anim > 0.01f) { // con la hoja abierta: una X para cerrarla
-		draw_circle(cx, cy, r, col_alpha(T.accent, QA.anim));
-		draw_icon(IC_CLOSE, cx, cy, 16, col_alpha(0xFFFFFFFF, QA.anim));
-	}
-	if (QA.anim < 0.99f)
-		draw_icon(IC_QR, cx, cy, 20, col_alpha(open ? 0xFFFFFFFF : T.text2, 1 - QA.anim));
+	draw_circle(cx, cy, r, brand_grad(g_time * 0.05f));
+	draw_circle(cx, cy, r - 2, col_lerp(T.accent, T.accent2, 0.5f));
+	for (int q = 0; q < 4; q++) // cuatro casillas: las aplicaciones
+		draw_rrect(cx - 8 + (q % 2) * 9, cy - 8 + (q / 2) * 9, 7, 7, 2, 0xFFFFFFFF);
 	if (p && g_touch.down)
 		draw_circle(cx, cy, r, col_alpha(0xFFFFFFFF, 0.15f));
-	if (!g_dialog.open && !QA.open && tap(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4))) {
-		QA.open = QA.just = true;
-		QA.sel = QA_CLOUD;
-		QA.pos = QA.sel;
+	if (!g_dialog.open && tap(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4))) {
+		QA.open = false;
+		hm_show();
 	}
 }
 
@@ -7997,6 +8401,14 @@ static void draw_bottom(void)
 		cl_bottom();
 		qa_draw();
 		dialog_draw();
+		return;
+	}
+	if (hm_is_open()) {
+		hm_bottom();
+		if (U.fade > 0) {
+			draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.bg, U.fade));
+			splash_bot(U.fade);
+		}
 		return;
 	}
 	// con un menú, la tarjeta de instalar o el visor encima, lo de debajo (pestaña y barra) no recibe nada
@@ -8708,6 +9120,11 @@ static void update(void)
 	br_poll(); // el navegador cerrado a media carga: se suelta al acabar
 	if (br_is_open() || CLU.open) // el navegador y la nube usan todos los botones (L/R, START…)
 		return;
+	if (hm_is_open()) { // el inicio usa los suyos (L/R, la cruceta, A, Y); START, salir
+		if ((g_kdown & KEY_START) && !MU.open && !QRS.open)
+			ask_exit();
+		return;
+	}
 	// en el editor de texto, L y R no cambian de pestaña: R edita varias líneas y B cierra
 	bool editor = VW.kind == VW_TXT && U.tab == TAB_FILES;
 	if (!editor && (g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind && U.tab == TAB_FILES)
@@ -8727,14 +9144,9 @@ static void update(void)
 	}
 	if ((g_kdown & KEY_START) && !(U.tab == TAB_FILES && VW.kind == VW_TXT)) // en el editor, START guarda
 		ask_exit();
-	if ((g_kdown & KEY_SELECT) && !editor) { // SELECT abre y cierra el menú del botón central
-		if (QA.open)
-			QA.open = false;
-		else {
-			QA.open = QA.just = true;
-			QA.sel = QA_CLOUD;
-			QA.pos = QA.sel;
-		}
+	if ((g_kdown & KEY_SELECT) && !editor) { // SELECT: al inicio
+		QA.open = false;
+		hm_show();
 	}
 }
 
