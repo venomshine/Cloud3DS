@@ -1023,61 +1023,6 @@ static void xfer_wide(float x0, float y, float w, float a)
 // tira compacta: dirección, PIN y estado; el resto de la pantalla queda libre
 static void xfer_head(const Xfer *x, const char **head, u32 *col, IconId *ic);
 
-static void mini_strip(float a)
-{
-	// una sola línea: dirección y estado a la izquierda, PIN a la derecha
-	float y = CARD_Y, cy = y + MINI_H / 2;
-	if (V.srv_off) { // apagado: se sigue viendo, en gris, para saber que existe
-		draw_rrect_outline(CARD_X + 1, y + 1, CARD_W - 2, MINI_H - 2, (MINI_H - 2) / 2, 1, col_alpha(T.divider, a));
-		draw_icon(IC_LOCK, CARD_X + 18, cy, 13, col_alpha(T.text3, a));
-		text_draw(_("Servidor apagado"), CARD_X + 34, cy - text_lineh(0.52f) / 2, 0.52f, col_alpha(T.text3, a));
-		text_draw_right(_("Se enciende en Conectar"), CARD_X + CARD_W - 14, cy - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.text3, a));
-		return;
-	}
-	draw_icon(IC_QR, CARD_X + 18, cy, 13, col_alpha(T.accent, a));
-	char url[48], pin[16];
-	url_text(url, sizeof url, false);
-	const float sc = 0.52f;
-	float lx = CARD_X + 34;
-	text_draw(url, lx, cy - text_lineh(sc) / 2, sc, col_alpha(T.accent, a));
-	snprintf(pin, sizeof pin, "%s", V.pin);
-	float pw = text_width(pin, sc) + 16, px = CARD_X + CARD_W - 10 - pw;
-	draw_rrect(px, y + 5, pw, MINI_H - 10, (MINI_H - 10) / 2, col_alpha(T.surface2, a));
-	text_draw_center(pin, px + pw / 2, cy - text_lineh(sc) / 2, sc, col_alpha(T.text, a));
-	float lw = text_width(_("PIN"), TS_SUB);
-	text_draw(_("PIN"), px - 6 - lw, cy - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.text3, a));
-	int on = online_count();
-	if (on) {
-		float sx = lx + text_width(url, sc) + 14;
-		char n[8];
-		snprintf(n, sizeof n, "%d", on);
-		draw_icon(IC_DEVICES, sx + 8, cy, 14, col_alpha(T.ok, a));
-		text_draw(n, sx + 19, cy - text_lineh(sc) / 2, sc, col_alpha(T.ok, a));
-		lx = sx + 19 + text_width(n, sc);
-	} else {
-		lx += text_width(url, sc);
-	}
-	// lo que está en curso (instalar, copiar, recibir…): qué es y cuánto va (la barra es la de bajo la cabecera)
-	const Xfer *xs[1];
-	if (visible_xfers(xs, 1)) {
-		const Xfer *x = xs[0];
-		const char *hd;
-		u32 col;
-		IconId ic;
-		xfer_head(x, &hd, &col, &ic);
-		float f = x->st == XS_DONE ? 1 : x->total ? clampf((float)((double)x->done / x->total), 0, 1) : 0;
-		char t[96];
-		if (x->st == XS_RUNNING)
-			snprintf(t, sizeof t, "%s %d%%", hd, (int)(f * 100));
-		else
-			util_strlcpy(t, hd, sizeof t);
-		float x0 = lx + 16, x1 = px - 10 - lw - 8;
-		if (x1 - x0 > 40) {
-			draw_icon(ic, x0 + 7, cy, 12, col_alpha(col, a));
-			text_draw_clip(t, x0 + 17, cy - text_lineh(TS_SUB) / 2, x1 - x0 - 17, TS_SUB, col_alpha(col, a));
-		}
-	}
-}
 
 // debajo de la tira: las transferencias a lo ancho o una pista para volver a abrir el QR
 // debajo de la tira, con el QR cerrado: toda la cola (transferencias, copias e instalaciones)
@@ -1988,7 +1933,6 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 
 // ------------------------------------------------------------ nube (OneDrive)
 static void explain_top(float a, IconId ic, u32 col, const char *title, const char *desc, const char *foot, u32 fc);
-static void draw_tabbar(void);
 static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char *title, const IconId *ic, const char *const *lab,
                       const u32 *col, int n);
 static float info_row(float x, float y, float w, const char *k, const char *v, u32 vc, float a);
@@ -2152,7 +2096,7 @@ static void cl_top(void)
 {
 	draw_header();
 	cl_refresh();
-	mini_strip(1); // la tira de la dirección, como en el resto de la app: hay un servidor a tu nombre
+	g_body_y = CARD_Y; // (como las demás aplicaciones: sin la tira del servidor, la pantalla de arriba entera)
 	const CloudInfo *ci = &CLU.info;
 	if (CLU.bk && ci->st == CLS_ON) {
 		cl_backups_top();
@@ -2521,10 +2465,6 @@ static void cl_bottom(void)
 		if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
 			close = true;
 	}
-	int tab = U.tab;
-	draw_tabbar();
-	if (U.tab != tab || QA.open) // otra pestaña o el botón central: fuera de la nube
-		close = true;
 	if (sheet)
 		g_kdown = kd, g_krepeat = kr, g_touch = tc;
 	cl_options();
@@ -8720,55 +8660,6 @@ static void hm_bottom(void)
 	install_card();
 	un_card();
 	dialog_draw();
-}
-
-// barra de abajo: dos pestañas a cada lado y, en el centro, el botón del QR (como SELECT)
-#define QR_FAB 52.0f
-static float tab_x(int i)
-{
-	float tw = (BOT_W - QR_FAB) / (float)TAB_COUNT;
-	return i * tw + (i >= TAB_COUNT / 2 ? QR_FAB : 0);
-}
-
-static void draw_tabbar(void)
-{
-	float y = SCR_H - TABBAR_H;
-	float tw = (BOT_W - QR_FAB) / (float)TAB_COUNT;
-	draw_rect(0, y, BOT_W, TABBAR_H, T.surface);
-	draw_rect(0, y, BOT_W, 1, T.divider);
-	// la raya de la pestaña elegida se desliza (y salta el hueco del QR)
-	U.tab_anim = approach(U.tab_anim, U.tab, 16);
-	float fa = U.tab_anim, xa = floorf(fa) < TAB_COUNT - 1 ? tab_x((int)floorf(fa)) + (tab_x((int)floorf(fa) + 1) - tab_x((int)floorf(fa))) * (fa - floorf(fa))
-	                                                        : tab_x(TAB_COUNT - 1);
-	draw_rrect(xa + tw / 2 - 16, y + 2, 32, 3, 1.5f, T.accent);
-	static const IconId ics[TAB_COUNT] = {IC_FOLDER, IC_CLOCK, IC_DEVICES, IC_GEAR};
-	const char *names[TAB_COUNT] = {_("Archivos"), _("Actividad"), _("Dispositivos"), _("Ajustes")};
-	for (int i = 0; i < TAB_COUNT; i++) {
-		float k = clampf(1 - fabsf(U.tab_anim - i), 0, 1), x = tab_x(i);
-		u32 c = col_lerp(T.text3, T.accent, k);
-		draw_icon(ics[i], x + tw / 2, y + 15, 17, c);
-		float lw = fminf(text_width(names[i], 0.36f), tw - 4);
-		text_draw_clip(names[i], x + (tw - lw) / 2, y + 25, tw - 4, 0.36f, c);
-		if (!g_dialog.open && tap(x, y, tw, TABBAR_H)) {
-			U.tab = i;
-			U.page = PAGE_MAIN;
-		}
-	}
-	// botón central: el inicio (todas las aplicaciones), redondo y elevado sobre la barra, con el degradado de la marca
-	float cx = BOT_W / 2, cy = y + 8, r = 21;
-	bool p = touch_in(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4));
-	draw_circle(cx, cy + 2, r + 3, T.shadow);
-	draw_circle(cx, cy, r + 3, T.bg);
-	draw_circle(cx, cy, r, brand_grad(g_time * 0.05f));
-	draw_circle(cx, cy, r - 2, col_lerp(T.accent, T.accent2, 0.5f));
-	for (int q = 0; q < 4; q++) // cuatro casillas: las aplicaciones
-		draw_rrect(cx - 8 + (q % 2) * 9, cy - 8 + (q / 2) * 9, 7, 7, 2, 0xFFFFFFFF);
-	if (p && g_touch.down)
-		draw_circle(cx, cy, r, col_alpha(0xFFFFFFFF, 0.15f));
-	if (!g_dialog.open && tap(cx - r - 4, cy - r - 4, 2 * r + 8, SCR_H - (cy - r - 4))) {
-		QA.open = false;
-		hm_show();
-	}
 }
 
 static void draw_bottom(void)
