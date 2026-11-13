@@ -397,3 +397,119 @@ int save_backups_count(const TitleInfo *t, u64 *last)
 		*last = c.last;
 	return c.n;
 }
+
+/* ---------------------------------------------------------------- liberar espacio: por partes y datos extra */
+
+int title_uninstall_part(u64 tid, int part)
+{
+	if ((part != 1 && part != 2) || (u32)(tid >> 32) != HI_APP || title_is_self(tid))
+		return -1;
+	if (R_FAILED(amInit()))
+		return -2;
+	u32 lo = (u32)tid, n = 0, hi = part == 1 ? HI_UPD : HI_DLC;
+	u64 *ids = NULL;
+	int done = 0;
+	Result r = 0;
+	if (R_SUCCEEDED(AM_GetTitleCount(MEDIATYPE_SD, &n)) && n && (ids = malloc(n * sizeof *ids)) && R_SUCCEEDED(AM_GetTitleList(&n, MEDIATYPE_SD, n, ids)))
+		for (u32 i = 0; i < n; i++)
+			if ((u32)ids[i] == lo && (u32)(ids[i] >> 32) == hi) {
+				Result rr = AM_DeleteTitle(MEDIATYPE_SD, ids[i]);
+				if (R_FAILED(rr))
+					r = rr;
+				else
+					done++;
+			}
+	free(ids);
+	amExit();
+	util_log("desinstalar parte %d de %016llX: %d, %08lX", part, (unsigned long long)tid, done, (unsigned long)r);
+	return done && R_SUCCEEDED(r) ? 0 : -2;
+}
+
+// los datos extra de un juego van con su ID único (como en Checkpoint: los 32 bits bajos del título, sin el último byte)
+static FS_ExtSaveDataInfo ext_info(const TitleInfo *t)
+{
+	FS_ExtSaveDataInfo i = {0};
+	i.mediaType = MEDIATYPE_SD;
+	i.saveId = ((u32)t->tid) >> 8;
+	return i;
+}
+static bool ext_open(const TitleInfo *t, FS_Archive *a)
+{
+	u32 path[3] = {MEDIATYPE_SD, ((u32)t->tid) >> 8, 0};
+	return R_SUCCEEDED(FSUSER_OpenArchive(a, ARCHIVE_EXTDATA, (FS_Path){PATH_BINARY, sizeof path, path}));
+}
+static u64 ext_dir_size(FS_Archive a, const u16 *src, int srclen, int depth)
+{
+	u16 path[512];
+	memcpy(path, src, srclen * 2);
+	path[srclen] = 0;
+	Handle d;
+	u64 tot = 0;
+	if (depth > 8 || R_FAILED(FSUSER_OpenDirectory(&d, a, (FS_Path){PATH_UTF16, (srclen + 1) * 2, path})))
+		return 0;
+	FS_DirectoryEntry *e = malloc(sizeof *e);
+	u32 got;
+	while (e && R_SUCCEEDED(FSDIR_Read(d, &got, 1, e)) && got) {
+		if (!(e->attributes & FS_ATTRIBUTE_DIRECTORY)) {
+			tot += e->fileSize;
+			continue;
+		}
+		int nl = 0;
+		while (nl < 0x105 && e->name[nl])
+			nl++;
+		if (srclen + 1 + nl >= 500)
+			continue;
+		u16 child[512];
+		memcpy(child, path, srclen * 2);
+		int cl = srclen;
+		if (cl == 0 || child[cl - 1] != '/')
+			child[cl++] = '/';
+		memcpy(child + cl, e->name, nl * 2);
+		cl += nl;
+		tot += ext_dir_size(a, child, cl, depth + 1);
+	}
+	free(e);
+	FSDIR_Close(d);
+	return tot;
+}
+s64 extdata_size(const TitleInfo *t)
+{
+	FS_Archive a;
+	if (!t || title_is_self(t->tid) || !ext_open(t, &a))
+		return -1;
+	static const u16 root[1] = {'/'};
+	u64 s = ext_dir_size(a, root, 1, 0);
+	FSUSER_CloseArchive(a);
+	return (s64)s;
+}
+int extdata_backup(const TitleInfo *t, char *out, size_t n)
+{
+	CopyCtx c = {0};
+	if (!ext_open(t, &c.a))
+		return -1;
+	char gd[512], *p;
+	save_dir(t, gd, sizeof gd); // la misma carpeta de juego que Checkpoint, en «extdata» en vez de «saves»
+	if ((p = strstr(gd, "/saves/")))
+		memmove(p + 9, p + 7, strlen(p + 7) + 1), memcpy(p, "/extdata/", 9);
+	time_t now = time(NULL);
+	struct tm tm;
+	gmtime_r(&now, &tm);
+	snprintf(out, n, "%s/%04d%02d%02d-%02d%02d%02d", gd, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	static const u16 root[1] = {'/'};
+	copy_dir(&c, root, 1, out);
+	FSUSER_CloseArchive(c.a);
+	util_log("copia de los datos extra %016llX en %s: %d archivos%s", (unsigned long long)t->tid, out, c.files, c.err ? " (error)" : "");
+	if (c.err) {
+		fsx_rmrf(out);
+		return -2;
+	}
+	return 0;
+}
+int extdata_delete(const TitleInfo *t)
+{
+	if (!t || title_is_self(t->tid))
+		return -1;
+	Result r = FSUSER_DeleteExtSaveData(ext_info(t));
+	util_log("borrar datos extra %016llX: %08lX", (unsigned long long)t->tid, (unsigned long)r);
+	return R_SUCCEEDED(r) ? 0 : -2;
+}

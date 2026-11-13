@@ -41,3 +41,10 @@ int  save_backups_count(const TitleInfo *t, u64 *last); /* cuántas copias hay y
 void save_dir(const TitleInfo *t, char *out, size_t n);  /* su carpeta de copias (puede no existir aún) */
 /* huella (MD5 en hex, 33 bytes) de la partida, sin copiarla; <0 si no tiene o no se pudo leer */
 int  save_fingerprint(const TitleInfo *t, char *hex);
+
+/* liberar espacio. part: 1 la actualización, 2 los DLC. 0 bien. Tardan: desde un hilo */
+int  title_uninstall_part(u64 tid, int part);
+/* datos extra (extdata) de un juego: cuánto ocupan (-1 si no tiene), copia en /3ds/Checkpoint/extdata/… y borrar */
+s64  extdata_size(const TitleInfo *t);
+int  extdata_backup(const TitleInfo *t, char *out, size_t n);
+int  extdata_delete(const TitleInfo *t);
