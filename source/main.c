@@ -4631,8 +4631,13 @@ static void cl_open_poll(void)
 		zs_open(p);
 	else {
 		static char one[1][256];
-		util_strlcpy(one[0], CO.it.name, sizeof one[0]);
-		if (music_play(CLOUD_CACHE, one, 1, 0))
+		char dir[700];
+		util_strlcpy(dir, p, sizeof dir);
+		char *sl = strrchr(dir, '/');
+		util_strlcpy(one[0], sl ? sl + 1 : dir, sizeof one[0]);
+		if (sl)
+			*sl = 0;
+		if (music_play(dir, one, 1, 0))
 			CO.mu_wait = 300; // (el reproductor sale en cuanto suene)
 		else
 			toast_icon(_("No se pudo reproducir"), IC_CLOSE, T.danger);
@@ -6264,7 +6269,7 @@ static void music_sheet(void)
 	if (!fresh && (tap(18, ly, lw, 26) || (g_kdown & KEY_X))) {
 		music_stop();
 		MU.open = false;
-	} else if (!fresh && (tap(26 + lw, ly, lw, 26) || (g_kdown & KEY_Y)) && !strcmp(MU.s.dir, CLOUD_CACHE)) {
+	} else if (!fresh && (tap(26 + lw, ly, lw, 26) || (g_kdown & KEY_Y)) && strstr(MU.s.dir, CLOUD_CACHE)) {
 		MU.open = false; // (de la nube: su carpeta es la de la nube, no la copia que se bajó)
 		if (!CLU.open)
 			cl_open();

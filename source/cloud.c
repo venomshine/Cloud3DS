@@ -1070,55 +1070,61 @@ static void do_download_to(const char *id, const char *name, const char *dir, bo
 		set_err("download");
 }
 
-typedef struct {
-	FILE *f;
-	u64 got;
-} OpenW;
-
-static size_t open_cb(char *d, size_t s, size_t m, void *u)
-{
-	OpenW *w = u;
-	size_t k = s * m;
-	if (C.open_cancel || C.quit || fwrite(d, 1, k, w->f) != k)
-		return 0;
-	w->got += k;
-	C.info.open_got = w->got;
-	return k;
-}
-
-/* abrir un archivo de la nube: se baja entero a la carpeta dir de la SD (y la consola lo abre al terminar) */
+/* abrir un archivo de la nube: se baja entero a la carpeta dir de la SD con el gestor de descargas (el mismo de
+ * «Descargar a la SD», que ya sabe seguir redirecciones, reintentar y elegir entre httpc y libcurl), se espera
+ * aquí a que acabe y la consola lo abre. Termina sin dejar rastro en la lista de descargas */
 static void do_open(const char *id, const char *name, const char *dir)
 {
-	char path[300], sd[700], tmp[720];
+	char path[300];
 	snprintf(path, sizeof path, "/me/drive/items/%s?$select=id,name,@microsoft.graph.downloadUrl", id);
-	snprintf(sd, sizeof sd, "%s/%s", dir, name);
-	snprintf(tmp, sizeof tmp, "sdmc:%s.part", sd);
 	long code = 0;
 	cJSON *j = graph_json(path, &code);
 	const cJSON *u = cJSON_GetObjectItemCaseSensitive(j, "@microsoft.graph.downloadUrl");
-	bool ok = cJSON_IsString(u) && fsx_mkdirs(dir) >= 0;
-	OpenW w = {NULL, 0};
-	if (ok)
-		ok = (w.f = fopen(tmp, "wb")) != NULL;
-	if (ok) {
-		const char *H[] = {NULL};
-		ok = dl_request(HTTPC_METHOD_GET, u->valuestring, H, NULL, 0, open_cb, &w, &code) == DLF_OK && code < 300;
-		ok = fclose(w.f) == 0 && ok;
-		char fin[720];
-		snprintf(fin, sizeof fin, "sdmc:%s", sd);
-		if (ok) {
-			remove(fin);
-			ok = rename(tmp, fin) == 0;
-		}
-		if (!ok)
-			remove(tmp);
-	}
+	u32 did = 0;
+	char old[720];
+	snprintf(old, sizeof old, "sdmc:%s/%s", dir, name);
+	if (!strcmp(dir, CLOUD_CACHE)) // (en la caché, la copia de la vez anterior sobra)
+		remove(old);
+	bool ok = cJSON_IsString(u) && fsx_mkdirs(dir) >= 0 && dl_add(u->valuestring, dir, "", DLA_NONE, "OneDrive", &did) == 0;
 	cJSON_Delete(j);
-	util_log("nube: abrir %s -> %s (HTTP %ld)", name, ok ? "bien" : "mal", code);
+	char got_path[700] = "";
+	if (ok) {
+		dl_set_name(did, name);
+		DlItem *l = malloc(sizeof(DlItem) * DL_MAX);
+		ok = l != NULL;
+		for (bool fin = false; ok && !fin;) {
+			if (C.open_cancel || C.quit) {
+				dl_op(did, DL_CANCEL);
+				ok = false;
+				break;
+			}
+			int n = dl_list(l, DL_MAX), k = 0;
+			while (k < n && l[k].id != did)
+				k++;
+			if (k == n) { // (ya no está: se quitó)
+				ok = false;
+				break;
+			}
+			C.info.open_got = l[k].done;
+			if (l[k].total)
+				C.info.open_size = l[k].total;
+			if (l[k].st == DL_DONE)
+				fin = true, util_strlcpy(got_path, l[k].path, sizeof got_path);
+			else if (l[k].st == DL_FAIL || l[k].st == DL_CANCELED) {
+				util_log("nube: abrir %s: la descarga falló (%s)", name, l[k].err);
+				ok = false;
+			} else
+				svcSleepThread(100000000ll);
+		}
+		free(l);
+		dl_op(did, DL_REMOVE); // (lo abierto no se queda en la lista de descargas)
+	}
+	ok = ok && got_path[0];
+	util_log("nube: abrir %s -> %s (%s)", name, ok ? "bien" : "mal", got_path);
 	lock();
 	C.info.opening = false;
 	C.info.open_ok = ok && !C.open_cancel;
-	util_strlcpy(C.info.open_path, ok ? sd : "", sizeof C.info.open_path);
+	util_strlcpy(C.info.open_path, ok ? got_path : "", sizeof C.info.open_path);
 	C.info.open_rev++;
 	bump();
 	unlock();
