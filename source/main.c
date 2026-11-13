@@ -1222,7 +1222,7 @@ static void mini_body(float a)
 		draw_halo(TOP_W / 2, cy, 64, 0.25f * a);
 		draw_cloud(TOP_W / 2, cy, 20, a);
 		text_draw_center(_("Tu nube está lista"), TOP_W / 2, cy + 28, TS_BODY, col_alpha(T.text2, a));
-		text_draw_center(_("SELECT abre el menú"), TOP_W / 2, cy + 48, TS_SUB, col_alpha(T.text3, a));
+		text_draw_center(_("SELECT vuelve al inicio"), TOP_W / 2, cy + 48, TS_SUB, col_alpha(T.text3, a));
 		return;
 	}
 	if (nx == 1 && !nw) { // una sola: a lo grande
@@ -2289,7 +2289,7 @@ static void cl_options(void)
 			cloud_list(c->id, c->name);
 		else if (act[r] == 1) {
 			cloud_download(c);
-			toast_icon(_("Descargando: lo verás en Actividad"), IC_DOWNLOAD, T.ok);
+			toast_icon(_("Descargando: lo verás en Conectar, en «Actividad»"), IC_DOWNLOAD, T.ok);
 		} else {
 			char msg[260];
 			snprintf(msg, sizeof msg, _("«%s» irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive."), c->name);
@@ -2589,7 +2589,7 @@ static void tab_activity(void)
 	int rows = NA + n + nd;
 	list_update(l, rows, RH);
 	if (!rows) {
-		empty_state(IC_CLOUD, _("Todo listo"), _("Aquí verás lo que se sube, se descarga o se instala. Para traer algo, usa el botón central."));
+		empty_state(IC_CLOUD, _("Todo listo"), _("Aquí verás lo que envíes, recibas, descargues o instales. Para conectar el móvil o el PC, escanea el código QR de arriba."));
 		return;
 	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
@@ -2923,7 +2923,7 @@ enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT,
 static const char *chip_name(int i)
 {
 	switch (i) {
-	case CH_HOME: return _("Inicio");
+	case CH_HOME: return _("SD"); // (la raíz de la tarjeta; «inicio» es el menú de aplicaciones)
 	case CH_SHOTS: return _("Capturas");
 	case CH_PHOTOS: return _("Fotos");
 	case CH_CIAS: return _("CIAs");
@@ -4844,7 +4844,7 @@ static void qrs_download(bool install)
 	for (int i = 0; i < QRS.nurl; i++)
 		ok += dl_add(QRS.url[i], QRS.dest, "", install ? DLA_INSTALL | DLA_STREAM : DLA_NONE, G.console, NULL) == 0; // pedido aquí: se instala mientras baja
 	char m[120];
-	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo verás en Actividad") : _("Descargando %d enlaces: los verás en Actividad"), ok);
+	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo verás en Descargas") : _("Descargando %d enlaces: los verás en Descargas"), ok);
 	toast_icon(ok ? m : _("El enlace no es válido"), ok ? IC_GLOBE : IC_CLOSE, ok ? T.accent : T.danger);
 	qrs_close();
 }
@@ -7705,7 +7705,7 @@ static void settings_sub_top(float a)
 		if (V.srv_off)
 			explain_top(a, IC_LOCK, T.text3, _("Servidor apagado"),
 			            _("La web, cloud3ds.local, las subidas desde el PC y la instalación remota no funcionan. La nube, las descargas y el navegador siguen igual."),
-			            _("Apagado gasta menos batería. Se enciende aquí o con SELECT, en «Conectar»."), T.text3);
+			            _("Apagado gasta menos batería. Se enciende aquí o al abrir Conectar."), T.text3);
 		else
 			explain_top(a, IC_WIFI, T.ok, _("Servidor para el PC y el móvil"),
 			            _("Con él encendido, el móvil o el PC entran en la consola desde el navegador: ven, suben y bajan archivos e instalan CIA."),
@@ -8588,7 +8588,10 @@ static void hm_top(void)
 	if (s2[0])
 		text_draw_clip(s2, tx, y, tw, TS_SUB, col_alpha(T.accent, a));
 	char hint[120];
-	snprintf(hint, sizeof hint, _("%s Abrir · %s Cambiar de página · %s Tamaño de los iconos"), GLYPH_A, "L R", GLYPH_Y);
+	if (hm_pages() > 1)
+		snprintf(hint, sizeof hint, _("%s Abrir · %s Cambiar de página · %s Tamaño de los iconos"), GLYPH_A, "L R", GLYPH_Y);
+	else
+		snprintf(hint, sizeof hint, _("%s Abrir · %s Tamaño de los iconos · START Salir"), GLYPH_A, GLYPH_Y);
 	text_draw_center(hint, TOP_W / 2, SCR_H - 18, 0.36f, T.text3);
 	toast_draw_top();
 }
@@ -9318,7 +9321,7 @@ static void update(void)
 		bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
 		if (kb_input(_("Enlace para descargar (https://…)"), clu ? cl : "https://", url, sizeof url, false, false) && url[0]) {
 			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
-				toast_icon(_("Descargando: lo verás en Actividad"), IC_GLOBE, T.accent);
+				toast_icon(_("Descargando: lo verás en Descargas"), IC_GLOBE, T.accent);
 			else
 				toast_icon(_("El enlace no es válido"), IC_CLOSE, T.danger);
 		}

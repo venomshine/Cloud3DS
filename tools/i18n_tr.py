@@ -2779,4 +2779,28 @@ TR = {
     'Otro juego instalado usa estos datos extra: no se han borrado':
         ("Another installed game uses this extra data: it wasn't deleted",
          'ほかのインストール済みゲームがこの追加データを使用しているため、削除しませんでした'),
+    'SELECT vuelve al inicio':
+        ('SELECT returns to the home menu',
+         'SELECTでホームに戻ります'),
+    'Aquí verás lo que envíes, recibas, descargues o instales. Para conectar el móvil o el PC, escanea el código QR de arriba.':
+        ("Here you'll see what you send, receive, download or install. To connect your phone or PC, scan the QR code above.",
+         '送信・受信・ダウンロード・インストールの状況がここに表示されます。スマホやPCを接続するには、上のQRコードを読み取ってください。'),
+    'Apagado gasta menos batería. Se enciende aquí o al abrir Conectar.':
+        ('Turning it off saves battery. Turn it on here or by opening Connect.',
+         'オフにするとバッテリーを節約できます。ここか「接続」を開くとオンになります。'),
+    'Descargando: lo verás en Conectar, en «Actividad»':
+        ('Downloading: see Connect > Activity',
+         'ダウンロード中:「接続」の「アクティビティ」で確認できます'),
+    'Descargando: lo verás en Descargas':
+        ('Downloading: see Downloads',
+         'ダウンロード中:「ダウンロード」で確認できます'),
+    'Descargando %d enlaces: los verás en Descargas':
+        ('Downloading %d links: see Downloads',
+         '%d件のリンクをダウンロード中:「ダウンロード」で確認できます'),
+    '%s Abrir · %s Tamaño de los iconos · START Salir':
+        ('%s Open · %s Icon size · START Exit',
+         '%s 開く · %s アイコンサイズ · START 終了'),
+    'SD':
+        ('SD',
+         'SD'),
 }
