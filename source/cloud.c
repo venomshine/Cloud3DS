@@ -863,7 +863,7 @@ static void do_download(const char *id, const char *name)
 	bool cia = l > 4 && !strcasecmp(name + l - 4, ".cia");
 	u32 did = 0;
 	// pedido desde la propia consola: un .cia se instala mientras baja
-	if (dl_add(u->valuestring, cia ? "/cias" : "/Descargas", "", cia ? DLA_INSTALL | DLA_STREAM : DLA_NONE, "OneDrive", &did) == 0)
+	if (dl_add(u->valuestring, DL_DIR, "", cia ? DLA_INSTALL | DLA_STREAM : DLA_NONE, "OneDrive", &did) == 0)
 		dl_set_name(did, name);
 	else
 		set_err("download");

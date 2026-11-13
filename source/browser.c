@@ -5019,7 +5019,7 @@ static void go(const char *url, bool push)
 	if (is_file_url(url)) {
 		size_t l = strcspn(url, "?#");
 		bool cia = l > 4 && !strncasecmp(url + l - 4, ".cia", 4);
-		if (dl_add(url, cia ? "/cias" : "/Descargas", "", cia ? DLA_INSTALL | DLA_STREAM : DLA_NONE, "Navegador", NULL) == 0)
+		if (dl_add(url, DL_DIR, "", cia ? DLA_INSTALL | DLA_STREAM : DLA_NONE, "Navegador", NULL) == 0)
 			toast_icon(cia ? "Descargando e instalando: lo verás en Actividad" : "Descargando en /Descargas: lo verás en Actividad", IC_DOWNLOAD, T.accent);
 		else
 			toast_icon("No se pudo descargar ese enlace", IC_CLOSE, T.danger);

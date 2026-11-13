@@ -295,7 +295,7 @@ static void fbi_payload(Fbi *f)
 		char c = *e;
 		*e = 0;
 		u32 id;
-		if (*p && dl_add(p, "/cias", "", DLA_INSTALL, "PC (FBI)", &id) == 0)
+		if (*p && dl_add(p, DL_DIR, "", DLA_INSTALL, "PC (FBI)", &id) == 0)
 			f->ids[f->nids++] = id;
 		*e = c;
 		p = e;

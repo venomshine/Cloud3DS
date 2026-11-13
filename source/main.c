@@ -1578,7 +1578,6 @@ static void un_poll(void)
 
 static bool hm_is_open(void);
 static void dl_top(void);
-static void dl_bottom(void);
 static void hm_top(void);
 static void hm_bottom(void);
 static void hm_show(void);
@@ -1653,63 +1652,11 @@ static void dl_top(void)
 		f += xs[i]->kind == XF_FETCH;
 	if (f)
 		mini_body(1);
-	else
-		app_idle_top(IC_DOWNLOAD, _("Sin descargas en curso"), _("Los CIA se instalan mientras se descargan; el resto se guarda en la carpeta de descargas."));
-}
-static void dl_bottom(void)
-{
-	tab_header(_("Descargas"), false);
-	if ((g_kdown & KEY_B) && !g_dialog.open) {
-		hm_show();
-		return;
-	}
-	static int sel;
-	const char *cl = clip_text();
-	bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
-	struct { IconId ic; u32 col; const char *t, *s; } C[3] = {
-	    {IC_LINK, T.warn, _("Desde un enlace"), _("Escribe la dirección de un archivo o de un proyecto de GitHub")},
-	    {IC_CAMERA, T.ok, _("Escanear un código QR"), _("Con la cámara, como en FBI")},
-	    {IC_DUP, T.accent2, _("Enlace del portapapeles"), cl},
-	};
-	int n = clu ? 3 : 2;
-	if (g_krepeat & KEY_DOWN)
-		sel = (sel + 1) % n, U.buttons = true;
-	if (g_krepeat & KEY_UP)
-		sel = (sel + n - 1) % n, U.buttons = true;
-	if (sel >= n)
-		sel = 0;
-	int run = -1;
-	float y = VIEW_Y + 8;
-	for (int i = 0; i < n; i++, y += 58) {
-		bool hl = touch_in(10, y, BOT_W - 20, 50) || (U.buttons && sel == i);
-		draw_rrect(10, y, BOT_W - 20, 50, 14, hl ? T.surface2 : T.surface);
-		if (U.buttons && sel == i)
-			draw_rrect_outline(10, y, BOT_W - 20, 50, 14, 1.5f, T.accent);
-		draw_circle(36, y + 25, 15, col_alpha(C[i].col, 0.18f));
-		draw_icon(C[i].ic, 36, y + 25, 16, C[i].col);
-		text_draw_clip(C[i].t, 60, y + 8, BOT_W - 84, TS_BODY, T.text);
-		text_draw_clip(C[i].s, 60, y + 27, BOT_W - 84, TS_SUB, T.text3);
-		if (!g_dialog.open && tap(10, y, BOT_W - 20, 50))
-			run = i, sel = i;
-	}
-	if (!g_dialog.open && (g_kdown & KEY_A))
-		run = sel;
-	text_draw_center(_("El progreso se ve arriba y en Conectar, en «Actividad»."), BOT_W / 2, SCR_H - 22, TS_SUB, T.text3);
-	if (run == 0)
-		U.want_dlurl = true;
-	else if (run == 1)
-		qrs_open();
-	else if (run == 2) {
-		char url[1024];
-		util_strlcpy(url, cl, sizeof url);
-		if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
-			toast_icon(_("Descargando el enlace del portapapeles"), IC_DOWNLOAD, T.accent);
-		else
-			toast_icon(_("No se pudo descargar ese enlace"), IC_CLOSE, T.danger);
+	else {
+		files_top(1);
+		sd_bar(1);
 	}
 }
-
-
 static void titles_space_bar(void);
 static bool f_is_titles(void);
 
@@ -2303,10 +2250,10 @@ static void cl_options(void)
 			cloud_list(c->id, c->name);
 		else if (act[r] == 1) {
 			if (c->dir)
-				cloud_download_to(c, "/Descargas");
+				cloud_download_to(c, DL_DIR);
 			else
 				cloud_download(c); // (un .cia, a /cias, y se instala mientras baja)
-			toast_icon(c->dir ? _("Descargando la carpeta en /Descargas: lo verás en Descargas") : _("Descargando: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+			toast_icon(c->dir ? _("Descargando la carpeta: la tendrás en Descargas (/Downloads)") : _("Descargando: lo tendrás en Descargas (/Downloads)"), IC_DOWNLOAD, T.ok);
 		} else if (act[r] == 3 || act[r] == 4) {
 			fp_clear(); // un solo portapapeles: lo de Archivos se sustituye
 			CC.mode = act[r] == 3 ? CC_COPY : CC_CUT;
@@ -2344,8 +2291,8 @@ static void cl_options(void)
 			if (mr == 0) {
 				for (int i = 0; i < CLU.n; i++)
 					if (CLU.mark[i])
-						cloud_download_to(&CLU.it[i], "/Descargas");
-				toast_icon(_("Descargando en /Descargas: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+						cloud_download_to(&CLU.it[i], DL_DIR);
+				toast_icon(_("Descargando: lo tendrás en Descargas (/Downloads)"), IC_DOWNLOAD, T.ok);
 				CLU.ms = false;
 			} else if (mr == 1 || mr == 2) {
 				fp_clear();
@@ -4676,7 +4623,7 @@ static void cl_open_item(int i)
 	CO.kind = k;
 	CO.it = *c;
 	util_strlcpy(CO.parent, cl_parent(), sizeof CO.parent);
-	if (!cloud_open(c, k == CO_ZIP ? "/Descargas" : CLOUD_CACHE)) {
+	if (!cloud_open(c, k == CO_ZIP ? DL_DIR : CLOUD_CACHE)) {
 		CO.kind = CO_NONE;
 		toast_icon(_("Espera a que termine de abrirse el anterior"), IC_CLOCK, T.text2);
 	}
@@ -5118,12 +5065,12 @@ static bool qrs_is_open(void)
 
 // dónde se guarda lo que se descarga: la carpeta abierta en Archivos; desde la raíz o desde
 // otra pestaña, la raíz, y los .cia (o las releases de GitHub) en /cias
+// adónde va lo que se descarga: siempre a la carpeta de descargas (la que enseña la app Descargas)
 static const char *dl_dest_dir(const char *url)
 {
-	const char *dir = U.tab != TAB_FILES || F.trash || F.search || F.titles || F.nosaves || F.missing ? "/" : F.path;
-	size_t l = strcspn(url, "?#");
-	bool cia = (l > 4 && !strncasecmp(url + l - 4, ".cia", 4)) || strstr(url, "github.com/");
-	return !strcmp(dir, "/") && cia ? "/cias" : dir;
+	(void)url;
+	fsx_mkdirs(DL_DIR);
+	return DL_DIR;
 }
 
 static void qrs_open(void)
@@ -5174,7 +5121,8 @@ static void qrs_parse(const char *t)
 		cia |= (l > 4 && !strncasecmp(QRS.url[i] + l - 4, ".cia", 4)) || strstr(QRS.url[i], "github.com/");
 	}
 	const char *dir = U.tab != TAB_FILES || F.trash || F.search || F.titles || F.nosaves || F.missing ? "/" : F.path;
-	util_strlcpy(QRS.dest, !strcmp(dir, "/") && cia ? "/cias" : dir, sizeof QRS.dest);
+	(void)dir, (void)cia;
+	util_strlcpy(QRS.dest, dl_dest_dir(""), sizeof QRS.dest);
 }
 
 static bool qrs_cia(void)
@@ -5193,7 +5141,7 @@ static void qrs_download(bool install)
 	for (int i = 0; i < QRS.nurl; i++)
 		ok += dl_add(QRS.url[i], QRS.dest, "", install ? DLA_INSTALL | DLA_STREAM : DLA_NONE, G.console, NULL) == 0; // pedido aquí: se instala mientras baja
 	char m[120];
-	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo verás en Descargas") : _("Descargando %d enlaces: los verás en Descargas"), ok);
+	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo tendrás en Descargas (/Downloads)") : _("Descargando %d enlaces: los tendrás en Descargas (/Downloads)"), ok);
 	toast_icon(ok ? m : _("El enlace no es válido"), ok ? IC_GLOBE : IC_CLOSE, ok ? T.accent : T.danger);
 	qrs_close();
 }
@@ -6412,7 +6360,7 @@ static void tab_files(void)
 		f_reload_keep();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = f_app_root();
-	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : root && U.app == AP_MUSIC ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
+	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : root && (U.app == AP_MUSIC || U.app == AP_DL) ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
 	char sq[160];
 	if (F.search) {
 		snprintf(sq, sizeof sq, "«%s»", SR.q);
@@ -6518,7 +6466,46 @@ static void tab_files(void)
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
 	// a la derecha: buscar, ordenar y agrupar, lista o iconos, y «+»
 	float gx = nx - 32, sx = nx - 64, lx = nx - 96;
-	if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search && !F.titles) {
+	if (U.app == AP_DL && root && !MS.on) { // Descargas: desde un enlace, escanear un QR, el enlace copiado y el orden
+		const char *cl = clip_text();
+		bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
+		float bx[4] = {sx - 32, sx, gx, nx};
+		static const IconId bi[4] = {IC_LINK, IC_CAMERA, IC_DUP, IC_SORT};
+		int nb = 0, act[4];
+		for (int k = 0; k < 4; k++)
+			if (k != 2 || clu) // (sin enlace copiado, su botón no sale)
+				act[nb++] = k;
+		bool hit[4] = {0};
+		for (int k = 0; k < nb; k++) {
+			float cx = bx[4 - nb + k];
+			bool main = act[k] == 0;
+			draw_circle(cx, ny, 12, main ? (touch_in(cx - 14, ny - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent) : touch_in(cx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
+			draw_icon(bi[act[k]], cx, ny, 14, main ? 0xFFFFFFFF : T.text2);
+			hit[act[k]] = hdr_hit(cx - 13, ny - 13, 26, 26);
+		}
+		if (!g_dialog.open && (hit[0] || (U.buttons && !FP.mode && !CC.mode && (g_kdown & KEY_X)))) {
+			U.want_dlurl = true;
+			return;
+		}
+		if (!g_dialog.open && hit[1]) {
+			qrs_open();
+			return;
+		}
+		if (!g_dialog.open && hit[2]) {
+			char url[1024];
+			util_strlcpy(url, cl, sizeof url);
+			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
+				toast_icon(_("Descargando el enlace del portapapeles"), IC_DOWNLOAD, T.accent);
+			else
+				toast_icon(_("No se pudo descargar ese enlace"), IC_CLOSE, T.danger);
+			return;
+		}
+		if (!g_dialog.open && hit[3]) {
+			VS.open = VS.just = true;
+			VS.sel = 0;
+			return;
+		}
+	} else if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search && !F.titles) {
 		draw_circle(lx, ny, 12, touch_in(lx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(IC_SEARCH, lx, ny, 14, T.text2);
 		draw_circle(gx, ny, 12, touch_in(gx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
@@ -6873,6 +6860,10 @@ static void tab_files(void)
 		char t[96];
 		snprintf(t, sizeof t, _("Los elementos eliminados se conservan %d días"), TRASH_DAYS);
 		text_draw_center(t, BOT_W / 2, my + 62, TS_SUB, T.text3);
+	} else if (!F.err && F.n == 0 && U.app == AP_DL && f_app_root()) {
+		text_draw_center(_("Aún no hay descargas"), BOT_W / 2, my + 30, TS_BODY, T.text3);
+		wrap_center(_("Aquí queda lo que descargues desde un enlace o un QR (botones de arriba, o X para un enlace), desde la Nube o desde el Navegador."),
+		            BOT_W / 2, my + 52, BOT_W - 40, TS_SUB, 4, T.text3);
 	} else if (F.err || F.n == 0) {
 		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	}
@@ -8812,7 +8803,7 @@ static const char *ap_desc(int i)
 	case AP_FILES: return _("La tarjeta SD: carpetas, capturas, fotos, CIA, homebrew, partidas y papelera.");
 	case AP_TITLES: return _("Juegos y aplicaciones instalados: cuánto ocupan, actualizaciones, DLC, datos extra, copias de la partida y desinstalación.");
 	case AP_CONNECT: return _("Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.");
-	case AP_DL: return _("Descarga desde un enlace o escaneando un código QR. Los CIA se instalan durante la descarga.");
+	case AP_DL: return _("Descarga desde un enlace o un código QR, y abre lo descargado (carpeta /Downloads). Los CIA se instalan durante la descarga.");
 	case AP_CLOUD:
 		return cl_connected() ? _("Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben solas.")
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
@@ -8890,13 +8881,17 @@ static void hm_launch(int i)
 			U.tab = TAB_ACTIVITY;
 		return;
 	}
-	if (i == AP_DL)
-		return; // (su pantalla: dl_bottom)
 	if (i == AP_SETTINGS) {
 		U.tab = TAB_SETTINGS;
 		return;
 	}
 	U.tab = TAB_FILES;
+	if (i == AP_DL) { // la carpeta de descargas, con lo de Archivos; arriba, enlace y QR
+		fsx_mkdirs(DL_DIR);
+		f_load(DL_DIR);
+		util_strlcpy(U.app_root, DL_DIR, sizeof U.app_root);
+		return;
+	}
 	if (i == AP_TITLES) {
 		f_load("@titles");
 		util_strlcpy(U.app_root, "@titles", sizeof U.app_root);
@@ -9244,9 +9239,7 @@ static void draw_bottom(void)
 		if (!FM.open && !TY.open && !U.ins_pend && !g_dialog.open)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
 		vw_bottom();
-	} else if (U.app == AP_DL)
-		dl_bottom();
-	else if (U.tab == TAB_FILES) {
+	} else if (U.tab == TAB_FILES) {
 		tab_files();
 		f_pick_bar();
 	} else if (U.tab == TAB_ACTIVITY)
@@ -9753,7 +9746,7 @@ static void update(void)
 		bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
 		if (kb_input(_("Enlace para descargar (https://…)"), clu ? cl : "https://", url, sizeof url, false, false) && url[0]) {
 			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
-				toast_icon(_("Descargando: lo verás en Descargas"), IC_GLOBE, T.accent);
+				toast_icon(_("Descargando: lo tendrás en Descargas (/Downloads)"), IC_GLOBE, T.accent);
 			else
 				toast_icon(_("El enlace no es válido"), IC_CLOSE, T.danger);
 		}

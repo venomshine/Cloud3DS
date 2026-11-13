@@ -2941,4 +2941,22 @@ TR = {
     'Ya existen %d elementos aquí':
         ('%d items already exist here',
          '%d件は既にあります'),
+    'Descargando la carpeta: la tendrás en Descargas (/Downloads)':
+        ("Downloading the folder: you'll find it in Downloads (/Downloads)",
+         'フォルダをダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
+    'Descargando: lo tendrás en Descargas (/Downloads)':
+        ("Downloading: you'll find it in Downloads (/Downloads)",
+         'ダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
+    'Descargando %d enlaces: los tendrás en Descargas (/Downloads)':
+        ("Downloading %d links: you'll find them in Downloads (/Downloads)",
+         '%d件のリンクをダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
+    'Aún no hay descargas':
+        ('No downloads yet',
+         'まだダウンロードはありません'),
+    'Aquí queda lo que descargues desde un enlace o un QR (botones de arriba, o X para un enlace), desde la Nube o desde el Navegador.':
+        ('Everything you download from a link or a QR code (buttons above, or X for a link), from the Cloud or from the Browser ends up here.',
+         'リンクやQRコード(上のボタン、リンクはX)、クラウド、ブラウザからダウンロードしたものはここに保存されます。'),
+    'Descarga desde un enlace o un código QR, y abre lo descargado (carpeta /Downloads). Los CIA se instalan durante la descarga.':
+        ('Download from a link or a QR code, and open what you downloaded (/Downloads folder). CIA files are installed during the download.',
+         'リンクやQRコードからダウンロードし、ダウンロードしたものを開けます(/Downloadsフォルダ)。CIAはダウンロード中にインストールされます。'),
 }

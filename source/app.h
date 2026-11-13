@@ -14,6 +14,7 @@
 #define APP_NAME     "Cloud3DS"
 #define APP_VERSION  "1.2.0"
 #define APP_DIR      "sdmc:/3ds/Cloud3DS"
+#define DL_DIR       "/Downloads" /* todo lo descargado (enlaces, QR, la nube, el navegador, FBI): la app Descargas */
 #define CONFIG_PATH  APP_DIR "/config.json"
 #define LOG_PATH     APP_DIR "/net.log"
 
