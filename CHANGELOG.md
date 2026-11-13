@@ -7,7 +7,7 @@
 - Descargas de Internet en la consola: desde la web, escribiendo un enlace o escaneando un QR (como en FBI), con cola, pausa y reanudación, comprobación de MD5 o SHA-256, y releases de GitHub. Van por el servicio HTTP del sistema, como FBI, y comprueban el certificado (si no se puede, se puede descargar sin comprobarlo tras un aviso).
 - Los CIA pedidos desde la consola se instalan mientras se descargan, sin guardarlos en la SD.
 - Títulos: juegos y aplicaciones de la SD con su icono, versión y lo que ocupan, ordenables por tamaño, con un resumen del espacio de la SD. Copias de la partida en el formato de Checkpoint, desinstalar solo la actualización o los DLC, borrar los datos extra (con copia previa y sin tocar los que comparta otro juego) y desinstalar.
-- Nube: OneDrive en la consola, con copia automática de partidas y capturas.
+- Nube: OneDrive en la consola, gestionado como Archivos: copiar, cortar, cambiar el nombre, eliminar y crear carpetas, con un mismo portapapeles para la SD y la nube (subir y descargar archivos o carpetas enteras pegando con X). Las capturas nuevas se suben solas.
 - Navegador web (experimental), con favoritos e historial.
 - Papelera (con recuperación durante 7 días), búsqueda en toda la SD, selección múltiple, MD5 y SHA-256, crear y extraer ZIP y descargar carpetas como ZIP.
 - Reproductor de música (MP3, OGG y WAV) que sigue sonando con la tapa cerrada, y capturas de pantalla que aparecen al instante en la web.
