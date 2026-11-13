@@ -87,8 +87,7 @@ static struct {
 
 enum { QA_CLOUD, QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
 /* las aplicaciones del inicio (ver hm_*) */
-enum { AP_FILES, AP_CLOUD, AP_WEB, AP_DL, AP_TITLES, AP_SAVES, AP_SHOTS, AP_MUSIC, AP_CONNECT, AP_SCAN, AP_SEARCH, AP_TRASH,
-       AP_ACTIVITY, AP_DEVICES, AP_SHARE, AP_SETTINGS, AP_N };
+enum { AP_FILES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SHARE, AP_SETTINGS, AP_N };
 
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
@@ -1492,6 +1491,8 @@ static void un_poll(void)
 }
 
 static bool hm_is_open(void);
+static void dl_top(void);
+static void dl_bottom(void);
 static void hm_top(void);
 static void hm_bottom(void);
 static void hm_show(void);
@@ -1553,6 +1554,75 @@ static void activity_top(void)
 		app_idle_top(IC_CLOCK, _("Sin transferencias en curso"), _("Aquí verás el progreso de lo que envíes, recibas, descargues o instales."));
 }
 
+
+static void tab_header(const char *title, bool back);
+static void qrs_open(void);
+static const char *dl_dest_dir(const char *url);
+// Descargas: desde un enlace o escaneando un QR; arriba, lo que se está descargando
+static void dl_top(void)
+{
+	const Xfer *xs[MAX_XFERS];
+	int n = visible_xfers(xs, MAX_XFERS), f = 0;
+	for (int i = 0; i < n; i++)
+		f += xs[i]->kind == XF_FETCH;
+	if (f)
+		mini_body(1);
+	else
+		app_idle_top(IC_DOWNLOAD, _("Sin descargas en curso"), _("Los CIA se instalan mientras se descargan; el resto se guarda en la carpeta de descargas."));
+}
+static void dl_bottom(void)
+{
+	tab_header(_("Descargas"), false);
+	if ((g_kdown & KEY_B) && !g_dialog.open) {
+		hm_show();
+		return;
+	}
+	static int sel;
+	const char *cl = clip_text();
+	bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
+	struct { IconId ic; u32 col; const char *t, *s; } C[3] = {
+	    {IC_LINK, T.warn, _("Desde un enlace"), _("Escribe la dirección de un archivo o de un proyecto de GitHub")},
+	    {IC_CAMERA, T.ok, _("Escanear un código QR"), _("Con la cámara, como en FBI")},
+	    {IC_DUP, T.accent2, _("Enlace del portapapeles"), cl},
+	};
+	int n = clu ? 3 : 2;
+	if (g_krepeat & KEY_DOWN)
+		sel = (sel + 1) % n, U.buttons = true;
+	if (g_krepeat & KEY_UP)
+		sel = (sel + n - 1) % n, U.buttons = true;
+	if (sel >= n)
+		sel = 0;
+	int run = -1;
+	float y = VIEW_Y + 8;
+	for (int i = 0; i < n; i++, y += 58) {
+		bool hl = touch_in(10, y, BOT_W - 20, 50) || (U.buttons && sel == i);
+		draw_rrect(10, y, BOT_W - 20, 50, 14, hl ? T.surface2 : T.surface);
+		if (U.buttons && sel == i)
+			draw_rrect_outline(10, y, BOT_W - 20, 50, 14, 1.5f, T.accent);
+		draw_circle(36, y + 25, 15, col_alpha(C[i].col, 0.18f));
+		draw_icon(C[i].ic, 36, y + 25, 16, C[i].col);
+		text_draw_clip(C[i].t, 60, y + 8, BOT_W - 84, TS_BODY, T.text);
+		text_draw_clip(C[i].s, 60, y + 27, BOT_W - 84, TS_SUB, T.text3);
+		if (!g_dialog.open && tap(10, y, BOT_W - 20, 50))
+			run = i, sel = i;
+	}
+	if (!g_dialog.open && (g_kdown & KEY_A))
+		run = sel;
+	text_draw_center(_("El progreso se ve arriba y en Conectar, en «Actividad»."), BOT_W / 2, SCR_H - 22, TS_SUB, T.text3);
+	if (run == 0)
+		U.want_dlurl = true;
+	else if (run == 1)
+		qrs_open();
+	else if (run == 2) {
+		char url[1024];
+		util_strlcpy(url, cl, sizeof url);
+		if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
+			toast_icon(_("Descargando el enlace del portapapeles"), IC_DOWNLOAD, T.accent);
+		else
+			toast_icon(_("No se pudo descargar ese enlace"), IC_CLOSE, T.danger);
+	}
+}
+
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
@@ -1599,8 +1669,15 @@ static void draw_top(void)
 		update_top();
 	else if (U.ins_pend)
 		install_top(1);
-	else if (U.app == AP_CONNECT)
-		conn_top();
+	else if (U.app == AP_CONNECT) {
+		const Xfer *xs[1];
+		bool busy = visible_xfers(xs, 1) > 0;
+		if (busy)
+			mini_body(1);
+		else if (!(U.tab == TAB_DEVICES && device_top(1)))
+			conn_top();
+	} else if (U.app == AP_DL)
+		dl_top();
 	else if (MU.open)
 		music_top(1);
 	else if (U.tab == TAB_FILES) {
@@ -2347,6 +2424,16 @@ static void cl_bottom(void)
 
 static void qrs_open(void);
 
+// Conectar: el inicio y sus secciones (Actividad · Dispositivos), también con L y R
+static int segmented(float x, float y, float w, float h, const char *const *opts, int n, int cur, bool focus);
+static void conn_header(void)
+{
+	tab_header_w("", false, 0);
+	const char *opts[2] = {_("Actividad"), _("Dispositivos")};
+	int r = segmented(40, 5, 150, 22, opts, 2, U.tab == TAB_DEVICES, false);
+	if (r >= 0 && !g_dialog.open)
+		U.tab = r ? TAB_DEVICES : TAB_ACTIVITY;
+}
 static void tab_activity(void)
 {
 	if ((g_kdown & KEY_B) && !g_dialog.open) { // en la raíz de la aplicación: al inicio
@@ -2354,7 +2441,10 @@ static void tab_activity(void)
 		return;
 	}
 	List *l = cur_list();
-	tab_header(_("Actividad"), false);
+	if (U.app == AP_CONNECT)
+		conn_header();
+	else
+		tab_header(_("Actividad"), false);
 	float hx = BOT_W - 14;
 	if (V.hist_n) {
 		// borrar el historial: siempre a mano, arriba a la derecha (también con Y)
@@ -2367,7 +2457,7 @@ static void tab_activity(void)
 			            _("Borrar"), true);
 		hx = cx - 20;
 	}
-	if (V.stat_up || V.stat_down) {
+	if ((V.stat_up || V.stat_down) && U.app != AP_CONNECT) { // (en Conectar, ahí van sus secciones)
 		char a[24], b[24];
 		util_fmt_size(a, sizeof a, V.stat_up);
 		util_fmt_size(b, sizeof b, V.stat_down);
@@ -2476,7 +2566,10 @@ static void tab_devices(void)
 	List *l = cur_list();
 	int idx[MAX_DEVICES];
 	int n = device_order(idx);
-	tab_header(U.app == AP_CONNECT ? _("Conectar") : _("Dispositivos"), false);
+	if (U.app == AP_CONNECT)
+		conn_header();
+	else
+		tab_header(_("Dispositivos"), false);
 	if (n) {
 		char r[48];
 		int on = online_count();
@@ -5719,7 +5812,7 @@ static void tab_files(void)
 		f_reload_keep();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = f_app_root();
-	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : root && U.app != AP_FILES && U.app != AP_SEARCH ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
+	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : root && U.app == AP_MUSIC ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
 	char sq[160];
 	if (F.search) {
 		snprintf(sq, sizeof sq, "«%s»", SR.q);
@@ -7981,31 +8074,21 @@ static struct {
 	float drag_dx;
 } HM = {.open = true};
 
-static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_CLOUD, IC_GLOBE, IC_DOWNLOAD, IC_GAMEPAD, IC_SHIELD, IC_IMAGE, IC_SPEAKER,
-                                   IC_LAPTOP, IC_CAMERA, IC_SEARCH, IC_TRASH, IC_CLOCK, IC_DEVICES, IC_SEND, IC_GEAR};
+static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_SEND, IC_GEAR};
 static u32 ap_col(int i)
 {
-	static const u32 hex[AP_N] = {0x3B9CFF, 0x7A5CFF, 0x2BC0D6, 0x2EC47A, 0xF5B02E, 0x3FD0A0, 0xFF5E8A, 0xFF7A59,
-	                              0x5FB4FF, 0x3B9CFF, 0x8FB8FF, 0xF04A5A, 0x6FD3FF, 0x8FA3C2, 0x21C7A8, 0x9AA6BA};
+	static const u32 hex[AP_N] = {0x3B9CFF, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x21C7A8, 0x9AA6BA};
 	return col_hex(hex[i]);
 }
 static const char *ap_name(int i)
 {
 	switch (i) {
 	case AP_FILES: return _("Archivos");
+	case AP_CONNECT: return _("Conectar");
+	case AP_DL: return _("Descargas");
 	case AP_CLOUD: return _("Nube");
 	case AP_WEB: return _("Navegador");
-	case AP_DL: return _("Descargar");
-	case AP_TITLES: return _("Títulos");
-	case AP_SAVES: return _("Partidas");
-	case AP_SHOTS: return _("Capturas");
 	case AP_MUSIC: return _("Música");
-	case AP_CONNECT: return _("Conectar");
-	case AP_SCAN: return _("Escáner QR");
-	case AP_SEARCH: return _("Buscar");
-	case AP_TRASH: return _("Papelera");
-	case AP_ACTIVITY: return _("Actividad");
-	case AP_DEVICES: return _("Dispositivos");
 	case AP_SHARE: return _("Compartir");
 	default: return _("Ajustes");
 	}
@@ -8013,22 +8096,14 @@ static const char *ap_name(int i)
 static const char *ap_desc(int i)
 {
 	switch (i) {
-	case AP_FILES: return _("Explora y gestiona la tarjeta SD: carpetas, títulos, capturas y archivos recibidos.");
+	case AP_FILES: return _("La tarjeta SD: carpetas, capturas, fotos, CIA, homebrew, títulos instalados, partidas y papelera.");
+	case AP_CONNECT: return _("Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.");
+	case AP_DL: return _("Descarga desde un enlace o escaneando un código QR. Los CIA se instalan durante la descarga.");
 	case AP_CLOUD:
 		return cl_connected() ? _("Tu OneDrive desde la consola, con copia automática de partidas y capturas.")
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
-	case AP_DL: return _("Descarga un archivo o la última versión de un proyecto de GitHub a partir de su enlace. Los CIA se instalan durante la descarga.");
-	case AP_TITLES: return _("Títulos instalados: tamaño, actualizaciones, DLC y desinstalación.");
-	case AP_SAVES: return _("Copias de seguridad de partidas de Checkpoint y JKSM.");
-	case AP_SHOTS: return _("Capturas de pantalla de tus títulos, para verlas o enviarlas a otros dispositivos.");
 	case AP_MUSIC: return _("Reproduce la música de la tarjeta SD, también en segundo plano.");
-	case AP_CONNECT: return _("Conecta un móvil o un ordenador de tu misma red escaneando el código QR o con la dirección y el PIN.");
-	case AP_SCAN: return _("Escanea un código QR con la cámara para descargar e instalar su contenido.");
-	case AP_SEARCH: return _("Busca archivos y carpetas en toda la tarjeta SD.");
-	case AP_TRASH: return _("Elementos eliminados: puedes restaurarlos o eliminarlos definitivamente.");
-	case AP_ACTIVITY: return _("Historial de transferencias, descargas, instalaciones y conexiones.");
-	case AP_DEVICES: return _("Móviles y ordenadores vinculados: estado, permisos y revocación del acceso.");
 	case AP_SHARE: return _("Transfiere aplicaciones homebrew a otra consola. Disponible próximamente.");
 	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
 	}
@@ -8072,15 +8147,13 @@ static void hm_show(void)
 	U.nav_eat = true;
 }
 
-// abrir una aplicación: lo que tiene pantalla propia encima del inicio (vuelve sola aquí); el resto, su pestaña
+// abrir una aplicación: lo que tiene pantalla propia encima del inicio (vuelve sola aquí) o la suya
 static void hm_launch(int i)
 {
 	hm_save();
 	switch (i) {
 	case AP_CLOUD: cl_open(); return;
 	case AP_WEB: U.want_web = true; return;
-	case AP_DL: U.want_dlurl = true; return;
-	case AP_SCAN: qrs_open(); return;
 	case AP_MUSIC:
 		if (MU.s.st != MU_OFF) { // ya hay algo: el reproductor
 			MU.open = MU.just = true, MU.sel = 2;
@@ -8094,33 +8167,21 @@ static void hm_launch(int i)
 	U.page = PAGE_MAIN;
 	U.buttons = false;
 	U.app = i;
-	if (i == AP_ACTIVITY) {
-		U.tab = TAB_ACTIVITY;
-		return;
-	}
-	if (i == AP_CONNECT) { // el QR arriba; abajo, los dispositivos
+	U.app_root[0] = 0;
+	if (i == AP_CONNECT) { // el QR arriba; abajo, la actividad y los dispositivos
 		if (V.srv_off)
 			srv_set(true);
-		U.tab = TAB_DEVICES;
+		if (U.tab != TAB_DEVICES)
+			U.tab = TAB_ACTIVITY;
 		return;
 	}
-	if (i == AP_DEVICES) {
-		U.tab = TAB_DEVICES;
-		return;
-	}
+	if (i == AP_DL)
+		return; // (su pantalla: dl_bottom)
 	if (i == AP_SETTINGS) {
 		U.tab = TAB_SETTINGS;
 		return;
 	}
 	U.tab = TAB_FILES;
-	U.app_root[0] = 0;
-	const char *to = i == AP_TITLES ? "@titles" : i == AP_SAVES ? "@saves" : i == AP_SHOTS ? "/luma/screenshots" : i == AP_TRASH ? "@trash" : NULL;
-	if (to)
-		f_load(to);
-	else if (F.path[0] == '@' || i == AP_SEARCH) // (Archivos: donde se estaba, salvo una vista especial)
-		f_load("/");
-	if (i == AP_SEARCH)
-		U.want_search = true;
 	if (i == AP_MUSIC) { // sin nada sonando: la carpeta de música (si la hay), para elegir una canción
 		static const char *const MD[] = {"/Music", "/music", "/Música", "/música", "/MP3", "/mp3"};
 		struct stat st;
@@ -8132,10 +8193,10 @@ static void hm_launch(int i)
 				dir = MD[k];
 		}
 		f_load(dir);
-		toast_icon(_("Elige una canción para reproducirla"), IC_SPEAKER, T.accent);
-	}
-	if (i != AP_FILES && i != AP_SEARCH) // (Archivos: la raíz de la SD; el resto, la carpeta con la que se abre)
 		util_strlcpy(U.app_root, F.path, sizeof U.app_root);
+		toast_icon(_("Elige una canción para reproducirla"), IC_SPEAKER, T.accent);
+	} else if (F.path[0] == '@' && !F.trash && !F.titles) // (Archivos: donde se estaba)
+		f_load("/");
 }
 
 // un icono de aplicación: cuadrado redondeado con el color de la app; elegido, con su borde y su brillo
@@ -8153,16 +8214,14 @@ static void hm_tile(int i, float x, float y, float s, bool sel, bool label, floa
 	draw_icon(AP_IC[i], x + s / 2, y + s / 2, s * 0.46f, col_alpha(c, a));
 	// aviso: lo que está en marcha (Actividad) o lo que falta por hacer
 	int badge = 0;
-	if (i == AP_ACTIVITY) {
+	if (i == AP_CONNECT || i == AP_DL)
 		for (int k = 0; k < MAX_XFERS; k++)
-			badge += V.xfers[k].st == XS_RUNNING;
-	} else if (i == AP_DEVICES)
-		badge = online_count();
+			badge += V.xfers[k].st == XS_RUNNING && (i == AP_CONNECT) == (V.xfers[k].kind != XF_FETCH);
 	if (badge > 0) {
 		char b[8];
 		snprintf(b, sizeof b, "%d", badge > 9 ? 9 : badge);
 		float bw = fmaxf(15, text_width(b, 0.36f) + 8), bx = x + s - bw + 5, by = y - 5;
-		u32 bc = i == AP_DEVICES ? T.ok : T.danger;
+		u32 bc = T.danger;
 		draw_rrect(bx - 2, by - 2, bw + 4, 19, 9.5f, col_alpha(T.bg, a));
 		draw_rrect(bx, by, bw, 15, 7.5f, col_alpha(bc, a));
 		text_draw_center(b, bx + bw / 2, by + 7.5f - text_lineh(0.36f) / 2, 0.36f, col_alpha(0xFFFFFFFF, a));
@@ -8203,7 +8262,7 @@ static void hm_top(void)
 	// lo de cada una
 	char s1[160] = "", s2[96] = "";
 	u32 c1 = T.text3;
-	if (i == AP_FILES || i == AP_SEARCH) {
+	if (i == AP_FILES) {
 		u64 fr = 0, tot = 0;
 		if (fsx_space(&fr, &tot) && tot) {
 			float f = 1 - (float)((double)fr / tot);
@@ -8224,32 +8283,30 @@ static void hm_top(void)
 	} else if (i == AP_MUSIC) {
 		if (MU.s.st == MU_PLAY || MU.s.st == MU_PAUSE)
 			snprintf(s1, sizeof s1, "%s %s", MU.s.st == MU_PLAY ? _("Reproduciendo:") : _("En pausa:"), MU.s.title), c1 = T.text2;
-	} else if (i == AP_DEVICES || i == AP_CONNECT) {
-		int on = online_count();
-		if (on)
+	} else if (i == AP_CONNECT) {
+		int on = online_count(), run = 0;
+		for (int k = 0; k < MAX_XFERS; k++)
+			run += V.xfers[k].st == XS_RUNNING && V.xfers[k].kind != XF_FETCH;
+		if (run)
+			snprintf(s1, sizeof s1, run == 1 ? _("1 transferencia en curso") : _("%d transferencias en curso"), run), c1 = T.accent;
+		else if (on)
 			snprintf(s1, sizeof s1, on == 1 ? _("%d dispositivo conectado") : _("%d dispositivos conectados"), on), c1 = T.ok;
 		else
 			util_strlcpy(s1, _("Ningún dispositivo conectado"), sizeof s1);
-		if (i == AP_CONNECT && V.ip && !V.srv_off) {
+		if (V.ip && !V.srv_off) {
 			char url[64];
 			url_text(url, sizeof url, false);
 			snprintf(s2, sizeof s2, "%s · PIN %s", url, V.pin);
 		}
-	} else if (i == AP_TRASH) {
-		int tc = 0;
-		u64 sz = trash_size(&tc);
-		char zs[24];
-		util_fmt_size(zs, sizeof zs, sz);
-		if (tc)
-			snprintf(s1, sizeof s1, tc == 1 ? _("1 elemento · %s") : _("%d elementos · %s"), tc, zs);
-		else
-			util_strlcpy(s1, _("La papelera está vacía"), sizeof s1);
-	} else if (i == AP_ACTIVITY) {
+	} else if (i == AP_DL) {
 		int run = 0;
 		for (int k = 0; k < MAX_XFERS; k++)
-			run += V.xfers[k].st == XS_RUNNING;
+			run += V.xfers[k].st == XS_RUNNING && V.xfers[k].kind == XF_FETCH;
 		if (run)
-			snprintf(s1, sizeof s1, run == 1 ? _("1 transferencia en curso") : _("%d transferencias en curso"), run), c1 = T.accent;
+			snprintf(s1, sizeof s1, run == 1 ? _("1 descarga en curso") : _("%d descargas en curso"), run), c1 = T.accent;
+		const char *cl = clip_text();
+		if (!strncasecmp(cl, "http", 4))
+			util_strlcpy(s2, _("Hay un enlace en el portapapeles"), sizeof s2);
 	}
 	if (s1[0])
 		text_draw_clip(s1, tx, y, tw, TS_SUB, col_alpha(c1, a)), y += text_lineh(TS_SUB) + 2;
@@ -8477,7 +8534,9 @@ static void draw_bottom(void)
 		if (!FM.open && !TY.open && !U.ins_pend && !g_dialog.open)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
 		vw_bottom();
-	} else if (U.tab == TAB_FILES) {
+	} else if (U.app == AP_DL)
+		dl_bottom();
+	else if (U.tab == TAB_FILES) {
 		tab_files();
 		f_pick_bar();
 	} else if (U.tab == TAB_ACTIVITY)
@@ -9172,6 +9231,8 @@ static void update(void)
 	br_poll(); // el navegador cerrado a media carga: se suelta al acabar
 	if (br_is_open() || CLU.open) // el navegador y la nube usan todos los botones (L/R, START…)
 		return;
+	if (!hm_is_open() && U.app == AP_CONNECT && (U.tab == TAB_ACTIVITY || U.tab == TAB_DEVICES) && (g_kdown & (KEY_L | KEY_R | KEY_ZL | KEY_ZR)))
+		U.tab = U.tab == TAB_ACTIVITY ? TAB_DEVICES : TAB_ACTIVITY;
 	if (hm_is_open()) { // el inicio usa los suyos (L/R, la cruceta, A, Y); START, salir
 		if ((g_kdown & KEY_START) && !MU.open && !QRS.open)
 			ask_exit();
@@ -9179,16 +9240,6 @@ static void update(void)
 	}
 	// en el editor de texto, L y R no cambian de pestaña: R edita varias líneas y B cierra
 	bool editor = VW.kind == VW_TXT && U.tab == TAB_FILES;
-	if (!editor && (g_kdown & (KEY_R | KEY_ZR | KEY_L | KEY_ZL)) && VW.kind && U.tab == TAB_FILES)
-		vw_close();
-	if (!editor && (g_kdown & (KEY_R | KEY_ZR))) {
-		U.tab = (U.tab + 1) % TAB_COUNT;
-		U.page = PAGE_MAIN;
-	}
-	if (!editor && (g_kdown & (KEY_L | KEY_ZL))) {
-		U.tab = (U.tab + TAB_COUNT - 1) % TAB_COUNT;
-		U.page = PAGE_MAIN;
-	}
 	// atrás: de una subpágina a Ajustes (y la pantalla de arriba vuelve al QR)
 	if (U.page != PAGE_MAIN && ((g_kdown & KEY_B) || tap(0, 0, 170, VIEW_Y))) {
 		U.list[TAB_SETTINGS].sel = U.page == PAGE_LANG ? SET_LANG : U.page == PAGE_PIN ? SET_PIN : U.page == PAGE_UPDATE ? SET_UPDATE : U.page == PAGE_CONN ? SET_CONN : SET_ABOUT;
