@@ -602,6 +602,11 @@ bool upd_busy(void)
 	return U.i.st == UPD_DOWNLOADING || U.i.st == UPD_INSTALLING;
 }
 
+bool upd_installing(void)
+{
+	return U.i.st == UPD_INSTALLING;
+}
+
 void upd_exit(void)
 {
 	if (!U.thr)

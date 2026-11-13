@@ -87,7 +87,7 @@ static struct {
 
 enum { QA_CLOUD, QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
 /* las aplicaciones del inicio (ver hm_*) */
-enum { AP_FILES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SHARE, AP_SETTINGS, AP_N };
+enum { AP_FILES, AP_TITLES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SHARE, AP_SETTINGS, AP_N };
 
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
@@ -107,7 +107,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLOUT };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLOUT, DLG_UNUPD, DLG_UNDLC, DLG_EXTDEL };
 
 typedef struct {
 	float off, target;
@@ -1375,7 +1375,15 @@ static struct {
 	u64 t0;
 	Texture icon;
 	float anim;
-} UN;
+	int kind;          // UN_ALL desinstalar entero, UN_UPD la actualización, UN_DLC los DLC, UN_EXT copiar y borrar los datos extra
+	TitleInfo ti;      // (UN_EXT: el título, para su copia)
+	char extra[200];   // (UN_EXT: dónde quedó la copia)
+	int ins_icon_id;   // instalando: de qué petición es el icono cargado
+	bool ins_mode;     // la pantalla es de una instalación (se recuerda mientras se desvanece)
+	bool upd;          // y es la de Cloud3DS
+	Texture ins_icon;
+} UN = {.ins_icon_id = -1};
+enum { UN_ALL, UN_UPD, UN_DLC, UN_EXT };
 
 static void un_step(int part)
 {
@@ -1385,13 +1393,31 @@ static void un_step(int part)
 static void un_thread(void *arg)
 {
 	(void)arg;
-	UN.res = title_uninstall(UN.tid, un_step);
+	if (UN.kind == UN_ALL)
+		UN.res = title_uninstall(UN.tid, un_step);
+	else if (UN.kind == UN_UPD || UN.kind == UN_DLC)
+		UN.part = UN.kind == UN_UPD ? 1 : 2, UN.res = title_uninstall_part(UN.tid, UN.kind == UN_UPD ? 1 : 2);
+	else { // los datos extra: primero su copia; sin copia, no se borra nada
+		UN.part = 3;
+		UN.res = extdata_backup(&UN.ti, UN.extra, sizeof UN.extra);
+		if (UN.res == 0)
+			UN.part = 4, UN.res = extdata_delete(&UN.ti);
+		else
+			UN.res = -3;
+	}
 	UN.done = true;
+}
+
+// la pantalla de espera: desinstalando o borrando (UN.busy), o instalando un CIA (de un archivo, del móvil, mientras se
+// descarga o la actualización de Cloud3DS)
+static bool guard_on(void)
+{
+	return UN.busy || ins_busy() || ins_streaming() || upd_installing();
 }
 
 static const char *un_part_name(int k)
 {
-	return k == 0 ? _("Juego") : k == 1 ? _("Actualización") : _("Contenido descargable");
+	return k == 0 ? _("Juego") : k == 1 ? _("Actualización") : k == 2 ? _("Contenido descargable") : k == 3 ? _("Copia de seguridad") : _("Datos extra");
 }
 
 static void un_elapsed(char *out, size_t n)
@@ -1414,19 +1440,65 @@ static void un_top(void)
 	draw_arc(cx, cy, 68, 2, -g_time * 2.6f + 3.14f, -g_time * 2.6f + 4.44f, col_alpha(T.accent2, a * 0.7f));
 	float is = 64 * pulse;
 	draw_rrect(cx - 40, cy - 40, 80, 80, 20, col_alpha(T.surface, a));
+	if (UN.ins_mode) { // instalando un CIA: su icono, su nombre y cuánto lleva
+		const InsReq *ir = NULL;
+		for (int i = 0; i < U.ins_n && !ir; i++)
+			if (U.ins[i].st == INS_RUNNING)
+				ir = &U.ins[i];
+		const Xfer *xs = NULL; // (o el que se instala mientras se descarga)
+		for (int i = 0; i < MAX_XFERS && !xs; i++)
+			if (V.xfers[i].st == XS_RUNNING && V.xfers[i].kind == XF_FETCH)
+				xs = &V.xfers[i];
+		if (ir && ir->has_icon && UN.ins_icon_id != ir->id) {
+			UN.ins_icon_id = ir->id;
+			tex_from_rgb565(&UN.ins_icon, ir->icon, 48, 48);
+		}
+		if (ir && ir->has_icon && UN.ins_icon.ok)
+			draw_texture(&UN.ins_icon, cx - is / 2, cy - is / 2, is, is, a);
+		else
+			draw_icon(IC_DOWNLOAD, cx, cy, 34, col_alpha(T.accent, a));
+		char t[120], l[120];
+		u64 done = ir ? ir->done : xs ? xs->done : 0, tot = ir ? ir->size : xs ? xs->total : 0;
+		snprintf(t, sizeof t, _("Instalando «%s»"), ir ? ir->title : xs ? xs->name : "CIA");
+		if (!ir && !xs && UN.upd) { // la actualización de Cloud3DS
+			UpdInfo ui;
+			upd_get(&ui);
+			done = ui.done, tot = ui.total;
+			snprintf(t, sizeof t, "%s", _("Actualizando Cloud3DS"));
+		}
+		text_draw_center_clip(t, cx, cy + 84, TOP_W - 40, TS_TITLE, col_alpha(T.text, a));
+		float f = tot ? clampf((float)((double)done / tot), 0, 1) : 0;
+		float bw = 220, bx = cx - bw / 2, by = cy + 84 + text_lineh(TS_TITLE) + 8;
+		draw_rrect(bx, by, bw, 6, 3, col_alpha(T.surface2, a));
+		draw_grad_h(bx, by, fmaxf(6, bw * f), 6, col_alpha(T.accent, a), col_alpha(T.accent2, a));
+		char d1[24], d2[24];
+		util_fmt_size(d1, sizeof d1, done), util_fmt_size(d2, sizeof d2, tot);
+		snprintf(l, sizeof l, "%d%% · %s / %s", (int)(f * 100), d1, d2);
+		text_draw_center(l, cx, by + 12, TS_SUB, col_alpha(T.text3, a));
+		return;
+	}
 	if (UN.icon.ok)
 		draw_texture(&UN.icon, cx - is / 2, cy - is / 2, is, is, a);
 	else
 		draw_icon(IC_GAMEPAD, cx, cy, 34, col_alpha(T.text3, a));
 	char t[120], l[160], sz[24], el[24];
-	snprintf(t, sizeof t, _("Desinstalando «%s»"), UN.name);
+	if (UN.kind == UN_ALL)
+		snprintf(t, sizeof t, _("Desinstalando «%s»"), UN.name);
+	else if (UN.kind == UN_EXT)
+		snprintf(t, sizeof t, _("Datos extra de «%s»"), UN.name);
+	else
+		snprintf(t, sizeof t, UN.kind == UN_UPD ? _("Actualización de «%s»") : _("DLC de «%s»"), UN.name);
 	text_draw_center_clip(t, cx, cy + 84, TOP_W - 40, TS_TITLE, col_alpha(T.text, a));
 	int np = UN.has[0] + UN.has[1] + UN.has[2], k = UN.part, idx = 0;
 	for (int i = 0; i < k && i < 3; i++)
 		idx += UN.has[i];
 	util_fmt_size(sz, sizeof sz, UN.size[k < 3 ? k : 0]);
 	un_elapsed(el, sizeof el);
-	if (np > 1)
+	if (UN.kind == UN_EXT)
+		snprintf(l, sizeof l, k == 3 ? _("Copiando los datos extra (%s) · %s") : _("Borrando los datos extra · %s"), k == 3 ? sz : el, el);
+	else if (UN.kind != UN_ALL)
+		snprintf(l, sizeof l, _("Borrando: %s (%s) · %s"), un_part_name(k), sz, el);
+	else if (np > 1)
 		snprintf(l, sizeof l, _("Borrando: %s (%s) · paso %d de %d · %s"), un_part_name(k), sz, idx + 1, np, el);
 	else
 		snprintf(l, sizeof l, _("Borrando: %s (%s) · %s"), un_part_name(k), sz, el);
@@ -1450,7 +1522,9 @@ static void un_tape(float y, float h, float a)
 // abajo, a pantalla completa: el cartel de no tocar nada
 static void un_card(void)
 {
-	UN.anim = approach(UN.anim, UN.busy ? 1 : 0, 10);
+	if (guard_on())
+		UN.ins_mode = !UN.busy, UN.upd = upd_installing();
+	UN.anim = approach(UN.anim, guard_on() ? 1 : 0, 10);
 	if (UN.anim < 0.01f)
 		return;
 	float a = ease_out_cubic(UN.anim);
@@ -1463,7 +1537,8 @@ static void un_card(void)
 	draw_circle(cx, 62, 22, col_alpha(T.accent, a));
 	draw_icon(IC_POWER, cx, 62, 22, col_alpha(0xFFFFFFFF, a));
 	text_draw_center(_("NO TOQUES NADA"), cx, 98, 0.85f, col_alpha(T.text, a));
-	wrap_center(_("No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada."), cx,
+	wrap_center(UN.ins_mode ? _("Se está instalando. No apagues la consola, no saques la SD y no pulses HOME: si se corta a mitad, la instalación puede quedar dañada.")
+	                     : _("No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada."), cx,
 	            132, BOT_W - 40, TS_SUB, 4, col_alpha(T.text, a));
 	wrap_center(_("Cuando termine, Cloud3DS sigue sola."), cx, SCR_H - 44, BOT_W - 40, TS_SUB, 1, col_alpha(T.text3, a));
 }
@@ -1477,7 +1552,13 @@ static void un_poll(void)
 	threadJoin(UN.thr, U64_MAX);
 	threadFree(UN.thr);
 	UN.busy = false;
-	aptSetHomeAllowed(true);
+	if (UN.kind != UN_ALL) { // por partes: su aviso
+		const char *ok = UN.kind == UN_UPD ? _("Actualización desinstalada") : UN.kind == UN_DLC ? _("DLC desinstalados") : _("Datos extra borrados (con copia en la SD)");
+		const char *ko = UN.res == -3 ? _("No se pudo copiar: no se ha borrado nada") : _("No se pudo completar");
+		toast_icon(UN.res == 0 ? ok : ko, UN.res == 0 ? IC_TRASH : IC_CLOSE, UN.res == 0 ? T.ok : T.danger);
+		titles_reload();
+		return;
+	}
 	if (UN.res == 0) {
 		char m[120];
 		snprintf(m, sizeof m, _("Desinstalado: %s"), UN.name);
@@ -1623,11 +1704,19 @@ static void dl_bottom(void)
 	}
 }
 
+
+static void titles_space_bar(void);
+static bool f_is_titles(void);
+
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
 	if (U.splash >= 0) {
 		splash_top(1);
+		return;
+	}
+	if (UN.anim > 0.99f) { // instalando o borrando: solo la pantalla de espera
+		un_top();
 		return;
 	}
 	if (br_is_open()) { // navegador: las dos pantallas
@@ -1682,7 +1771,10 @@ static void draw_top(void)
 		music_top(1);
 	else if (U.tab == TAB_FILES) {
 		files_top(1);
-		sd_bar(1);
+		if (f_is_titles())
+			titles_space_bar();
+		else
+			sd_bar(1);
 	} else if (U.tab == TAB_SETTINGS && U.page == PAGE_MAIN)
 		settings_top(1);
 	else if (U.tab == TAB_SETTINGS && (U.page == PAGE_PIN || U.page == PAGE_CONN))
@@ -2650,8 +2742,9 @@ typedef struct {
 	float x, w;  // en la vista de iconos, cada casilla de la fila
 	short n;     // cabecera de grupo: cuántos tiene
 } FView;
-enum { CH_HOME, CH_SHOTS, CH_PHOTOS, CH_CIAS, CH_HB, CH_TITLES, CH_SAVES, CH_COUNT };
-static const char *const CHIP_PATH[CH_COUNT] = {"/", "/luma/screenshots", "/DCIM", "/cias", "/3ds", "@titles", "@saves"};
+enum { CH_HOME, CH_SHOTS, CH_PHOTOS, CH_CIAS, CH_HB, CH_SAVES, CH_TITLES, CH_COUNT };
+#define CH_SHOWN (CH_COUNT - 1) /* (los títulos instalados son su propia aplicación: fuera de los accesos rápidos) */
+static const char *const CHIP_PATH[CH_COUNT] = {"/", "/luma/screenshots", "/DCIM", "/cias", "/3ds", "@saves", "@titles"};
 static const char *const SAVE_DIRS[3] = {"/3ds/Checkpoint/saves", "/JKSV/Saves", "/JKSV"};
 
 static struct {
@@ -2695,6 +2788,46 @@ static struct {
 // títulos instalados: los de la última lectura
 static TitleInfo *TI;
 static int TI_n;
+static bool f_is_titles(void) { return F.titles; }
+
+// Títulos: en vez de la barra de la SD, en qué se va su espacio (juegos, actualizaciones, DLC, otros archivos y libre)
+static void titles_space_bar(void)
+{
+	u64 g = 0, up = 0, dl = 0, fr = 0, tot = 0;
+	for (int i = 0; i < TI_n; i++)
+		g += TI[i].size, up += TI[i].upd_size, dl += TI[i].dlc_size;
+	fsx_space(&fr, &tot);
+	float x = CARD_X, y = SCR_H - 8 - SDB_H, w = CARD_W;
+	draw_rrect(x, y + 3, w, SDB_H, 14, T.shadow);
+	draw_rrect(x, y, w, SDB_H, 14, T.surface);
+	if (!tot)
+		return;
+	const u64 v[4] = {g, up, dl, tot > fr + g + up + dl ? tot - fr - g - up - dl : 0};
+	const u32 c[4] = {T.warn, T.accent, T.accent2, T.text3};
+	const char *n[4] = {_("Juegos"), _("Actualizaciones"), _("DLC"), _("Otros")};
+	float bx = x + 14, bw = w - 28, by = y + 9, acc = 0;
+	draw_rrect(bx, by, bw, 8, 4, T.surface2);
+	for (int k = 0; k < 4; k++) {
+		float pw = bw * (float)((double)v[k] / tot);
+		if (pw >= 1)
+			draw_rect(bx + acc, by, pw, 8, c[k]);
+		acc += pw;
+	}
+	float lx = bx, ly = by + 14;
+	for (int k = 0; k < 4; k++) {
+		char z[24], t[64];
+		util_fmt_size(z, sizeof z, v[k]);
+		snprintf(t, sizeof t, "%s %s", n[k], z);
+		draw_circle(lx + 3, ly + 6, 3, c[k]);
+		text_draw(t, lx + 9, ly, 0.34f, T.text2);
+		lx += text_width(t, 0.34f) + 18;
+	}
+	char z[24], t[48];
+	util_fmt_size(z, sizeof z, fr);
+	snprintf(t, sizeof t, _("%s libres"), z);
+	text_draw_right(t, bx + bw, ly, 0.34f, T.ok);
+}
+
 
 // comprimir en ZIP: lo elegido espera aquí a que se escriba el nombre (teclado, fuera del dibujo)
 static struct {
@@ -2773,7 +2906,7 @@ static const char *chip_name(int i)
 
 static IconId chip_icon(int i)
 {
-	static const IconId IC[CH_COUNT] = {IC_CLOUD, IC_CAMERA, IC_IMAGE, IC_GEM, IC_CODE, IC_GAMEPAD, IC_STAR};
+	static const IconId IC[CH_COUNT] = {IC_CLOUD, IC_CAMERA, IC_IMAGE, IC_GEM, IC_CODE, IC_STAR, IC_GAMEPAD};
 	return IC[i];
 }
 
@@ -3268,6 +3401,12 @@ static void sr_close(void)
 	f_load(SR.scope);
 }
 
+static bool TI_by_size; // Títulos: ordenados por tamaño (si no, por nombre)
+static int f_cmp_size_desc(const void *a, const void *b)
+{
+	const FEnt *x = a, *y = b;
+	return x->size < y->size ? 1 : x->size > y->size ? -1 : strcasecmp(x->name, y->name);
+}
 static void f_load(const char *path)
 {
 	// la pulsación (A o el dedo) que lleva a otra carpeta se queda aquí: si siguiera, abriría lo que quede debajo en la nueva
@@ -3303,6 +3442,8 @@ static void f_load(const char *path)
 			e->size = TI[i].size + TI[i].upd_size + TI[i].dlc_size;
 			e->tid = (u32)i;
 		}
+		if (TI_by_size) // los que más ocupan, primero
+			qsort(F.e, F.n, sizeof *F.e, f_cmp_size_desc);
 		F.err = F.missing = false;
 		f_build_view();
 		if (!same) {
@@ -5418,6 +5559,7 @@ static struct {
 	int copies;     // copias de su partida (se cuentan al elegirlo)
 	u64 last;
 	u64 info_tid;
+	s64 ext;        // cuánto ocupan sus datos extra (-1: no tiene)
 } TT;
 
 static const TitleInfo *tt_selected(void)
@@ -5445,24 +5587,61 @@ static void tt_draw(void)
 	const TitleInfo *t = tt_selected();
 	if (!t && TT.open)
 		TT.open = false;
-	if (t && TT.info_tid != t->tid) { // cuántas copias tiene (la pantalla de arriba usa lo mismo)
+	if (t && TT.info_tid != t->tid) { // cuántas copias tiene y sus datos extra (la pantalla de arriba usa lo mismo)
 		TT.info_tid = t->tid;
 		TT.copies = save_backups_count(t, &TT.last);
+		TT.ext = extdata_size(t);
 	}
-	// «Ver sus copias» solo si las hay; Cloud3DS no se desinstala a sí mismo
-	IconId ic[3];
-	const char *lab[3];
-	u32 col[3];
-	int act[3], n = 0;
-	ic[n] = IC_DOWNLOAD, lab[n] = _("Crear copia de seguridad"), col[n] = T.ok, act[n++] = 0;
+	// «Ver sus copias» solo si las hay; liberar espacio, por partes; Cloud3DS no se desinstala a sí mismo
+	IconId ic[6];
+	const char *lab[6];
+	u32 col[6];
+	int act[6], n = 0;
+	static char l_upd[80], l_dlc[80], l_ext[80];
+	bool self = t && title_is_self(t->tid);
+	ic[n] = IC_DOWNLOAD, lab[n] = _("Crear copia de la partida"), col[n] = T.ok, act[n++] = 0;
 	if (t && TT.copies > 0)
-		ic[n] = IC_FOLDER, lab[n] = _("Ver copias de seguridad"), col[n] = T.text, act[n++] = 1;
-	if (t && !title_is_self(t->tid))
+		ic[n] = IC_FOLDER, lab[n] = _("Ver copias de la partida"), col[n] = T.text, act[n++] = 1;
+	if (t && !self && t->upd_size) {
+		char z[24];
+		util_fmt_size(z, sizeof z, t->upd_size);
+		snprintf(l_upd, sizeof l_upd, _("Desinstalar la actualización (%s)"), z);
+		ic[n] = IC_UNDO, lab[n] = l_upd, col[n] = T.warn, act[n++] = 3;
+	}
+	if (t && !self && t->dlc > 0) {
+		char z[24];
+		util_fmt_size(z, sizeof z, t->dlc_size);
+		snprintf(l_dlc, sizeof l_dlc, _("Desinstalar los DLC (%s)"), z);
+		ic[n] = IC_GEM, lab[n] = l_dlc, col[n] = T.warn, act[n++] = 4;
+	}
+	if (t && !self && TT.ext > 0) {
+		char z[24];
+		util_fmt_size(z, sizeof z, (u64)TT.ext);
+		snprintf(l_ext, sizeof l_ext, _("Borrar los datos extra (%s)"), z);
+		ic[n] = IC_ARCHIVE, lab[n] = l_ext, col[n] = T.warn, act[n++] = 5;
+	}
+	if (t && !self)
 		ic[n] = IC_TRASH, lab[n] = _("Desinstalar"), col[n] = T.danger, act[n++] = 2;
 	int r = sheet_list(&TT.open, &TT.just, &TT.anim, &TT.sel, t ? t->title : "", ic, lab, col, n);
 	if (r < 0 || !t)
 		return;
 	r = act[r];
+	U.dlg_arg = (int)(t - TI);
+	if (r == 3 || r == 4) {
+		char msg[300], sz[24];
+		util_fmt_size(sz, sizeof sz, r == 3 ? t->upd_size : t->dlc_size);
+		snprintf(msg, sizeof msg, r == 3 ? _("Se liberarán %s. El juego seguirá instalado, sin la actualización; podrás volver a instalarla.")
+		                                 : _("Se liberarán %s. El juego seguirá instalado, sin sus contenidos descargables; podrás volver a instalarlos."), sz);
+		dialog_open(r == 3 ? DLG_UNUPD : DLG_UNDLC, r == 3 ? _("¿Desinstalar la actualización?") : _("¿Desinstalar los DLC?"), msg, _("Desinstalar"), true);
+		return;
+	}
+	if (r == 5) {
+		char msg[320], sz[24];
+		util_fmt_size(sz, sizeof sz, (u64)TT.ext);
+		snprintf(msg, sizeof msg, _("Se liberarán %s. Antes se hará una copia en /3ds/Checkpoint/extdata (se puede restaurar con Checkpoint); si la copia falla, no se borra nada. La partida no se toca."), sz);
+		dialog_open(DLG_EXTDEL, _("¿Borrar los datos extra?"), msg, _("Copiar y borrar"), true);
+		return;
+	}
 	if (r == 0)
 		tt_backup(t);
 	else if (r == 1) {
@@ -5499,9 +5678,39 @@ static void titles_top(float a)
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
 	const float X = CARD_X + 14, W = CARD_W - 28;
-	if (!t) {
-		draw_icon(IC_GAMEPAD, TOP_W / 2, y0 + h / 2 - 14, 30, col_alpha(T.text3, a));
-		text_draw_center(_("Selecciona un juego para ver su información"), TOP_W / 2, y0 + h / 2 + 8, TS_BODY, col_alpha(T.text3, a));
+	if (!t) { // nada elegido: en qué se va el espacio de la SD
+		u64 g = 0, up = 0, dl = 0, fr = 0, tot = 0;
+		for (int i = 0; i < TI_n; i++)
+			g += TI[i].size, up += TI[i].upd_size, dl += TI[i].dlc_size;
+		fsx_space(&fr, &tot);
+		float y = y0 + 14;
+		text_draw(_("Espacio en la tarjeta SD"), X, y, TS_TITLE, col_alpha(T.text, a));
+		y += text_lineh(TS_TITLE) + 10;
+		const u64 v4[4] = {g, up, dl, tot > fr + g + up + dl ? tot - fr - g - up - dl : 0};
+		const u32 c4[4] = {T.warn, T.accent, T.accent2, T.text3};
+		const char *n4[4] = {_("Juegos y aplicaciones"), _("Actualizaciones"), _("DLC"), _("Otros archivos")};
+		float bx = X, bw = W, acc = 0;
+		draw_rrect(bx, y, bw, 10, 5, col_alpha(T.surface2, a));
+		for (int k = 0; k < 4 && tot; k++) {
+			float w = bw * (float)((double)v4[k] / tot);
+			if (w >= 1)
+				draw_rect(bx + acc, y, w, 10, col_alpha(c4[k], a));
+			acc += w;
+		}
+		y += 22;
+		for (int k = 0; k < 4; k++) {
+			char z[24];
+			util_fmt_size(z, sizeof z, v4[k]);
+			draw_circle(X + 5, y + 7, 4, col_alpha(c4[k], a));
+			text_draw(n4[k], X + 16, y, TS_SUB, col_alpha(T.text2, a));
+			text_draw_right(z, X + W, y, TS_SUB, col_alpha(T.text, a));
+			y += 18;
+		}
+		char z[24], z2[24], f2[64];
+		util_fmt_size(z, sizeof z, fr), util_fmt_size(z2, sizeof z2, tot);
+		snprintf(f2, sizeof f2, _("%s libres de %s"), z, z2);
+		text_draw(f2, X + 16, y + 2, TS_SUB, col_alpha(T.ok, a));
+		text_draw_right(_("Elige un título para gestionarlo"), X + W, y0 + h - 22, TS_SUB, col_alpha(T.text3, a));
 		return;
 	}
 	if (TT.icon_tid != t->tid) {
@@ -5516,6 +5725,7 @@ static void titles_top(float a)
 	if (TT.info_tid != t->tid) {
 		TT.info_tid = t->tid;
 		TT.copies = save_backups_count(t, &TT.last);
+		TT.ext = extdata_size(t);
 	}
 	const float IS = h - 20;
 	float px = X - 4, py = y0 + 10;
@@ -5558,6 +5768,10 @@ static void titles_top(float a)
 		util_fmt_size(b1, sizeof b1, t->dlc_size);
 		snprintf(v, sizeof v, t->dlc == 1 ? _("1 contenido · %s") : _("%d contenidos · %s"), t->dlc, b1);
 		y = info_row(rx, y, rw, _("DLC"), v, T.text2, a);
+	}
+	if (TT.ext > 0) {
+		util_fmt_size(b1, sizeof b1, (u64)TT.ext);
+		y = info_row(rx, y, rw, _("Datos extra"), b1, T.text2, a);
 	}
 	snprintf(v, sizeof v, "%016llX", (unsigned long long)t->tid);
 	y = info_row(rx, y, rw, _("ID"), v, T.text3, a);
@@ -5870,7 +6084,18 @@ static void tab_files(void)
 		char c[64], sz[24];
 		util_fmt_size(sz, sizeof sz, tot);
 		snprintf(c, sizeof c, TI_n == 1 ? _("1 título · %s") : _("%d títulos · %s"), TI_n, sz);
-		text_draw_right(c, BOT_W - 14, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
+		// el orden: por nombre o por tamaño (tocándolo o con Y)
+		const char *ord = TI_by_size ? _("Por tamaño") : _("Por nombre");
+		float ow = text_width(ord, TS_SUB) + 20, ox = BOT_W - 10 - ow;
+		draw_rrect(ox, 6, ow, 20, 10, touch_in(ox, 4, ow, 24) ? T.surface2 : T.surface);
+		text_draw_center(ord, ox + ow / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
+		text_draw_right(c, ox - 8, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
+		if (!g_dialog.open && (tap(ox, 4, ow, 24) || (U.buttons && (g_kdown & KEY_Y) && !TT.open))) {
+			TI_by_size = !TI_by_size;
+			g_kdown &= ~KEY_Y;
+			f_load("@titles");
+			return;
+		}
 		if (root && !g_dialog.open && U.buttons && (g_kdown & KEY_B)) { // abierta desde el inicio: B, al inicio
 			hm_show();
 			return;
@@ -5994,7 +6219,7 @@ static void tab_files(void)
 			F.target = v->y + v->h - VIEW_H;
 	}
 	if (U.buttons && !g_dialog.open && f_on_chips() && (g_krepeat & (KEY_LEFT | KEY_RIGHT)))
-		F.chip = (F.chip + ((g_krepeat & KEY_RIGHT) ? 1 : CH_COUNT - 1)) % CH_COUNT;
+		F.chip = (F.chip + ((g_krepeat & KEY_RIGHT) ? 1 : CH_SHOWN - 1)) % CH_SHOWN;
 	if (U.buttons && !g_dialog.open && F.search && (g_krepeat & (KEY_LEFT | KEY_RIGHT)) && sr_nkinds() > 1)
 		sr_next_kind((g_krepeat & KEY_RIGHT) ? 1 : -1);
 	if (U.buttons && !g_dialog.open && grid && F.sel >= 0 && F.v[F.sel].kind == FV_ITEM && (g_krepeat & (KEY_LEFT | KEY_RIGHT))) {
@@ -6022,8 +6247,8 @@ static void tab_files(void)
 		if (y + v->h < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
 		if (v->kind == FV_CHIPS) {
-			float cw = (BOT_W - 12) / (float)CH_COUNT;
-			for (int c = 0; c < CH_COUNT; c++) {
+			float cw = (BOT_W - 12) / (float)CH_SHOWN;
+			for (int c = 0; c < CH_SHOWN; c++) {
 				float cx = 6 + c * cw;
 				bool here = c == CH_SAVES ? (F.nosaves || strstr(F.path, "/Checkpoint/saves") || !strncasecmp(F.path, "/JKSV", 5))
 				                          : !F.nosaves && !strcasecmp(F.path, CHIP_PATH[c]);
@@ -8074,16 +8299,17 @@ static struct {
 	float drag_dx;
 } HM = {.open = true};
 
-static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_SEND, IC_GEAR};
+static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_SEND, IC_GEAR};
 static u32 ap_col(int i)
 {
-	static const u32 hex[AP_N] = {0x3B9CFF, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x21C7A8, 0x9AA6BA};
+	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x21C7A8, 0x9AA6BA};
 	return col_hex(hex[i]);
 }
 static const char *ap_name(int i)
 {
 	switch (i) {
 	case AP_FILES: return _("Archivos");
+	case AP_TITLES: return _("Títulos");
 	case AP_CONNECT: return _("Conectar");
 	case AP_DL: return _("Descargas");
 	case AP_CLOUD: return _("Nube");
@@ -8096,7 +8322,8 @@ static const char *ap_name(int i)
 static const char *ap_desc(int i)
 {
 	switch (i) {
-	case AP_FILES: return _("La tarjeta SD: carpetas, capturas, fotos, CIA, homebrew, títulos instalados, partidas y papelera.");
+	case AP_FILES: return _("La tarjeta SD: carpetas, capturas, fotos, CIA, homebrew, partidas y papelera.");
+	case AP_TITLES: return _("Juegos y aplicaciones instalados: cuánto ocupan, actualizaciones, DLC, datos extra, copias de la partida y desinstalación.");
 	case AP_CONNECT: return _("Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.");
 	case AP_DL: return _("Descarga desde un enlace o escaneando un código QR. Los CIA se instalan durante la descarga.");
 	case AP_CLOUD:
@@ -8133,7 +8360,7 @@ static void hm_save(void)
 }
 
 static bool hm_is_open(void) { return HM.open && !U.ins_pend; }
-static int hm_cols(void) { return HM.small ? 6 : 4; }
+static int hm_cols(void) { return HM.small ? 6 : 5; }
 static int hm_rows(void) { return HM.small ? 3 : 2; }
 static int hm_per_page(void) { return hm_cols() * hm_rows(); }
 static int hm_pages(void) { return (AP_N + hm_per_page() - 1) / hm_per_page(); }
@@ -8182,6 +8409,11 @@ static void hm_launch(int i)
 		return;
 	}
 	U.tab = TAB_FILES;
+	if (i == AP_TITLES) {
+		f_load("@titles");
+		util_strlcpy(U.app_root, "@titles", sizeof U.app_root);
+		return;
+	}
 	if (i == AP_MUSIC) { // sin nada sonando: la carpeta de música (si la hay), para elegir una canción
 		static const char *const MD[] = {"/Music", "/music", "/Música", "/música", "/MP3", "/mp3"};
 		struct stat st;
@@ -8195,7 +8427,7 @@ static void hm_launch(int i)
 		f_load(dir);
 		util_strlcpy(U.app_root, F.path, sizeof U.app_root);
 		toast_icon(_("Elige una canción para reproducirla"), IC_SPEAKER, T.accent);
-	} else if (F.path[0] == '@' && !F.trash && !F.titles) // (Archivos: donde se estaba)
+	} else if (F.path[0] == '@' && !F.trash) // (Archivos: donde se estaba, salvo en Títulos)
 		f_load("/");
 }
 
@@ -8272,6 +8504,15 @@ static void hm_top(void)
 			util_fmt_size(fs, sizeof fs, fr), util_fmt_size(ts, sizeof ts, tot);
 			snprintf(s1, sizeof s1, _("%s libres de %s"), fs, ts);
 			y += 12;
+		}
+	} else if (i == AP_TITLES) {
+		if (TI_n) {
+			u64 tt = 0;
+			for (int k = 0; k < TI_n; k++)
+				tt += TI[k].size + TI[k].upd_size + TI[k].dlc_size;
+			char z[24];
+			util_fmt_size(z, sizeof z, tt);
+			snprintf(s1, sizeof s1, TI_n == 1 ? _("1 título · %s") : _("%d títulos · %s"), TI_n, z);
 		}
 	} else if (i == AP_CLOUD) {
 		CloudInfo ci;
@@ -8501,6 +8742,10 @@ static void draw_bottom(void)
 		splash_bot(1);
 		return;
 	}
+	if (UN.anim > 0.99f || (guard_on() && (br_is_open() || CLU.open))) {
+		un_card();
+		return;
+	}
 	if (br_is_open()) {
 		br_bottom();
 		dialog_draw();
@@ -8652,6 +8897,11 @@ static void handle_dialog(int ctx, bool ok)
 		} else
 			ctx = DLG_UNINSTALL2;
 	}
+	if ((ctx == DLG_UNUPD || ctx == DLG_UNDLC || ctx == DLG_EXTDEL) && U.dlg_arg >= 0 && U.dlg_arg < TI_n && !UN.busy) {
+		ctx = DLG_UNINSTALL2; // (la misma pantalla de espera, con lo suyo)
+		UN.kind = g_dialog.ctx == DLG_UNUPD ? UN_UPD : g_dialog.ctx == DLG_UNDLC ? UN_DLC : UN_EXT;
+	} else if (ctx == DLG_UNINSTALL2)
+		UN.kind = UN_ALL;
 	if (ctx == DLG_UNINSTALL2 && U.dlg_arg >= 0 && U.dlg_arg < TI_n && !UN.busy) {
 		const TitleInfo *t = &TI[U.dlg_arg];
 		UN.tid = t->tid;
@@ -8664,14 +8914,16 @@ static void handle_dialog(int ctx, bool ok)
 		else
 			tex_free(&UN.icon);
 		free(px);
-		UN.part = 0, UN.done = false, UN.t0 = util_ms();
+		UN.part = UN.kind == UN_UPD ? 1 : UN.kind == UN_DLC ? 2 : UN.kind == UN_EXT ? 3 : 0, UN.done = false, UN.t0 = util_ms();
+		UN.ti = *t;
+		if (UN.kind == UN_EXT)
+			UN.size[0] = TT.ext > 0 ? (u64)TT.ext : 0;
 		s32 prio = 0x30;
 		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
 		UN.thr = threadCreate(un_thread, NULL, 32 * 1024, prio + 1, -2, false);
-		if (UN.thr) {
-			UN.busy = true;
-			aptSetHomeAllowed(false); // HOME a mitad sería peligroso
-		} else
+		if (UN.thr)
+			UN.busy = true; // (la pantalla de espera bloquea HOME)
+		else
 			toast_icon(_("No se pudo desinstalar"), IC_CLOSE, T.danger);
 	} else if (ctx == DLG_TRASHEMPTY) {
 		trash_empty();
@@ -8823,7 +9075,11 @@ static void update(void)
 		return;
 	}
 	un_poll();
-	if (UN.busy) { // desinstalando: nada de debajo responde hasta que termine (tampoco al dibujar)
+	static bool home_blocked;
+	bool g = guard_on();
+	if (g != home_blocked) // HOME a mitad de instalar o borrar sería peligroso
+		aptSetHomeAllowed(!g), home_blocked = g;
+	if (g) { // nada de debajo responde hasta que termine (tampoco al dibujar)
 		g_kdown = g_kheld = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 		return;

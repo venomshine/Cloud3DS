@@ -28,6 +28,7 @@ void upd_check(void);
 void upd_install(void);
 void upd_get(UpdInfo *out);
 bool upd_busy(void);
+bool upd_installing(void); /* escribiendo en AM (la pantalla de espera) */
 bool upd_newer(const char *a, const char *b); /* a > b */
 void upd_exit(void);
 

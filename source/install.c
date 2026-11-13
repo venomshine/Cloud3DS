@@ -690,3 +690,8 @@ void ins_exit(void)
 		I.thr = NULL;
 	}
 }
+
+bool ins_streaming(void)
+{
+	return I.streaming;
+}
