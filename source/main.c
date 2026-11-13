@@ -8398,6 +8398,8 @@ static int hm_pages(void) { return (AP_N + hm_per_page() - 1) / hm_per_page(); }
 static void hm_show(void)
 {
 	hm_load();
+	// las hojas abiertas en una aplicación se cierran: si no, al abrir otra seguirían tapando su entrada sin verse
+	QA.open = DVS.open = UL.open = FM.open = PM.open = TY.open = VS.open = MA.open = MC.open = TS.open = HS.open = ZS.open = DS.open = TT.open = false;
 	HM.open = true;
 	HM.fade = 0;
 	HM.page_pos = HM.sel / hm_per_page();
