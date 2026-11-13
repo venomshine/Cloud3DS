@@ -2548,4 +2548,235 @@ TR = {
     'La ventana del QR se cierra sola en cuanto haces otra cosa.':
         ('The QR window closes by itself as soon as you do something else.',
          'ほかの操作をするとQRの画面は自動で閉じます。'),
+    'Copia de seguridad':
+        ('Backup',
+         'バックアップ'),
+    'Datos extra':
+        ('Extra data',
+         '追加データ'),
+    'Instalando «%s»':
+        ('Installing "%s"',
+         '「%s」をインストール中'),
+    'Actualizando Cloud3DS':
+        ('Updating Cloud3DS',
+         'Cloud3DSを更新中'),
+    'Datos extra de «%s»':
+        ('Extra data of "%s"',
+         '「%s」の追加データ'),
+    'Actualización de «%s»':
+        ('Update of "%s"',
+         '「%s」の更新データ'),
+    'DLC de «%s»':
+        ('DLC of "%s"',
+         '「%s」のDLC'),
+    'Copiando los datos extra (%s) · %s':
+        ('Copying the extra data (%s) · %s',
+         '追加データをコピー中(%s)· %s'),
+    'Borrando los datos extra · %s':
+        ('Deleting the extra data · %s',
+         '追加データを削除中 · %s'),
+    'Se está instalando. No apagues la consola, no saques la SD y no pulses HOME: si se corta a mitad, la instalación puede quedar dañada.':
+        ("Installing. Don't turn off the console, remove the SD card or press HOME: if it's interrupted, the installation may be damaged.",
+         'インストール中です。電源を切ったり、SDカードを抜いたり、HOMEボタンを押したりしないでください。中断するとインストールが破損するおそれがあります。'),
+    'Actualización desinstalada':
+        ('Update uninstalled',
+         '更新データを削除しました'),
+    'DLC desinstalados':
+        ('DLC uninstalled',
+         'DLCを削除しました'),
+    'Datos extra borrados (con copia en la SD)':
+        ('Extra data deleted (backup saved on the SD card)',
+         '追加データを削除しました(SDカードにバックアップ済み)'),
+    'No se pudo copiar: no se ha borrado nada':
+        ("Couldn't make the backup: nothing was deleted",
+         'バックアップできなかったため、何も削除していません'),
+    'No se pudo completar':
+        ("Couldn't complete the operation",
+         '完了できませんでした'),
+    'Actívalo en Ajustes, en «Conexión», para conectar otros dispositivos.':
+        ('Turn it on in Settings > Connection to connect other devices.',
+         '他のデバイスと接続するには、設定の「接続」でオンにしてください。'),
+    'Iniciando el servidor…':
+        ('Starting the server…',
+         'サーバーを起動中…'),
+    'Sin transferencias en curso':
+        ('No transfers in progress',
+         '進行中の転送はありません'),
+    'Aquí verás el progreso de lo que envíes, recibas, descargues o instales.':
+        ("Here you'll see the progress of everything you send, receive, download or install.",
+         '送信・受信・ダウンロード・インストールの進行状況がここに表示されます。'),
+    'Sin descargas en curso':
+        ('No downloads in progress',
+         '進行中のダウンロードはありません'),
+    'Los CIA se instalan mientras se descargan; el resto se guarda en la carpeta de descargas.':
+        ('CIA files are installed while they download; everything else is saved to the downloads folder.',
+         'CIAはダウンロードしながらインストールされます。その他のファイルはダウンロードフォルダに保存されます。'),
+    'Descargas':
+        ('Downloads',
+         'ダウンロード'),
+    'Desde un enlace':
+        ('From a link',
+         'リンクから'),
+    'Escribe la dirección de un archivo o de un proyecto de GitHub':
+        ('Enter the address of a file or a GitHub project',
+         'ファイルまたはGitHubプロジェクトのアドレスを入力'),
+    'Enlace del portapapeles':
+        ('Link from the clipboard',
+         'クリップボードのリンク'),
+    'El progreso se ve arriba y en Conectar, en «Actividad».':
+        ('Progress is shown above and in Connect > Activity.',
+         '進行状況は上画面と「接続」の「アクティビティ」で確認できます。'),
+    'Descargando el enlace del portapapeles':
+        ('Downloading the link from the clipboard',
+         'クリップボードのリンクをダウンロード中'),
+    'No se pudo descargar ese enlace':
+        ("Couldn't download that link",
+         'そのリンクをダウンロードできませんでした'),
+    'Elige un dispositivo para ver su información y sus permisos.':
+        ('Select a device to see its details and permissions.',
+         'デバイスを選ぶと、情報と権限を確認できます。'),
+    'En el portapapeles: ve a otra carpeta y pulsa X para pegar':
+        ('On the clipboard: go to another folder and press X to paste',
+         'クリップボードにあります。別のフォルダでXを押すと貼り付けます'),
+    'Cortar':
+        ('Cut',
+         '切り取り'),
+    'Crear copia de la partida':
+        ('Back up the save data',
+         'セーブデータをバックアップ'),
+    'Ver copias de la partida':
+        ('View save backups',
+         'セーブデータのバックアップを見る'),
+    'Desinstalar la actualización (%s)':
+        ('Uninstall the update (%s)',
+         '更新データを削除(%s)'),
+    'Desinstalar los DLC (%s)':
+        ('Uninstall the DLC (%s)',
+         'DLCを削除(%s)'),
+    'Borrar los datos extra (%s)':
+        ('Delete the extra data (%s)',
+         '追加データを削除(%s)'),
+    'Se liberarán %s. El juego seguirá instalado, sin la actualización; podrás volver a instalarla.':
+        ('%s will be freed. The game stays installed without the update; you can install it again later.',
+         '%s が空きます。ゲームは更新データなしで残ります。あとで再インストールできます。'),
+    'Se liberarán %s. El juego seguirá instalado, sin sus contenidos descargables; podrás volver a instalarlos.':
+        ('%s will be freed. The game stays installed without its downloadable content; you can install it again later.',
+         '%s が空きます。ゲームは追加コンテンツなしで残ります。あとで再インストールできます。'),
+    '¿Desinstalar la actualización?':
+        ('Uninstall the update?',
+         '更新データを削除しますか?'),
+    '¿Desinstalar los DLC?':
+        ('Uninstall the DLC?',
+         'DLCを削除しますか?'),
+    'Se liberarán %s. Antes se hará una copia en /3ds/Checkpoint/extdata (se puede restaurar con Checkpoint); si la copia falla, no se borra nada. La partida no se toca.':
+        ("%s will be freed. A backup is saved first to /3ds/Checkpoint/extdata (it can be restored with Checkpoint); if the backup fails, nothing is deleted. The save data isn't touched.",
+         '%s が空きます。先に /3ds/Checkpoint/extdata へバックアップします(Checkpointで復元できます)。バックアップに失敗した場合は何も削除しません。セーブデータには影響しません。'),
+    '¿Borrar los datos extra?':
+        ('Delete the extra data?',
+         '追加データを削除しますか?'),
+    'Copiar y borrar':
+        ('Back up and delete',
+         'バックアップして削除'),
+    'Espacio en la tarjeta SD':
+        ('SD card storage',
+         'SDカードの容量'),
+    'Juegos y aplicaciones':
+        ('Games and apps',
+         'ゲームとアプリ'),
+    'Otros archivos':
+        ('Other files',
+         'その他のファイル'),
+    '%s libres de %s':
+        ('%s free of %s',
+         '空き %s / %s'),
+    'Elige un título para gestionarlo':
+        ('Select a title to manage it',
+         'タイトルを選んで管理します'),
+    'Títulos':
+        ('Titles',
+         'タイトル'),
+    'Por tamaño':
+        ('By size',
+         'サイズ順'),
+    'Por nombre':
+        ('By name',
+         '名前順'),
+    'Pegar aquí':
+        ('Paste here',
+         'ここに貼り付け'),
+    'Música':
+        ('Music',
+         'ミュージック'),
+    'La tarjeta SD: carpetas, capturas, fotos, CIA, homebrew, partidas y papelera.':
+        ('The SD card: folders, screenshots, photos, CIA files, homebrew, saves and trash.',
+         'SDカード:フォルダ、スクリーンショット、写真、CIA、Homebrew、セーブデータ、ゴミ箱。'),
+    'Juegos y aplicaciones instalados: cuánto ocupan, actualizaciones, DLC, datos extra, copias de la partida y desinstalación.':
+        ('Installed games and apps: storage used, updates, DLC, extra data, save backups and uninstalling.',
+         'インストール済みのゲームとアプリ:使用容量、更新データ、DLC、追加データ、セーブのバックアップ、削除。'),
+    'Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.':
+        ('Transfer files with your phone or computer from the browser using a QR code. Includes activity and paired devices.',
+         'QRコードを使い、スマホやPCのブラウザからファイルを転送します。アクティビティと登録済みデバイスも確認できます。'),
+    'Descarga desde un enlace o escaneando un código QR. Los CIA se instalan durante la descarga.':
+        ('Download from a link or by scanning a QR code. CIA files are installed during the download.',
+         'リンクやQRコードからダウンロードします。CIAはダウンロード中にインストールされます。'),
+    'Tu OneDrive desde la consola, con copia automática de partidas y capturas.':
+        ('Your OneDrive on the console, with automatic backup of saves and screenshots.',
+         '本体からOneDriveを利用。セーブデータとスクリーンショットを自動でバックアップします。'),
+    'Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.':
+        ('Connect your OneDrive account with a QR code, without typing passwords on the console.',
+         'QRコードでOneDriveアカウントを接続します。本体でパスワードを入力する必要はありません。'),
+    'Navegador web con JavaScript, favoritos e historial.':
+        ('Web browser with JavaScript, bookmarks and history.',
+         'JavaScript、ブックマーク、履歴に対応したWebブラウザ。'),
+    'Reproduce la música de la tarjeta SD, también en segundo plano.':
+        ('Plays music from the SD card, also in the background.',
+         'SDカードの音楽を再生します。バックグラウンド再生にも対応。'),
+    'Conexión, seguridad, idioma, tema y actualizaciones.':
+        ('Connection, security, language, theme and updates.',
+         '接続、セキュリティ、言語、テーマ、アップデート。'),
+    'Elige una canción para reproducirla':
+        ('Select a song to play it',
+         '再生する曲を選んでください'),
+    'Sin conectar':
+        ('Not connected',
+         '未接続'),
+    'Reproduciendo:':
+        ('Playing:',
+         '再生中:'),
+    'En pausa:':
+        ('Paused:',
+         '一時停止中:'),
+    '1 transferencia en curso':
+        ('1 transfer in progress',
+         '転送中:1件'),
+    '%d transferencias en curso':
+        ('%d transfers in progress',
+         '転送中:%d件'),
+    'Ningún dispositivo conectado':
+        ('No devices connected',
+         '接続中のデバイスはありません'),
+    '1 descarga en curso':
+        ('1 download in progress',
+         'ダウンロード中:1件'),
+    '%d descargas en curso':
+        ('%d downloads in progress',
+         'ダウンロード中:%d件'),
+    'Hay un enlace en el portapapeles':
+        ("There's a link on the clipboard",
+         'クリップボードにリンクがあります'),
+    '%s Abrir · %s Cambiar de página · %s Tamaño de los iconos':
+        ('%s Open · %s Change page · %s Icon size',
+         '%s 開く · %s ページ切替 · %s アイコンサイズ'),
+    'Sin red':
+        ('No network',
+         'ネットワークなし'),
+    'Enlace':
+        ('Link',
+         'リンク'),
+    'Cancelando la descarga…':
+        ('Canceling the download…',
+         'ダウンロードをキャンセル中…'),
+    'Otro juego instalado usa estos datos extra: no se han borrado':
+        ("Another installed game uses this extra data: it wasn't deleted",
+         'ほかのインストール済みゲームがこの追加データを使用しているため、削除しませんでした'),
 }
