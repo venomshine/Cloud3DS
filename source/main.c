@@ -1542,7 +1542,14 @@ static void un_card(void)
 	wrap_center(UN.ins_mode ? _("Se está instalando. No apagues la consola, no saques la SD y no pulses HOME: si se corta a mitad, la instalación puede quedar dañada.")
 	                     : _("No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada."), cx,
 	            132, BOT_W - 40, TS_SUB, 4, col_alpha(T.text, a));
-	wrap_center(_("Cuando termine, Cloud3DS sigue sola."), cx, SCR_H - 44, BOT_W - 40, TS_SUB, 1, col_alpha(T.text3, a));
+	if (UN.ins_mode && ins_streaming()) { // descargando e instalando a la vez: se puede cancelar sin riesgo
+		char cl[64];
+		snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cancelar la descarga"));
+		float cw = text_width(cl, TS_SUB) + 28;
+		draw_rrect(cx - cw / 2, SCR_H - 54, cw, 26, 13, col_alpha(T.surface2, a));
+		text_draw_center(cl, cx, SCR_H - 41 - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.text, a));
+	} else
+		wrap_center(_("Cuando termine, Cloud3DS sigue sola."), cx, SCR_H - 44, BOT_W - 40, TS_SUB, 1, col_alpha(T.text3, a));
 }
 
 // cada vuelta: al terminar el hilo, se avisa y se vuelve a leer la lista
@@ -9081,6 +9088,15 @@ static void update(void)
 	if (g != home_blocked) // HOME a mitad de instalar o borrar sería peligroso
 		aptSetHomeAllowed(!g), home_blocked = g;
 	if (g) { // nada de debajo responde hasta que termine (tampoco al dibujar)
+		// salvo cancelar una descarga que se instala según llega: AM descarta lo instalado a medias
+		static bool cancel_sent;
+		if (!ins_streaming())
+			cancel_sent = false;
+		else if (!UN.busy && !cancel_sent && ((g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy > SCR_H - 64))) {
+			dl_cancel_current();
+			cancel_sent = true;
+			toast_icon(_("Cancelando la descarga…"), IC_CLOSE, T.text2);
+		}
 		g_kdown = g_kheld = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 		return;

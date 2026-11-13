@@ -257,6 +257,14 @@ int dl_active(void)
 	return k;
 }
 
+void dl_cancel_current(void)
+{
+	lock();
+	if (D.cur)
+		D.cancel = true;
+	unlock();
+}
+
 int dl_op(u32 id, int op)
 {
 	lock();

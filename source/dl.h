@@ -50,6 +50,7 @@ void dl_exit(void);
 int  dl_add(const char *url, const char *dir, const char *hash, int after, const char *device, u32 *id);
 int  dl_list(DlItem *out, int max); /* en el orden de la cola */
 int  dl_op(u32 id, int op);
+void dl_cancel_current(void); /* cancela la descarga en curso (la que se está instalando, por ejemplo) */
 u32  dl_rev(void);                  /* cambia con cada novedad */
 int  dl_active(void);               /* en cola o bajando */
 bool dl_url_ok(const char *url);
