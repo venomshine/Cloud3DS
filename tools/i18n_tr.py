@@ -2712,7 +2712,7 @@ TR = {
          'SDカード:フォルダ、スクリーンショット、写真、CIA、Homebrew、セーブデータ、ゴミ箱。'),
     'Juegos y aplicaciones instalados: cuánto ocupan, actualizaciones, DLC, datos extra, copias de la partida y desinstalación.':
         ('Installed games and apps: storage used, updates, DLC, extra data, save backups and uninstalling.',
-         'インストール済みのゲームとアプリ:使用容量、更新データ、DLC、追加データ、セーブのバックアップ、削除。'),
+         'インストール済みのゲームとアプリの使用容量、更新データ、DLC、追加データ、セーブのバックアップ、削除。'),
     'Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.':
         ('Transfer files with your phone or computer from the browser using a QR code. Includes activity and paired devices.',
          'QRコードを使い、スマホやPCのブラウザからファイルを転送します。アクティビティと登録済みデバイスも確認できます。'),

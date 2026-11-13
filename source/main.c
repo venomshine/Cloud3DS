@@ -1428,6 +1428,15 @@ static void un_elapsed(char *out, size_t n)
 	snprintf(out, n, "%llu:%02llu", (unsigned long long)(s / 60), (unsigned long long)(s % 60));
 }
 
+// el título de la operación: con nombres largos (o en otros idiomas) se encoge un poco antes de cortarse
+static void un_title(const char *t, float cx, float y, float a)
+{
+	float mw = TOP_W - 40, sc = TS_TITLE, w = text_width(t, sc);
+	while (w > mw && sc > TS_TITLE * 0.55f)
+		sc -= 0.01f, w = text_width(t, sc);
+	text_draw_center_clip(t, cx, y + (text_lineh(TS_TITLE) - text_lineh(sc)) / 2, mw, sc, col_alpha(T.text, a));
+}
+
 // arriba, a pantalla completa: el juego en el centro con anillos girando (se está trabajando)
 static void un_top(void)
 {
@@ -1468,7 +1477,7 @@ static void un_top(void)
 			done = ui.done, tot = ui.total;
 			snprintf(t, sizeof t, "%s", _("Actualizando Cloud3DS"));
 		}
-		text_draw_center_clip(t, cx, cy + 84, TOP_W - 40, TS_TITLE, col_alpha(T.text, a));
+		un_title(t, cx, cy + 84, a);
 		float f = tot ? clampf((float)((double)done / tot), 0, 1) : 0;
 		float bw = 220, bx = cx - bw / 2, by = cy + 84 + text_lineh(TS_TITLE) + 8;
 		draw_rrect(bx, by, bw, 6, 3, col_alpha(T.surface2, a));
@@ -1490,7 +1499,7 @@ static void un_top(void)
 		snprintf(t, sizeof t, _("Datos extra de «%s»"), UN.name);
 	else
 		snprintf(t, sizeof t, UN.kind == UN_UPD ? _("Actualización de «%s»") : _("DLC de «%s»"), UN.name);
-	text_draw_center_clip(t, cx, cy + 84, TOP_W - 40, TS_TITLE, col_alpha(T.text, a));
+	un_title(t, cx, cy + 84, a);
 	int np = UN.has[0] + UN.has[1] + UN.has[2], k = UN.part, idx = 0;
 	for (int i = 0; i < k && i < 3; i++)
 		idx += UN.has[i];
@@ -2824,19 +2833,28 @@ static void titles_space_bar(void)
 			draw_rect(bx + acc, by, pw, 8, c[k]);
 		acc += pw;
 	}
+	// la leyenda: si no cabe en una línea (otros idiomas), letra algo más pequeña y menos hueco
+	char lt[4][64], z[24], ft[48];
+	for (int k = 0; k < 4; k++)
+		util_fmt_size(z, sizeof z, v[k]), snprintf(lt[k], sizeof lt[k], "%s %s", n[k], z);
+	util_fmt_size(z, sizeof z, fr);
+	snprintf(ft, sizeof ft, _("%s libres"), z);
+	float sc = 0.34f, gap = 18;
+	for (int tries = 0; tries < 6; tries++) {
+		float need = text_width(ft, sc) + 8;
+		for (int k = 0; k < 4; k++)
+			need += 9 + text_width(lt[k], sc) + gap;
+		if (need <= bw)
+			break;
+		sc -= 0.01f, gap = fmaxf(8, gap - 3);
+	}
 	float lx = bx, ly = by + 14;
 	for (int k = 0; k < 4; k++) {
-		char z[24], t[64];
-		util_fmt_size(z, sizeof z, v[k]);
-		snprintf(t, sizeof t, "%s %s", n[k], z);
 		draw_circle(lx + 3, ly + 6, 3, c[k]);
-		text_draw(t, lx + 9, ly, 0.34f, T.text2);
-		lx += text_width(t, 0.34f) + 18;
+		text_draw(lt[k], lx + 9, ly, sc, T.text2);
+		lx += 9 + text_width(lt[k], sc) + gap;
 	}
-	char z[24], t[48];
-	util_fmt_size(z, sizeof z, fr);
-	snprintf(t, sizeof t, _("%s libres"), z);
-	text_draw_right(t, bx + bw, ly, 0.34f, T.ok);
+	text_draw_right(ft, bx + bw, ly, sc, T.ok);
 }
 
 
@@ -7273,7 +7291,10 @@ static float info_row(float x, float y, float w, const char *label, const char *
 	if (y + 13 > g_info_ymax)
 		return y;
 	const float LW = 74;
-	text_draw_clip(label, x, y, LW - 6, TS_SUB, col_alpha(T.text3, a));
+	float ls = TS_SUB, lw = text_width(label, ls); // (etiquetas largas, en otros idiomas: algo más pequeñas antes que cortadas)
+	while (lw > LW - 6 && ls > TS_SUB * 0.6f) // (paso a paso: el japonés no encoge en proporción, ver cjk_scale)
+		ls -= 0.01f, lw = text_width(label, ls);
+	text_draw_clip(label, x, y + (text_lineh(TS_SUB) - text_lineh(ls)) / 2, LW - 6, ls, col_alpha(T.text3, a));
 	text_draw_clip(value, x + LW, y, w - LW, TS_SUB, col_alpha(vc, a));
 	return y + 15;
 }
