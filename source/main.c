@@ -87,7 +87,7 @@ static struct {
 
 enum { QA_CLOUD, QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
 /* las aplicaciones del inicio (ver hm_*) */
-enum { AP_FILES, AP_TITLES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SHARE, AP_SETTINGS, AP_N };
+enum { AP_FILES, AP_TITLES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SETTINGS, AP_N };
 
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
@@ -8299,10 +8299,10 @@ static struct {
 	float drag_dx;
 } HM = {.open = true};
 
-static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_SEND, IC_GEAR};
+static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_GEAR};
 static u32 ap_col(int i)
 {
-	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x21C7A8, 0x9AA6BA};
+	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x9AA6BA};
 	return col_hex(hex[i]);
 }
 static const char *ap_name(int i)
@@ -8315,7 +8315,6 @@ static const char *ap_name(int i)
 	case AP_CLOUD: return _("Nube");
 	case AP_WEB: return _("Navegador");
 	case AP_MUSIC: return _("Música");
-	case AP_SHARE: return _("Compartir");
 	default: return _("Ajustes");
 	}
 }
@@ -8331,7 +8330,6 @@ static const char *ap_desc(int i)
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
 	case AP_MUSIC: return _("Reproduce la música de la tarjeta SD, también en segundo plano.");
-	case AP_SHARE: return _("Transfiere aplicaciones homebrew a otra consola. Disponible próximamente.");
 	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
 	}
 }
@@ -8360,7 +8358,7 @@ static void hm_save(void)
 }
 
 static bool hm_is_open(void) { return HM.open && !U.ins_pend; }
-static int hm_cols(void) { return HM.small ? 6 : 5; }
+static int hm_cols(void) { return HM.small ? 6 : 4; }
 static int hm_rows(void) { return HM.small ? 3 : 2; }
 static int hm_per_page(void) { return hm_cols() * hm_rows(); }
 static int hm_pages(void) { return (AP_N + hm_per_page() - 1) / hm_per_page(); }
@@ -8387,7 +8385,6 @@ static void hm_launch(int i)
 			return;
 		}
 		break;
-	case AP_SHARE: toast_icon(_("Compartir estará disponible en una próxima versión"), IC_SEND, T.text2); return;
 	default: break;
 	}
 	HM.open = false;
