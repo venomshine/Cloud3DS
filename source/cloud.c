@@ -41,7 +41,7 @@
 #define CHUNK     (640 * 1024) /* múltiplo de 320 KiB, como pide OneDrive */
 #define DEPTH     16
 
-enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME, J_CAPS, J_MKDIR, J_RENAME, J_MOVE, J_COPY, J_DLTO };
+enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME, J_CAPS, J_MKDIR, J_RENAME, J_MOVE, J_COPY, J_DLTO, J_OPEN };
 #define SHOTS "/luma/screenshots"
 typedef struct {
 	int type;
@@ -72,7 +72,10 @@ static struct {
 	CloudItem *items;
 	int nitems;
 	bool loading;
-	char folder_id[64]; /* la carpeta Cloud3DS, cuando ya se sabe */
+	char folder_id[64]; /* la carpeta Cloud3DS, cuando ya se sabe (por su id: aunque se le cambie el nombre) */
+	char caps_id[64];   /* y su carpeta Capturas */
+	bool folder_ok, caps_ok; /* comprobado en esta sesión que siguen ahí */
+	volatile bool open_cancel;
 	cJSON *shots;       /* capturas ya subidas */
 	u64 next_caps;      /* ms: próxima mirada a las capturas */
 } C;
@@ -150,6 +153,8 @@ static void save_tokens(void)
 	cJSON_AddStringToObject(j, "name", C.info.name);
 	cJSON_AddStringToObject(j, "email", C.info.email);
 	cJSON_AddBoolToObject(j, "caps", C.info.caps);
+	cJSON_AddStringToObject(j, "folder_id", C.folder_id);
+	cJSON_AddStringToObject(j, "caps_id", C.caps_id);
 	if (C.shots)
 		cJSON_AddItemToObject(j, "shots", cJSON_Duplicate(C.shots, true));
 	char *s = cJSON_PrintUnformatted(j);
@@ -179,7 +184,8 @@ static void forget(void)
 	C.info.st = CLS_OFF;
 	C.nitems = 0;
 	C.depth = 0;
-	C.folder_id[0] = 0;
+	C.folder_id[0] = C.caps_id[0] = 0;
+	C.folder_ok = C.caps_ok = false;
 	bump();
 	unlock();
 }
@@ -262,6 +268,7 @@ static cJSON *graph_json(const char *path, long *code)
 }
 
 /* ------------------------------------------------------------ trabajos */
+static bool app_folder_ex(char *id, size_t n, bool create);
 static void do_me(void)
 {
 	long code;
@@ -289,6 +296,13 @@ static void do_me(void)
 	cJSON_Delete(dr);
 	if (me)
 		save_tokens();
+	// la carpeta Cloud3DS, para reconocerla por su id (sin crearla: solo si ya existe)
+	static bool looked;
+	if (me && !C.folder_id[0] && !looked) {
+		looked = true;
+		char id[64];
+		app_folder_ex(id, sizeof id, false);
+	}
 }
 
 static void do_connect(void)
@@ -404,10 +418,10 @@ static int item_cmp(const void *a, const void *b)
 	const CloudItem *x = a, *y = b;
 	if (x->dir != y->dir)
 		return x->dir ? -1 : 1;
-	if (x->dir && !strcmp(x->name, OD_FOLDER)) // la de la app, la primera
-		return -1;
-	if (y->dir && !strcmp(y->name, OD_FOLDER))
-		return 1;
+	bool xa = x->dir && (C.folder_id[0] ? !strcmp(x->id, C.folder_id) : !strcmp(x->name, OD_FOLDER)); // la de la app, la primera
+	bool ya = y->dir && (C.folder_id[0] ? !strcmp(y->id, C.folder_id) : !strcmp(y->name, OD_FOLDER));
+	if (xa != ya)
+		return xa ? -1 : 1;
 	return strcasecmp(x->name, y->name);
 }
 
@@ -453,12 +467,28 @@ static void do_list(const char *id)
 	free(it);
 }
 
-/* la carpeta Cloud3DS de OneDrive (la crea si no está) */
-static bool app_folder(char *id, size_t n)
+static bool item_alive(const char *id)
+{
+	char path[200];
+	snprintf(path, sizeof path, "/me/drive/items/%s?$select=id", id);
+	long code = 0;
+	cJSON *j = graph_json(path, &code);
+	cJSON_Delete(j);
+	return code == 200;
+}
+
+/* la carpeta Cloud3DS de OneDrive: la que se conoce por su id (aunque se le haya cambiado el nombre); si ya no
+ * está, la que se llame así; si tampoco, se crea (con create) */
+static bool app_folder_ex(char *id, size_t n, bool create)
 {
 	if (C.folder_id[0]) {
-		util_strlcpy(id, C.folder_id, n);
-		return true;
+		if (C.folder_ok || item_alive(C.folder_id)) {
+			C.folder_ok = true;
+			util_strlcpy(id, C.folder_id, n);
+			return true;
+		}
+		C.folder_id[0] = C.caps_id[0] = 0; // se borró: se busca o se crea otra
+		C.caps_ok = false;
 	}
 	long code;
 	for (int t = 0; t < 2; t++) {
@@ -467,11 +497,13 @@ static bool app_folder(char *id, size_t n)
 		if (cJSON_IsString(i)) {
 			util_strlcpy(C.folder_id, i->valuestring, sizeof C.folder_id);
 			util_strlcpy(id, i->valuestring, n);
+			C.folder_ok = true;
 			cJSON_Delete(j);
+			save_tokens();
 			return true;
 		}
 		cJSON_Delete(j);
-		if (code != 404 || t)
+		if (code != 404 || t || !create)
 			return false;
 		static const char body[] = "{\"name\":\"" OD_FOLDER "\",\"folder\":{},\"@microsoft.graph.conflictBehavior\":\"fail\"}";
 		Mem m = {NULL, 0, 64 * 1024};
@@ -481,9 +513,14 @@ static bool app_folder(char *id, size_t n)
 	return false;
 }
 
+static bool app_folder(char *id, size_t n)
+{
+	return app_folder_ex(id, n, true);
+}
+
 /* sube un archivo de la SD a la carpeta parent de OneDrive; xid >= 0: suma su progreso a esa
  * transferencia a partir de base. Devuelve si salió bien */
-static bool upload_file(const char *sd, const char *parent, int xid, u64 base)
+static bool upload_file_ex(const char *sd, const char *parent, int xid, u64 base, bool replace)
 {
 	const char *nm = strrchr(sd, '/');
 	nm = nm ? nm + 1 : sd;
@@ -503,12 +540,12 @@ static bool upload_file(const char *sd, const char *parent, int xid, u64 base)
 	Mem m = {NULL, 0, 256 * 1024};
 	if (ok && size <= CHUNK) { // pequeño: de una vez
 		size_t got = size ? fread(buf, 1, size, f) : 0;
-		snprintf(path, sizeof path, "/me/drive/items/%s:/%s:/content?@microsoft.graph.conflictBehavior=rename", parent, enc);
+		snprintf(path, sizeof path, "/me/drive/items/%s:/%s:/content?@microsoft.graph.conflictBehavior=%s", parent, enc, replace ? "replace" : "rename");
 		ok = got == size && graph(HTTPC_METHOD_PUT, path, "application/octet-stream", buf, size, &m, &code) == DLF_OK && code < 300;
 	} else if (ok) { // grande: una sesión y trozos
 		snprintf(path, sizeof path, "/me/drive/items/%s:/%s:/createUploadSession", parent, enc);
-		static const char body[] = "{\"item\":{\"@microsoft.graph.conflictBehavior\":\"rename\"}}";
-		ok = graph(HTTPC_METHOD_POST, path, "application/json", body, sizeof body - 1, &m, &code) == DLF_OK && code < 300;
+		const char *body = replace ? "{\"item\":{\"@microsoft.graph.conflictBehavior\":\"replace\"}}" : "{\"item\":{\"@microsoft.graph.conflictBehavior\":\"rename\"}}";
+		ok = graph(HTTPC_METHOD_POST, path, "application/json", body, strlen(body), &m, &code) == DLF_OK && code < 300;
 		cJSON *j = ok && m.p ? cJSON_Parse(m.p) : NULL;
 		const cJSON *uu = cJSON_GetObjectItemCaseSensitive(j, "uploadUrl");
 		char upurl[2048] = "";
@@ -549,6 +586,11 @@ static bool upload_file(const char *sd, const char *parent, int xid, u64 base)
 	return ok;
 }
 
+static bool upload_file(const char *sd, const char *parent, int xid, u64 base)
+{
+	return upload_file_ex(sd, parent, xid, base, false);
+}
+
 static u64 dir_bytes(const char *dir, int depth);
 static bool mkdir_in(const char *parent, const char *name, char *out, size_t n);
 static bool upload_dir(const char *dir, const char *parent, int xid, u64 *done, int depth);
@@ -562,7 +604,7 @@ static void refresh_current(void)
 	do_list(cur);
 }
 
-static void do_upload(const char *sd, const char *parent0)
+static void do_upload(const char *sd, const char *parent0, bool replace)
 {
 	char parent[64];
 	if (parent0[0])
@@ -587,7 +629,7 @@ static void do_upload(const char *sd, const char *parent0)
 		u64 done = 0;
 		ok = mkdir_in(parent, nm, id, sizeof id) && upload_dir(sd, id, xid, &done, 0);
 	} else
-		ok = upload_file(sd, parent, xid, 0);
+		ok = upload_file_ex(sd, parent, xid, 0, replace);
 	state_lock();
 	xfer_end(xid, ok ? XS_DONE : XS_FAILED);
 	state_unlock();
@@ -595,68 +637,6 @@ static void do_upload(const char *sd, const char *parent0)
 		set_err("upload");
 	refresh_current();
 	do_me();
-}
-
-/* la carpeta de OneDrive con esa ruta (desde la raíz, con «/»), creándola si falta; su id en out */
-static bool ensure_path(const char *rel, char *out, size_t n)
-{
-	char parent[64] = "", sofar[600] = "";
-	const char *p = rel;
-	while (*p) {
-		const char *e = strchr(p, '/');
-		size_t l = e ? (size_t)(e - p) : strlen(p);
-		char seg[200];
-		snprintf(seg, sizeof seg, "%.*s", (int)(l < sizeof seg - 1 ? l : sizeof seg - 1), p);
-		p += l + (e ? 1 : 0);
-		if (!seg[0])
-			continue;
-		size_t sl = strlen(sofar);
-		snprintf(sofar + sl, sizeof sofar - sl, "%s%s", sl ? "/" : "", seg);
-		char enc[900], path[1000];
-		url_enc(sofar, enc, sizeof enc, true);
-		snprintf(path, sizeof path, "/me/drive/root:/%s?$select=id", enc);
-		long code;
-		bool got = false;
-		for (int t = 0; t < 2 && !got; t++) {
-			cJSON *j = graph_json(path, &code);
-			const cJSON *i = cJSON_GetObjectItemCaseSensitive(j, "id");
-			if (cJSON_IsString(i)) {
-				util_strlcpy(parent, i->valuestring, sizeof parent);
-				got = true;
-			}
-			cJSON_Delete(j);
-			if (got || code != 404 || t)
-				break;
-			// no está: se crea dentro de la anterior
-			cJSON *b = cJSON_CreateObject();
-			cJSON_AddStringToObject(b, "name", seg);
-			cJSON_AddItemToObject(b, "folder", cJSON_CreateObject());
-			cJSON_AddStringToObject(b, "@microsoft.graph.conflictBehavior", "fail");
-			char *body = cJSON_PrintUnformatted(b);
-			cJSON_Delete(b);
-			char cpath[200];
-			if (parent[0])
-				snprintf(cpath, sizeof cpath, "/me/drive/items/%s/children", parent);
-			else
-				util_strlcpy(cpath, "/me/drive/root/children", sizeof cpath);
-			Mem m = {NULL, 0, 64 * 1024};
-			graph(HTTPC_METHOD_POST, cpath, "application/json", body, body ? strlen(body) : 0, &m, &code);
-			free(body);
-			// la respuesta trae su id; si otro la creó a la vez (409), se vuelve a buscar
-			cJSON *r = code < 300 && m.p ? cJSON_ParseWithLength(m.p, m.n) : NULL;
-			const cJSON *ri = cJSON_GetObjectItemCaseSensitive(r, "id");
-			if (cJSON_IsString(ri)) {
-				util_strlcpy(parent, ri->valuestring, sizeof parent);
-				got = true;
-			}
-			cJSON_Delete(r);
-			free(m.p);
-		}
-		if (!got)
-			return false;
-	}
-	util_strlcpy(out, parent, n);
-	return parent[0] != 0;
 }
 
 /* lo que hay en una carpeta de la SD, sin límite fijo */
@@ -777,6 +757,35 @@ static bool upload_dir(const char *dir, const char *parent, int xid, u64 *done, 
 	return ok;
 }
 
+/* la carpeta Capturas, dentro de Cloud3DS: por su id; si ya no está, la que se llame así; si no, se crea */
+static bool caps_folder(char *id, size_t n)
+{
+	if (C.caps_id[0] && (C.caps_ok || item_alive(C.caps_id))) {
+		C.caps_ok = true;
+		util_strlcpy(id, C.caps_id, n);
+		return true;
+	}
+	char app[64], path[200];
+	if (!app_folder(app, sizeof app))
+		return false;
+	snprintf(path, sizeof path, "/me/drive/items/%s:/Capturas?$select=id", app);
+	long code = 0;
+	cJSON *j = graph_json(path, &code);
+	const cJSON *i = cJSON_GetObjectItemCaseSensitive(j, "id");
+	bool ok = cJSON_IsString(i);
+	if (ok)
+		util_strlcpy(C.caps_id, i->valuestring, sizeof C.caps_id);
+	cJSON_Delete(j);
+	if (!ok && code == 404)
+		ok = mkdir_in(app, "Capturas", C.caps_id, sizeof C.caps_id);
+	if (ok) {
+		C.caps_ok = true;
+		util_strlcpy(id, C.caps_id, n);
+		save_tokens();
+	}
+	return ok;
+}
+
 static bool shot_cb(const FsxEntry *e, void *u)
 {
 	size_t l = strlen(e->name);
@@ -812,7 +821,7 @@ static void do_caps(void)
 	for (int i = 0; i < t.n && !C.quit; i++) {
 		if (shot_done(t.name[i]))
 			continue;
-		if (!id[0] && !ensure_path(OD_FOLDER "/Capturas", id, sizeof id))
+		if (!id[0] && !caps_folder(id, sizeof id))
 			break;
 		char p[400];
 		snprintf(p, sizeof p, SHOTS "/%s", t.name[i]);
@@ -950,11 +959,24 @@ static void do_move(const char *id, const char *parent)
 	refresh_current();
 }
 
+static int child_count(const char *parent)
+{
+	char path[200];
+	items_path(parent, "?$select=id,folder", path, sizeof path);
+	long code = 0;
+	cJSON *j = graph_json(path, &code);
+	const cJSON *f = cJSON_GetObjectItemCaseSensitive(j, "folder"), *c = f ? cJSON_GetObjectItemCaseSensitive(f, "childCount") : NULL;
+	int n = cJSON_IsNumber(c) ? c->valueint : -1;
+	cJSON_Delete(j);
+	return n;
+}
+
 static void do_copy(const char *id, const char *parent)
 {
 	char pid[64];
 	bool ok = parent_ref(parent, pid, sizeof pid);
 	long code = 0;
+	int n0 = ok ? child_count(pid) : -1;
 	if (ok) {
 		cJSON *b = cJSON_CreateObject(), *pr = cJSON_CreateObject();
 		cJSON_AddStringToObject(pr, "id", pid);
@@ -970,7 +992,12 @@ static void do_copy(const char *id, const char *parent)
 	util_log("nube: copiar %s (HTTP %ld)", id, code);
 	if (!ok)
 		set_err("manage");
-	svcSleepThread(2500000000ll); // la copia la hace OneDrive aparte: se le da un momento antes de volver a leer
+	// la copia la hace OneDrive por su cuenta: se espera (hasta un minuto) a que la carpeta tenga un elemento más
+	for (int k = 0; ok && n0 >= 0 && k < 30 && !C.quit; k++) {
+		svcSleepThread(2000000000ll);
+		if (child_count(pid) > n0)
+			break;
+	}
 	refresh_current();
 	do_me();
 }
@@ -1043,6 +1070,60 @@ static void do_download_to(const char *id, const char *name, const char *dir, bo
 		set_err("download");
 }
 
+typedef struct {
+	FILE *f;
+	u64 got;
+} OpenW;
+
+static size_t open_cb(char *d, size_t s, size_t m, void *u)
+{
+	OpenW *w = u;
+	size_t k = s * m;
+	if (C.open_cancel || C.quit || fwrite(d, 1, k, w->f) != k)
+		return 0;
+	w->got += k;
+	C.info.open_got = w->got;
+	return k;
+}
+
+/* abrir un archivo de la nube: se baja entero a la carpeta dir de la SD (y la consola lo abre al terminar) */
+static void do_open(const char *id, const char *name, const char *dir)
+{
+	char path[300], sd[700], tmp[720];
+	snprintf(path, sizeof path, "/me/drive/items/%s?$select=id,name,@microsoft.graph.downloadUrl", id);
+	snprintf(sd, sizeof sd, "%s/%s", dir, name);
+	snprintf(tmp, sizeof tmp, "sdmc:%s.part", sd);
+	long code = 0;
+	cJSON *j = graph_json(path, &code);
+	const cJSON *u = cJSON_GetObjectItemCaseSensitive(j, "@microsoft.graph.downloadUrl");
+	bool ok = cJSON_IsString(u) && fsx_mkdirs(dir) >= 0;
+	OpenW w = {NULL, 0};
+	if (ok)
+		ok = (w.f = fopen(tmp, "wb")) != NULL;
+	if (ok) {
+		const char *H[] = {NULL};
+		ok = dl_request(HTTPC_METHOD_GET, u->valuestring, H, NULL, 0, open_cb, &w, &code) == DLF_OK && code < 300;
+		ok = fclose(w.f) == 0 && ok;
+		char fin[720];
+		snprintf(fin, sizeof fin, "sdmc:%s", sd);
+		if (ok) {
+			remove(fin);
+			ok = rename(tmp, fin) == 0;
+		}
+		if (!ok)
+			remove(tmp);
+	}
+	cJSON_Delete(j);
+	util_log("nube: abrir %s -> %s (HTTP %ld)", name, ok ? "bien" : "mal", code);
+	lock();
+	C.info.opening = false;
+	C.info.open_ok = ok && !C.open_cancel;
+	util_strlcpy(C.info.open_path, ok ? sd : "", sizeof C.info.open_path);
+	C.info.open_rev++;
+	bump();
+	unlock();
+}
+
 static bool push_full(int type, const char *a, const char *b, const char *c, bool dir)
 {
 	lock();
@@ -1102,7 +1183,7 @@ static void thread_main(void *arg)
 		case J_ME: do_me(); break;
 		case J_LIST: do_list(j.a); break;
 		case J_DOWNLOAD: do_download(j.a, j.b); break;
-		case J_UPLOAD: do_upload(j.a, j.b); break;
+		case J_UPLOAD: do_upload(j.a, j.b, j.dir); break;
 		case J_DELETE: do_delete(j.a); break;
 		case J_CAPS: do_caps(); break;
 		case J_MKDIR: do_mkdir(j.a, j.b); break;
@@ -1110,6 +1191,7 @@ static void thread_main(void *arg)
 		case J_MOVE: do_move(j.a, j.b); break;
 		case J_COPY: do_copy(j.a, j.b); break;
 		case J_DLTO: do_download_to(j.a, j.b, j.c, j.dir); break;
+		case J_OPEN: do_open(j.a, j.b, j.c); break;
 		}
 		lock();
 		C.info.busy = C.nq > 0;
@@ -1121,6 +1203,7 @@ static void thread_main(void *arg)
 /* ------------------------------------------------------------ uso */
 void cloud_init(void)
 {
+	fsx_rmrf(CLOUD_CACHE); // lo abierto la vez anterior
 	LightLock_Init(&C.lock);
 	LightEvent_Init(&C.ev, RESET_ONESHOT);
 	C.info.st = OD_CLIENT_ID[0] ? CLS_OFF : CLS_NOCFG;
@@ -1138,8 +1221,13 @@ void cloud_init(void)
 		free(buf);
 		const cJSON *r = cJSON_GetObjectItemCaseSensitive(j, "refresh"), *nm = cJSON_GetObjectItemCaseSensitive(j, "name"),
 		            *em = cJSON_GetObjectItemCaseSensitive(j, "email");
-		const cJSON *cp = cJSON_GetObjectItemCaseSensitive(j, "caps");
+		const cJSON *cp = cJSON_GetObjectItemCaseSensitive(j, "caps"), *fi = cJSON_GetObjectItemCaseSensitive(j, "folder_id"),
+		            *ki = cJSON_GetObjectItemCaseSensitive(j, "caps_id");
 		C.info.caps = cJSON_IsBool(cp) ? cJSON_IsTrue(cp) : true;
+		if (cJSON_IsString(fi))
+			util_strlcpy(C.folder_id, fi->valuestring, sizeof C.folder_id);
+		if (cJSON_IsString(ki))
+			util_strlcpy(C.caps_id, ki->valuestring, sizeof C.caps_id);
 		cJSON *sh = cJSON_DetachItemFromObjectCaseSensitive(j, "shots");
 		if (sh)
 			C.shots = sh;
@@ -1328,4 +1416,35 @@ void cloud_copy(const CloudItem *it, const char *parent_id)
 void cloud_download_to(const CloudItem *it, const char *sd_dir)
 {
 	push_full(J_DLTO, it->id, it->name, sd_dir, it->dir);
+}
+
+void cloud_upload_replace(const char *sd_path, const char *parent_id)
+{
+	push_full(J_UPLOAD, sd_path, parent_id, NULL, true);
+}
+
+bool cloud_open(const CloudItem *it, const char *sd_dir)
+{
+	lock();
+	bool busy = C.info.opening;
+	if (!busy) {
+		C.info.opening = true;
+		C.open_cancel = false;
+		C.info.open_got = 0;
+		C.info.open_size = it->size;
+		util_strlcpy(C.info.open_name, it->name, sizeof C.info.open_name);
+		bump();
+	}
+	unlock();
+	return !busy && push_full(J_OPEN, it->id, it->name, sd_dir, false);
+}
+
+void cloud_open_cancel(void)
+{
+	C.open_cancel = true;
+}
+
+const char *cloud_app_folder_id(void)
+{
+	return C.folder_id;
 }

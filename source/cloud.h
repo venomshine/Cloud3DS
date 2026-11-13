@@ -15,6 +15,8 @@
 
 enum { CLS_NOCFG, CLS_OFF, CLS_CODE, CLS_ON };
 
+#define CLOUD_CACHE "/3ds/Cloud3DS/nube" /* donde se baja lo que se abre (fotos, textos, música…); se vacía al empezar */
+
 typedef struct {
 	int  st;
 	u32  rev;               /* cambia con cada novedad */
@@ -29,6 +31,13 @@ typedef struct {
 	/* capturas en la nube */
 	bool caps;              /* subir las capturas nuevas */
 	int  caps_queue;        /* capturas nuevas esperando */
+	/* abrir un archivo (se baja entero y la consola lo abre) */
+	bool opening;
+	char open_name[160];
+	u64  open_size, open_got;
+	u32  open_rev;          /* cambia al terminar; open_ok y open_path dicen cómo */
+	bool open_ok;
+	char open_path[700];
 } CloudInfo;
 
 typedef struct {
@@ -67,6 +76,10 @@ void cloud_rename(const CloudItem *it, const char *name);
 void cloud_move(const CloudItem *it, const char *parent_id);  /* cortar y pegar */
 void cloud_copy(const CloudItem *it, const char *parent_id);  /* la copia la hace OneDrive (tarda un poco en verse) */
 void cloud_download_to(const CloudItem *it, const char *sd_dir); /* a esa carpeta de la SD; una carpeta, entera */
+void cloud_upload_replace(const char *sd_path, const char *parent_id); /* sustituye el que se llame igual (guardar) */
+bool cloud_open(const CloudItem *it, const char *sd_dir); /* bajarlo a sd_dir para abrirlo; false si ya hay uno */
+void cloud_open_cancel(void);
+const char *cloud_app_folder_id(void);              /* la carpeta Cloud3DS ("" si aún no se sabe) */
 
 /* capturas en la nube: las nuevas de Luma se suben solas a /Cloud3DS/Capturas */
 void cloud_set_caps(bool on);
