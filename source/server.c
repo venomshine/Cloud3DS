@@ -7,6 +7,7 @@
  */
 #define _GNU_SOURCE
 #include "server.h"
+#include "share.h"
 #include "fsx.h"
 #include "ops.h"
 #include "names.h"
@@ -1495,13 +1496,21 @@ static void pct_encode(Buf *b, const char *s)
 	}
 }
 
+static void send_file(Conn *c, const char *p, const char *who);
 static void h_file(Conn *c)
 {
-	char p[1024], sp[1100];
+	char p[1024];
 	if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p)) {
 		resp_err(c, 400, "bad_path");
 		return;
 	}
+	send_file(c, p, NULL);
+}
+
+// manda un archivo de la SD (con rangos). who: a otra consola (Compartir): se apunta en la actividad
+static void send_file(Conn *c, const char *p, const char *who)
+{
+	char sp[1100];
 	bool dir;
 	u64 size;
 	if (fsx_stat(p, &dir, &size) < 0 || dir) {
@@ -1566,12 +1575,83 @@ static void h_file(Conn *c)
 	}
 	c->ffd = fd;
 	c->f_left = len;
-	if (dl && !partial) {
+	if ((dl || who) && !partial) {
 		state_lock();
-		const char *dn = G.dev[c->dev].name;
+		const char *dn = who ? who : G.dev[c->dev].name;
 		c->xid = xfer_begin(XF_DOWNLOAD, basename_of(p), dn, len);
 		state_unlock();
 	}
+}
+
+/* ---------- Compartir: otra consola vinculada (con su token, no con la sesión de la web) ---------- */
+static void h_share(Conn *c, const char *what, bool post)
+{
+	u32 ip = inet_addr(c->ip);
+	char tok[40] = "", b[1024];
+	qget(c->query, "t", tok, sizeof tok);
+	if (!strcmp(what, "hello")) {
+		share_srv_hello(b, sizeof b);
+		resp(c, 200, "application/json", b + 5, strlen(b + 5), NULL);
+		return;
+	}
+	if (!strcmp(what, "pair") && post) {
+		char from[24] = "", name[64] = "", code[8] = "", t2[40] = "", port[8] = "";
+		qget(c->query, "from", from, sizeof from), qget(c->query, "name", name, sizeof name), qget(c->query, "code", code, sizeof code);
+		qget(c->query, "tok", t2, sizeof t2), qget(c->query, "port", port, sizeof port);
+		int rid = share_srv_pair(from, name, code, t2, ip, atoi(port));
+		if (rid < 0) {
+			resp_err(c, 400, "bad");
+			return;
+		}
+		int n = snprintf(b, sizeof b, "{\"ok\":true,\"rid\":%d}", rid);
+		resp(c, 200, "application/json", b, n, NULL);
+		return;
+	}
+	if (!strcmp(what, "pair_st")) {
+		char r[16] = "", t2[40] = "";
+		qget(c->query, "rid", r, sizeof r);
+		int st = share_srv_pair_st(atoi(r), t2, sizeof t2);
+		int n = snprintf(b, sizeof b, "{\"st\":%d,\"tok\":\"%s\"}", st, st == 1 ? t2 : "");
+		resp(c, 200, "application/json", b, n, NULL);
+		return;
+	}
+	int peer = share_srv_auth(tok, ip);
+	if (peer < 0) {
+		resp_err(c, 401, "auth");
+		return;
+	}
+	char si[16] = "", sr[16] = "";
+	qget(c->query, "i", si, sizeof si), qget(c->query, "rid", sr, sizeof sr);
+	if (!strcmp(what, "catalog")) {
+		char *j = share_srv_catalog(peer);
+		resp(c, 200, "application/json", j ? j : "{}", j ? strlen(j) : 2, NULL);
+		free(j);
+	} else if (!strcmp(what, "icon")) {
+		static u16 px[48 * 48];
+		if (share_srv_icon(peer, atoi(si), px))
+			resp(c, 200, "application/octet-stream", px, sizeof px, NULL);
+		else
+			resp_err(c, 404, "no_icon");
+	} else if (!strcmp(what, "req") && post) {
+		int rid = share_srv_req(peer, atoi(si));
+		if (rid < 0) {
+			resp_err(c, 404, "not_found");
+			return;
+		}
+		int n = snprintf(b, sizeof b, "{\"ok\":true,\"rid\":%d}", rid);
+		resp(c, 200, "application/json", b, n, NULL);
+	} else if (!strcmp(what, "req_st")) {
+		int n = snprintf(b, sizeof b, "{\"st\":%d}", share_srv_req_st(peer, atoi(sr)));
+		resp(c, 200, "application/json", b, n, NULL);
+	} else if (!strcmp(what, "file")) {
+		char path[300], who[48];
+		if (!share_srv_file(peer, atoi(sr), path, sizeof path, who, sizeof who)) {
+			resp_err(c, 403, "not_allowed");
+			return;
+		}
+		send_file(c, path, who);
+	} else
+		resp_err(c, 404, "not_found");
 }
 
 
@@ -2154,6 +2234,10 @@ static void route(Conn *c, const char *body)
 	}
 	if (strcmp(p, "ping.gif") == 0 && get) {
 		h_ping_gif(c);
+		return;
+	}
+	if (strncmp(p, "share/", 6) == 0) { // otra consola (Compartir): con su propio token
+		h_share(c, p + 6, post);
 		return;
 	}
 	if (strcmp(p, "login") == 0) {

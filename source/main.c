@@ -21,6 +21,7 @@
 #include "hash.h"
 #include "music.h"
 #include "mlib.h"
+#include "share.h"
 #include "live.h"
 #include "titles.h"
 #include "remote.h"
@@ -88,7 +89,7 @@ static struct {
 
 enum { QA_CLOUD, QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
 /* las aplicaciones del inicio (ver hm_*) */
-enum { AP_FILES, AP_TITLES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SETTINGS, AP_N };
+enum { AP_FILES, AP_TITLES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SHARE, AP_SETTINGS, AP_N };
 
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
@@ -108,7 +109,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLDELN, DLG_CLOUT, DLG_MLDEL, DLG_UNUPD, DLG_UNDLC, DLG_EXTDEL };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLDELN, DLG_CLOUT, DLG_MLDEL, DLG_SHARE, DLG_UNUPD, DLG_UNDLC, DLG_EXTDEL };
 
 typedef struct {
 	float off, target;
@@ -1661,6 +1662,8 @@ static void dl_top(void)
 static void titles_space_bar(void);
 static bool f_is_titles(void);
 static void ml_top(void);
+static void sh_top(void);
+static u32 ap_col(int i);
 
 static void draw_top(void)
 {
@@ -1732,6 +1735,8 @@ static void draw_top(void)
 		dl_top();
 	else if (U.app == AP_MUSIC)
 		ml_top();
+	else if (U.app == AP_SHARE)
+		sh_top();
 	else if (MU.open)
 		music_top(1);
 	else if (U.tab == TAB_FILES) {
@@ -1779,6 +1784,8 @@ static List *cur_list(void)
 static bool hdr_enter(void);
 static void ml_top(void);    // la app Música: su biblioteca
 static void ml_bottom(void);
+static void sh_bottom(void);
+static void sh_prompts(void);
 static void hm_launch(int i); // (↑ en lo primero de una lista: a los botones de la cabecera)
 static float g_list_bar; // lo que tapa una barra al pie de la lista (la de pegar, por ejemplo): se puede bajar hasta verlo todo
 static void list_update(List *l, int count, float rh)
@@ -3729,7 +3736,6 @@ static const FEnt *f_selected(void)
 }
 
 // SMDH de un .3dsx (nombre, autor e icono), si lo lleva
-static bool smdh_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, u16 *px);
 
 static bool read_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, Texture *icon)
 {
@@ -3738,45 +3744,6 @@ static bool read_3dsx(const char *path, char *title, size_t tn, char *pub, size_
 		return false;
 	tex_from_rgb565(icon, px, 48, 48);
 	return true;
-}
-
-// título, autor e icono (48×48 RGB565) del SMDH de un .3dsx; vale desde cualquier hilo
-static bool smdh_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, u16 *px)
-{
-	char sd[720];
-	snprintf(sd, sizeof sd, "sdmc:%s", path);
-	FILE *f = fopen(sd, "rb");
-	if (!f)
-		return false;
-	u8 h[0x28];
-	bool ok = fread(h, 1, sizeof h, f) == sizeof h && !memcmp(h, "3DSX", 4) && (h[4] | h[5] << 8) > 32;
-	u8 *smdh = NULL;
-	if (ok) {
-		u32 off = h[32] | h[33] << 8 | h[34] << 16 | (u32)h[35] << 24, sz = h[36] | h[37] << 8 | h[38] << 16 | (u32)h[39] << 24;
-		ok = sz >= 0x36C0 && (smdh = malloc(0x36C0)) && !fseek(f, off, SEEK_SET) && fread(smdh, 1, 0x36C0, f) == 0x36C0 &&
-		     !memcmp(smdh, "SMDH", 4);
-	}
-	fclose(f);
-	if (ok) {
-		int l = g_lang == LANG_JA ? 0 : g_lang == LANG_ES ? 5 : 1;
-		const u8 *ti = smdh + 8 + l * 0x200;
-		if (!ti[0] && !ti[1])
-			ti = smdh + 8 + 0x200;
-		u16 tmp[0x81] = {0};
-		for (int i = 0; i < 0x40; i++)
-			tmp[i] = ti[i * 2] | ti[i * 2 + 1] << 8;
-		util_utf16_to_utf8(title, tn, tmp, 0x40);
-		for (int i = 0; i < 0x40; i++)
-			tmp[i] = ti[0x180 + i * 2] | ti[0x180 + i * 2 + 1] << 8;
-		util_utf16_to_utf8(pub, pn, tmp, 0x40);
-		const u16 *ic = (const u16 *)(smdh + 0x24C0);
-		static const u8 tbl[8] = {0x00, 0x01, 0x04, 0x05, 0x10, 0x11, 0x14, 0x15};
-		for (int y = 0; y < 48; y++)
-			for (int x = 0; x < 48; x++)
-				px[y * 48 + x] = ic[((y >> 3) * 6 + (x >> 3)) * 64 + (tbl[x & 7] | tbl[y & 7] << 1)];
-	}
-	free(smdh);
-	return ok;
 }
 
 static bool count_cb(const FsxEntry *e, void *u)
@@ -9270,6 +9237,342 @@ static void qa_card_text(int i, const char **lab, const char **sb)
 
 static const char *dl_dest_dir(const char *url);
 
+// ---- Compartir: las consolas (vinculadas y las que se ven en la red) y lo que ofrece esta. Dentro de una vinculada,
+// sus apps: A la pide. Lo que piden las demás se pregunta con un diálogo, en cualquier aplicación (sh_prompts)
+static struct {
+	int view, level;       // view 0 consolas, 1 mis apps; level 1: las apps de una consola
+	List l[3];
+	SharePeer peers[SHARE_PEERS];
+	int np, order[SHARE_PEERS];
+	ShareItem *items;      // de la consola abierta o las propias
+	int ni, cat_peer;
+	bool loading, failed;
+	Texture tex[SHARE_ITEMS];
+	u32 rev, tex_rev;
+	bool om, om_just;
+	float om_anim;
+	int om_sel, om_i;
+	bool want_ip;
+	int pair_seen;         // (para avisar una vez al terminar de vincular)
+} SH;
+
+static void sh_refresh(void)
+{
+	u32 r = share_rev();
+	if (r == SH.rev && SH.items)
+		return;
+	SH.rev = r;
+	SH.np = share_peers(SH.peers, SHARE_PEERS);
+	int k = 0; // primero las vinculadas, luego las que se ven
+	for (int pass = 0; pass < 2; pass++)
+		for (int i = 0; i < SH.np; i++)
+			if (SH.peers[i].paired == !pass && (SH.peers[i].paired || SH.peers[i].online))
+				SH.order[k++] = i;
+	SH.np = k;
+	if (!SH.items && !(SH.items = malloc(sizeof(ShareItem) * SHARE_ITEMS)))
+		return;
+	if (SH.level == 1)
+		SH.ni = share_catalog(SH.items, SHARE_ITEMS, &SH.cat_peer, &SH.loading, &SH.failed);
+	else if (SH.view == 1)
+		SH.ni = share_mine(SH.items, SHARE_ITEMS), SH.loading = SH.failed = false;
+	else
+		SH.ni = 0;
+	for (int i = 0; i < SHARE_ITEMS; i++) // los iconos, otra vez
+		tex_free(&SH.tex[i]);
+	for (int i = 0; i < SH.ni; i++)
+		if (SH.items[i].has_icon)
+			tex_from_rgb565(&SH.tex[i], SH.items[i].icon, 48, 48);
+}
+
+// lo que preguntan otras consolas: un diálogo (si no hay otro abierto ni nada delicado en marcha)
+static void sh_prompts(void)
+{
+	SharePrompt sp;
+	if (g_dialog.open || guard_on() || !share_prompt(&sp))
+		return;
+	char t[120], m[300], sz[24];
+	U.dlg_arg = sp.rid;
+	if (sp.kind == SP_PAIR) {
+		snprintf(t, sizeof t, _("«%s» quiere vincularse"), sp.who);
+		snprintf(m, sizeof m, _("Comprueba que en su pantalla sale el código %s. Una vez vinculadas, cada una puede ver las apps homebrew de la otra y pedírselas."), sp.code);
+		dialog_open(DLG_SHARE, t, m, _("Vincular"), false);
+	} else {
+		util_fmt_size(sz, sizeof sz, sp.size);
+		snprintf(t, sizeof t, _("«%s» te pide una app"), sp.who);
+		snprintf(m, sizeof m, _("Quiere «%s» (%s). Si aceptas, se le envía por la Wi-Fi."), sp.item, sz);
+		dialog_open(DLG_SHARE, t, m, _("Enviar"), false);
+	}
+}
+
+static void sh_kind_text(const ShareItem *it, char *out, size_t n)
+{
+	char sz[24];
+	util_fmt_size(sz, sizeof sz, it->size);
+	const char *st = it->st == SHR_WAIT ? _("Esperando a que acepte…") : it->st == SHR_DOWNLOADING ? (it->kind == SK_CIA ? _("Recibiendo: al terminar, se instala") : _("Recibiendo: queda en /3ds"))
+	                 : it->st == SHR_REFUSED ? _("No lo aceptó") : it->st == SHR_FAIL ? _("No se pudo pedir") : NULL;
+	if (st)
+		snprintf(out, n, "%s", st);
+	else
+		snprintf(out, n, "%s%s%s · %s%s", it->author, it->author[0] ? " · " : "", it->kind == SK_CIA ? "CIA" : "3DSX", sz,
+		         it->hidden ? _(" · No se comparte") : "");
+}
+
+static void sh_top(void)
+{
+	sh_refresh();
+	float y0 = BODY_Y, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
+	const float X = CARD_X + 16, W = CARD_W - 32;
+	int pp;
+	char code[8];
+	int pst = share_pair_state(&pp, code, sizeof code);
+	if (pst == 1) { // vinculando: el código, a lo grande
+		text_draw_center(_("Vinculando"), TOP_W / 2, y0 + 16, TS_TITLE, T.text);
+		text_draw_center(code, TOP_W / 2, y0 + 44, 1.6f, T.accent);
+		wrap_center(_("Comprueba que la otra consola enseña este mismo código y acepta allí la vinculación."), TOP_W / 2, y0 + 110, W, TS_SUB, 3, T.text2);
+		text_draw_center(_("B Cancelar"), TOP_W / 2, y0 + h - 24, TS_SUB, T.text3);
+		return;
+	}
+	List *l = &SH.l[SH.level ? 2 : SH.view];
+	const ShareItem *it = (SH.level == 1 || SH.view == 1) && l->sel >= 0 && l->sel < SH.ni ? &SH.items[l->sel] : NULL;
+	if (it) { // la app elegida, en grande
+		draw_rrect(X, y0 + 14, 80, 80, 18, T.bg);
+		if (it->has_icon && SH.tex[l->sel].ok)
+			draw_texture(&SH.tex[l->sel], X + 8, y0 + 22, 64, 64, 1);
+		else
+			draw_icon(IC_GEM, X + 40, y0 + 54, 30, T.ok);
+		float tx = X + 96, tw = X + W - tx;
+		text_draw_clip(it->name, tx, y0 + 18, tw, TS_TITLE, T.text);
+		char sub[200];
+		sh_kind_text(it, sub, sizeof sub);
+		text_wrap_lines(sub, tw, TS_SUB, 3, tx, y0 + 20 + text_lineh(TS_TITLE) + 4, T.text2, true);
+		const char *hint = SH.level == 1 ? _("A Pedir esta app") : it->hidden ? _("A Volver a compartir") : _("A Dejar de compartir");
+		text_draw_right(hint, X + W, y0 + h - 10 - text_lineh(TS_SUB), TS_SUB, T.text3);
+		return;
+	}
+	draw_circle(X + 30, y0 + 40, 26, col_alpha(ap_col(AP_SHARE), 0.16f));
+	draw_icon(IC_SEND, X + 30, y0 + 40, 24, ap_col(AP_SHARE));
+	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
+	text_draw_clip(_("Compartir homebrew"), tx, y, tw, TS_TITLE, T.text);
+	y += text_lineh(TS_TITLE) + 4;
+	char me[96];
+	snprintf(me, sizeof me, _("Esta consola: %s"), share_my_name());
+	text_draw_clip(me, tx, y, tw, TS_SUB, T.text2);
+	y = fmaxf(y + text_lineh(TS_SUB), y0 + 76) + 8;
+	draw_rect(X, y, W, 1, T.divider);
+	y += 10;
+	y += text_wrap_lines(_("Las dos consolas, en la misma Wi-Fi y con Cloud3DS abierto. Elige la otra para vincularlas (una sola vez); luego verás sus apps y podrás pedírselas."),
+	                     W, TS_SUB, 4, X, y, T.text2, true) *
+	         text_lineh(TS_SUB) + 6;
+	text_wrap_lines(_("Solo se comparte homebrew: los .3dsx de /3ds y los CIA sin cifrar. Nunca juegos de cartucho, de eShop ni del sistema."), W, TS_SUB, 3, X, y,
+	                T.text3, true);
+}
+
+static void sh_bottom(void)
+{
+	sh_refresh();
+	int pp;
+	char code[8];
+	int pst = share_pair_state(&pp, code, sizeof code);
+	if (pst != SH.pair_seen) { // terminó de vincular: se avisa y, si salió bien, a sus apps
+		if (SH.pair_seen == 1 && pst == 2) {
+			toast_icon(_("Vinculadas"), IC_LINK, T.ok);
+			SH.level = 1, SH.l[2].sel = 0;
+			share_open_catalog(pp);
+		} else if (SH.pair_seen == 1 && pst == 3)
+			toast_icon(_("La otra consola no aceptó la vinculación"), IC_CLOSE, T.danger);
+		else if (SH.pair_seen == 1 && pst == 4)
+			toast_icon(_("No se pudo conectar con esa consola"), IC_CLOSE, T.danger);
+		SH.pair_seen = pst;
+	}
+	bool sheet = SH.om || g_dialog.open || pst == 1;
+	u32 kd = g_kdown, kr = g_krepeat;
+	Touch tc = g_touch;
+	if (pst == 1 && (g_kdown & KEY_B))
+		share_pair_cancel();
+	if (sheet) {
+		g_kdown = g_krepeat = 0;
+		memset(&g_touch, 0, sizeof g_touch);
+	}
+	const SharePeer *cp = NULL;
+	for (int i = 0; i < SH.np; i++)
+		if (SH.order[i] == SH.cat_peer)
+			cp = &SH.peers[SH.order[i]];
+	// cabecera
+	if (SH.level == 0) {
+		tab_header_w("", false, 0);
+		const char *opts[2] = {_("Consolas"), _("Mis apps")};
+		int r = segmented(40, 5, 150, 22, opts, 2, SH.view, false);
+		if (hdr_hit(40, 5, 75, 22))
+			r = 0;
+		if (hdr_hit(115, 5, 75, 22))
+			r = 1;
+		if (g_kdown & (KEY_L | KEY_R | KEY_ZL | KEY_ZR))
+			r = !SH.view;
+		if (r >= 0 && r != SH.view)
+			SH.view = r, SH.rev = 0;
+		if (SH.view == 0) { // buscar otra vez y añadir por la IP
+			float bx[2] = {BOT_W - 56, BOT_W - 24};
+			static const IconId bi[2] = {IC_REFRESH, IC_PLUS};
+			for (int k = 0; k < 2; k++) {
+				draw_circle(bx[k], 16, 12, k ? T.accent : touch_in(bx[k] - 14, 2, 28, 28) ? T.surface2 : T.surface);
+				draw_icon(bi[k], bx[k], 16, 13, k ? 0xFFFFFFFF : T.text2);
+				if (hdr_hit(bx[k] - 13, 3, 26, 26)) {
+					if (k)
+						SH.want_ip = true;
+					else {
+						share_discover();
+						toast_icon(_("Buscando consolas en la Wi-Fi…"), IC_REFRESH, T.accent);
+					}
+				}
+			}
+			if (g_kdown & KEY_X)
+				SH.want_ip = true;
+		}
+		if ((g_kdown & KEY_B) && !g_dialog.open) {
+			hm_show();
+			return;
+		}
+	} else {
+		tab_header_w(cp ? cp->name : "", true, 220);
+		float bx = BOT_W - 24;
+		draw_circle(bx, 16, 12, touch_in(bx - 14, 2, 28, 28) ? T.surface2 : T.surface);
+		draw_icon(IC_REFRESH, bx, 16, 13, T.text2);
+		if (hdr_hit(bx - 13, 3, 26, 26))
+			share_open_catalog(SH.cat_peer);
+		if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
+			SH.level = 0, SH.rev = 0;
+	}
+	sh_refresh();
+	bool apps = SH.level == 1 || SH.view == 1;
+	List *l = &SH.l[SH.level ? 2 : SH.view];
+	int cnt = apps ? SH.ni : SH.np;
+	const float RH = 44;
+	list_update(l, cnt, RH);
+	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+	if (!cnt) {
+		if (SH.level == 1)
+			empty_state(IC_SEND, SH.loading ? _("Pidiendo su lista…") : SH.failed ? _("No contesta") : _("No ofrece nada"),
+			            SH.loading ? _("Un momento.") : SH.failed ? _("Comprueba que la otra consola tiene Cloud3DS abierto y está en la misma Wi-Fi.") : _("No tiene apps homebrew para compartir (o las ha ocultado)."));
+		else if (SH.view == 1)
+			empty_state(IC_GEM, _("Nada que compartir"), _("Aquí salen los .3dsx de /3ds y los CIA homebrew de la SD."));
+		else
+			empty_state(IC_DEVICES, _("Buscando consolas…"), _("Abre Cloud3DS en la otra consola, en la misma Wi-Fi. Si no aparece, añádela por su IP con «+» (la ves en Conectar)."));
+	}
+	for (int i = 0; i < cnt; i++) {
+		float y = VIEW_Y + i * RH - l->off;
+		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
+			continue;
+		bool was = l->sel == i;
+		bool t = row(l, i, y, RH);
+		if (!U.buttons && l->sel == i)
+			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
+		char t1[96], t2[200];
+		if (apps) {
+			const ShareItem *it = &SH.items[i];
+			draw_rrect(12, y + 5, 34, 34, 9, T.bg);
+			if (it->has_icon && SH.tex[i].ok)
+				draw_texture(&SH.tex[i], 13, y + 6, 32, 32, it->hidden ? 0.4f : 1);
+			else
+				draw_icon(IC_GEM, 29, y + RH / 2, 16, T.ok);
+			util_strlcpy(t1, it->name, sizeof t1);
+			sh_kind_text(it, t2, sizeof t2);
+		} else {
+			const SharePeer *p = &SH.peers[SH.order[i]];
+			draw_circle(29, y + RH / 2, 16, col_alpha(p->paired ? T.accent : T.text3, 0.16f));
+			draw_icon(IC_DEVICES, 29, y + RH / 2, 16, p->paired ? T.accent : T.text2);
+			if (p->online)
+				draw_circle(41, y + RH / 2 + 10, 4, T.ok);
+			util_strlcpy(t1, p->name[0] ? p->name : "3DS", sizeof t1);
+			if (p->paired)
+				snprintf(t2, sizeof t2, "%s%s", p->online ? _("Vinculada · en la red") : _("Vinculada · no se ve ahora"), p->trusted ? _(" · De confianza") : "");
+			else
+				snprintf(t2, sizeof t2, "%s", _("En la red · A para vincular"));
+		}
+		g_clip_ell = l->sel != i;
+		text_draw_clip(t1, 54, y + 6, BOT_W - 94, TS_BODY, T.text);
+		text_draw_clip(t2, 54, y + 24, BOT_W - 94, TS_SUB, T.text3);
+		g_clip_ell = false;
+		if (l->sel == i) {
+			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
+			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
+		}
+		bool open = (t && was) || activate(l, i);
+		if (t && was && g_touch.px > BOT_W - 44)
+			SH.om = SH.om_just = true, SH.om_sel = 0, SH.om_i = i;
+		else if (open) {
+			if (SH.level == 1) {
+				share_request(SH.cat_peer, SH.items[i].id);
+				toast_icon(_("Pedida: la otra consola tiene que aceptarla"), IC_SEND, T.accent);
+			} else if (SH.view == 1)
+				share_hide(SH.items[i].path, !SH.items[i].hidden);
+			else {
+				const SharePeer *p = &SH.peers[SH.order[i]];
+				if (p->paired) {
+					SH.level = 1, SH.l[2].sel = 0, SH.l[2].off = SH.l[2].target = 0;
+					share_open_catalog(SH.order[i]);
+				} else {
+					char c[8];
+					share_pair(SH.order[i], c, sizeof c);
+					SH.pair_seen = 1;
+				}
+			}
+		}
+	}
+	gfx_clip_off();
+	if ((g_kdown & KEY_Y) && cnt && !SH.om)
+		SH.om = SH.om_just = true, SH.om_sel = 0, SH.om_i = l->sel;
+	if (sheet)
+		g_kdown = kd, g_krepeat = kr, g_touch = tc;
+	if (pst == 1) // vinculando: tapa la lista (el código está arriba)
+		empty_state(IC_LINK, _("Vinculando…"), _("Acepta en la otra consola. B para cancelar."));
+	// opciones: de una consola o de una app propia
+	IconId ic[4];
+	const char *lab[4];
+	u32 col[4];
+	int act[4], n = 0;
+	char title[96] = "";
+	const SharePeer *op = !apps && SH.om_i >= 0 && SH.om_i < SH.np ? &SH.peers[SH.order[SH.om_i]] : NULL;
+	if (op) {
+		util_strlcpy(title, op->name, sizeof title);
+		if (op->paired) {
+			ic[n] = IC_GEM, lab[n] = _("Ver sus apps"), col[n] = T.text, act[n++] = 0;
+			ic[n] = op->trusted ? IC_CLOSE : IC_SHIELD, lab[n] = op->trusted ? _("Quitar de confianza") : _("De confianza: enviarle sin preguntar"), col[n] = T.text, act[n++] = 1;
+			ic[n] = IC_LOGOUT, lab[n] = _("Desvincular"), col[n] = T.danger, act[n++] = 2;
+		} else
+			ic[n] = IC_LINK, lab[n] = _("Vincular"), col[n] = T.accent, act[n++] = 3;
+	} else if (apps && SH.om_i >= 0 && SH.om_i < SH.ni) {
+		const ShareItem *it = &SH.items[SH.om_i];
+		util_strlcpy(title, it->name, sizeof title);
+		if (SH.level == 1)
+			ic[n] = IC_DOWNLOAD, lab[n] = _("Pedir esta app"), col[n] = T.ok, act[n++] = 4;
+		else
+			ic[n] = it->hidden ? IC_CHECK : IC_CLOSE, lab[n] = it->hidden ? _("Volver a compartir") : _("No compartir esta app"), col[n] = T.text, act[n++] = 5;
+	}
+	if (!n)
+		SH.om = false;
+	int r = sheet_list(&SH.om, &SH.om_just, &SH.om_anim, &SH.om_sel, title, ic, lab, col, n);
+	if (r >= 0) {
+		int a = act[r], pi = op ? SH.order[SH.om_i] : -1;
+		if (a == 0)
+			SH.level = 1, SH.l[2].sel = 0, share_open_catalog(pi);
+		else if (a == 1)
+			share_set_trusted(pi, !op->trusted);
+		else if (a == 2)
+			share_unpair(pi);
+		else if (a == 3) {
+			char c[8];
+			share_pair(pi, c, sizeof c);
+			SH.pair_seen = 1;
+		} else if (a == 4) {
+			share_request(SH.cat_peer, SH.items[SH.om_i].id);
+			toast_icon(_("Pedida: la otra consola tiene que aceptarla"), IC_SEND, T.accent);
+		} else if (a == 5)
+			share_hide(SH.items[SH.om_i].path, !SH.items[SH.om_i].hidden);
+	}
+}
+
 /* ------------------------------------------------------------ inicio por aplicaciones
  * La pantalla de inicio: cada función de Cloud3DS es una aplicación con su icono. Arriba, la elegida en grande con
  * lo más útil de ella (espacio libre, la cuenta de la nube, el QR para conectar…); abajo, la cuadrícula (dos tamaños,
@@ -9286,10 +9589,10 @@ static struct {
 	float drag_dx;
 } HM = {.open = true};
 
-static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_GEAR};
+static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_SEND, IC_GEAR};
 static u32 ap_col(int i)
 {
-	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x9AA6BA};
+	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x21C7A8, 0x9AA6BA};
 	return col_hex(hex[i]);
 }
 static const char *ap_name(int i)
@@ -9302,6 +9605,7 @@ static const char *ap_name(int i)
 	case AP_CLOUD: return _("Nube");
 	case AP_WEB: return _("Navegador");
 	case AP_MUSIC: return _("Música");
+	case AP_SHARE: return _("Compartir");
 	default: return _("Ajustes");
 	}
 }
@@ -9317,6 +9621,7 @@ static const char *ap_desc(int i)
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
 	case AP_MUSIC: return _("Toda la música de la SD, por canciones, artistas y álbumes. Sigue sonando en segundo plano.");
+	case AP_SHARE: return _("Pasa aplicaciones homebrew a otra consola en la misma Wi-Fi: vincúlalas una vez, mira sus apps y pídelas.");
 	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
 	}
 }
@@ -9345,7 +9650,7 @@ static void hm_save(void)
 }
 
 static bool hm_is_open(void) { return HM.open && !U.ins_pend; }
-static int hm_cols(void) { return HM.small ? 6 : 4; }
+static int hm_cols(void) { return HM.small ? 6 : 5; }
 static int hm_rows(void) { return HM.small ? 3 : 2; }
 static int hm_per_page(void) { return hm_cols() * hm_rows(); }
 static int hm_pages(void) { return (AP_N + hm_per_page() - 1) / hm_per_page(); }
@@ -9371,6 +9676,9 @@ static void hm_launch(int i)
 	case AP_WEB: U.want_web = true; return;
 	case AP_MUSIC:
 		mlib_init(); // (la biblioteca: busca lo nuevo en segundo plano)
+		break;
+	case AP_SHARE:
+		share_discover();
 		break;
 	default: break;
 	}
@@ -9402,7 +9710,7 @@ static void hm_launch(int i)
 		util_strlcpy(U.app_root, "@titles", sizeof U.app_root);
 		return;
 	}
-	if (i == AP_MUSIC) // su biblioteca (ml_bottom)
+	if (i == AP_MUSIC || i == AP_SHARE) // su pantalla (ml_bottom, sh_bottom)
 		return;
 	if (F.path[0] == '@' && !F.trash) // (Archivos: donde se estaba, salvo en Títulos)
 		f_load("/");
@@ -9735,6 +10043,8 @@ static void draw_bottom(void)
 		vw_bottom();
 	} else if (U.app == AP_MUSIC)
 		ml_bottom();
+	else if (U.app == AP_SHARE)
+		sh_bottom();
 	else if (U.tab == TAB_FILES) {
 		tab_files();
 		f_pick_bar();
@@ -9796,6 +10106,10 @@ static void draw_bottom(void)
 // ------------------------------------------------------------ lógica
 static void handle_dialog(int ctx, bool ok)
 {
+	if (ctx == DLG_SHARE) { // otra consola: vincularse o que le envíe una app (también al decir que no)
+		share_answer(U.dlg_arg, ok);
+		return;
+	}
 	if (!ok)
 		return;
 	if (ctx == DLG_TXTDISCARD) {
@@ -10427,6 +10741,17 @@ static void update(void)
 		}
 		return;
 	}
+	if (SH.want_ip) { // Compartir: añadir una consola por su IP
+		SH.want_ip = false;
+		char ip[32];
+		if (kb_input(_("IP de la otra consola (la ves en su Conectar)"), "192.168.", ip, sizeof ip, false, false) && ip[0]) {
+			if (share_add_ip(ip))
+				toast_icon(_("Preguntando a esa IP…"), IC_DEVICES, T.accent);
+			else
+				toast_icon(_("Esa IP no es válida"), IC_CLOSE, T.danger);
+		}
+		return;
+	}
 	if (CLU.want_ren || CLU.want_mkdir) { // la nube: cambiar el nombre o carpeta nueva
 		int i = CLU.want_ren - 1;
 		bool mk = CLU.want_mkdir;
@@ -10578,6 +10903,7 @@ int main(int argc, char **argv)
 	dl_init(); // después de upd_init, que prepara curl
 	cloud_init(); // usa el servicio HTTP que arranca dl_init
 	ins_init();
+	share_init(); // (contesta a otras consolas aunque no se abra Compartir)
 	if (G.upd_auto)
 		upd_check();
 	U.splash = 0;
@@ -10628,6 +10954,7 @@ int main(int argc, char **argv)
 		if (U.upd.st == UPD_AVAILABLE)
 			U.upd_seen = U.upd.rev;
 		lid_and_sleep();
+		sh_prompts();
 		update();
 
 		gfx_frame_begin();
@@ -10652,6 +10979,7 @@ int main(int argc, char **argv)
 	cloud_exit();
 	music_exit();
 	mlib_exit();
+	share_exit();
 	dl_exit();
 	ops_exit();
 	th_exit();

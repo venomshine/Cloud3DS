@@ -544,3 +544,42 @@ int extdata_delete(const TitleInfo *t)
 	util_log("borrar datos extra %016llX (%08lX): %08lX", (unsigned long long)t->tid, (unsigned long)id, (unsigned long)r);
 	return R_SUCCEEDED(r) ? 0 : -2;
 }
+
+// título, autor e icono (48×48 RGB565) del SMDH de un .3dsx; vale desde cualquier hilo
+bool smdh_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, u16 *px)
+{
+	char sd[720];
+	snprintf(sd, sizeof sd, "sdmc:%s", path);
+	FILE *f = fopen(sd, "rb");
+	if (!f)
+		return false;
+	u8 h[0x28];
+	bool ok = fread(h, 1, sizeof h, f) == sizeof h && !memcmp(h, "3DSX", 4) && (h[4] | h[5] << 8) > 32;
+	u8 *smdh = NULL;
+	if (ok) {
+		u32 off = h[32] | h[33] << 8 | h[34] << 16 | (u32)h[35] << 24, sz = h[36] | h[37] << 8 | h[38] << 16 | (u32)h[39] << 24;
+		ok = sz >= 0x36C0 && (smdh = malloc(0x36C0)) && !fseek(f, off, SEEK_SET) && fread(smdh, 1, 0x36C0, f) == 0x36C0 &&
+		     !memcmp(smdh, "SMDH", 4);
+	}
+	fclose(f);
+	if (ok) {
+		int l = g_lang == LANG_JA ? 0 : g_lang == LANG_ES ? 5 : 1;
+		const u8 *ti = smdh + 8 + l * 0x200;
+		if (!ti[0] && !ti[1])
+			ti = smdh + 8 + 0x200;
+		u16 tmp[0x81] = {0};
+		for (int i = 0; i < 0x40; i++)
+			tmp[i] = ti[i * 2] | ti[i * 2 + 1] << 8;
+		util_utf16_to_utf8(title, tn, tmp, 0x40);
+		for (int i = 0; i < 0x40; i++)
+			tmp[i] = ti[0x180 + i * 2] | ti[0x180 + i * 2 + 1] << 8;
+		util_utf16_to_utf8(pub, pn, tmp, 0x40);
+		const u16 *ic = (const u16 *)(smdh + 0x24C0);
+		static const u8 tbl[8] = {0x00, 0x01, 0x04, 0x05, 0x10, 0x11, 0x14, 0x15};
+		for (int y = 0; y < 48; y++)
+			for (int x = 0; x < 48; x++)
+				px[y * 48 + x] = ic[((y >> 3) * 6 + (x >> 3)) * 64 + (tbl[x & 7] | tbl[y & 7] << 1)];
+	}
+	free(smdh);
+	return ok;
+}

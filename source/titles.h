@@ -48,3 +48,6 @@ int  title_uninstall_part(u64 tid, int part);
 s64  extdata_size(const TitleInfo *t);
 int  extdata_backup(const TitleInfo *t, char *out, size_t n);
 int  extdata_delete(const TitleInfo *t);
+
+/* título, autor e icono (48×48 RGB565) del SMDH de un .3dsx; vale desde cualquier hilo */
+bool smdh_3dsx(const char *path, char *title, size_t tn, char *pub, size_t pn, u16 *px);

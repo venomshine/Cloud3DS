@@ -3100,4 +3100,172 @@ TR = {
     '%d canciones a la papelera':
         ('%d songs moved to the trash',
          '%d曲をゴミ箱へ移動しました'),
+    '«%s» quiere vincularse':
+        ('"%s" wants to pair',
+         '「%s」がペアリングを求めています'),
+    'Comprueba que en su pantalla sale el código %s. Una vez vinculadas, cada una puede ver las apps homebrew de la otra y pedírselas.':
+        ("Check that its screen shows the code %s. Once paired, each console can see the other's homebrew apps and request them.",
+         '相手の画面にコード %s が表示されているか確認してください。ペアリングすると、お互いのHomebrewアプリを見てリクエストできます。'),
+    'Vincular':
+        ('Pair',
+         'ペアリング'),
+    '«%s» te pide una app':
+        ('"%s" is requesting an app',
+         '「%s」がアプリをリクエストしています'),
+    'Quiere «%s» (%s). Si aceptas, se le envía por la Wi-Fi.':
+        ('It wants "%s" (%s). If you accept, it is sent over Wi-Fi.',
+         '「%s」(%s)を求めています。承認するとWi-Fiで送信されます。'),
+    'Enviar':
+        ('Send',
+         '送信'),
+    'Esperando a que acepte…':
+        ('Waiting for it to accept…',
+         '承認を待っています…'),
+    'Recibiendo: al terminar, se instala':
+        ("Receiving: it's installed when done",
+         '受信中:完了後にインストールします'),
+    'Recibiendo: queda en /3ds':
+        ('Receiving: saved in /3ds',
+         '受信中:/3dsに保存されます'),
+    'No lo aceptó':
+        ("It wasn't accepted",
+         '承認されませんでした'),
+    'No se pudo pedir':
+        ("Couldn't request it",
+         'リクエストできませんでした'),
+    ' · No se comparte':
+        (' · Not shared',
+         ' · 共有しない'),
+    'Vinculando':
+        ('Pairing',
+         'ペアリング中'),
+    'Comprueba que la otra consola enseña este mismo código y acepta allí la vinculación.':
+        ('Check that the other console shows this same code and accept the pairing there.',
+         '相手の本体に同じコードが表示されているか確認し、そちらで承認してください。'),
+    'B Cancelar':
+        ('B Cancel',
+         'B キャンセル'),
+    'A Pedir esta app':
+        ('A Request this app',
+         'A このアプリをリクエスト'),
+    'A Volver a compartir':
+        ('A Share again',
+         'A 再び共有する'),
+    'A Dejar de compartir':
+        ('A Stop sharing',
+         'A 共有をやめる'),
+    'Compartir homebrew':
+        ('Share homebrew',
+         'Homebrewを共有'),
+    'Esta consola: %s':
+        ('This console: %s',
+         'この本体:%s'),
+    'Las dos consolas, en la misma Wi-Fi y con Cloud3DS abierto. Elige la otra para vincularlas (una sola vez); luego verás sus apps y podrás pedírselas.':
+        ("Both consoles on the same Wi-Fi with Cloud3DS open. Choose the other one to pair them (only once); then you'll see its apps and can request them.",
+         '両方の本体を同じWi-Fiにつなぎ、Cloud3DSを開いてください。相手を選んでペアリングすると(1回だけ)、相手のアプリを見てリクエストできます。'),
+    'Solo se comparte homebrew: los .3dsx de /3ds y los CIA sin cifrar. Nunca juegos de cartucho, de eShop ni del sistema.':
+        ('Only homebrew is shared: .3dsx files in /3ds and unencrypted CIA files. Never cartridge, eShop or system titles.',
+         '共有できるのはHomebrewだけです(/3dsの.3dsxと暗号化されていないCIA)。カートリッジ・eShop・システムのタイトルは共有しません。'),
+    'Vinculadas':
+        ('Paired',
+         'ペアリングしました'),
+    'La otra consola no aceptó la vinculación':
+        ("The other console didn't accept the pairing",
+         '相手の本体がペアリングを承認しませんでした'),
+    'No se pudo conectar con esa consola':
+        ("Couldn't connect to that console",
+         'その本体に接続できませんでした'),
+    'Consolas':
+        ('Consoles',
+         '本体'),
+    'Mis apps':
+        ('My apps',
+         '自分のアプリ'),
+    'Buscando consolas en la Wi-Fi…':
+        ('Looking for consoles on the Wi-Fi…',
+         'Wi-Fi上の本体を検索中…'),
+    'Pidiendo su lista…':
+        ('Requesting its list…',
+         'リストを取得中…'),
+    'No contesta':
+        ('No answer',
+         '応答がありません'),
+    'No ofrece nada':
+        ('Nothing offered',
+         '共有しているものはありません'),
+    'Un momento.':
+        ('One moment.',
+         '少々お待ちください。'),
+    'Comprueba que la otra consola tiene Cloud3DS abierto y está en la misma Wi-Fi.':
+        ('Check that the other console has Cloud3DS open and is on the same Wi-Fi.',
+         '相手の本体でCloud3DSが開いていて、同じWi-Fiにつながっているか確認してください。'),
+    'No tiene apps homebrew para compartir (o las ha ocultado).':
+        ('It has no homebrew apps to share (or has hidden them).',
+         '共有できるHomebrewアプリがありません(または非表示にしています)。'),
+    'Nada que compartir':
+        ('Nothing to share',
+         '共有するものがありません'),
+    'Aquí salen los .3dsx de /3ds y los CIA homebrew de la SD.':
+        ('Here you see the .3dsx files in /3ds and the homebrew CIA files on the SD card.',
+         '/3dsの.3dsxとSDカードのHomebrew CIAがここに表示されます。'),
+    'Buscando consolas…':
+        ('Looking for consoles…',
+         '本体を検索中…'),
+    'Abre Cloud3DS en la otra consola, en la misma Wi-Fi. Si no aparece, añádela por su IP con «+» (la ves en Conectar).':
+        ('Open Cloud3DS on the other console, on the same Wi-Fi. If it doesn\'t show up, add it by its IP with "+" (you\'ll find it in Connect).',
+         '同じWi-Fiにある相手の本体でCloud3DSを開いてください。表示されない場合は「+」でIPを入力して追加できます(IPは「接続」で確認できます)。'),
+    'Vinculada · en la red':
+        ('Paired · on the network',
+         'ペアリング済み · ネットワーク上'),
+    'Vinculada · no se ve ahora':
+        ('Paired · not visible now',
+         'ペアリング済み · 現在は見えません'),
+    ' · De confianza':
+        (' · Trusted',
+         ' · 信頼済み'),
+    'En la red · A para vincular':
+        ('On the network · A to pair',
+         'ネットワーク上 · Aでペアリング'),
+    'Pedida: la otra consola tiene que aceptarla':
+        ('Requested: the other console has to accept it',
+         'リクエストしました。相手の本体で承認が必要です'),
+    'Vinculando…':
+        ('Pairing…',
+         'ペアリング中…'),
+    'Acepta en la otra consola. B para cancelar.':
+        ('Accept on the other console. B to cancel.',
+         '相手の本体で承認してください。Bでキャンセル。'),
+    'Ver sus apps':
+        ('See its apps',
+         'アプリを見る'),
+    'Quitar de confianza':
+        ('Remove from trusted',
+         '信頼を解除'),
+    'De confianza: enviarle sin preguntar':
+        ('Trusted: send to it without asking',
+         '信頼する:確認せずに送信'),
+    'Pedir esta app':
+        ('Request this app',
+         'このアプリをリクエスト'),
+    'Volver a compartir':
+        ('Share again',
+         '再び共有する'),
+    'No compartir esta app':
+        ("Don't share this app",
+         'このアプリを共有しない'),
+    'Compartir':
+        ('Share',
+         '共有'),
+    'Pasa aplicaciones homebrew a otra consola en la misma Wi-Fi: vincúlalas una vez, mira sus apps y pídelas.':
+        ('Transfer homebrew apps to another console on the same Wi-Fi: pair them once, browse its apps and request them.',
+         '同じWi-Fiの別の本体にHomebrewアプリを送れます。一度ペアリングすれば、相手のアプリを見てリクエストできます。'),
+    'IP de la otra consola (la ves en su Conectar)':
+        ("The other console's IP (shown in its Connect)",
+         '相手の本体のIP(「接続」に表示されます)'),
+    'Preguntando a esa IP…':
+        ('Asking that IP…',
+         'そのIPに問い合わせ中…'),
+    'Esa IP no es válida':
+        ("That IP isn't valid",
+         'そのIPは無効です'),
 }
