@@ -5680,8 +5680,11 @@ static void tt_draw(void)
 		u64 sz;
 		if (fsx_stat(gd, &d, &sz) < 0)
 			toast_icon(_("Este juego no tiene copias de seguridad"), IC_INFO, T.text2);
-		else
+		else { // atrás (B o la flecha) vuelve a la lista de títulos, no sube por la SD
 			f_load(gd);
+			util_strlcpy(F.ret_from, F.path, sizeof F.ret_from);
+			util_strlcpy(F.ret_to, "@titles", sizeof F.ret_to);
+		}
 	} else {
 		char msg[300], sz[24];
 		util_fmt_size(sz, sizeof sz, t->size + t->upd_size + t->dlc_size);
