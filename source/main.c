@@ -4872,7 +4872,7 @@ static void ms_copy_move(int mode)
 		}
 	FP.mode = mode;
 	ms_end();
-	toast_icon(_("Ve a la carpeta de destino y pulsa X"), IC_FOLDER, T.accent);
+	toast_icon(_("En el portapapeles: ve a otra carpeta y pulsa X para pegar"), IC_DUP, T.accent);
 }
 
 static void ms_install(void)
@@ -5011,9 +5011,9 @@ static void ma_draw(void)
 	u32 col[6];
 	bool lock = ms_locked();
 	if (MS.n) {
-		acts[n] = FA_COPY, ic[n] = IC_PLUS, lab[n] = _("Copiar a…"), col[n++] = T.text;
+		acts[n] = FA_COPY, ic[n] = IC_DUP, lab[n] = _("Copiar"), col[n++] = T.text;
 		if (!lock)
-			acts[n] = FA_MOVE, ic[n] = IC_FOLDER, lab[n] = _("Mover a…"), col[n++] = T.text;
+			acts[n] = FA_MOVE, ic[n] = IC_FOLDER, lab[n] = _("Cortar"), col[n++] = T.text;
 		acts[n] = FA_COLORS, ic[n] = IC_STAR, lab[n] = _("Destacar"), col[n++] = T.text;
 		if (!lock)
 			acts[n] = FA_DELETE, ic[n] = IC_TRASH, lab[n] = _("Eliminar"), col[n++] = T.danger;
@@ -6231,8 +6231,8 @@ static void tab_files(void)
 			const char *t;
 			int act;
 			bool on;
-		} B[5] = {{IC_PLUS, _("Copiar"), FA_COPY, any},
-		          {IC_FOLDER, _("Mover"), FA_MOVE, any && !ms_locked()},
+		} B[5] = {{IC_DUP, _("Copiar"), FA_COPY, any},
+		          {IC_FOLDER, _("Cortar"), FA_MOVE, any && !ms_locked()},
 		          {IC_STAR, _("Destacar"), FA_COLORS, any},
 		          {IC_TRASH, _("Borrar"), FA_DELETE, any && !ms_locked()},
 		          {IC_DOWNLOAD, _("Instalar"), FA_INSTALL, cia}};
@@ -6321,8 +6321,8 @@ static const char *fa_name(int a)
 	switch (a) {
 	case FA_INSTALL: return _("Instalar");
 	case FA_RENAME: return _("Renombrar");
-	case FA_MOVE: return _("Mover a…");
-	case FA_COPY: return _("Copiar a…");
+	case FA_MOVE: return _("Cortar");
+	case FA_COPY: return _("Copiar");
 	case FA_DELETE: return _("Eliminar");
 	case FA_ASTEXT: return _("Abrir como texto");
 	case FA_TYPE: return _("Cambiar tipo");
@@ -6336,7 +6336,7 @@ static const char *fa_name(int a)
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[12] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_PLUS, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD, IC_ARCHIVE, IC_CLOUD};
+	static const IconId IC[12] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_DUP, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD, IC_ARCHIVE, IC_CLOUD};
 	return IC[a];
 }
 
@@ -6557,7 +6557,7 @@ static void fa_run(int a)
 		util_strlcpy(FP.src, full, sizeof FP.src);
 		util_strlcpy(FP.name, e->name, sizeof FP.name);
 		FP.src_dir = e->dir;
-		toast_icon(_("Ve a la carpeta de destino y pulsa X"), IC_FOLDER, T.accent);
+		toast_icon(_("En el portapapeles: ve a otra carpeta y pulsa X para pegar"), IC_DUP, T.accent);
 	}
 }
 
@@ -6676,7 +6676,7 @@ static void f_menu(void)
 			draw_rrect_outline(px + 4, py, pw - 8, PH, 12, 1.5f, T.accent);
 		draw_circle(icx, icy, 17, del ? col_alpha(T.danger, hl ? 0.3f : 0.16f) : hl ? T.divider : T.surface2);
 		draw_icon(fa_icon(act), icx, icy, 15, del ? T.danger : T.text2);
-		const char *pl = act == FA_MOVE ? _("Mover") : act == FA_COPY ? _("Copiar") : fa_name(act);
+		const char *pl = act == FA_MOVE ? _("Cortar") : act == FA_COPY ? _("Copiar") : fa_name(act);
 		text_draw_center_clip(pl, icx, py + 39, pw - 6, 0.38f, del ? T.danger : T.text);
 		if (tap(px, py, pw, PH))
 			run = act;
@@ -6774,10 +6774,14 @@ static void f_pick_bar(void)
 	draw_rrect(10, y + 2, w, 30, 15, T.shadow);
 	draw_rrect(10, y, w, 30, 15, T.accent);
 	char t[96];
-	snprintf(t, sizeof t, "%s %s", GLYPH_X, FP.mode == FA_MOVE ? _("Mover aquí") : _("Copiar aquí"));
+	int cn = FP.n > 1 ? FP.n : 1;
+	if (cn > 1)
+		snprintf(t, sizeof t, "%s %s (%d)", GLYPH_X, _("Pegar aquí"), cn);
+	else
+		snprintf(t, sizeof t, "%s %s", GLYPH_X, _("Pegar aquí"));
 	text_draw_center(t, BOT_W / 2 - 30, y + (30 - text_lineh(0.46f)) / 2, 0.46f, 0xFFFFFFFF);
 	draw_rect(BOT_W - 70, y + 6, 1, 18, col_alpha(0xFFFFFFFF, 0.4f));
-	text_draw_center(_("Cancelar"), BOT_W - 42, y + (30 - text_lineh(TS_SUB)) / 2, TS_SUB, 0xFFFFFFFF);
+	text_draw_center(_("Vaciar"), BOT_W - 42, y + (30 - text_lineh(TS_SUB)) / 2, TS_SUB, 0xFFFFFFFF);
 	bool cancel = tap(BOT_W - 70, y, 60, 30);
 	bool go = (g_kdown & KEY_X) || (!cancel && tap(10, y, w - 60, 30));
 	if (cancel) {
@@ -6839,8 +6843,8 @@ static void f_pick_bar(void)
 		char msg[64];
 		snprintf(msg, sizeof msg, FP.mode == FA_MOVE ? _("Movidos: %d") : _("Copiando %d elementos…"), done);
 		toast_icon(msg, IC_FOLDER, FP.mode == FA_MOVE ? T.accent2 : T.accent);
-		FP.mode = 0;
-		FP.n = 0;
+		if (FP.mode == FA_MOVE) // lo cortado ya no está donde estaba; lo copiado se puede volver a pegar
+			FP.mode = 0, FP.n = 0;
 		f_reload();
 		return;
 	}
@@ -6889,7 +6893,8 @@ static void f_pick_do(const char *dst)
 		                                                                                                    : _("No se pudo copiar"),
 		           r == OPS_OK ? IC_FOLDER : IC_CLOSE, r == OPS_OK ? T.accent : T.danger);
 	}
-	FP.mode = 0;
+	if (FP.mode == FA_MOVE)
+		FP.mode = 0;
 	f_reload();
 }
 
@@ -8281,6 +8286,26 @@ static void hm_bottom(void)
 		draw_rrect(x, 5, w, 20, 10, T.surface2);
 		text_draw(pin, x + 9, 15 - text_lineh(0.38f) / 2, 0.38f, T.text);
 	}
+	// el portapapeles: archivos (tocar lleva a Archivos, a pegarlos) o un enlace
+	if (FP.mode || clip_text()[0]) {
+		char cb[40];
+		if (FP.mode)
+			snprintf(cb, sizeof cb, "%d", FP.n > 1 ? FP.n : 1);
+		else
+			util_strlcpy(cb, _("Enlace"), sizeof cb);
+		float cw2 = text_width(cb, 0.38f) + 30, cx2 = BOT_W - 70 - cw2;
+		if (cx2 > x + 4) {
+			draw_rrect(cx2, 5, cw2, 20, 10, col_alpha(T.accent2, 0.22f));
+			draw_icon(IC_DUP, cx2 + 12, 15, 11, T.accent2);
+			text_draw(cb, cx2 + 22, 15 - text_lineh(0.38f) / 2, 0.38f, T.accent2);
+			if (!modal && tap(cx2, 0, cw2, HM_BAR)) {
+				if (FP.mode)
+					hm_launch(AP_FILES);
+				else
+					toast_icon(clip_text(), IC_DUP, T.accent2);
+			}
+		}
+	}
 	// el tamaño de los iconos: grandes o pequeños
 	for (int k = 0; k < 2; k++) {
 		float bx = BOT_W - 64 + k * 30, on = (k == 1) == HM.small;
@@ -8931,7 +8956,9 @@ static void update(void)
 	if (U.want_dlurl) {
 		U.want_dlurl = false;
 		char url[1024];
-		if (kb_input(_("Enlace para descargar (https://…)"), "https://", url, sizeof url, false, false) && url[0]) {
+		const char *cl = clip_text(); // (un enlace copiado, por ejemplo en el Navegador)
+		bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
+		if (kb_input(_("Enlace para descargar (https://…)"), clu ? cl : "https://", url, sizeof url, false, false) && url[0]) {
 			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
 				toast_icon(_("Descargando: lo verás en Actividad"), IC_GLOBE, T.accent);
 			else

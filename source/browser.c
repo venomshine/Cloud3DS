@@ -7266,7 +7266,13 @@ void br_bottom(void)
 		if (ready && (zout || (g_krepeat & KEY_L)))
 			zoom_by(0.8f);
 		clamp_view();
-		click = (g_touch.up && !g_touch.drag && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y && g_touch.sy < TP_B) ||
+		// mantener pulsado el touchpad: copiar el enlace bajo el puntero (o la dirección de la página) al portapapeles
+		if (ready && long_press(TX, TP_Y, TW, TP_B - TP_Y)) {
+			int lk = link_at_pointer();
+			clip_set_text(lk >= 0 && lk < B.nlinks ? B.links[lk] : B.url);
+			toast_icon(lk >= 0 ? "Enlace copiado al portapapeles" : "Dirección copiada al portapapeles", IC_DUP, T.accent);
+		}
+		click = (g_touch.up && !g_touch.drag && !g_touch.long_fired && g_touch.sx >= TX && g_touch.sx < TX + TW && g_touch.sy >= TP_Y && g_touch.sy < TP_B) ||
 		        (g_kdown & KEY_A);
 		if (!ready) { // el clic espera a que su JavaScript termine el rato que lleva (como mucho medio segundo)
 			B.click_wait |= click;

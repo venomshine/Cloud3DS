@@ -387,3 +387,13 @@ size_t util_b64_decode(const char *in, size_t n, u8 *out)
 	}
 	return o;
 }
+
+static char CLIP[1024];
+void clip_set_text(const char *s)
+{
+	util_strlcpy(CLIP, s ? s : "", sizeof CLIP);
+}
+const char *clip_text(void)
+{
+	return CLIP;
+}

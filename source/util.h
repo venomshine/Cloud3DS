@@ -43,3 +43,7 @@ void util_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /* base64 (también la variante de URL) a bytes; out con sitio para n*3/4. Devuelve cuántos */
 size_t util_b64_decode(const char *in, size_t n, u8 *out);
+
+/* portapapeles de texto, común a todas las aplicaciones (un enlace copiado en el Navegador se pega en Descargar…) */
+void clip_set_text(const char *s);
+const char *clip_text(void);   /* "" si está vacío */
