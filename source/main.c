@@ -144,6 +144,8 @@ static struct {
 	int n;
 	CloudItem it[8];
 } CC;
+static bool vw_cloud_open(void);           // el visor tiene abierto un archivo de la nube
+static void cl_open_item(int i);           // abrir como en Archivos (carpeta, foto, texto, música, CIA, ZIP…)
 static int fp_count(void);                 // cuántos hay copiados en Archivos (0: nada)
 static void fp_clear(void);
 static int fp_upload(const char *parent);  // sube lo copiado en Archivos a esa carpeta de la nube
@@ -1704,8 +1706,17 @@ static void draw_top(void)
 		toast_draw_float();
 		return;
 	}
-	if (CLU.open) { // la nube
-		cl_top();
+	if (CLU.open) { // la nube (y lo que se abre desde ella: el visor o el reproductor)
+		if (vw_cloud_open()) {
+			vw_top();
+			toast_draw_top();
+		} else if (MU.open) {
+			draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+			draw_header();
+			music_top(1);
+			toast_draw_top();
+		} else
+			cl_top();
 		return;
 	}
 	if (qrs_is_open()) { // escáner de QR: la cámara a pantalla completa
@@ -2005,7 +2016,8 @@ static void cl_item_icon(const CloudItem *c, IconId *ic, u32 *col)
 	const char *dot = strrchr(c->name, '.');
 	const char *ext = dot ? dot + 1 : "";
 	if (c->dir) {
-		bool app = !strcmp(c->name, "Cloud3DS");
+		const char *aid = cloud_app_folder_id(); // (la de la app, por su id: aunque se le cambie el nombre)
+		bool app = aid[0] ? !strcmp(c->id, aid) : !strcmp(c->name, "Cloud3DS");
 		*ic = app ? IC_CLOUD : IC_FOLDER, *col = app ? T.accent : T.warn;
 	} else if (!strcasecmp(ext, "cia") || !strcasecmp(ext, "3dsx"))
 		*ic = IC_GEM, *col = T.ok;
@@ -2190,10 +2202,10 @@ static void cl_options(void)
 	const CloudItem *c = CLU.om_item >= 0 && CLU.om_item < CLU.n ? &CLU.it[CLU.om_item] : NULL;
 	if (!c && CLU.om)
 		CLU.om = false;
-	IconId ic[7];
-	const char *lab[7];
-	u32 col[7];
-	int act[7], n = 0;
+	IconId ic[8];
+	const char *lab[8];
+	u32 col[8];
+	int act[8], n = 0;
 	if (c && c->dir)
 		ic[n] = IC_FOLDER, lab[n] = _("Abrir"), col[n] = T.text, act[n++] = 0;
 	ic[n] = IC_DOWNLOAD, lab[n] = _("Descargar a la SD"), col[n] = T.ok, act[n++] = 1;
@@ -2380,12 +2392,8 @@ static void cl_bottom(void)
 			bool open = (t && was) || activate(&CLU.l, i);
 			if (t && was && g_touch.px > BOT_W - 44) // el ⋮
 				CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = i;
-			else if (open) {
-				if (c->dir)
-					cloud_list(c->id, c->name);
-				else
-					CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = i;
-			}
+			else if (open)
+				cl_open_item(i);
 		}
 		gfx_clip_off();
 		if ((g_kdown & KEY_Y) && CLU.n && !CLU.om)
@@ -3800,7 +3808,30 @@ static struct {
 	int hlv;           // cuántos de esos estados son válidos (0 tras cada cambio)
 	int hlpos;         // posición en el historial de cambios con la que se calcularon
 	char find[128];    // lo último que se buscó
+	// abierto desde la nube: el archivo se bajó a CLOUD_CACHE; al guardar, se vuelve a subir a su carpeta
+	bool cloud;
+	CloudItem citem;
+	char cparent[64];
 } VW;
+
+static bool vw_cloud_open(void)
+{
+	return VW.cloud && VW.kind != VW_NONE;
+}
+
+static const char *vw_name(void)
+{
+	return VW.cloud ? VW.citem.name : F.e[VW.idx].name;
+}
+static void cl_view_step(int d); // (la nube: la foto anterior o la siguiente de su carpeta)
+static void cl_view_menu(void);  // (la nube: las opciones del archivo abierto)
+static void vw_menu(void)
+{
+	if (VW.cloud)
+		cl_view_menu();
+	else
+		f_menu_open();
+}
 
 static bool f_is_img(const FEnt *e)
 {
@@ -3817,8 +3848,11 @@ static bool vw_is_open(void)
 	return VW.kind != VW_NONE;
 }
 
+static void cl_open_abort(void);
 static void vw_close(void)
 {
+	if (VW.cloud) // (si se estaba bajando la foto siguiente, ya no se abre)
+		cl_open_abort();
 	tex_free(&VW.tex);
 	txt_free(&VW.doc);
 	VW.kind = VW_NONE;
@@ -3843,15 +3877,16 @@ static void vw_try_close(void)
 		vw_close();
 }
 
-static void vw_load(int idx)
+// abrir en el visor la foto o el texto full (name: su nombre, para saber de qué tipo es)
+static void vw_open(const char *full, const char *name)
 {
-	char full[700];
-	f_full(idx, full, sizeof full);
 	tex_free(&VW.tex);
 	txt_free(&VW.doc);
-	VW.idx = idx;
 	VW.t = 0;
-	if (f_is_img(&F.e[idx])) {
+	FEnt fe = {0};
+	util_strlcpy(fe.name, name, sizeof fe.name);
+	util_strlcpy(VW.path, full, sizeof VW.path);
+	if (f_is_img(&fe)) {
 		VW.kind = VW_IMG;
 		u8 *px = NULL;
 		VW.res = img_load_fit(full, 400, 240, &px, &VW.w, &VW.h, &VW.ow, &VW.oh);
@@ -3872,9 +3907,18 @@ static void vw_load(int idx)
 		return;
 	}
 	VW.kind = VW_TXT;
-	VW.prot = V.protect_sys && fsx_is_system(full);
-	VW.lang = hl_lang(f_ext(F.e[idx].name));
+	VW.prot = !VW.cloud && V.protect_sys && fsx_is_system(full);
+	VW.lang = hl_lang(f_ext(name));
 	VW.hlv = 0;
+}
+
+static void vw_load(int idx)
+{
+	char full[700];
+	f_full(idx, full, sizeof full);
+	VW.cloud = false;
+	VW.idx = idx;
+	vw_open(full, F.e[idx].name);
 }
 
 // fotos de la carpeta, para pasar con ← →
@@ -3882,6 +3926,10 @@ static void vw_step(int d)
 {
 	if (VW.kind != VW_IMG)
 		return;
+	if (VW.cloud) {
+		cl_view_step(d);
+		return;
+	}
 	for (int k = 1; k < F.n; k++) {
 		int i = (VW.idx + d * k + F.n * 4) % F.n;
 		if (f_is_img(&F.e[i])) {
@@ -4077,9 +4125,9 @@ static void vw_top(void)
 			draw_rect(0, SCR_H - 26, TOP_W, 26, col_alpha(0xFF000000, 0.55f * a));
 			char cap[200];
 			if (VW.res == IMG_OK)
-				snprintf(cap, sizeof cap, "%s · %d × %d", F.e[VW.idx].name, VW.ow, VW.oh);
+				snprintf(cap, sizeof cap, "%s · %d × %d", vw_name(), VW.ow, VW.oh);
 			else
-				util_strlcpy(cap, F.e[VW.idx].name, sizeof cap);
+				util_strlcpy(cap, vw_name(), sizeof cap);
 			text_draw_center_clip(cap, TOP_W / 2, SCR_H - 21, TOP_W - 20, TS_SUB, col_alpha(0xFFFFFFFF, a));
 		}
 		return;
@@ -4272,7 +4320,7 @@ static void vw_bottom_text(void)
 		if ((r = txt_redo(&VW.doc)) >= 0)
 			VW.cur = r < VW.doc.n ? r : VW.doc.n - 1;
 	} else if (menu) {
-		f_menu_open();
+		vw_menu();
 	} else if (save || (ed && VW.doc.dirty && (g_kdown & KEY_START))) {
 		vw_save(false);
 	} else if (close || (g_kdown & KEY_B)) {
@@ -4287,7 +4335,10 @@ static void vw_bottom_text(void)
 static void vw_bottom(void)
 {
 	draw_rect(0, 0, BOT_W, SCR_H, T.bg);
-	const FEnt *e = &F.e[VW.idx];
+	FEnt ce = {0}; // (de la nube: su nombre y tamaño)
+	if (VW.cloud)
+		util_strlcpy(ce.name, VW.citem.name, sizeof ce.name), ce.size = VW.citem.size;
+	const FEnt *e = VW.cloud ? &ce : &F.e[VW.idx];
 	IconId ic;
 	u32 col;
 	f_kind(e, &ic, &col);
@@ -4335,7 +4386,7 @@ static void vw_bottom(void)
 		vw_step(g_touch.x < g_touch.sx ? 1 : -1);
 	if (hit == 1 || (g_kdown & KEY_Y)) {
 		g_kdown &= ~KEY_Y;
-		f_menu_open();
+		vw_menu();
 	} else if (tap(14, cy, BOT_W - 28, 40) || (g_kdown & KEY_B)) {
 		vw_close();
 	}
@@ -4357,8 +4408,13 @@ static void vw_save(bool force)
 	}
 	if (fsx_stat(VW.path, &d, &sz) == 0)
 		VW.doc.size = sz;
+	if (VW.cloud) { // de la nube: se vuelve a subir, en lugar del que había
+		cloud_upload_replace(VW.path + 5 * !strncmp(VW.path, "sdmc:", 5), VW.cparent);
+		toast_icon(_("Guardado: subiendo a OneDrive"), IC_UPLOAD, T.ok);
+		return;
+	}
 	state_lock();
-	event_add(EV_EDIT, F.e[VW.idx].name, G.console, sz);
+	event_add(EV_EDIT, vw_name(), G.console, sz);
 	G.rev++;
 	state_unlock();
 	toast_icon(_("Guardado"), IC_CHECK, T.ok);
@@ -4418,6 +4474,165 @@ static bool f_open_item(int vi)
 		f_menu_open();
 	}
 	return true;
+}
+
+// ---- abrir lo de la nube como en Archivos: fotos y textos en el visor, música en el reproductor, páginas en el
+// navegador, ZIP en su hoja y CIA instalándose. Se baja primero (a CLOUD_CACHE; un ZIP, a /Descargas, para
+// extraerlo ahí) y se abre al terminar; mientras, una tarjeta con el progreso que se puede cancelar
+enum { CO_NONE, CO_VIEW, CO_MUSIC, CO_HTML, CO_ZIP };
+static struct {
+	int kind;          // qué se hace al terminar de bajarlo
+	CloudItem it;
+	char parent[64];
+	u32 seen;          // open_rev ya atendido
+	int mu_wait;       // música: vueltas que se espera a que empiece a sonar para enseñar el reproductor
+} CO;
+
+static void cl_open_item(int i)
+{
+	if (i < 0 || i >= CLU.n)
+		return;
+	const CloudItem *c = &CLU.it[i];
+	if (c->dir) {
+		cloud_list(c->id, c->name);
+		return;
+	}
+	const char *ext = f_ext(c->name);
+	if (!strcasecmp(ext, "cia")) { // se instala mientras baja, como al pedirlo desde Descargas
+		cloud_download(c);
+		toast_icon(_("Instalando desde OneDrive: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+		return;
+	}
+	FEnt fe = {0};
+	util_strlcpy(fe.name, c->name, sizeof fe.name);
+	int k = !strcasecmp(ext, "html") || !strcasecmp(ext, "htm") ? CO_HTML
+	        : f_is_img(&fe) || f_is_txt(&fe)                     ? CO_VIEW
+	        : !strcasecmp(ext, "zip")                             ? CO_ZIP
+	        : music_is_audio(c->name)                             ? CO_MUSIC
+	                                                              : CO_NONE;
+	if (k == CO_NONE) { // como en Archivos: lo que no se abre, sus opciones
+		CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = i;
+		return;
+	}
+	CO.kind = k;
+	CO.it = *c;
+	util_strlcpy(CO.parent, cl_parent(), sizeof CO.parent);
+	if (!cloud_open(c, k == CO_ZIP ? "/Descargas" : CLOUD_CACHE)) {
+		CO.kind = CO_NONE;
+		toast_icon(_("Espera a que termine de abrirse el anterior"), IC_CLOCK, T.text2);
+	}
+}
+
+// cuando termina de bajarse, se abre
+static void cl_open_poll(void)
+{
+	if (CO.mu_wait > 0 && (--CO.mu_wait, mu_on()))
+		MU.open = MU.just = true, MU.sel = 2, CO.mu_wait = 0;
+	if (CLU.info.open_rev == CO.seen)
+		return;
+	CO.seen = CLU.info.open_rev;
+	int k = CO.kind;
+	CO.kind = CO_NONE;
+	if (!k)
+		return;
+	if (!CLU.info.open_ok) {
+		char m[220];
+		snprintf(m, sizeof m, _("No se pudo abrir «%s»"), CO.it.name);
+		toast_icon(m, IC_CLOSE, T.danger);
+		return;
+	}
+	const char *p = CLU.info.open_path;
+	if (k == CO_VIEW) {
+		VW.cloud = true;
+		VW.citem = CO.it;
+		util_strlcpy(VW.cparent, CO.parent, sizeof VW.cparent);
+		VW.idx = -1;
+		vw_open(p, CO.it.name);
+	} else if (k == CO_HTML)
+		br_open_file(p);
+	else if (k == CO_ZIP)
+		zs_open(p);
+	else {
+		static char one[1][256];
+		util_strlcpy(one[0], CO.it.name, sizeof one[0]);
+		if (music_play(CLOUD_CACHE, one, 1, 0))
+			CO.mu_wait = 300; // (el reproductor sale en cuanto suene)
+		else
+			toast_icon(_("No se pudo reproducir"), IC_CLOSE, T.danger);
+	}
+}
+
+// la tarjeta de «Abriendo…»: lo que lleva y B para cancelar
+static void cl_open_overlay(void)
+{
+	if (!CLU.info.opening)
+		return;
+	draw_rect(0, 0, BOT_W, SCR_H, T.dim);
+	float x = 16, w = BOT_W - 32, h = 112, y = (SCR_H - h) / 2;
+	draw_rrect(x, y + 3, w, h, 18, T.shadow);
+	draw_rrect(x, y, w, h, 18, T.surface);
+	char t[220];
+	snprintf(t, sizeof t, _("Abriendo «%s»"), CLU.info.open_name);
+	text_draw_center_clip(t, BOT_W / 2, y + 14, w - 24, TS_BODY, T.text);
+	u64 got = CLU.info.open_got, tot = CLU.info.open_size;
+	float f = tot ? clampf((float)((double)got / tot), 0, 1) : 0;
+	draw_rrect(x + 16, y + 44, w - 32, 6, 3, T.surface2);
+	draw_grad_h(x + 16, y + 44, fmaxf(6, (w - 32) * f), 6, T.accent, T.accent2);
+	char a[24], b[24], l[64];
+	util_fmt_size(a, sizeof a, got), util_fmt_size(b, sizeof b, tot);
+	snprintf(l, sizeof l, "%s / %s", a, b);
+	text_draw_center(l, BOT_W / 2, y + 56, TS_SUB, T.text3);
+	char cl[48];
+	snprintf(cl, sizeof cl, "%s %s", GLYPH_B, _("Cancelar"));
+	float cw = text_width(cl, TS_SUB) + 28, cx = BOT_W / 2 - cw / 2, cy = y + h - 34;
+	draw_rrect(cx, cy, cw, 24, 12, touch_in(cx, cy, cw, 24) ? T.divider : T.surface2);
+	text_draw_center(cl, BOT_W / 2, cy + 12 - text_lineh(TS_SUB) / 2, TS_SUB, T.text);
+	if ((g_kdown & KEY_B) || tap(cx, cy, cw, 24)) {
+		cloud_open_cancel();
+		CO.kind = CO_NONE;
+	}
+	g_kdown = 0;
+	g_touch.up = false;
+}
+
+static void cl_open_abort(void)
+{
+	if (CO.kind != CO_NONE) {
+		CO.kind = CO_NONE;
+		cloud_open_cancel();
+	}
+}
+
+static int cl_index_of(const char *id)
+{
+	for (int i = 0; i < CLU.n; i++)
+		if (!strcmp(CLU.it[i].id, id))
+			return i;
+	return -1;
+}
+
+static void cl_view_step(int d)
+{
+	int i = cl_index_of(VW.citem.id);
+	if (i < 0)
+		return;
+	for (int k = 1; k < CLU.n; k++) {
+		int j = (i + d * k + CLU.n * 4) % CLU.n;
+		FEnt fe = {0};
+		util_strlcpy(fe.name, CLU.it[j].name, sizeof fe.name);
+		if (!CLU.it[j].dir && f_is_img(&fe)) {
+			CLU.l.sel = j;
+			cl_open_item(j);
+			return;
+		}
+	}
+}
+
+static void cl_view_menu(void)
+{
+	int i = cl_index_of(VW.citem.id);
+	if (i >= 0)
+		CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = i;
 }
 
 // ---- miniaturas para la lista y la vista de iconos: fotos e iconos de CIA y 3DSX.
@@ -5972,6 +6187,10 @@ static void music_sheet(void)
 	if (!fresh && (tap(18, ly, lw, 26) || (g_kdown & KEY_X))) {
 		music_stop();
 		MU.open = false;
+	} else if (!fresh && (tap(26 + lw, ly, lw, 26) || (g_kdown & KEY_Y)) && !strcmp(MU.s.dir, CLOUD_CACHE)) {
+		MU.open = false; // (de la nube: su carpeta es la de la nube, no la copia que se bajó)
+		if (!CLU.open)
+			cl_open();
 	} else if (!fresh && (tap(26 + lw, ly, lw, 26) || (g_kdown & KEY_Y))) {
 		MU.open = false;
 		U.tab = TAB_FILES;
@@ -8735,7 +8954,28 @@ static void draw_bottom(void)
 		return;
 	}
 	if (CLU.open) {
-		cl_bottom();
+		cl_open_poll();
+		// encima de la nube: abriendo un archivo, la hoja del ZIP o el reproductor; lo de debajo no recibe nada
+		bool over = CLU.info.opening || ZS.open || MU.open || (VW.cloud && VW.kind && (CLU.om || g_dialog.open));
+		u32 kd = g_kdown, kr = g_krepeat;
+		Touch tc = g_touch;
+		if (over) {
+			g_kdown = g_krepeat = 0;
+			memset(&g_touch, 0, sizeof g_touch);
+		}
+		if (VW.cloud && VW.kind) {
+			vw_bottom();
+			if (over)
+				g_kdown = kd, g_krepeat = kr, g_touch = tc;
+			cl_options();
+		} else {
+			cl_bottom();
+			if (over)
+				g_kdown = kd, g_krepeat = kr, g_touch = tc;
+		}
+		zs_draw();
+		music_sheet();
+		cl_open_overlay();
 		qa_draw();
 		dialog_draw();
 		return;
@@ -8858,8 +9098,12 @@ static void handle_dialog(int ctx, bool ok)
 			}
 		}
 	} else if (ctx == DLG_CLDEL) {
-		if (U.dlg_arg >= 0 && U.dlg_arg < CLU.n)
+		if (U.dlg_arg >= 0 && U.dlg_arg < CLU.n) {
+			if (VW.cloud && VW.kind && !strcmp(VW.citem.id, CLU.it[U.dlg_arg].id))
+				vw_close(); // (el que se estaba viendo)
 			cloud_delete(&CLU.it[U.dlg_arg]);
+		}
+
 	} else if (ctx == DLG_CLOUT) {
 		cloud_disconnect();
 		toast_icon(_("OneDrive desconectado"), IC_LOGOUT, T.text2);
@@ -8971,7 +9215,7 @@ static void watch_events(void)
 			toast_icon(msg, IC_CHECK, T.ok);
 		}
 		// el texto abierto en la consola se cambió desde otro dispositivo: si aquí no hay cambios, se recarga
-		if ((e->kind == EV_EDIT || e->kind == EV_UPLOAD) && VW.kind == VW_TXT && !VW.doc.dirty && strcmp(e->device, V.console) &&
+		if ((e->kind == EV_EDIT || e->kind == EV_UPLOAD) && VW.kind == VW_TXT && !VW.cloud && !VW.doc.dirty && strcmp(e->device, V.console) &&
 		    !strcmp(e->name, F.e[VW.idx].name)) {
 			int cur = VW.cur, top = VW.top;
 			vw_load(VW.idx);
@@ -9500,7 +9744,9 @@ static void update(void)
 	if (g_dialog.open)
 		return;
 	br_poll(); // el navegador cerrado a media carga: se suelta al acabar
-	if (CLU.open && (g_kdown & KEY_SELECT) && !CLU.om && !CLU.hm) { // la nube también: SELECT, al inicio
+	if (CLU.open && (g_kdown & KEY_SELECT) && !CLU.om && !CLU.hm && !(vw_cloud_open() && VW.kind == VW_TXT)) { // la nube también: SELECT, al inicio
+		if (vw_cloud_open()) // (en el editor, SELECT es «Bloque»)
+			vw_close();
 		CLU.open = false;
 		hm_show();
 		return;

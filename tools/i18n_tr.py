@@ -2893,4 +2893,28 @@ TR = {
     'Cambiando el nombre en OneDrive':
         ('Renaming in OneDrive',
          'OneDriveで名前を変更中'),
+    'Descargando en /Descargas: lo verás en Descargas':
+        ('Downloading to /Descargas: see Downloads',
+         '/Descargas にダウンロード中:「ダウンロード」で確認できます'),
+    '1 elemento irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive.':
+        ('1 item will go to your OneDrive recycle bin. You can restore it from the OneDrive website.',
+         '1件がOneDriveのごみ箱に移動します。OneDriveのWebサイトから復元できます。'),
+    '%d elementos irán a la papelera de tu OneDrive. Podrás recuperarlos desde la web de OneDrive.':
+        ('%d items will go to your OneDrive recycle bin. You can restore them from the OneDrive website.',
+         '%d件がOneDriveのごみ箱に移動します。OneDriveのWebサイトから復元できます。'),
+    'Guardado: subiendo a OneDrive':
+        ('Saved: uploading to OneDrive',
+         '保存しました。OneDriveにアップロード中'),
+    'Instalando desde OneDrive: lo verás en Descargas':
+        ('Installing from OneDrive: see Downloads',
+         'OneDriveからインストール中:「ダウンロード」で確認できます'),
+    'Espera a que termine de abrirse el anterior':
+        ('Wait until the previous one finishes opening',
+         '前のファイルが開き終わるまでお待ちください'),
+    'No se pudo abrir «%s»':
+        ('Couldn\'t open "%s"',
+         '「%s」を開けませんでした'),
+    'Abriendo «%s»':
+        ('Opening "%s"',
+         '「%s」を開いています'),
 }
