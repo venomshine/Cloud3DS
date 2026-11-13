@@ -223,7 +223,7 @@ static void mdns_send(u16 id, bool legacy, const struct sockaddr_in *to)
 	o += put_name(b + o, R.name);
 	b[o++] = 0, b[o++] = 1;                 // A
 	b[o++] = legacy ? 0 : 0x80, b[o++] = 1; // IN (y «cache flush»: somos los únicos con ese nombre)
-	u32 ttl = 120;
+	u32 ttl = 300; // (se vuelve a anunciar cada minuto: así sigue en la caché aunque las preguntas no lleguen)
 	b[o++] = ttl >> 24, b[o++] = ttl >> 16, b[o++] = ttl >> 8, b[o++] = ttl;
 	b[o++] = 0, b[o++] = 4;
 	memcpy(b + o, &R.ip, 4); // ya en orden de red
@@ -362,14 +362,16 @@ void remote_events(struct pollfd *pf, int n)
 void remote_tick(void)
 {
 	u64 now = util_ms();
-	if (R.mfd >= 0 && R.announces < 2 && now >= R.announce_at) { // al empezar se anuncia (dos veces, como pide el RFC)
+	// se anuncia al empezar (dos veces, como pide el RFC) y luego cada minuto: la Wi-Fi de la consola no siempre
+	// recibe las preguntas por multicast, y sin anuncios los móviles y PC olvidarían el nombre al caducar
+	if (R.mfd >= 0 && now >= R.announce_at) {
 		struct sockaddr_in to = {0};
 		to.sin_family = AF_INET;
 		to.sin_port = htons(MDNS_PORT);
 		to.sin_addr.s_addr = htonl(MDNS_ADDR);
 		mdns_send(0, false, &to);
 		R.announces++;
-		R.announce_at = now + 1000;
+		R.announce_at = now + (R.announces < 2 ? 1000 : 60000);
 	}
 	static u64 last;
 	if (now - last < 1000)
