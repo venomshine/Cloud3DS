@@ -79,6 +79,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 | Botón | Acción |
 |---|---|
 | **Cruceta** | Moverse por el inicio y por las listas |
+| **↑ en lo primero** | Pasar a los botones de la cabecera (buscar, ordenar, «+», secciones…); ← → para elegir, A para pulsar, ↓ o B para volver |
 | **A** | Abrir o elegir |
 | **B** | Atrás; en la pantalla principal de una aplicación, vuelve al inicio |
 | **Y** | En Archivos: opciones de lo elegido · en Títulos: ordenar por tamaño o por nombre · en el inicio: tamaño de los iconos |

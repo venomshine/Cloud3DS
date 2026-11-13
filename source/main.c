@@ -1825,6 +1825,7 @@ static List *cur_list(void)
 	return &U.list[U.tab];
 }
 
+static bool hdr_enter(void); // (↑ en lo primero de una lista: a los botones de la cabecera)
 static float g_list_bar; // lo que tapa una barra al pie de la lista (la de pegar, por ejemplo): se puede bajar hasta verlo todo
 static void list_update(List *l, int count, float rh)
 {
@@ -1838,7 +1839,7 @@ static void list_update(List *l, int count, float rh)
 	}
 	if (U.buttons && !g_dialog.open) {
 		if (g_krepeat & KEY_DOWN) l->sel++;
-		if (g_krepeat & KEY_UP) l->sel--;
+		if ((g_krepeat & KEY_UP) && !(l->sel == 0 && hdr_enter())) l->sel--;
 		if (l->sel >= count) l->sel = count - 1;
 		if (l->sel < 0) l->sel = 0;
 		if (g_krepeat & (KEY_UP | KEY_DOWN)) {
@@ -1872,6 +1873,61 @@ static bool activate(List *l, int i)
 
 // título de una pestaña (con «‹» si se puede volver); maxw: hasta dónde llega el texto
 static void hm_show(void);
+// ---- los botones de la cabecera, también con la cruceta: ↑ desde lo primero de la lista entra en ellos, ← → eligen,
+// A pulsa y ↓ o B vuelven a la lista. Cada botón se apunta al dibujarse (hdr_hit), de izquierda a derecha
+static struct {
+	int n, prev;   // los apuntados en esta vuelta y en la anterior
+	int focus;     // el elegido (-1: se está en la lista)
+	int fire;      // el que se pulsó con A (se atiende al dibujarlo)
+} HB = {.focus = -1, .fire = -1};
+
+static bool hdr_hit(float x, float y, float w, float h)
+{
+	int i = HB.n++;
+	if (HB.focus == i)
+		draw_rrect_outline(x - 2, y - 2, w + 4, h + 4, fminf(w, h) / 2 + 2, 2, T.accent);
+	bool f = HB.fire == i;
+	if (f)
+		HB.fire = -1;
+	return tap(x, y, w, h) || f;
+}
+
+// ↑ en lo primero de una lista: a la cabecera (al botón de más a la derecha, el principal)
+static bool hdr_enter(void)
+{
+	if (HB.prev <= 0)
+		return false;
+	HB.focus = HB.prev - 1;
+	U.buttons = true;
+	return true;
+}
+
+// al empezar a dibujar la pantalla de abajo. active: sin hojas ni diálogos encima (si no, la cabecera no mira nada)
+static void hdr_frame(bool active)
+{
+	HB.prev = HB.n;
+	HB.n = 0;
+	HB.fire = -1;
+	if (HB.focus >= HB.prev)
+		HB.focus = HB.prev - 1;
+	if (HB.focus < 0 || !active || g_dialog.open)
+		return;
+	if (g_touch.down) { // con el dedo, a la lista
+		HB.focus = -1;
+		return;
+	}
+	if (g_krepeat & KEY_LEFT)
+		HB.focus = HB.focus > 0 ? HB.focus - 1 : 0;
+	if (g_krepeat & KEY_RIGHT)
+		HB.focus = HB.focus < HB.prev - 1 ? HB.focus + 1 : HB.focus;
+	if (g_kdown & KEY_A)
+		HB.fire = HB.focus;
+	if (g_kdown & (KEY_DOWN | KEY_B))
+		HB.focus = -1;
+	g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y | KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT);
+	g_krepeat &= ~(KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT);
+}
+
 static void tab_header_w(const char *title, bool back, float maxw)
 {
 	float x = 14;
@@ -1880,13 +1936,17 @@ static void tab_header_w(const char *title, bool back, float maxw)
 		draw_rrect(6, 5, 26, 22, 11, hp ? col_alpha(T.accent, 0.35f) : col_alpha(T.accent, 0.18f));
 		for (int q = 0; q < 4; q++)
 			draw_rrect(13 + (q % 2) * 6.5f, 10 + (q / 2) * 6.5f, 5, 5, 1.4f, T.accent);
-		if (!g_dialog.open && tap(0, 0, 34, VIEW_Y))
+		if (!g_dialog.open && hdr_hit(6, 5, 26, 22)) {
+			HB.focus = -1;
 			hm_show();
+		}
 		x = 40;
 	} else {
 		if (touch_in(0, 0, 170, VIEW_Y))
 			draw_rrect(6, 4, fminf(text_width(title, TS_TITLE), maxw) + 36, 24, 12, T.surface);
 		draw_icon(IC_CHEV_LEFT, 20, 16, 14, T.text2);
+		if (hdr_hit(8, 6, 24, 20) && !g_touch.up) // (con A en la cabecera: como B, atrás; el toque lo mira cada pantalla)
+			g_kdown |= KEY_B, HB.focus = -1;
 		x = 32;
 	}
 	text_draw_clip(title, x, 7, maxw, TS_TITLE, T.text);
@@ -2408,7 +2468,7 @@ static void cl_bottom(void)
 		if (CLU.ms) { // seleccionando: las opciones de lo elegido (también con Y); B deja de seleccionar
 			draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
 			draw_icon(IC_DOTS, hx, hy, 14, 0xFFFFFFFF);
-			if (mn && (tap(hx - 14, hy - 14, 28, 28) || (g_kdown & KEY_Y)))
+			if ((hdr_hit(hx - 13, hy - 13, 26, 26) || (g_kdown & KEY_Y)) && mn)
 				CLU.mo = CLU.mo_just = true, CLU.mo_sel = 0;
 			else if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
 				CLU.ms = false;
@@ -2420,9 +2480,10 @@ static void cl_bottom(void)
 			draw_icon(IC_DOTS, hx, hy, 14, T.text2);
 			draw_circle(px, hy, 12, touch_in(px - 14, hy - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
 			draw_icon(IC_PLUS, px, hy, 13, 0xFFFFFFFF);
-			if (tap(hx - 14, hy - 14, 28, 28))
+			bool h_new = hdr_hit(px - 13, hy - 13, 26, 26), h_acc = hdr_hit(hx - 13, hy - 13, 26, 26);
+			if (h_acc)
 				CLU.hm = CLU.hm_just = true, CLU.hm_sel = 0;
-			else if (tap(px - 14, hy - 14, 28, 28) || (!clip && (g_kdown & KEY_X)))
+			else if (h_new || (!clip && (g_kdown & KEY_X)))
 				CLU.want_mkdir = true;
 			else if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B)) {
 				if (sub)
@@ -2592,6 +2653,10 @@ static void conn_header(void)
 	tab_header_w("", false, 0);
 	const char *opts[2] = {_("Actividad"), _("Dispositivos")};
 	int r = segmented(40, 5, 150, 22, opts, 2, U.tab == TAB_DEVICES, false);
+	if (hdr_hit(40, 5, 75, 22))
+		r = 0;
+	if (hdr_hit(115, 5, 75, 22))
+		r = 1;
 	if (r >= 0 && !g_dialog.open)
 		U.tab = r ? TAB_DEVICES : TAB_ACTIVITY;
 }
@@ -2613,7 +2678,7 @@ static void tab_activity(void)
 		bool p = touch_in(cx - 14, cy - 14, 28, 28);
 		draw_circle(cx, cy, 12, p ? col_alpha(T.danger, 0.35f) : T.surface);
 		draw_icon(IC_TRASH, cx, cy, 14, T.danger);
-		if (!g_dialog.open && (tap(cx - 14, cy - 14, 28, 28) || (g_kdown & KEY_Y)))
+		if (!g_dialog.open && (hdr_hit(cx - 13, cy - 13, 26, 26) || (g_kdown & KEY_Y)))
 			dialog_open(DLG_CLEAR, _("¿Borrar el historial?"), _("Se borrará la lista de actividad. Tus archivos no se modifican."),
 			            _("Borrar"), true);
 		hx = cx - 20;
@@ -6375,7 +6440,7 @@ static void tab_files(void)
 		float aw = text_width(all, TS_SUB) + 20, ax = BOT_W - 12 - aw;
 		draw_rrect(ax, 6, aw, 20, 10, touch_in(ax, 4, aw, 24) ? T.surface2 : T.surface);
 		text_draw_center(all, ax + aw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
-		if (!g_dialog.open && (tap(ax, 4, aw, 24) || (U.buttons && (g_kdown & KEY_X))))
+		if (!g_dialog.open && (hdr_hit(ax, 6, aw, 20) || (U.buttons && (g_kdown & KEY_X))))
 			ms_all();
 		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
 			ms_end();
@@ -6411,7 +6476,7 @@ static void tab_files(void)
 		draw_rrect(ox, 6, ow, 20, 10, touch_in(ox, 4, ow, 24) ? T.surface2 : T.surface);
 		text_draw_center(ord, ox + ow / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
 		text_draw_right(c, ox - 8, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
-		if (!g_dialog.open && (tap(ox, 4, ow, 24) || (U.buttons && (g_kdown & KEY_Y) && !TT.open))) {
+		if (!g_dialog.open && (hdr_hit(ox, 6, ow, 20) || (U.buttons && (g_kdown & KEY_Y) && !TT.open))) {
 			TI_by_size = !TI_by_size;
 			g_kdown &= ~KEY_Y;
 			f_load("@titles");
@@ -6434,7 +6499,7 @@ static void tab_files(void)
 			float vw = text_width(vt, TS_SUB) + 22, vx = BOT_W - 12 - vw;
 			draw_rrect(vx, 6, vw, 20, 10, touch_in(vx, 4, vw, 24) ? col_alpha(T.danger, 0.35f) : col_alpha(T.danger, 0.16f));
 			text_draw_center(vt, vx + vw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.danger);
-			if (!g_dialog.open && tap(vx, 4, vw, 24))
+			if (!g_dialog.open && hdr_hit(vx, 6, vw, 20))
 				dialog_open(DLG_TRASHEMPTY, _("¿Vaciar la papelera?"), _("Todo lo que hay en la papelera se borrará para siempre."), _("Vaciar"), true);
 		}
 		if (root && !g_dialog.open && U.buttons && (g_kdown & KEY_B)) {
@@ -6456,26 +6521,28 @@ static void tab_files(void)
 	if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search && !F.titles) {
 		draw_circle(lx, ny, 12, touch_in(lx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(IC_SEARCH, lx, ny, 14, T.text2);
-		if (!g_dialog.open && tap(lx - 14, ny - 14, 28, 28)) {
-			U.want_search = true;
-			return;
-		}
 		draw_circle(gx, ny, 12, touch_in(gx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(V.f_grid ? IC_LIST : IC_GRID, gx, ny, 14, T.text2);
 		draw_circle(sx, ny, 12, touch_in(sx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(IC_SORT, sx, ny, 14, T.text2);
 		draw_circle(nx, ny, 12, np ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
 		draw_icon(IC_PLUS, nx, ny, 13, 0xFFFFFFFF);
-		if (!g_dialog.open && (tap(nx - 14, ny - 14, 28, 28) || (U.buttons && !FP.mode && !CC.mode && (g_kdown & KEY_X)))) {
+		bool h_find = hdr_hit(lx - 13, ny - 13, 26, 26), h_sort = hdr_hit(sx - 13, ny - 13, 26, 26), h_grid = hdr_hit(gx - 13, ny - 13, 26, 26),
+		     h_new = hdr_hit(nx - 13, ny - 13, 26, 26);
+		if (!g_dialog.open && h_find) {
+			U.want_search = true;
+			return;
+		}
+		if (!g_dialog.open && (h_new || (U.buttons && !FP.mode && !CC.mode && (g_kdown & KEY_X)))) {
 			f_new_menu();
 			return;
 		}
-		if (!g_dialog.open && tap(gx - 14, ny - 14, 28, 28)) {
+		if (!g_dialog.open && h_grid) {
 			f_set_view(-1, -1, -1, !V.f_grid);
 			return;
 		}
 		// también con Y en los accesos rápidos
-		if (!g_dialog.open && (tap(sx - 14, ny - 14, 28, 28) || (U.buttons && f_on_chips() && (g_kdown & KEY_Y)))) {
+		if (!g_dialog.open && (h_sort || (U.buttons && f_on_chips() && (g_kdown & KEY_Y)))) {
 			VS.open = VS.just = true;
 			VS.sel = 0;
 			return;
@@ -6503,10 +6570,18 @@ static void tab_files(void)
 			f_show_chips();
 		F.pull = 0;
 	}
-	// con la cruceta: ↑ en lo primero también los saca
-	if (U.buttons && !g_dialog.open && !f_chips_shown() && F.sel == 0 && (g_krepeat & KEY_UP)) {
-		f_show_chips();
-		F.sel = 0;
+	// con la cruceta: ↑ en los accesos rápidos va a la cabecera; ↑ en lo primero los saca (y donde no hay, a la cabecera)
+	if (U.buttons && !g_dialog.open && F.sel == 0 && (g_krepeat & KEY_UP)) {
+		if (f_on_chips())
+			hdr_enter();
+		else if (!f_chips_shown()) {
+			f_show_chips();
+			if (f_chips_shown())
+				F.sel = 0;
+			else
+				hdr_enter();
+		} else
+			hdr_enter();
 		g_krepeat &= ~KEY_UP;
 	}
 	if (U.buttons && !g_dialog.open && (g_krepeat & (KEY_UP | KEY_DOWN))) {
@@ -8780,6 +8855,7 @@ static void hm_show(void)
 {
 	hm_load();
 	// las hojas abiertas en una aplicación se cierran: si no, al abrir otra seguirían tapando su entrada sin verse
+	HB.focus = -1;
 	XS.open = QA.open = DVS.open = UL.open = FM.open = PM.open = TY.open = VS.open = MA.open = MC.open = TS.open = HS.open = ZS.open = DS.open = TT.open = false;
 	HM.open = true;
 	HM.fade = 0;
@@ -9127,6 +9203,7 @@ static void draw_bottom(void)
 			g_kdown = g_krepeat = 0;
 			memset(&g_touch, 0, sizeof g_touch);
 		}
+		hdr_frame(!over && !CLU.om && !CLU.hm && !CLU.mo && !(VW.cloud && VW.kind));
 		if (VW.cloud && VW.kind) {
 			vw_bottom();
 			if (over)
@@ -9162,6 +9239,7 @@ static void draw_bottom(void)
 		memset(&g_touch, 0, sizeof g_touch);
 	} else if (mu_bar_shown() && tc.sy >= SCR_H - TABBAR_H - MU_BAR_H - 4 && tc.sy < SCR_H - TABBAR_H) // la barrita de la música: lo de debajo no se toca
 		memset(&g_touch, 0, sizeof g_touch);
+	hdr_frame(!overlay);
 	if (viewer) {
 		if (!FM.open && !TY.open && !U.ins_pend && !g_dialog.open)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
