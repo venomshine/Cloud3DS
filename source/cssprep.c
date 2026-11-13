@@ -3390,8 +3390,8 @@ static void rules(CssPrep *p, const char *s, const char *e, Out *o)
 			bool vars = has_ci(b0, (size_t)(b1 - b0), "--");
 			if (vars || has_ci(b0, (size_t)(b1 - b0), "grid-template"))
 				decls(p, b0, b1, vars && sel_is_root(p, s0, s1), NULL, NULL, false);
-				if (vars)
-					root_font(p, s0, s1, b0, b1);
+			if (vars)
+				root_font(p, s0, s1, b0, b1);
 			if (vars)
 				scope_add(p, s0, s1, b0, b1);
 			if (vars && !sel_is_root(p, s0, s1))
