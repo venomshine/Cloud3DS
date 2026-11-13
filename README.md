@@ -65,7 +65,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
   - **Títulos:** los juegos y aplicaciones instalados con lo que ocupa cada uno, ordenables por tamaño. Permite copiar la partida, desinstalar solo la actualización o los DLC, borrar los datos extra (siempre con copia previa) o desinstalar el título.
   - **Conectar:** el QR, la dirección y el PIN, la actividad en directo y los dispositivos vinculados.
   - **Descargas:** desde un enlace o escaneando un código QR; los CIA se instalan mientras se descargan.
-  - **Nube:** OneDrive en la consola, con las mismas opciones que Archivos (copiar, cortar, cambiar el nombre, eliminar, crear carpetas) y el mismo portapapeles: lo copiado en la SD se sube con X y lo copiado en la nube se descarga en cualquier carpeta de la SD. Las capturas nuevas se suben solas.
+  - **Nube:** OneDrive en la consola, como Archivos: abre fotos y textos (y guarda los cambios en la nube), música, páginas, ZIP y CIA; copia, corta, cambia el nombre, elimina, crea carpetas y selecciona varios. Comparte el portapapeles con Archivos: lo copiado en la SD se sube con X y lo copiado en la nube se descarga en cualquier carpeta de la SD. Las capturas nuevas se suben solas.
   - **Navegador** (experimental), **Música** (también en segundo plano) y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
 - **Operaciones delicadas protegidas:** al instalar, desinstalar o borrar datos aparece una pantalla de espera que bloquea los botones y HOME hasta que termina, para que no se corte a mitad. Una descarga que se está instalando se puede cancelar sin riesgo.
 - El servidor se puede apagar en Ajustes → Conexión (la nube y las descargas siguen funcionando).
