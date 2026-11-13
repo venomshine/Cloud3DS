@@ -7,14 +7,14 @@
 <a href='https://ko-fi.com/W3A028X2KV' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
 
 <p align="center">
-  <img src="docs/inicio.png" width="260" alt="Pantalla de inicio con el QR, la dirección, el PIN y la actividad">
-  <img src="docs/subida.png" width="260" alt="Subida en curso vista en la consola">
-  <img src="docs/minimizado.png" width="260" alt="El QR minimizado con SELECT y la subida a lo ancho">
+  <img src="docs/inicio.png" width="260" alt="El inicio: cada función es una aplicación">
+  <img src="docs/conectar.png" width="260" alt="Conectar: el QR, la dirección, el PIN y la actividad">
+  <img src="docs/titulos.png" width="260" alt="Títulos: juegos y aplicaciones instalados y lo que ocupan">
 </p>
 <p align="center">
-  <img src="docs/dispositivos.png" width="260" alt="Dispositivos con su nombre real">
+  <img src="docs/descargas.png" width="260" alt="Descargas desde un enlace o un código QR">
+  <img src="docs/espera.png" width="260" alt="Pantalla de espera mientras se desinstala">
   <img src="docs/ajustes.png" width="260" alt="Ajustes">
-  <img src="docs/acerca.png" width="260" alt="Acerca de, con el QR del Discord">
 </p>
 <p align="center">
   <img src="docs/web-movil.png" width="200" alt="La SD en el móvil, con carpetas destacadas y las del sistema aparte">
@@ -39,7 +39,7 @@ Necesitas una consola con homebrew (por ejemplo, con [3ds.hacks.guide](https://3
 ## Cómo se usa
 
 1. Conecta la consola a tu Wi-Fi (o al punto de acceso de tu móvil si no tienes router) y abre **Cloud3DS**.
-2. **Desde el móvil:** escanea el QR de la pantalla de arriba con la cámara. Se abre tu SD en el navegador, sin escribir nada.
+2. **Desde el móvil:** abre **Conectar** y escanea el QR de la pantalla de arriba con la cámara. Se abre tu SD en el navegador, sin escribir nada.
 3. **Desde el PC:** escribe en el navegador la dirección que aparece (por ejemplo `192.168.1.34`) y el **PIN** de 4 cifras.
 4. Listo: navega, sube, descarga y organiza. Cada dispositivo queda recordado; la próxima vez entra solo.
 
@@ -60,7 +60,15 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 - **Crear carpetas, renombrar y borrar**, también varios a la vez.
 - **Seguro por defecto:** modo **solo lectura** y **carpetas del sistema protegidas** (`Nintendo 3DS`, `3ds`, `luma`, `boot.firm`…): llevan un candado y no se pueden borrar ni renombrar mientras la protección esté activa.
 - **Sin sorpresas:** las subidas y las copias se escriben en un temporal y solo se guardan al terminar; si se corta, no quedan archivos a medias. Avisa si no hay espacio o si el archivo pasa de 4 GB (límite de FAT32).
-- **En la consola:** el QR, la dirección y el PIN siempre a la vista, con las transferencias en directo al lado. La ventana del QR se cierra sola en cuanto haces otra cosa y queda la tira con la dirección y el PIN. El servidor se puede apagar en Ajustes → Conexión (la nube y las descargas siguen funcionando). Pestañas de **Actividad**, **Dispositivos** y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
+- **En la consola, por aplicaciones:** el inicio reúne cada función como una aplicación con su icono; arriba se ve la elegida con lo más útil de ella (espacio libre, dispositivos conectados, descargas en curso…).
+  - **Archivos:** la SD con accesos rápidos, búsqueda, selección múltiple, papelera, ZIP, MD5/SHA-256, visor de fotos y editor de texto.
+  - **Títulos:** los juegos y aplicaciones instalados con lo que ocupa cada uno, ordenables por tamaño. Permite copiar la partida, desinstalar solo la actualización o los DLC, borrar los datos extra (siempre con copia previa) o desinstalar el título.
+  - **Conectar:** el QR, la dirección y el PIN, la actividad en directo y los dispositivos vinculados.
+  - **Descargas:** desde un enlace o escaneando un código QR; los CIA se instalan mientras se descargan.
+  - **Nube:** OneDrive en la consola, con copia automática de partidas y capturas.
+  - **Navegador** (experimental), **Música** (también en segundo plano) y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
+- **Operaciones delicadas protegidas:** al instalar, desinstalar o borrar datos aparece una pantalla de espera que bloquea los botones y HOME hasta que termina, para que no se corte a mitad. Una descarga que se está instalando se puede cancelar sin riesgo.
+- El servidor se puede apagar en Ajustes → Conexión (la nube y las descargas siguen funcionando).
 - **Se actualiza sola:** busca versiones nuevas en GitHub y las instala desde Ajustes, comprobando antes que el archivo es el original (SHA-256). Nunca baja de versión.
 - **Puedes cerrar la tapa:** mientras transfiere, la consola no se suspende y apaga la pantalla.
 - Fecha, hora, Wi-Fi y batería en la pantalla superior. Tema oscuro y claro.
@@ -70,13 +78,13 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 
 | Botón | Acción |
 |---|---|
-| **L / R** | Cambiar de pestaña (Actividad, Dispositivos, Ajustes) |
-| **↑ ↓** | Moverse por las listas |
-| **A** | Elegir (en Dispositivos: renombrar) |
-| **X** | Desvincular el dispositivo elegido (en Dispositivos) |
-| **Y** | Borrar el historial (en Actividad) |
-| **B** | Atrás / cancelar |
-| **SELECT** | Abrir el menú: Nube, Conectar (QR), Escanear QR, Descargar y Navegador (también con el botón central) |
+| **Cruceta** | Moverse por el inicio y por las listas |
+| **A** | Abrir o elegir |
+| **B** | Atrás; en la pantalla principal de una aplicación, vuelve al inicio |
+| **Y** | En Archivos: opciones de lo elegido · en Títulos: ordenar por tamaño o por nombre · en el inicio: tamaño de los iconos |
+| **X** | En Archivos: crear una carpeta o un documento, o pegar lo copiado |
+| **L / R** | En Conectar: cambiar entre Actividad y Dispositivos |
+| **SELECT** | Volver al inicio desde cualquier aplicación |
 | **START** | Salir (siempre pregunta) |
 
 Todo se puede hacer también con la pantalla táctil.
@@ -105,7 +113,12 @@ source/   código de la app
   fsx.c           operaciones de la SD
   ops.c           copiar y mover dentro de la SD
   names.c         nombre real de los dispositivos (mDNS, NetBIOS y el router)
-  install.c       instalar CIA de la SD (con confirmación en la consola)
+  install.c       instalar CIA de la SD (con confirmación en la consola) o mientras se descargan
+  titles.c        títulos instalados: tamaños, copias de la partida, desinstalar por partes, datos extra
+  dl.c            descargas de Internet (curl)
+  cloud.c         OneDrive
+  music.c         reproductor de música
+  browser.c       navegador web (experimental; brcss, brlayout, jsdom, canvas, svg)
   img.c           abrir fotos para el visor y las miniaturas de la consola
   txt.c           abrir, editar y guardar textos sin cambiar su formato
   hl.c            colores de código en el editor (Python, C/C++, Java, JS, Lua, HTML, JSON…)
@@ -131,7 +144,7 @@ Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python
 
 **Install:** open **FBI** → *Remote Install* → *Scan QR Code* and scan the QR above, or download `Cloud3DS.cia` / `Cloud3DS.3dsx` from the [latest release](https://github.com/venomshine/Cloud3DS/releases/latest).
 
-**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, copy and move, view photos and videos, rename and delete. If something already exists, choose to replace (or merge folders), rename, keep both, skip or cancel all. Highlight folders with a color, and system folders are shown in their own group. Devices show their real name when the network provides it, can be renamed and unpaired from the console. The QR window closes by itself as soon as you do something else; SELECT opens the menu (Cloud, Connect, Scan QR, Download, Browser). The server can be turned off in Settings → Connection. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads and copies never leave half-written files behind.
+**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, copy and move, view photos and videos, rename and delete. If something already exists, choose to replace (or merge folders), rename, keep both, skip or cancel all. Highlight folders with a color, and system folders are shown in their own group. Devices show their real name when the network provides it, can be renamed and unpaired from the console. On the console, every feature is an app on the home menu: Files, Titles (installed games and apps, their size, updates, DLC, extra data, save backups and uninstalling), Connect (QR, address, PIN, activity and devices), Downloads (from a link or a QR code; CIA files install while they download), Cloud (OneDrive), Browser (experimental), Music and Settings. SELECT always returns to the home menu. Installing, uninstalling and deleting data show a waiting screen that blocks the buttons and HOME until they finish. The server can be turned off in Settings → Connection. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads and copies never leave half-written files behind.
 
 **Updates:** Cloud3DS checks GitHub for new versions when it opens. Go to **Settings → Updates** to download, verify (SHA-256) and install the new one without FBI.
 
