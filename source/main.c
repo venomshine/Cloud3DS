@@ -107,7 +107,7 @@ enum { PAGE_MAIN, PAGE_LANG, PAGE_ABOUT, PAGE_PIN, PAGE_UPDATE, PAGE_CONN };
 enum { PIN_CUSTOM, PIN_RANDOM, PIN_COUNT };
 enum { SET_READONLY, SET_PROTECT, SET_PIN, SET_CONN, SET_SHOTS, SET_LANG, SET_THEME, SET_UPDATE, SET_ABOUT, SET_EXIT, SET_COUNT };
 enum { AB_APP, AB_GITHUB, AB_DISCORD, AB_KOFI, AB_COUNT };
-enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLOUT, DLG_UNUPD, DLG_UNDLC, DLG_EXTDEL };
+enum { DLG_REVOKE = 1, DLG_NEWPIN, DLG_EXIT, DLG_CLEAR, DLG_UPDATE, DLG_FDELETE, DLG_FEXISTS, DLG_TXTDISCARD, DLG_TXTOVER, DLG_FDELMULTI, DLG_TRASHEMPTY, DLG_TRASHDEL, DLG_UNINSTALL, DLG_UNINSTALL2, DLG_DLINSECURE, DLG_UPDFILE, DLG_UPDRESTART, DLG_CLDEL, DLG_CLDELN, DLG_CLOUT, DLG_UNUPD, DLG_UNDLC, DLG_EXTDEL };
 
 typedef struct {
 	float off, target;
@@ -133,6 +133,12 @@ static struct {
 	int bk_sel;
 	int want_ren;     // cambiar el nombre del elemento want_ren - 1 (el teclado, fuera del dibujo)
 	bool want_mkdir;  // carpeta nueva
+	bool ms;          // seleccionando varios (mark: cuáles, en la carpeta ms_folder)
+	bool mark[400];
+	char ms_folder[64];
+	bool mo, mo_just; // opciones de lo seleccionado
+	float mo_anim;
+	int mo_sel;
 } CLU;
 
 // portapapeles de la nube: lo copiado o cortado en OneDrive. Se pega en otra carpeta de la nube (copiar o
@@ -142,7 +148,7 @@ enum { CC_NONE, CC_COPY, CC_CUT };
 static struct {
 	int mode;
 	int n;
-	CloudItem it[8];
+	CloudItem it[64];
 } CC;
 static bool vw_cloud_open(void);           // el visor tiene abierto un archivo de la nube
 static void cl_open_item(int i);           // abrir como en Archivos (carpeta, foto, texto, música, CIA, ZIP…)
@@ -2212,6 +2218,7 @@ static void cl_options(void)
 	ic[n] = IC_DUP, lab[n] = _("Copiar"), col[n] = T.text, act[n++] = 3;
 	ic[n] = IC_FOLDER, lab[n] = _("Cortar"), col[n] = T.text, act[n++] = 4;
 	ic[n] = IC_PEN, lab[n] = _("Cambiar el nombre"), col[n] = T.text, act[n++] = 5;
+	ic[n] = IC_CHECK, lab[n] = _("Seleccionar varios"), col[n] = T.text, act[n++] = 6;
 	ic[n] = IC_TRASH, lab[n] = _("Eliminar"), col[n] = T.danger, act[n++] = 2;
 	int r = sheet_list(&CLU.om, &CLU.om_just, &CLU.om_anim, &CLU.om_sel, c ? c->name : "", ic, lab, col, n);
 	if (r >= 0 && c) {
@@ -2232,11 +2239,54 @@ static void cl_options(void)
 			           IC_DUP, T.accent2);
 		} else if (act[r] == 5)
 			CLU.want_ren = CLU.om_item + 1;
+		else if (act[r] == 6) {
+			memset(CLU.mark, 0, sizeof CLU.mark);
+			CLU.mark[CLU.om_item] = true;
+			CLU.ms = true;
+			util_strlcpy(CLU.ms_folder, cloud_folder_id(), sizeof CLU.ms_folder);
+		}
 		else {
 			char msg[260];
 			snprintf(msg, sizeof msg, _("«%s» irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive."), c->name);
 			U.dlg_arg = CLU.om_item;
 			dialog_open(DLG_CLDEL, _("¿Eliminar de OneDrive?"), msg, _("Eliminar"), true);
+		}
+	}
+	// opciones de lo seleccionado
+	{
+		int mn = 0;
+		for (int i = 0; i < CLU.n; i++)
+			mn += CLU.ms && CLU.mark[i];
+		static const IconId mic[4] = {IC_DOWNLOAD, IC_DUP, IC_FOLDER, IC_TRASH};
+		const char *mlab[4] = {_("Descargar a la SD"), _("Copiar"), _("Cortar"), _("Eliminar")};
+		const u32 mcol[4] = {T.ok, T.text, T.text, T.danger};
+		char mt[48];
+		snprintf(mt, sizeof mt, mn == 1 ? _("1 seleccionado") : _("%d seleccionados"), mn);
+		int mr = sheet_list(&CLU.mo, &CLU.mo_just, &CLU.mo_anim, &CLU.mo_sel, mt, mic, mlab, mcol, 4);
+		if (mr >= 0 && mn) {
+			if (mr == 0) {
+				for (int i = 0; i < CLU.n; i++)
+					if (CLU.mark[i])
+						cloud_download_to(&CLU.it[i], "/Descargas");
+				toast_icon(_("Descargando en /Descargas: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+				CLU.ms = false;
+			} else if (mr == 1 || mr == 2) {
+				fp_clear();
+				CC.mode = mr == 1 ? CC_COPY : CC_CUT;
+				CC.n = 0;
+				for (int i = 0; i < CLU.n && CC.n < (int)(sizeof CC.it / sizeof CC.it[0]); i++)
+					if (CLU.mark[i])
+						CC.it[CC.n++] = CLU.it[i];
+				toast_icon(mr == 1 ? _("Copiado: pégalo con X en otra carpeta de la nube o en Archivos") : _("Cortado: pégalo con X en otra carpeta de la nube"), IC_DUP,
+				           T.accent2);
+				CLU.ms = false;
+			} else {
+				char msg[200];
+				snprintf(msg, sizeof msg, mn == 1 ? _("1 elemento irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive.")
+				                                  : _("%d elementos irán a la papelera de tu OneDrive. Podrás recuperarlos desde la web de OneDrive."),
+				         mn);
+				dialog_open(DLG_CLDELN, _("¿Eliminar de OneDrive?"), msg, _("Eliminar"), true);
+			}
 		}
 	}
 	// opciones de la cuenta
@@ -2313,7 +2363,7 @@ static void cl_bottom(void)
 {
 	cl_refresh();
 	const CloudInfo *ci = &CLU.info;
-	bool sheet = CLU.om || CLU.hm || g_dialog.open;
+	bool sheet = CLU.om || CLU.hm || CLU.mo || g_dialog.open;
 	u32 kd = g_kdown, kr = g_krepeat;
 	Touch tc = g_touch;
 	if (sheet) {
@@ -2328,23 +2378,41 @@ static void cl_bottom(void)
 	else if (ci->st == CLS_ON) {
 		const char *fname = cloud_folder_name();
 		bool sub = cloud_depth() > 1;
-		tab_header_w(sub ? fname : "OneDrive", true, 170);
+		if (CLU.ms && strcmp(CLU.ms_folder, cloud_folder_id()))
+			CLU.ms = false; // (otra carpeta: la selección era de la anterior)
+		int mn = 0;
+		for (int i = 0; i < CLU.n && CLU.ms; i++)
+			mn += CLU.mark[i];
+		char mt[48];
+		snprintf(mt, sizeof mt, mn == 1 ? _("1 seleccionado") : _("%d seleccionados"), mn);
+		tab_header_w(CLU.ms ? mt : sub ? fname : "OneDrive", true, 170);
 		// a la derecha: carpeta nueva y opciones de la cuenta
 		float hx = BOT_W - 24, hy = 16, px = hx - 32;
-		draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? T.surface2 : T.surface);
-		draw_icon(IC_DOTS, hx, hy, 14, T.text2);
-		draw_circle(px, hy, 12, touch_in(px - 14, hy - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
-		draw_icon(IC_PLUS, px, hy, 13, 0xFFFFFFFF);
-		bool clip = CC.mode || fp_count();
-		if (tap(hx - 14, hy - 14, 28, 28))
-			CLU.hm = CLU.hm_just = true, CLU.hm_sel = 0;
-		else if (tap(px - 14, hy - 14, 28, 28) || (!clip && (g_kdown & KEY_X)))
-			CLU.want_mkdir = true;
-		else if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B)) {
-			if (sub)
-				cloud_up();
-			else
-				close = true;
+		if (CLU.ms) { // seleccionando: las opciones de lo elegido (también con Y); B deja de seleccionar
+			draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+			draw_icon(IC_DOTS, hx, hy, 14, 0xFFFFFFFF);
+			if (mn && (tap(hx - 14, hy - 14, 28, 28) || (g_kdown & KEY_Y)))
+				CLU.mo = CLU.mo_just = true, CLU.mo_sel = 0;
+			else if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
+				CLU.ms = false;
+			g_kdown &= ~(KEY_B | KEY_Y | KEY_X);
+		}
+		bool clip = !CLU.ms && (CC.mode || fp_count());
+		if (!CLU.ms) {
+			draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? T.surface2 : T.surface);
+			draw_icon(IC_DOTS, hx, hy, 14, T.text2);
+			draw_circle(px, hy, 12, touch_in(px - 14, hy - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+			draw_icon(IC_PLUS, px, hy, 13, 0xFFFFFFFF);
+			if (tap(hx - 14, hy - 14, 28, 28))
+				CLU.hm = CLU.hm_just = true, CLU.hm_sel = 0;
+			else if (tap(px - 14, hy - 14, 28, 28) || (!clip && (g_kdown & KEY_X)))
+				CLU.want_mkdir = true;
+			else if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B)) {
+				if (sub)
+					cloud_up();
+				else
+					close = true;
+			}
 		}
 		const float RH = 40;
 		g_list_bar = clip ? 42 : 0;
@@ -2385,6 +2453,15 @@ static void cl_bottom(void)
 			}
 			text_draw_clip(sb, 50, y + 22, BOT_W - 90, TS_SUB, T.text3);
 			g_clip_ell = false;
+			if (CLU.ms) { // seleccionando: su casilla; tocar o A la marca o la desmarca
+				bool on = CLU.mark[i];
+				draw_circle(BOT_W - 26, y + RH / 2, 10, on ? T.accent : T.surface2);
+				if (on)
+					draw_icon(IC_CHECK, BOT_W - 26, y + RH / 2, 12, 0xFFFFFFFF);
+				if (t || activate(&CLU.l, i))
+					CLU.mark[i] = !on;
+				continue;
+			}
 			if (CLU.l.sel == i) { // ⋮ en la marcada
 				draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
 				draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
@@ -2396,7 +2473,7 @@ static void cl_bottom(void)
 				cl_open_item(i);
 		}
 		gfx_clip_off();
-		if ((g_kdown & KEY_Y) && CLU.n && !CLU.om)
+		if ((g_kdown & KEY_Y) && CLU.n && !CLU.om && !CLU.ms)
 			CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = CLU.l.sel;
 		// lo copiado (en la nube o en Archivos): «Pegar aquí», como en Archivos
 		if (clip) {
@@ -9103,7 +9180,11 @@ static void handle_dialog(int ctx, bool ok)
 				vw_close(); // (el que se estaba viendo)
 			cloud_delete(&CLU.it[U.dlg_arg]);
 		}
-
+	} else if (ctx == DLG_CLDELN) {
+		for (int i = 0; i < CLU.n; i++)
+			if (CLU.ms && CLU.mark[i])
+				cloud_delete(&CLU.it[i]);
+		CLU.ms = false;
 	} else if (ctx == DLG_CLOUT) {
 		cloud_disconnect();
 		toast_icon(_("OneDrive desconectado"), IC_LOGOUT, T.text2);
@@ -9744,7 +9825,7 @@ static void update(void)
 	if (g_dialog.open)
 		return;
 	br_poll(); // el navegador cerrado a media carga: se suelta al acabar
-	if (CLU.open && (g_kdown & KEY_SELECT) && !CLU.om && !CLU.hm && !(vw_cloud_open() && VW.kind == VW_TXT)) { // la nube también: SELECT, al inicio
+	if (CLU.open && (g_kdown & KEY_SELECT) && !CLU.om && !CLU.hm && !CLU.mo && !(vw_cloud_open() && VW.kind == VW_TXT)) { // la nube también: SELECT, al inicio
 		if (vw_cloud_open()) // (en el editor, SELECT es «Bloque»)
 			vw_close();
 		CLU.open = false;
