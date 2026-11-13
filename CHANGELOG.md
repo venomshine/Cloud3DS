@@ -2,7 +2,7 @@
 
 ## 1.2.0 — novedades y arreglos
 
-- Nueva interfaz en la consola: un inicio con cada función como una aplicación (Archivos, Títulos, Conectar, Descargas, Nube, Navegador, Música y Ajustes), con lo más útil de la elegida en la pantalla de arriba y dos tamaños de icono. Cada aplicación ocupa las dos pantallas; SELECT vuelve siempre al inicio y B, desde la pantalla principal de una aplicación. Las aplicaciones se comunican por el portapapeles (archivos copiados y enlaces).
+- Nueva interfaz en la consola: un inicio con cada función como una aplicación (Archivos, Títulos, Conectar, Descargas, Nube, Navegador, Música, Compartir y Ajustes), con lo más útil de la elegida en la pantalla de arriba y dos tamaños de icono. Cada aplicación ocupa las dos pantallas; SELECT vuelve siempre al inicio y B, desde la pantalla principal de una aplicación. Las aplicaciones se comunican por el portapapeles (archivos copiados y enlaces).
 - Pantalla de espera en las operaciones delicadas: instalar un CIA (también mientras se descarga o al actualizar Cloud3DS), desinstalar y borrar datos bloquean los botones, la pantalla táctil y HOME hasta terminar. Una descarga que se está instalando se puede cancelar sin riesgo.
 - Descargas de Internet en la consola: desde la web, escribiendo un enlace o escaneando un QR (como en FBI), con cola, pausa y reanudación, comprobación de MD5 o SHA-256, y releases de GitHub. Van por el servicio HTTP del sistema, como FBI, y comprueban el certificado (si no se puede, se puede descargar sin comprobarlo tras un aviso).
 - Los CIA pedidos desde la consola se instalan mientras se descargan, sin guardarlos en la SD.
@@ -10,7 +10,12 @@
 - Nube: OneDrive en la consola, gestionado como Archivos: abrir fotos, textos (editándolos y guardando en la nube), música, páginas, ZIP y CIA; copiar, cortar, cambiar el nombre, eliminar, crear carpetas y seleccionar varios, con un mismo portapapeles para la SD y la nube (subir y descargar archivos o carpetas enteras pegando con X). Las capturas nuevas se suben solas.
 - Navegador web (experimental), con favoritos e historial.
 - Papelera (con recuperación durante 7 días), búsqueda en toda la SD, selección múltiple, MD5 y SHA-256, crear y extraer ZIP y descargar carpetas como ZIP.
-- Reproductor de música (MP3, OGG y WAV) que sigue sonando con la tapa cerrada, y capturas de pantalla que aparecen al instante en la web.
+- Música: biblioteca de toda la SD por canciones, artistas y álbumes (etiquetas ID3 y Vorbis), con «Sin datos» para lo que no las tiene (ocultar o eliminar, opcional). El reproductor (MP3, OGG y WAV) sigue sonando con la tapa cerrada.
+- Compartir: pasar homebrew (.3dsx y CIA sin cifrar) entre consolas en la misma Wi-Fi, vinculándolas una vez con un código; cada pedido lo acepta quien da, salvo las consolas «de confianza».
+- Descargas: todo lo descargado queda en /Downloads, que la app Descargas enseña y deja abrir.
+- Todos los botones de las cabeceras también con la cruceta (↑ desde lo primero de la lista).
+- Al pegar algo que ya existe: reemplazar (o combinar carpetas), conservar ambos u omitir.
+- Capturas de pantalla que aparecen al instante en la web.
 - Escribir desde el teclado del PC en el editor de la consola (edición en directo).
 - cloud3ds.local e instalación remota desde las apps de PC para FBI. Vincular por la IP vale también para el nombre .local y al revés.
 - Actualizar Cloud3DS desde un archivo de la SD (Ajustes → Actualizaciones → Instalar desde un archivo) o subiendo su CIA desde la web, además de desde GitHub.
