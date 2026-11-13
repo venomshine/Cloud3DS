@@ -64,13 +64,14 @@ u32 __stacksize__ = 256 * 1024;
 #define COL_W  160
 
 // pantalla inferior
-#define TABBAR_H 42
+#define TABBAR_H 0 /* (sin barra de pestañas: cada aplicación ocupa su pantalla; el inicio, con su botón) */
 #define VIEW_Y   32
 #define VIEW_H   (SCR_H - TABBAR_H - VIEW_Y)
-#define QR_PAD   24 // el botón del QR sobresale de la barra
+#define QR_PAD   8
 #define MINI_H   30 // tira de arriba con el QR cerrado
 #define SDB_H    44 // tarjeta de la SD, al pie de la pantalla de arriba
-#define BODY_Y   (CARD_Y + MINI_H + 8)        // lo de en medio, entre la tira y la tarjeta de la SD
+static float g_body_y = CARD_Y + MINI_H + 8; // lo de en medio, entre la tira y la tarjeta de la SD (sin la tira, desde arriba)
+#define BODY_Y   g_body_y
 #define BODY_B   (SCR_H - 8 - SDB_H - 6)
 static float g_info_ymax = 1e9f; // info_row: las filas que no caben (las menos importantes van al final) no se dibujan
 
@@ -85,7 +86,10 @@ static struct {
 } QA = {.sel = 1, .pos = 1};
 
 enum { QA_CLOUD, QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
-static void qa_top(float a);
+/* las aplicaciones del inicio (ver hm_*) */
+enum { AP_FILES, AP_CLOUD, AP_WEB, AP_DL, AP_TITLES, AP_SAVES, AP_SHOTS, AP_MUSIC, AP_CONNECT, AP_SCAN, AP_SEARCH, AP_TRASH,
+       AP_ACTIVITY, AP_DEVICES, AP_SHARE, AP_SETTINGS, AP_N };
+
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
 static struct {
@@ -150,6 +154,8 @@ static struct {
 	bool want_fnew;              // crear una carpeta en Archivos
 	bool want_tnew;              // crear un documento de texto en Archivos
 	bool want_search;            // buscar desde la carpeta abierta (teclado)
+	int app;                     // la aplicación abierta (AP_*, del inicio): de ella depende la pantalla de arriba
+	char app_root[512];          // en las que son una vista de Archivos (Capturas, Títulos…): su carpeta; ahí, B vuelve al inicio
 	bool want_dlurl;             // descargar un enlace escrito en la consola (teclado)
 	bool want_web;               // abrir una página en el navegador (teclado)
 	bool want_netname;           // cambiar el nombre en la red (teclado)
@@ -1200,7 +1206,7 @@ static void mini_body(float a)
 {
 	if (a <= 0.01f)
 		return;
-	float y = CARD_Y + MINI_H + 10, h = BODY_B - y;
+	float y = BODY_Y + 2, h = BODY_B - y;
 	const Xfer *xs[MAX_XFERS];
 	int nx = visible_xfers(xs, MAX_XFERS);
 	const InsReq *wait[MAX_INS];
@@ -1489,6 +1495,64 @@ static bool hm_is_open(void);
 static void hm_top(void);
 static void hm_bottom(void);
 static void hm_show(void);
+
+// arriba, en una aplicación sin nada elegido: su icono y una frase
+static void app_idle_top(IconId ic, const char *title, const char *text)
+{
+	float y = BODY_Y, h = SCR_H - 8 - y, cy = y + h / 2 - 20;
+	draw_rrect(CARD_X, y + 3, CARD_W, h, 16, T.shadow);
+	draw_rrect(CARD_X, y, CARD_W, h, 16, T.surface);
+	draw_circle(TOP_W / 2, cy, 30, T.surface2);
+	draw_icon(ic, TOP_W / 2, cy, 30, T.text2);
+	text_draw_center(title, TOP_W / 2, cy + 40, TS_TITLE, T.text);
+	if (text)
+		wrap_center(text, TOP_W / 2, cy + 64, 300, TS_SUB, 2, T.text3);
+}
+
+// Conectar: el código QR y la dirección (o por qué aún no se puede)
+static void conn_top(void)
+{
+	if (!strcmp(V.srv_error, "soc")) {
+		char msg[160];
+		snprintf(msg, sizeof msg, _("El servicio de red de la consola no responde (error %08lX). Reintentando automáticamente…"), (unsigned long)V.net_err);
+		card_message(IC_REFRESH, T.warn, _("Iniciando la red"), msg);
+	} else if (!V.ip && V.wifi == 3)
+		card_message(IC_WIFI, T.accent, _("Conectado al Wi-Fi"), _("Esperando a que el router asigne una dirección IP…"));
+	else if (!V.ip)
+		card_message(IC_WIFI_OFF, T.text3, _("Sin conexión Wi-Fi"),
+		             _("Conecta la consola a una red Wi-Fi. Si no tienes router, puedes usar el punto de acceso de tu móvil."));
+	else if (V.srv_error[0])
+		card_message(IC_INFO, T.warn, _("No se pudo iniciar el servidor"), _("Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS."));
+	else if (V.srv_off)
+		card_message(IC_POWER, T.text3, _("Servidor apagado"), _("Actívalo en Ajustes, en «Conexión», para conectar otros dispositivos."));
+	else if (!V.running) {
+		card();
+		draw_arc(TOP_W / 2, CARD_Y + 80, 16, 3, g_time * 6, g_time * 6 + 4.2f, T.accent);
+		text_draw_center(_("Iniciando el servidor…"), TOP_W / 2, CARD_Y + 114, TS_BODY, T.text3);
+	} else {
+		card();
+		char url[64], qr[96];
+		url_text(url, sizeof url, true);
+		snprintf(qr, sizeof qr, "%s/#k=%s", url, V.qr_key);
+		draw_qr(qr, QR_X, QR_Y, QR_S, 1);
+		connect_col(1, 0);
+		draw_status(COL_X, QR_Y + QR_S - 12, COL_W, 1);
+	}
+}
+
+// Actividad: lo que está en curso o, sin nada, cómo funciona
+static void activity_top(void)
+{
+	const Xfer *xs[1];
+	bool any = visible_xfers(xs, 1) > 0;
+	for (int i = 0; i < U.ins_n && !any; i++)
+		any = U.ins[i].st == INS_PENDING || U.ins[i].st == INS_QUEUED;
+	if (any || mu_on())
+		mini_body(1);
+	else
+		app_idle_top(IC_CLOCK, _("Sin transferencias en curso"), _("Aquí verás el progreso de lo que envíes, recibas, descargues o instales."));
+}
+
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
@@ -1528,65 +1592,31 @@ static void draw_top(void)
 	bool about = U.tab == TAB_SETTINGS && U.page == PAGE_ABOUT;
 	if (!about)
 		draw_header();
-	if (about) {
+	g_body_y = CARD_Y; // (sin la tira del servidor: cada aplicación, su pantalla de arriba entera)
+	if (about)
 		about_top();
-	} else if (U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE) {
+	else if (U.tab == TAB_SETTINGS && U.page == PAGE_UPDATE)
 		update_top();
-	} else if (!strcmp(V.srv_error, "soc")) {
-		// la red de la consola (soc:U) no arrancó: no es culpa del Wi-Fi, y se reintenta sola
-		char msg[160];
-		snprintf(msg, sizeof msg, _("El servicio de red de la consola no responde (error %08lX). Reintentando automáticamente…"),
-		         (unsigned long)V.net_err);
-		card_message(IC_REFRESH, T.warn, _("Iniciando la red"), msg);
-	} else if (!V.ip && V.wifi == 3) {
-		card_message(IC_WIFI, T.accent, _("Conectado al Wi-Fi"), _("Esperando a que el router asigne una dirección IP…"));
-	} else if (!V.ip) {
-		card_message(IC_WIFI_OFF, T.text3, _("Sin conexión Wi-Fi"),
-		             _("Conecta la consola a una red Wi-Fi. Si no tienes router, puedes usar el punto de acceso de tu móvil."));
-	} else if (V.srv_error[0]) {
-		card_message(IC_INFO, T.warn, _("No se pudo iniciar el servidor"),
-		             _("Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS."));
-	} else if (!V.running && !V.srv_off) { // apagado a propósito: la tira gris, no «preparando»
-		card();
-		draw_arc(TOP_W / 2, CARD_Y + 80, 16, 3, g_time * 6, g_time * 6 + 4.2f, T.accent);
-		text_draw_center(_("Preparando tu nube…"), TOP_W / 2, CARD_Y + 114, TS_BODY, T.text3);
-	} else {
-		// la tarjeta se encoge hasta la tira compacta (SELECT o el botón del QR abajo)
-		U.qr_anim = approach(U.qr_anim, V.qr_min ? 0 : 1, 10);
-		float k = ease_in_out(U.qr_anim), full = clampf(k * 1.6f - 0.6f, 0, 1), mini = clampf(1 - k * 1.6f, 0, 1);
-		float h = MINI_H + (CARD_H - MINI_H) * k;
-		draw_rrect(CARD_X, CARD_Y + 3, CARD_W, h, 16, T.shadow);
-		draw_rrect(CARD_X, CARD_Y, CARD_W, h, 16, T.surface);
-		gfx_clip(CARD_X, CARD_Y, CARD_W, h);
-		if (full > 0.01f) {
-			char url[64], qr[96];
-			url_text(url, sizeof url, true);
-			snprintf(qr, sizeof qr, "%s/#k=%s", url, V.qr_key);
-			// con el QR abierto, solo el QR y cómo conectarse: lo demás se ve con el QR cerrado
-			draw_qr(qr, QR_X, QR_Y, QR_S, full);
-			connect_col(full, 0);
-			draw_status(COL_X, QR_Y + QR_S - 12, COL_W, full);
-		}
-		if (mini > 0.01f)
-			mini_strip(mini);
-		gfx_clip_off();
-		if (mini > 0.01f)
-			sd_bar(mini);
-		if (mini > 0.01f && U.ins_pend)
-			install_top(mini);
-		else if (mini > 0.01f && QA.anim > 0.01f)
-			qa_top(mini);
-		else if (mini > 0.01f && MU.open)
-			music_top(mini);
-		else if (U.tab == TAB_FILES && mini > 0.01f)
-			files_top(mini);
-		else if (U.tab == TAB_SETTINGS && U.page == PAGE_MAIN && mini > 0.01f)
-			settings_top(mini);
-		else if (U.tab == TAB_SETTINGS && (U.page == PAGE_PIN || U.page == PAGE_CONN) && mini > 0.01f)
-			settings_sub_top(mini);
-		else if (!(U.tab == TAB_DEVICES && mini > 0.01f && device_top(mini)))
-			mini_body(mini);
-	}
+	else if (U.ins_pend)
+		install_top(1);
+	else if (U.app == AP_CONNECT)
+		conn_top();
+	else if (MU.open)
+		music_top(1);
+	else if (U.tab == TAB_FILES) {
+		files_top(1);
+		sd_bar(1);
+	} else if (U.tab == TAB_SETTINGS && U.page == PAGE_MAIN)
+		settings_top(1);
+	else if (U.tab == TAB_SETTINGS && (U.page == PAGE_PIN || U.page == PAGE_CONN))
+		settings_sub_top(1);
+	else if (U.tab == TAB_SETTINGS)
+		app_idle_top(IC_GEAR, _("Ajustes"), NULL);
+	else if (U.tab == TAB_DEVICES) {
+		if (!device_top(1))
+			app_idle_top(IC_DEVICES, _("Dispositivos"), _("Elige un dispositivo para ver su información y sus permisos."));
+	} else
+		activity_top();
 	if (UN.anim > 0.01f)
 		un_top();
 	toast_draw_top();
@@ -1656,10 +1686,19 @@ static bool activate(List *l, int i)
 }
 
 // título de una pestaña (con «‹» si se puede volver); maxw: hasta dónde llega el texto
+static void hm_show(void);
 static void tab_header_w(const char *title, bool back, float maxw)
 {
 	float x = 14;
-	if (back) {
+	if (!back) { // en la raíz de una aplicación: al inicio (como B)
+		bool hp = touch_in(0, 0, 34, VIEW_Y);
+		draw_rrect(6, 5, 26, 22, 11, hp ? col_alpha(T.accent, 0.35f) : col_alpha(T.accent, 0.18f));
+		for (int q = 0; q < 4; q++)
+			draw_rrect(13 + (q % 2) * 6.5f, 10 + (q / 2) * 6.5f, 5, 5, 1.4f, T.accent);
+		if (!g_dialog.open && tap(0, 0, 34, VIEW_Y))
+			hm_show();
+		x = 40;
+	} else {
 		if (touch_in(0, 0, 170, VIEW_Y))
 			draw_rrect(6, 4, fminf(text_width(title, TS_TITLE), maxw) + 36, 24, 12, T.surface);
 		draw_icon(IC_CHEV_LEFT, 20, 16, 14, T.text2);
@@ -2310,6 +2349,10 @@ static void qrs_open(void);
 
 static void tab_activity(void)
 {
+	if ((g_kdown & KEY_B) && !g_dialog.open) { // en la raíz de la aplicación: al inicio
+		hm_show();
+		return;
+	}
 	List *l = cur_list();
 	tab_header(_("Actividad"), false);
 	float hx = BOT_W - 14;
@@ -2426,10 +2469,14 @@ static void dvs_draw(void)
 
 static void tab_devices(void)
 {
+	if ((g_kdown & KEY_B) && !g_dialog.open) { // en la raíz de la aplicación: al inicio
+		hm_show();
+		return;
+	}
 	List *l = cur_list();
 	int idx[MAX_DEVICES];
 	int n = device_order(idx);
-	tab_header(_("Dispositivos"), false);
+	tab_header(U.app == AP_CONNECT ? _("Conectar") : _("Dispositivos"), false);
 	if (n) {
 		char r[48];
 		int on = online_count();
@@ -5661,6 +5708,9 @@ static void cq_tick(void)
 	}
 }
 
+static const char *ap_name(int i);
+// ¿en la carpeta con la que se abrió la aplicación? (Archivos: la raíz de la SD)
+static bool f_app_root(void) { return !strcmp(F.path, U.app_root[0] ? U.app_root : "/"); }
 static void tab_files(void)
 {
 	if (!F.e)
@@ -5668,8 +5718,8 @@ static void tab_files(void)
 	if (F.need_reload)
 		f_reload_keep();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
-	bool root = !strcmp(F.path, "/");
-	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Instalados") : F.nosaves ? _("Partidas") : root ? "SD" : strrchr(F.path, '/') + 1;
+	bool root = f_app_root();
+	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : root && U.app != AP_FILES && U.app != AP_SEARCH ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
 	char sq[160];
 	if (F.search) {
 		snprintf(sq, sizeof sq, "«%s»", SR.q);
@@ -5720,7 +5770,7 @@ static void tab_files(void)
 			return;
 		}
 	} else if (F.titles) { // instalados: atrás a la raíz y, a la derecha, cuántos y cuánto ocupan
-		tab_header_w(nm, true, 130);
+		tab_header_w(nm, !root, 130);
 		u64 tot = 0;
 		for (int i = 0; i < TI_n; i++)
 			tot += TI[i].size + TI[i].upd_size + TI[i].dlc_size;
@@ -5728,14 +5778,18 @@ static void tab_files(void)
 		util_fmt_size(sz, sizeof sz, tot);
 		snprintf(c, sizeof c, TI_n == 1 ? _("1 título · %s") : _("%d títulos · %s"), TI_n, sz);
 		text_draw_right(c, BOT_W - 14, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
-		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
+		if (root && !g_dialog.open && U.buttons && (g_kdown & KEY_B)) { // abierta desde el inicio: B, al inicio
+			hm_show();
+			return;
+		}
+		if (!root && !g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
 			if (!f_back_to_origin())
 				f_load("/");
 			g_kdown &= ~KEY_B;
 			return;
 		}
 	} else if (F.trash) { // papelera: atrás a la raíz y «Vaciar»
-		tab_header(nm, true);
+		tab_header(nm, !root);
 		if (F.n) {
 			const char *vt = _("Vaciar");
 			float vw = text_width(vt, TS_SUB) + 22, vx = BOT_W - 12 - vw;
@@ -5744,7 +5798,11 @@ static void tab_files(void)
 			if (!g_dialog.open && tap(vx, 4, vw, 24))
 				dialog_open(DLG_TRASHEMPTY, _("¿Vaciar la papelera?"), _("Todo lo que hay en la papelera se borrará para siempre."), _("Vaciar"), true);
 		}
-		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
+		if (root && !g_dialog.open && U.buttons && (g_kdown & KEY_B)) {
+			hm_show();
+			return;
+		}
+		if (!root && !g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
 			f_load("/");
 			g_kdown &= ~KEY_B;
 			return;
@@ -6198,6 +6256,8 @@ static void tab_files(void)
 	if (!MS.on && U.buttons && !g_dialog.open && (g_kdown & KEY_B)) {
 		if (F.nosaves)
 			f_reload_keep();
+		else if (f_app_root() && !F.search) // en la carpeta de la aplicación: al inicio
+			hm_show();
 		else if (!f_back_to_results())
 			f_up();
 	}
@@ -7359,6 +7419,10 @@ static void settings_top(float a)
 
 static void settings_main(void)
 {
+	if ((g_kdown & KEY_B) && !g_dialog.open) { // en la raíz de la aplicación: al inicio
+		hm_show();
+		return;
+	}
 	List *l = cur_list();
 	tab_header(_("Ajustes"), false);
 	const float RH = 44;
@@ -7894,55 +7958,13 @@ static void qa_card_text(int i, const char **lab, const char **sb)
 	}
 }
 
-// pantalla de arriba con la hoja abierta: qué hace la tarjeta marcada y dónde se guarda
 static const char *dl_dest_dir(const char *url);
-static void qa_top(float a)
-{
-	float y0 = BODY_Y, h = BODY_B - y0;
-	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, col_alpha(T.shadow, a));
-	draw_rrect(CARD_X, y0, CARD_W, h, 16, col_alpha(T.surface, a));
-	int i = QA.sel;
-	const IconId *ic = QA_IC;
-	u32 col[QA_N];
-	for (int k = 0; k < QA_N; k++)
-		col[k] = qa_col(k);
-	const float X = CARD_X + 16, W = CARD_W - 32;
-	float cx = X + 26, cy = y0 + 16 + 26;
-	draw_circle(cx, cy, 26, col_alpha(col[i], 0.16f * a));
-	draw_icon(ic[i], cx, cy, 24, col_alpha(col[i], a));
-	float rx = X + 66, rw = X + W - rx, y = y0 + 14;
-	const char *t[QA_N] = {_("Nube"), _("Conectar un dispositivo"), _("Escanear un código QR"), _("Descargar un enlace"), _("Navegador (prototipo)")};
-	const char *d[QA_N] = {cl_connected() ? _("Tu OneDrive desde la consola: explora, sube y descarga, y guarda solas las copias de tus partidas y capturas.")
-	                                      : _("Conecta tu cuenta de Microsoft con un QR y un código, sin escribir contraseñas en la consola. Después, tu OneDrive y tus copias, desde aquí."),
-	                       _("Muestra arriba el código QR y el PIN. Escanéalo con el móvil o escribe la dirección en el navegador del PC: tienen que estar en la misma red Wi-Fi."),
-	                       _("Apunta la cámara de la consola a un código QR con un enlace, como los de las webs de homebrew o los de FBI."),
-	                       _("Escribe la dirección de un archivo o de un proyecto de GitHub; de GitHub se descarga su última versión."),
-	                       _("Abre páginas web ligeras: Wikipedia, blogs, foros, noticias y documentación. No ejecuta JavaScript.")};
-	text_draw_clip(t[i], rx, y, rw, TS_TITLE, col_alpha(T.text, a));
-	y += text_lineh(TS_TITLE) + 4;
-	y += text_wrap_lines(d[i], rw, TS_SUB, 3, rx, y, col_alpha(T.text2, a), true) * text_lineh(TS_SUB) + 4;
-	char note[200];
-	if (i == QA_CLOUD)
-		util_strlcpy(note, cl_connected() ? _("Las partidas se guardan en la carpeta Cloud3DS de tu OneDrive.") : _("Solo hace falta una vez: el permiso se guarda y se renueva solo."), sizeof note);
-	else if (i == QA_CONNECT)
-		util_strlcpy(note, V.srv_off ? _("El servidor está apagado: al abrir esta tarjeta se enciende. Se vuelve a apagar en Ajustes, en «Conexión».")
-		                             : _("La ventana del QR se cierra sola en cuanto haces otra cosa."), sizeof note);
-	else if (i == QA_WEB)
-		util_strlcpy(note, _("Un .html de la SD también se abre aquí desde Archivos."), sizeof note);
-	else {
-		const char *dir = dl_dest_dir("");
-		snprintf(note, sizeof note, _("Los .cia se instalan mientras se descargan, como en FBI. El resto se guarda en %s."), !strcmp(dir, "/") ? _("la raíz de la SD") : dir);
-	}
-	text_wrap_lines(note, rw, TS_SUB, 2, rx, y, col_alpha(T.text3, a), true);
-}
 
 /* ------------------------------------------------------------ inicio por aplicaciones
  * La pantalla de inicio: cada función de Cloud3DS es una aplicación con su icono. Arriba, la elegida en grande con
  * lo más útil de ella (espacio libre, la cuenta de la nube, el QR para conectar…); abajo, la cuadrícula (dos tamaños,
  * como en el menú de la consola). Al abrir una, se muestra la pantalla de siempre de esa función; el botón central de
  * la barra (o SELECT) vuelve aquí. Lo que se abre encima (la nube, el navegador, el escáner, la música) vuelve solo. */
-enum { AP_FILES, AP_CLOUD, AP_WEB, AP_DL, AP_TITLES, AP_SAVES, AP_SHOTS, AP_MUSIC, AP_CONNECT, AP_SCAN, AP_SEARCH, AP_TRASH,
-       AP_ACTIVITY, AP_DEVICES, AP_SHARE, AP_SETTINGS, AP_N };
 #define HM_CFG APP_DIR "/inicio.cfg"
 #define HM_BAR 30
 static struct {
@@ -8066,13 +8088,15 @@ static void hm_launch(int i)
 	HM.open = false;
 	U.page = PAGE_MAIN;
 	U.buttons = false;
-	if (i == AP_ACTIVITY || i == AP_CONNECT) {
+	U.app = i;
+	if (i == AP_ACTIVITY) {
 		U.tab = TAB_ACTIVITY;
-		if (i == AP_CONNECT) {
-			if (V.srv_off)
-				srv_set(true);
-			qr_show(true);
-		}
+		return;
+	}
+	if (i == AP_CONNECT) { // el QR arriba; abajo, los dispositivos
+		if (V.srv_off)
+			srv_set(true);
+		U.tab = TAB_DEVICES;
 		return;
 	}
 	if (i == AP_DEVICES) {
@@ -8084,6 +8108,7 @@ static void hm_launch(int i)
 		return;
 	}
 	U.tab = TAB_FILES;
+	U.app_root[0] = 0;
 	const char *to = i == AP_TITLES ? "@titles" : i == AP_SAVES ? "@saves" : i == AP_SHOTS ? "/luma/screenshots" : i == AP_TRASH ? "@trash" : NULL;
 	if (to)
 		f_load(to);
@@ -8104,6 +8129,8 @@ static void hm_launch(int i)
 		f_load(dir);
 		toast_icon(_("Elige una canción para reproducirla"), IC_SPEAKER, T.accent);
 	}
+	if (i != AP_FILES && i != AP_SEARCH) // (Archivos: la raíz de la SD; el resto, la carpeta con la que se abre)
+		util_strlcpy(U.app_root, F.path, sizeof U.app_root);
 }
 
 // un icono de aplicación: cuadrado redondeado con el color de la app; elegido, con su borde y su brillo
@@ -8444,8 +8471,6 @@ static void draw_bottom(void)
 		settings_conn();
 	else
 		settings_main();
-	if (!viewer)
-		draw_tabbar();
 	bool lf = g_touch.long_fired; // una pulsación larga ya usada no vuelve a contar al soltar
 	g_kdown = kd, g_krepeat = kr, g_touch = tc, g_touch.long_fired |= lf;
 	if (U.nav_eat) { // lo que llevó a otra carpeta no sigue en las hojas y barras de después
