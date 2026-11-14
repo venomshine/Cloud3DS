@@ -1,84 +1,48 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee con la consola girada a la izquierda, con zoom.':
+        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT from the SD card, with a library. Read with the console turned to the left, with zoom.',
+         'SDカードのPDF、漫画・コミック(CBZ)、EPUB、DOCX、TXTをライブラリで管理。本体を左に回して、ズームしながら読めます。'),
+    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Se lee con la consola girada a la izquierda (el Circle Pad abajo), con zoom y manga de derecha a izquierda.':
+        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT. Read with the console turned to the left (Circle Pad at the bottom), with zoom and right-to-left manga.',
+         'PDF、漫画・コミック(CBZ)、EPUB、DOCX、TXT。本体を左に回して(スライドパッドが下)読みます。ズームと右から左の漫画に対応。'),
+    'Letra: %d':
+        ('Text size: %d',
+         '文字サイズ: %d'),
+    'Cruceta ← →: pasar página':
+        ('D-Pad ← →: turn the page',
+         '十字ボタン ← →: ページをめくる'),
+    'Cruceta ↑ ↓: tamaño de la letra':
+        ('D-Pad ↑ ↓: text size',
+         '十字ボタン ↑ ↓: 文字サイズ'),
+    'Cruceta ↑ ↓: zoom':
+        ('D-Pad ↑ ↓: zoom',
+         '十字ボタン ↑ ↓: ズーム'),
+    'Circle Pad: moverse por la página':
+        ('Circle Pad: move around the page',
+         'スライドパッド: ページ内を移動'),
+    'Tocar la pantalla: menú · %s Salir':
+        ('Tap the screen: menu · %s Exit',
+         '画面をタップ: メニュー · %s 終了'),
+    'Toca la pantalla para abrir el menú':
+        ('Tap the screen to open the menu',
+         '画面をタップしてメニューを開く'),
+    'Derecha a izquierda (manga)':
+        ('Right to left (manga)',
+         '右から左(漫画)'),
+    'Controles':
+        ('Controls',
+         '操作方法'),
     'Aquí aparecerán los documentos que abras, con la página en la que te quedaste. Elige un documento en «Todos».':
         ('Documents you open will appear here, at the page where you left off. Choose a document in “All”.',
          '開いた文書が、読み終えたページとともにここに表示されます。「すべて」から文書を選んでください。'),
-    'Página entera':
-        ('Whole page',
-         'ページ全体'),
-    'Ajustar al ancho':
-        ('Fit to width',
-         '幅に合わせる'),
-    '%s %s Página anterior y siguiente':
-        ('%s %s Previous and next page',
-         '%s %s 前のページ・次のページ'),
-    '%s Bajar y subir · ← → Cambiar de página':
-        ('%s Scroll down and up · ← → Change page',
-         '%s 上下にスクロール · ← → ページ移動'),
-    '%s Moverse por la página · %s Zoom':
-        ('%s Move around the page · %s Zoom',
-         '%s ページ内を移動 · %s ズーム'),
-    '%s Pasar página en el sentido de la lectura':
-        ('%s Turn the page in reading direction',
-         '%s 読む方向にページをめくる'),
-    '%s Cambiar de vista · Tocar el centro: menú':
-        ('%s Change view · Tap the center: menu',
-         '%s 表示を切り替え · 中央をタップ: メニュー'),
-    '%s Menú · %s Salir':
-        ('%s Menu · %s Exit',
-         '%s メニュー · %s 終了'),
-    'Vista horizontal':
-        ('Horizontal view',
-         '横表示'),
-    'Vista de libro (consola de lado)':
-        ('Book view (console on its side)',
-         'ブック表示(本体を縦に持つ)'),
-    'Panel táctil':
-        ('Touch panel',
-         'タッチパネル'),
-    'Arrastra para moverte · Toca los lados para pasar página':
-        ('Drag to move · Tap the sides to turn the page',
-         'ドラッグで移動 · 左右をタップでページをめくる'),
-    'Reducir':
-        ('Zoom out',
-         '縮小'),
-    'Menú':
-        ('Menu',
-         'メニュー'),
-    'Horizontal':
-        ('Horizontal',
-         '横'),
-    'Libro':
-        ('Book',
-         'ブック'),
-    'Vista':
-        ('View',
-         '表示'),
-    'Girar al otro lado':
-        ('Rotate to the other side',
-         '反対側に回転'),
-    'Rotación automática':
-        ('Auto-rotate',
-         '自動回転'),
-    'Sí':
-        ('Yes',
-         'はい'),
-    'No':
-        ('No',
-         'いいえ'),
     'Sentido de lectura':
         ('Reading direction',
          '読む方向'),
-    'Derecha a izquierda':
-        ('Right to left',
-         '右から左'),
     'Izquierda a derecha':
         ('Left to right',
          '左から右'),
-    'Zoom':
-        ('Zoom',
-         'ズーム'),
     '%d de %d':
         ('%d of %d',
          '%d / %d'),
@@ -238,12 +202,6 @@ TR = {
     'Copia PDF, CBZ, EPUB, DOCX o TXT a la SD (por ejemplo, a /Books o a /Manga) y aparecerán aquí.':
         ('Copy PDF, CBZ, EPUB, DOCX or TXT files to the SD card (for example, to /Books or /Manga) and they will appear here.',
          'PDF、CBZ、EPUB、DOCX、TXTをSDカード(例: /Books、/Manga)にコピーすると、ここに表示されます。'),
-    '1 documento · %s':
-        ('1 document · %s',
-         '1件 · %s'),
-    '%d documentos · %s':
-        ('%d documents · %s',
-         '%d件 · %s'),
     '%s · %s · página %d de %d':
         ('%s · %s · page %d of %d',
          '%s · %s · %d / %d ページ'),
@@ -271,27 +229,6 @@ TR = {
     'El documento está protegido con contraseña':
         ('The document is password-protected',
          'ドキュメントはパスワードで保護されています'),
-    'Abriendo…':
-        ('Opening…',
-         '開いています…'),
-    'Preparando las páginas…':
-        ('Preparing the pages…',
-         'ページを準備中…'),
-    'Cargando la página…':
-        ('Loading the page…',
-         'ページを読み込み中…'),
-    'B Volver':
-        ('B Back',
-         'B 戻る'),
-    'Ampliar':
-        ('Zoom in',
-         '拡大'),
-    'Letra más grande':
-        ('Larger text',
-         '文字を大きく'),
-    'Letra más pequeña':
-        ('Smaller text',
-         '文字を小さく'),
     'Cerrar el documento':
         ('Close the document',
          'ドキュメントを閉じる'),
@@ -3157,12 +3094,6 @@ TR = {
     'Continuar la lectura':
         ('Continue reading',
          '続きを読む'),
-    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Lectura en modo horizontal o en modo libro, con la consola en vertical.':
-        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT from the SD card, with a library. Read in horizontal mode or in book mode, with the console held vertically.',
-         'SDカードのPDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXTをライブラリで。横向きでも、本のように縦向きでも読めます。'),
-    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Lectura en modo horizontal o en modo libro, con la consola en vertical, y manga de derecha a izquierda.':
-        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT. Read in horizontal mode or in book mode, with the console held vertically, and manga right to left.',
-         'PDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXT。横向きでも、本のように縦向きでも読めます。マンガは右から左へ。'),
     'Los archivos TXT solo se buscan en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Los demás se pueden abrir desde Archivos.':
         ('TXT files are only searched in reading folders (/Books, /Manga, /Documents, /Downloads…). Others can be opened from Files.',
          'TXTは読書用フォルダー(/Books、/Manga、/Documents、/Downloadsなど)だけで検索します。その他はファイルから開けます。'),
