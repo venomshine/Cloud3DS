@@ -1683,18 +1683,19 @@ static void qrs_open(void);
 static const char *dl_dest_dir(const char *url);
 // Descargas: desde un enlace o escaneando un QR; arriba, lo que se está descargando
 static void dl_top(void)
+static void dl_recent_top(void);
 {
 	const Xfer *xs[MAX_XFERS];
 	int n = visible_xfers(xs, MAX_XFERS), f = 0;
 	for (int i = 0; i < n; i++)
 		f += xs[i]->kind == XF_FETCH;
 	if (DLV) {
+	(void)f;
 		files_top(1);
 		sd_bar(1);
-	} else if (f)
-		mini_body(1);
-	else
-		app_idle_top(IC_DOWNLOAD, _("Sin descargas en curso"), _("Los archivos CIA se instalan durante la descarga. Todo lo descargado se guarda en /Downloads."));
+		return;
+	}
+	dl_recent_top();
 }
 static void titles_space_bar(void);
 static bool f_is_titles(void);
@@ -2053,6 +2054,45 @@ static void cl_open(void)
 	if (!CLU.it)
 		CLU.it = malloc(sizeof(CloudItem) * 400);
 	cloud_get(&CLU.info);
+// Descargas, arriba: las más recientes primero (cómo van o por qué fallaron)
+static void dl_recent_top(void)
+{
+	ds_refresh();
+	if (!DS.n) {
+		app_idle_top(IC_DOWNLOAD, _("Sin descargas recientes"), _("Los archivos CIA se instalan durante la descarga. Todo lo descargado se guarda en /Downloads."));
+		return;
+	}
+	// las descargas (las más recientes primero): cómo van o por qué fallaron
+	float y0 = BODY_Y, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
+	const float X = CARD_X + 14, W = CARD_W - 28;
+	int run = 0;
+	for (int i = 0; i < DS.n; i++)
+		run += DS.it[i].st == DL_RUN || DS.it[i].st == DL_QUEUED;
+	char t[64];
+	snprintf(t, sizeof t, run == 1 ? _("1 descarga en curso") : run ? _("%d descargas en curso") : _("Descargas recientes"), run);
+	text_draw(t, X, y0 + 10, TS_TITLE, T.text);
+	float y = y0 + 12 + text_lineh(TS_TITLE) + 6;
+	for (int k = DS.n - 1, shown = 0; k >= 0 && shown < 4; k--, shown++) {
+		const DlItem *d = &DS.it[k];
+		u32 col;
+		char st[160];
+		dl_status(d, st, sizeof st, &col);
+		bool fail = d->st == DL_FAIL;
+		draw_circle(X + 13, y + 15, 13, col_alpha(fail ? T.danger : d->st == DL_DONE ? T.ok : T.accent, 0.16f));
+		draw_icon(fail ? IC_CLOSE : d->st == DL_DONE ? IC_CHECK : IC_DOWNLOAD, X + 13, y + 15, 13, fail ? T.danger : d->st == DL_DONE ? T.ok : T.accent);
+		text_draw_clip(d->name[0] ? d->name : d->url, X + 34, y, W - 34, TS_BODY, T.text);
+		text_draw_clip(st, X + 34, y + 17, W - 34, TS_SUB, col);
+		if (d->st == DL_RUN && d->total) {
+			draw_rrect(X + 34, y + 32, W - 34, 4, 2, T.surface2);
+			draw_rrect(X + 34, y + 32, fmaxf(4, (W - 34) * (float)((double)d->done / d->total)), 4, 2, T.accent);
+		}
+		y += 42;
+	}
+	text_draw_right(_("Gestiónalas en Conectar > Actividad"), X + W, y0 + h - 8 - text_lineh(TS_SUB), TS_SUB, T.text3);
+}
+
 	if (CLU.info.st == CLS_ON && !cloud_depth())
 		cloud_list("", "OneDrive");
 	CLU.rev = (u32)-1;
