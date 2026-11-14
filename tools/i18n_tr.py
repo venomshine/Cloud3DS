@@ -1,6 +1,39 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Últimas descargas':
+        ('Latest downloads',
+         '最近のダウンロード'),
+    '1 elemento en /Downloads':
+        ('1 item in /Downloads',
+         '/Downloadsに1件'),
+    '%d elementos en /Downloads':
+        ('%d items in /Downloads',
+         '/Downloadsに%d件'),
+    '%s Cola de descargas':
+        ('%s Download queue',
+         '%s ダウンロードキュー'),
+    'Escuchado recientemente':
+        ('Recently played',
+         '最近再生した曲'),
+    'Videojuegos':
+        ('Video games',
+         'ゲーム音楽'),
+    'Electrónica':
+        ('Electronic',
+         'エレクトロニカ'),
+    'Reguetón':
+        ('Reggaeton',
+         'レゲトン'),
+    'Clásica':
+        ('Classical',
+         'クラシック'),
+    'Géneros':
+        ('Genres',
+         'ジャンル'),
+    'Búsquedas recientes':
+        ('Recent searches',
+         '最近の検索'),
     'No se pudo leer la cabecera de la app (PxiPM: %08lX).':
         ('Could not read the app header (PxiPM: %08lX).',
          'アプリのヘッダーを読み取れませんでした(PxiPM: %08lX)。'),
@@ -112,9 +145,6 @@ TR = {
     'Prueba con otras palabras.':
         ('Try different words.',
          '別のキーワードでお試しください。'),
-    'Busca en SoundCloud':
-        ('Search SoundCloud',
-         'SoundCloudで検索'),
     'Toca la lupa o pulsa X para buscar canciones, artistas o playlists.':
         ('Tap the magnifier or press X to search for songs, artists or playlists.',
          '虫眼鏡をタップするかXを押して、曲、アーティスト、プレイリストを検索します。'),

@@ -2063,11 +2063,61 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 }
 
 // Descargas, arriba: las más recientes primero (cómo van o por qué fallaron)
+static bool dl_count_cb(const FsxEntry *e, void *u);
 static void dl_recent_top(void)
 {
 	ds_refresh();
-	if (!DS.n) {
-		app_idle_top(IC_DOWNLOAD, _("Sin descargas recientes"), _("Los archivos CIA se instalan durante la descarga. Los archivos descargados se guardan en /Downloads."));
+	if (!DS.n) { // la cola está vacía (p. ej., al volver a abrir la app): las últimas descargas del historial
+		const Event *evs[4];
+		int ne = 0;
+		for (int i = 0; i < V.hist_n && ne < 4; i++) {
+			const Event *e = ev(i);
+			if (e->kind != EV_FETCH && e->kind != EV_INSTALL)
+				continue;
+			bool dup = false; // (una descarga instalada deja dos: se enseña una)
+			for (int k = 0; k < ne && !dup; k++)
+				dup = !strcmp(evs[k]->name, e->name) && (evs[k]->when > e->when ? evs[k]->when - e->when : e->when - evs[k]->when) < 600;
+			if (!dup)
+				evs[ne++] = e;
+		}
+		if (!ne) {
+			app_idle_top(IC_DOWNLOAD, _("Sin descargas recientes"), _("Los archivos CIA se instalan durante la descarga. Los archivos descargados se guardan en /Downloads."));
+			return;
+		}
+		float y0 = BODY_Y, h = SCR_H - 8 - y0;
+		draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
+		draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
+		const float X = CARD_X + 14, W = CARD_W - 28;
+		text_draw(_("Últimas descargas"), X, y0 + 10, TS_TITLE, T.text);
+		float y = y0 + 12 + text_lineh(TS_TITLE) + 6;
+		for (int k = 0; k < ne; k++, y += 38) {
+			const Event *e = evs[k];
+			bool inst = e->kind == EV_INSTALL;
+			for (int i = 0; i < V.hist_n && !inst; i++) { // ¿se instaló también?
+				const Event *o = ev(i);
+				inst = o->kind == EV_INSTALL && !strcmp(o->name, e->name);
+			}
+			char sz[24], when[24], st[160];
+			util_fmt_size(sz, sizeof sz, e->size);
+			util_fmt_when(when, sizeof when, e->when);
+			snprintf(st, sizeof st, "%s · %s%s%s", inst ? _("Instalado") : _("Descargado"), sz, e->kind == EV_FETCH && e->device[0] ? " · " : "",
+			         e->kind == EV_FETCH ? e->device : "");
+			draw_circle(X + 13, y + 15, 13, col_alpha(inst ? T.ok : T.accent, 0.16f));
+			draw_icon(inst ? IC_CHECK : IC_DOWNLOAD, X + 13, y + 15, 13, inst ? T.ok : T.accent);
+			float ww = text_width(when, TS_SUB);
+			text_draw_clip(e->name, X + 34, y, W - 34 - ww - 8, TS_BODY, T.text);
+			text_draw_right(when, X + W, y + 2, TS_SUB, T.text3);
+			text_draw_clip(st, X + 34, y + 17, W - 34, TS_SUB, inst ? T.ok : T.text3);
+		}
+		if (DLV_n < 0) { // (lo que hay en /Downloads)
+			DLV_n = 0;
+			fsx_list(DL_DIR, false, dl_count_cb, &DLV_n);
+		}
+		char f[96], q[64];
+		snprintf(f, sizeof f, DLV_n == 1 ? _("1 elemento en /Downloads") : _("%d elementos en /Downloads"), DLV_n);
+		snprintf(q, sizeof q, _("%s Cola de descargas"), GLYPH_X);
+		text_draw(f, X, y0 + h - 8 - text_lineh(TS_SUB), TS_SUB, T.text3);
+		text_draw_right(q, X + W, y0 + h - 8 - text_lineh(TS_SUB), TS_SUB, T.text3);
 		return;
 	}
 	// las descargas (las más recientes primero): cómo van o por qué fallaron
@@ -6651,6 +6701,107 @@ static struct {
 	bool scerr_shown;
 } SCV;
 
+// lo último que se buscó y se escuchó en SoundCloud (APP_DIR/soundcloud_recientes.txt): «q\t<búsqueda>» y
+// «p\t<título>\t<artista>», lo más reciente primero
+#define SCH_N 6
+#define SCH_FILE APP_DIR "/soundcloud_recientes.txt"
+static struct {
+	bool loaded;
+	char q[SCH_N][96];
+	int nq;
+	char pt[SCH_N][96], pa[SCH_N][64];
+	int np;
+	u32 track; // (la canción que ya se apuntó)
+} SCH;
+
+static void sch_load(void)
+{
+	if (SCH.loaded)
+		return;
+	SCH.loaded = true;
+	FILE *f = fopen(SCH_FILE, "r");
+	char ln[256];
+	while (f && fgets(ln, sizeof ln, f)) {
+		ln[strcspn(ln, "\r\n")] = 0;
+		char *t1 = strchr(ln, '\t');
+		if (!t1)
+			continue;
+		*t1++ = 0;
+		if (!strcmp(ln, "q") && SCH.nq < SCH_N && *t1)
+			util_strlcpy(SCH.q[SCH.nq++], t1, sizeof SCH.q[0]);
+		else if (!strcmp(ln, "p") && SCH.np < SCH_N) {
+			char *t2 = strchr(t1, '\t');
+			if (t2)
+				*t2++ = 0;
+			util_strlcpy(SCH.pt[SCH.np], t1, sizeof SCH.pt[0]);
+			util_strlcpy(SCH.pa[SCH.np++], t2 ? t2 : "", sizeof SCH.pa[0]);
+		}
+	}
+	if (f)
+		fclose(f);
+}
+
+static void sch_save(void)
+{
+	FILE *f = fopen(SCH_FILE, "w");
+	if (!f)
+		return;
+	for (int i = 0; i < SCH.nq; i++)
+		fprintf(f, "q\t%s\n", SCH.q[i]);
+	for (int i = 0; i < SCH.np; i++)
+		fprintf(f, "p\t%s\t%s\n", SCH.pt[i], SCH.pa[i]);
+	fclose(f);
+}
+
+// al principio de la lista (sin repetir), sin tabuladores ni saltos de línea
+static void sch_clean(char *s)
+{
+	for (; *s; s++)
+		if (*s == '\t' || *s == '\n' || *s == '\r')
+			*s = ' ';
+}
+static void sch_add_query(const char *q)
+{
+	sch_load();
+	char c[96];
+	util_strlcpy(c, q, sizeof c);
+	sch_clean(c);
+	int k = 0;
+	while (k < SCH.nq && strcasecmp(SCH.q[k], c))
+		k++;
+	if (k == SCH.nq)
+		k = SCH.nq < SCH_N ? SCH.nq++ : SCH_N - 1;
+	memmove(SCH.q[1], SCH.q[0], sizeof SCH.q[0] * k);
+	util_strlcpy(SCH.q[0], c, sizeof SCH.q[0]);
+	sch_save();
+}
+static void sch_add_played(const char *title, const char *artist)
+{
+	sch_load();
+	char t[96], a[64];
+	util_strlcpy(t, title, sizeof t), util_strlcpy(a, artist, sizeof a);
+	sch_clean(t), sch_clean(a);
+	int k = 0;
+	while (k < SCH.np && strcmp(SCH.pt[k], t))
+		k++;
+	if (k == SCH.np)
+		k = SCH.np < SCH_N ? SCH.np++ : SCH_N - 1;
+	memmove(SCH.pt[1], SCH.pt[0], sizeof SCH.pt[0] * k);
+	memmove(SCH.pa[1], SCH.pa[0], sizeof SCH.pa[0] * k);
+	util_strlcpy(SCH.pt[0], t, sizeof SCH.pt[0]);
+	util_strlcpy(SCH.pa[0], a, sizeof SCH.pa[0]);
+	sch_save();
+}
+
+// buscar (desde el teclado, un género o una búsqueda reciente)
+static void sc_go(const char *q)
+{
+	util_strlcpy(SCV.q, q, sizeof SCV.q);
+	SCV.in_list = false, SCV.want = 1, SCV.nt = SCV.nl = 0;
+	sc_search(q);
+	sch_add_query(q);
+}
+
 static void sc_show(void)
 {
 	SCV.local = false;
@@ -6680,6 +6831,10 @@ static const char *sc_err_text(const char *e)
 // la descarga de SoundCloud: al terminar, un aviso (se mira en cada vuelta, esté donde esté la aplicación)
 static void sc_dl_tick(void)
 {
+	if (mu_on() && !MU.s.loading && !strncmp(MU.s.name, "sc:", 3) && MU.s.track != SCH.track && MU.s.title[0]) { // (lo que suena, apuntado)
+		SCH.track = MU.s.track;
+		sch_add_played(MU.s.title, MU.s.artist);
+	}
 	char t[128];
 	int st = sc_download_state(t, sizeof t, NULL);
 	if (st == SCD_DONE) {
@@ -6775,8 +6930,23 @@ static void sc_top(void)
 	else if (SCV.st == SCQ_ERR)
 		msg = sc_err_text(SCV.err), mc = T.danger;
 	else
-		msg = _("Busca canciones, artistas o playlists. Algunas canciones solo permiten escuchar un fragmento de 30 segundos. Tu música de la tarjeta SD está en «En la consola».");
-	y += text_wrap_lines(msg, W, TS_SUB, 4, X, y, mc, true) * text_lineh(TS_SUB) + 8;
+		msg = NULL;
+	sch_load();
+	if (!msg && SCH.np) { // lo escuchado hace poco
+		text_draw(_("Escuchado recientemente"), X, y, TS_SUB, T.text3);
+		y += text_lineh(TS_SUB) + 4;
+		for (int i = 0; i < SCH.np && i < 4; i++, y += 18) {
+			draw_icon(IC_SPEAKER, X + 7, y + text_lineh(TS_SUB) / 2, 10, 0xFF0055FF);
+			char l[180];
+			snprintf(l, sizeof l, "%s%s%s", SCH.pt[i], SCH.pa[i][0] ? " · " : "", SCH.pa[i]);
+			text_draw_clip(l, X + 20, y, W - 20, TS_SUB, T.text2);
+		}
+		y += 4;
+	} else {
+		if (!msg)
+			msg = _("Busca canciones, artistas o playlists. Algunas canciones solo permiten escuchar un fragmento de 30 segundos. Tu música de la tarjeta SD está en «En la consola».");
+		y += text_wrap_lines(msg, W, TS_SUB, 4, X, y, mc, true) * text_lineh(TS_SUB) + 8;
+	}
 	char dt[128];
 	int pct;
 	if (sc_download_busy(dt, sizeof dt, &pct)) { // la descarga en curso
@@ -6789,6 +6959,86 @@ static void sc_top(void)
 	char hint[160];
 	snprintf(hint, sizeof hint, _("%s Buscar · %s Reproducir · %s Opciones"), GLYPH_X, GLYPH_A, GLYPH_Y);
 	text_draw_right(hint, X + W, y0 + h - 10 - text_lineh(TS_SUB), TS_SUB, T.text3);
+}
+
+// antes de buscar: géneros para empezar y las búsquedas recientes (tocar o cruceta y A)
+static void sc_discover(bool sheet)
+{
+	static const char *const G[][2] = {{"Lo-fi", "lofi"}, {"Chiptune", "chiptune"}, {N_("Videojuegos"), "video game music"}, {N_("Electrónica"), "electronic"},
+	                                   {"Pop", "pop"},     {"Rock", "rock"},         {"Hip hop", "hip hop"},                {N_("Reguetón"), "reggaeton"},
+	                                   {"Jazz", "jazz"},   {N_("Clásica"), "classical"}};
+	enum { NG = sizeof G / sizeof G[0] };
+	static int sel;
+	sch_load();
+	int n = NG + SCH.nq;
+	if (U.buttons && !sheet) {
+		if (g_krepeat & KEY_RIGHT)
+			sel = sel + 1 < n ? sel + 1 : sel;
+		if (g_krepeat & KEY_LEFT)
+			sel = sel > 0 ? sel - 1 : 0;
+		if ((g_krepeat & KEY_DOWN) && sel >= NG)
+			sel = sel + 1 < n ? sel + 1 : sel;
+		if ((g_krepeat & KEY_UP) && sel >= NG) {
+			sel = sel > NG ? sel - 1 : NG - 1;
+			g_krepeat &= ~KEY_UP;
+		}
+	}
+	if (sel >= n)
+		sel = n - 1;
+	int run = -1;
+	float y = VIEW_Y + 6;
+	text_draw(_("Géneros"), 14, y, TS_SUB, T.text3);
+	y += text_lineh(TS_SUB) + 4;
+	// cada uno del ancho de su nombre, en filas (a la siguiente cuando no cabe)
+	const float gap = 6, ch = 26;
+	float gx[NG], gy[NG], gw[NG], cx = 14, cy = y;
+	for (int i = 0; i < NG; i++) {
+		gw[i] = text_width(_(G[i][0]), TS_SUB) + 22;
+		if (cx + gw[i] > BOT_W - 14)
+			cx = 14, cy += ch + gap;
+		gx[i] = cx, gy[i] = cy, cx += gw[i] + gap;
+	}
+	if (U.buttons && !sheet && (g_krepeat & (KEY_UP | KEY_DOWN)) && sel < NG) { // ↑ ↓ entre filas: el más cercano
+		bool dn = g_krepeat & KEY_DOWN;
+		float ty = dn ? gy[sel] + ch + gap : gy[sel] - ch - gap, mid = gx[sel] + gw[sel] / 2;
+		int best = -1;
+		for (int i = 0; i < NG; i++)
+			if (gy[i] == ty && (best < 0 || fabsf(gx[i] + gw[i] / 2 - mid) < fabsf(gx[best] + gw[best] / 2 - mid)))
+				best = i;
+		sel = best >= 0 ? best : dn && SCH.nq ? NG : sel;
+		g_krepeat &= ~(KEY_UP | KEY_DOWN);
+	}
+	for (int i = 0; i < NG; i++) {
+		bool hl = (U.buttons && sel == i) || touch_in(gx[i], gy[i], gw[i], ch);
+		draw_rrect(gx[i], gy[i], gw[i], ch, 13, hl ? col_alpha(0xFF0055FF, 0.35f) : T.surface);
+		if (U.buttons && sel == i)
+			draw_rrect_outline(gx[i], gy[i], gw[i], ch, 13, 1.5f, 0xFF0055FF);
+		text_draw_center(_(G[i][0]), gx[i] + gw[i] / 2, gy[i] + (ch - text_lineh(TS_SUB)) / 2, TS_SUB, T.text);
+		if (!sheet && tap(gx[i], gy[i], gw[i], ch))
+			run = i;
+	}
+	y = cy + ch + gap + 6;
+	if (SCH.nq) {
+		text_draw(_("Búsquedas recientes"), 14, y, TS_SUB, T.text3);
+		y += text_lineh(TS_SUB) + 2;
+		for (int i = 0; i < SCH.nq && y + 26 <= VIEW_Y + VIEW_H; i++, y += 28) {
+			bool hl = (U.buttons && sel == NG + i) || touch_in(8, y, BOT_W - 16, 26);
+			if (hl)
+				draw_rrect(8, y, BOT_W - 16, 26, 10, T.surface);
+			draw_icon(IC_CLOCK, 26, y + 13, 12, T.text3);
+			text_draw_clip(SCH.q[i], 42, y + (26 - text_lineh(TS_BODY)) / 2, BOT_W - 60, TS_BODY, T.text);
+			if (!sheet && tap(8, y, BOT_W - 16, 26))
+				run = NG + i;
+		}
+	} else
+		wrap_center(_("Toca la lupa o pulsa X para buscar canciones, artistas o playlists."), BOT_W / 2, y + 6, BOT_W - 40, TS_SUB, 2, T.text3);
+	if (!sheet && U.buttons && (g_kdown & KEY_A))
+		run = sel;
+	if (run >= 0) {
+		char q[96];
+		util_strlcpy(q, run < NG ? G[run][1] : SCH.q[run - NG], sizeof q);
+		sc_go(q);
+	}
 }
 
 static void sc_bottom(void)
@@ -6845,9 +7095,7 @@ static void sc_bottom(void)
 		else if (SCV.q[0] || SCV.in_list)
 			empty_state(IC_SEARCH, _("Sin resultados"), _("Prueba con otras palabras."));
 		else
-			empty_state(IC_SEARCH, _("Busca en SoundCloud"), _("Toca la lupa o pulsa X para buscar canciones, artistas o playlists."));
-		if (!sheet && SCV.st != SCQ_BUSY && U.buttons && (g_kdown & KEY_A))
-			U.want_scq = true;
+			sc_discover(sheet);
 	}
 	MusicState ms;
 	music_get(&ms);
@@ -12317,11 +12565,8 @@ static void update(void)
 	if (U.want_scq) {
 		U.want_scq = false;
 		char q[128];
-		if (kb_input(_("Buscar en SoundCloud"), SCV.q, q, sizeof q, false, false) && q[0]) {
-			util_strlcpy(SCV.q, q, sizeof SCV.q);
-			SCV.in_list = false, SCV.want = 1, SCV.nt = SCV.nl = 0;
-			sc_search(q);
-		}
+		if (kb_input(_("Buscar en SoundCloud"), SCV.q, q, sizeof q, false, false) && q[0])
+			sc_go(q);
 	}
 	if (U.want_search) {
 		U.want_search = false;
