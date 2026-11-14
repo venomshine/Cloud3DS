@@ -1373,7 +1373,9 @@ static void run(DlItem *s)
 	CURLcode r = CURLE_FAILED_INIT;
 	long code = 0;
 	char eff[1024] = "";
-	int hr = hc_ready ? hc_body(&j, url, !s->insecure, &code, eff, sizeof eff) : HC_NOCONN;
+	// las descargas, como en FBI: sin comprobar el certificado (muchas consolas no aceptan los de algunos servidores y
+	// la descarga no empezaba). Las peticiones con la sesión de OneDrive (dl_request) sí lo comprueban
+	int hr = hc_ready ? hc_body(&j, url, false, &code, eff, sizeof eff) : HC_NOCONN;
 	const char *engine = "httpc";
 	if (hr == HC_OK)
 		r = CURLE_OK;
@@ -1392,10 +1394,8 @@ static void run(DlItem *s)
 		if (c) {
 			common_opts(c, eb);
 			curl_easy_setopt(c, CURLOPT_SOCKOPTDATA, (void *)1); // descarga grande: búfer de socket grande
-			if (s->insecure) { // lo pidió el usuario para esta descarga
-				curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
-				curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
-			}
+			curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L); // (como con httpc: sin comprobar el certificado)
+			curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
 			curl_easy_setopt(c, CURLOPT_URL, url);
 			curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, head_cb);
 			curl_easy_setopt(c, CURLOPT_HEADERDATA, &j);
