@@ -356,10 +356,24 @@ static size_t mem_cb(char *d, size_t s, size_t m, void *u)
  * funciones no hacen nada, por eso allí no se notaba). */
 static bool hc_ready;
 
+static bool sslc_on, hc_inited;
 static void hc_init(void)
 {
-	hc_ready = R_SUCCEEDED(httpcInit(0));
-	util_log("dl: httpc %s", hc_ready ? "listo" : "no disponible");
+	hc_ready = hc_inited = R_SUCCEEDED(httpcInit(0));
+	// Mbed TLS (libcurl) saca los números aleatorios de cada conexión de ssl:C sin mirar si responde: sin una sesión
+	// abierta, las claves salían de lo que hubiera en memoria (como hace 3dsDL, se abre al empezar)
+	sslc_on = R_SUCCEEDED(sslcInit(0));
+	util_log("dl: httpc %s, ssl:C %s", hc_ready ? "listo" : "no disponible", sslc_on ? "listo" : "no disponible");
+}
+
+// httpc con «estado no válido» (0xD8A0A0xx): en algunas consolas falla así en todas las peticiones, al momento. Desde
+// entonces, todo con libcurl directamente
+static void hc_broken(Result r)
+{
+	if (hc_ready && ((u32)r & 0xFFFFFF00) == 0xD8A0A000) {
+		hc_ready = false;
+		util_log("dl: httpc no funciona en esta consola (0x%08lX): desde ahora, todo con libcurl", (unsigned long)r);
+	}
 }
 
 enum { HC_OK, HC_NOCONN, HC_HTTP, HC_NET, HC_ABORT, HC_WRITE };
@@ -398,6 +412,7 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		if (R_FAILED(r)) {
 			util_log("dl: httpc %s -> 0x%08lX", url, (unsigned long)r);
 			httpcCloseContext(ctx);
+			hc_broken(r);
 			return HC_NOCONN;
 		}
 		if (t_ck_set) { // httpc da la primera Set-Cookie (la de sesión, casi siempre)
@@ -635,6 +650,7 @@ static int dl_request_hc(int method, const char *url0, const char *const *header
 			r = httpcGetResponseStatusCodeTimeout(&ctx, &code, 60ull * 1000000000ull);
 		if (R_FAILED(r)) {
 			util_log("http: %s -> 0x%08lX", url, (unsigned long)r);
+			hc_broken(r);
 			httpcCloseContext(&ctx);
 			return DLF_NOCONN;
 		}
@@ -725,10 +741,13 @@ static int stop_cb(void *u, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t
 static int sockopt_cb(void *u, curl_socket_t fd, curlsocktype purpose)
 {
 	(void)purpose;
-	if (!u) // solo las descargas grandes: el búfer de soc:U (1 MB) es para todos los sockets, y con
-		return CURL_SOCKOPT_OK; // varios a la vez (el navegador baja la página, su CSS e imágenes) se agotaba
-	int sz = 256 * 1024;
+	if (!u) // solo las descargas grandes: el búfer de soc:U (1 MB) es para todos los sockets (y el servidor, el
+		return CURL_SOCKOPT_OK; // mDNS y el navegador tienen los suyos)
+	// 48 KB, como 3dsDL: con 256 KB no quedaba sitio en el búfer de soc:U y la conexión no llegaba a recibir nada (en la
+	// consola, «SSL connection timeout» a los 60 s en todas las descargas; en el emulador no pasaba)
+	int sz = 48 * 1024;
 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof sz);
+	setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof sz);
 	return CURL_SOCKOPT_OK;
 }
 
@@ -1532,8 +1551,9 @@ void dl_exit(void)
 		threadFree(D.thr);
 		D.thr = NULL;
 	}
-	if (hc_ready) {
-		httpcExit();
-		hc_ready = false;
-	}
+	if (hc_inited)
+		httpcExit(), hc_inited = false; // (aunque se diera por estropeado, se abrió)
+	hc_ready = false;
+	if (sslc_on)
+		sslcExit(), sslc_on = false;
 }
