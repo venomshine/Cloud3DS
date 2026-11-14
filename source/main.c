@@ -2960,6 +2960,9 @@ static void titles_space_bar(void)
 			break;
 		sc -= 0.01f, gap = fmaxf(8, gap - 3);
 	}
+	bool dir_more;     // (se dejó de contar: hay más)
+	int mt_next;       // fechas: se leen poco a poco tras abrir la carpeta (pedirlas todas a la vez la trababa)
+	bool mt_pending;
 	float lx = bx, ly = by + 14;
 	for (int k = 0; k < 4; k++) {
 		draw_circle(lx + 3, ly + 6, 3, c[k]);
@@ -3669,7 +3672,8 @@ static void f_load(const char *path)
 		F.info_for = -1;
 		return;
 	}
-	F.err = fsx_list(path, true, f_collect, NULL) < 0;
+	F.err = fsx_list(path, false, f_collect, NULL) < 0; // (sin fechas: se leen después, poco a poco)
+	F.mt_next = 0, F.mt_pending = F.n > 0;
 	bool d;
 	u64 sz;
 	F.missing = F.err && fsx_stat(path, &d, &sz) < 0;
@@ -3752,6 +3756,43 @@ static bool f_back_to_origin(void)
 	if (!F.ret_from[0] || strcasecmp(F.path, F.ret_from) || !strcmp(F.ret_to, F.path))
 		return false;
 	char to[512], from[512];
+// las fechas de la carpeta abierta, unas pocas en cada vuelta (con tope de tiempo); al tenerlas todas, si se ordena o se
+// agrupa por fecha, se vuelve a ordenar sin perder lo elegido
+static void f_mtime_step(void)
+{
+	if (!F.mt_pending)
+		return;
+	if (F.trash || F.search || F.titles || F.path[0] != '/') {
+		F.mt_pending = false;
+		return;
+	}
+	WHERE("leer las fechas de la carpeta");
+	u64 t0 = util_ms();
+	while (F.mt_next < F.n && util_ms() - t0 < 6) {
+		char full[700];
+		f_full(F.mt_next, full, sizeof full);
+		F.e[F.mt_next].mtime = fsx_mtime(full);
+		F.mt_next++;
+	}
+	if (F.mt_next < F.n)
+		return;
+	F.mt_pending = false;
+	F.info_for = -1; // (la información de arriba, con su fecha)
+	if (V.f_sort != 1 && V.f_group != 2)
+		return;
+	char keep[128] = "";
+	const FView *v = F.sel >= 0 && F.sel < F.nv ? &F.v[F.sel] : NULL;
+	if (v && v->kind == FV_ITEM)
+		util_strlcpy(keep, F.e[v->idx].name, sizeof keep);
+	for (int i = 0; i < F.n; i++)
+		F.e[i].grp = (u8)f_grp(&F.e[i]);
+	qsort(F.e, F.n, sizeof *F.e, f_cmp);
+	f_build_view();
+	for (int i = 0; keep[0] && i < F.nv; i++)
+		if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, keep))
+			F.sel = i;
+}
+
 	util_strlcpy(to, F.ret_to, sizeof to);
 	util_strlcpy(from, F.ret_from, sizeof from);
 	F.ret_from[0] = 0;
@@ -3827,7 +3868,8 @@ static bool read_3dsx(const char *path, char *title, size_t tn, char *pub, size_
 static bool count_cb(const FsxEntry *e, void *u)
 {
 	(void)e;
-	return ++*(int *)u < 100000;
+	CountT *c = u;
+	return ++c->n < 100000 && ((c->n & 31) || util_ms() - c->t0 < 120); // (una carpeta enorme no traba: se dice «más de»)
 }
 
 static bool f_is_img(const FEnt *e);
@@ -3854,9 +3896,9 @@ static void f_info_refresh(void)
 	char full[700];
 	f_full(idx, full, sizeof full);
 	if (e->dir) {
-		int n = 0;
-		if (fsx_list(full, false, count_cb, &n) >= 0)
-			F.dir_count = n;
+		CountT c = {0, util_ms()};
+		if (fsx_list(full, false, count_cb, &c) >= 0)
+			F.dir_count = c.n, F.dir_more = util_ms() - c.t0 >= 120;
 	} else if (!strcasecmp(f_ext(e->name), "cia")) {
 		if (!F.cia)
 			F.cia = malloc(sizeof *F.cia);
@@ -3877,6 +3919,10 @@ static void f_info_refresh(void)
 			F.preview[n] = 0;
 			char *p = F.preview;
 			if (!strncmp(p, "\xEF\xBB\xBF", 3))
+typedef struct {
+	int n;
+	u64 t0;
+} CountT;
 				memmove(p, p + 3, strlen(p + 3) + 1);
 			size_t l = strlen(p);
 			if (n == sizeof F.preview - 1) { // se cortó: sin un carácter partido al final
@@ -7093,6 +7139,7 @@ static void tab_files(void)
 	} else if (F.titles) { // instalados: atrás a la raíz y, a la derecha, cuántos y cuánto ocupan
 		tab_header_w(nm, !root, 130);
 		u64 tot = 0;
+	f_mtime_step();
 		for (int i = 0; i < TI_n; i++)
 			tot += TI[i].size + TI[i].upd_size + TI[i].dlc_size;
 		char c[64], sz[24];
@@ -8588,7 +8635,10 @@ static void files_top(float a)
 	}
 	if (e->dir) {
 		if (F.dir_count >= 0) {
-			snprintf(v, sizeof v, F.dir_count == 1 ? _("1 elemento") : _("%d elementos"), F.dir_count);
+			if (F.dir_more)
+				snprintf(v, sizeof v, _("Más de %d elementos"), F.dir_count);
+			else
+				snprintf(v, sizeof v, F.dir_count == 1 ? _("1 elemento") : _("%d elementos"), F.dir_count);
 			y = info_row(rx, y, rw, _("Contenido"), v, T.text2, a);
 		}
 	} else {
