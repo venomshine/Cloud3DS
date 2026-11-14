@@ -10367,6 +10367,9 @@ static struct {
 	int orient;              // 0 horizontal; 1 libro con la pantalla de arriba a la izquierda; 2 al revés
 	bool rtl;                // libro: de derecha a izquierda (manga)
 	int zoom;                // horizontal: 0 al ancho de la pantalla de abajo; 1 de la de arriba; 2 y 3, más
+	bool autorot;            // libro: girar solo hacia el lado al que se gire la consola (acelerómetro)
+	float ax;                // (el acelerómetro, suavizado)
+	u64 ax_t;                // desde cuándo apunta al otro lado
 	int em;                  // letra de lo que se recoloca (puntos)
 	u32 lgen;
 	bool relaying;
@@ -10380,7 +10383,7 @@ static struct {
 	float menu_anim;
 	int menu_sel;
 	bool want_page;          // «Ir a la página»: teclado, fuera del dibujo
-} RV = {.em = 11};
+} RV = {.em = 11, .autorot = true};
 
 #define RV_CFG APP_DIR "/lector.cfg"
 static void rv_cfg_load(void)
@@ -10401,6 +10404,8 @@ static void rv_cfg_load(void)
 		else if (!strncmp(ln, "em=", 3))
 			RV.em = clampf(atoi(ln + 3), 8, 20);
 	}
+		else if (!strncmp(ln, "auto=", 5))
+			RV.autorot = atoi(ln + 5) != 0;
 	if (f)
 		fclose(f);
 }
@@ -10408,7 +10413,7 @@ static void rv_cfg_save(void)
 {
 	FILE *f = fopen(RV_CFG, "w");
 	if (f)
-		fprintf(f, "orient=%d\nrtl=%d\nzoom=%d\nem=%d\n", RV.orient, RV.rtl ? 1 : 0, RV.zoom, RV.em), fclose(f);
+		fprintf(f, "orient=%d\nrtl=%d\nzoom=%d\nem=%d\nauto=%d\n", RV.orient, RV.rtl ? 1 : 0, RV.zoom, RV.em, RV.autorot ? 1 : 0), fclose(f);
 }
 
 static const char *rd_kind_name(int k)
@@ -10918,8 +10923,41 @@ static bool rv_req_eq(const RdReq *a, const RdReq *b)
 
 // cada vuelta: el estado del documento y lo que hay que tener dibujado
 static void rv_poll(void)
+// libro: con el acelerómetro, hacia el lado al que se gira la consola (la gravedad, a lo largo del eje X de la
+// consola: negativa con la pantalla de arriba a la izquierda). Medio segundo apuntando al otro lado para cambiar
+static void rv_autorot(void)
+{
+	static bool on;
+	if (!rv_book() || !RV.autorot) {
+		if (on)
+			HIDUSER_DisableAccelerometer(), on = false;
+		return;
+	}
+	if (!on) {
+		HIDUSER_EnableAccelerometer();
+		on = true;
+		RV.ax = 0, RV.ax_t = 0;
+		return;
+	}
+	accelVector a;
+	hidAccelRead(&a);
+	RV.ax = RV.ax * 0.85f + a.x * 0.15f;
+	int want = RV.ax < -220 ? 1 : RV.ax > 220 ? 2 : 0;
+	if (!want || want == RV.orient) {
+		RV.ax_t = 0;
+		return;
+	}
+	if (!RV.ax_t)
+		RV.ax_t = util_ms();
+	else if (util_ms() - RV.ax_t > 500) {
+		RV.orient = want, RV.ax_t = 0;
+		RV.hud_t = util_ms();
+	}
+}
+
 {
 	int pages;
+	rv_autorot();
 	bool reflow;
 	char err[32];
 	int st = rd_state(&pages, &reflow, err, sizeof err);
@@ -11124,8 +11162,8 @@ static void rv_bottom(void)
 		RV.menu = RV.menu_just = true, RV.menu_sel = 0;
 		return;
 	}
-	if (g_kdown & KEY_Y) { // girar: horizontal → libro → libro al otro lado
-		RV.orient = (RV.orient + 1) % 3;
+	if (g_kdown & KEY_Y) { // horizontal ↔ libro (con el giro automático, el lado lo da la consola; si no, de uno a otro)
+		RV.orient = RV.autorot ? (RV.orient ? 0 : 1) : (RV.orient + 1) % 3;
 		RV.cx = -1;
 		rv_drop_tex();
 		rv_relayout(RV.page);
@@ -11136,9 +11174,13 @@ static void rv_bottom(void)
 	if (RV.pages <= 0)
 		return;
 	int step = rv_book() ? 2 : 1;
-	u32 next = KEY_R | KEY_ZR | KEY_A | KEY_DRIGHT, prev = KEY_L | KEY_ZL | KEY_DLEFT;
-	if (rv_book())
-		next |= KEY_DDOWN, prev |= KEY_DUP;
+	u32 next = KEY_R | KEY_ZR | KEY_A, prev = KEY_L | KEY_ZL;
+	if (!rv_book())
+		next |= KEY_DRIGHT | KEY_CPAD_RIGHT, prev |= KEY_DLEFT | KEY_CPAD_LEFT;
+	else { // la cruceta, según cómo se sostiene: «siguiente» es la flecha que apunta hacia donde se lee
+		u32 right = RV.orient == 1 ? KEY_DDOWN | KEY_CPAD_DOWN : KEY_DUP | KEY_CPAD_UP, left = RV.orient == 1 ? KEY_DUP | KEY_CPAD_UP : KEY_DDOWN | KEY_CPAD_DOWN;
+		next |= RV.rtl ? left : right, prev |= RV.rtl ? right : left;
+	}
 	if (g_krepeat & next)
 		rv_go(RV.page + step);
 	else if (g_krepeat & prev)
@@ -11170,11 +11212,20 @@ static void rv_bottom(void)
 				RV.cx = fmaxf(BOT_W / 2.0f, fminf(RV.tex[0].w - BOT_W / 2.0f, RV.cx - (g_touch.x - g_touch.px)));
 		}
 	}
-	// tocar: a los lados, página anterior o siguiente; en medio, las opciones
+	// tocar: a los lados (los de verdad, según cómo se sostiene), página anterior o siguiente; en medio, las opciones
 	if (g_touch.up && !g_touch.drag) {
-		if (g_touch.x < BOT_W / 4)
+		int side = 0; // -1 a la izquierda, 1 a la derecha (vistos por quien lee)
+		if (!rv_book())
+			side = g_touch.x < BOT_W / 4 ? -1 : g_touch.x > BOT_W * 3 / 4 ? 1 : 0;
+		else {
+			int t = g_touch.y < SCR_H / 3 ? -1 : g_touch.y > SCR_H * 2 / 3 ? 1 : 0; // (arriba / abajo de la pantalla)
+			side = RV.orient == 1 ? t : -t;
+		}
+		if (side && rv_book() && RV.rtl)
+			side = -side;
+		if (side < 0)
 			rv_go(RV.page - step);
-		else if (g_touch.x > BOT_W * 3 / 4)
+		else if (side > 0)
 			rv_go(RV.page + step);
 		else
 			RV.menu = RV.menu_just = true, RV.menu_sel = 0;
@@ -11189,10 +11240,14 @@ static void rv_menu(void)
 	int act[8], n = 0;
 	static char pg[64];
 	ic[n] = IC_FLIP, col[n] = T.text, act[n++] = 0;
-	lab[n - 1] = RV.orient == 0 ? _("Leer como un libro (consola de lado)") : RV.orient == 1 ? _("Girar al otro lado") : _("Leer en horizontal");
-	if (rv_book())
+	lab[n - 1] = RV.orient == 0 ? _("Leer como un libro (consola de lado)") : _("Girar al otro lado");
+	if (RV.orient) // (y volver a horizontal, siempre a mano)
+		ic[n] = IC_BOOK, lab[n] = _("Leer en horizontal"), col[n] = T.text, act[n++] = 9;
+	if (rv_book()) {
 		ic[n] = IC_UNDO, lab[n] = RV.rtl ? _("Leer de izquierda a derecha") : _("Leer de derecha a izquierda (manga)"), col[n] = T.text, act[n++] = 1;
 	if (!RV.reflow && !rv_book()) {
+		ic[n] = RV.autorot ? IC_CHECK : IC_FLIP, lab[n] = RV.autorot ? _("Girar solo: activado") : _("Girar solo al girar la consola"), col[n] = T.text, act[n++] = 8;
+	}
 		if (RV.zoom < 3)
 			ic[n] = IC_SEARCH, lab[n] = _("Ampliar"), col[n] = T.text, act[n++] = 2;
 		if (RV.zoom > 0)
@@ -11212,13 +11267,23 @@ static void rv_menu(void)
 		return;
 	switch (act[r]) {
 	case 0:
-		RV.orient = (RV.orient + 1) % 3;
+	case 9:
+		RV.orient = 0;
+		RV.cx = -1;
+		rv_drop_tex();
+		rv_relayout(RV.page);
+		break;
+		if (RV.orient == 0)
+			RV.orient = 1; // a libro (con el giro automático, el lado lo pone la consola)
+		else
+			RV.orient = RV.orient == 1 ? 2 : 1, RV.autorot = false; // al otro lado, a mano: si no, el sensor lo devolvería
 		RV.cx = -1;
 		rv_drop_tex();
 		rv_relayout(RV.page);
 		break;
 	case 1: RV.rtl = !RV.rtl; break;
 	case 2:
+	case 8: RV.autorot = !RV.autorot; break;
 	case 3:
 		RV.zoom = act[r] == 2 ? RV.zoom + 1 : 0;
 		RV.cx = -1;
