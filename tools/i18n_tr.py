@@ -1,6 +1,87 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    '«%s» se guardó en /Music/SoundCloud':
+        ('“%s” was saved to /Music/SoundCloud',
+         '「%s」を/Music/SoundCloudに保存しました'),
+    'No se pudo descargar la canción':
+        ('Could not download the song',
+         '曲をダウンロードできませんでした'),
+    'Descargando «%s»… %d %%':
+        ('Downloading “%s”… %d %%',
+         '「%s」をダウンロード中… %d %%'),
+    'Descargando en /Music/SoundCloud…':
+        ('Downloading to /Music/SoundCloud…',
+         '/Music/SoundCloudにダウンロード中…'),
+    'Espera a que termine la descarga en curso':
+        ('Wait for the current download to finish',
+         '現在のダウンロードが終わるまでお待ちください'),
+    'Cargando · %s':
+        ('Loading · %s',
+         '読み込み中 · %s'),
+    'Repetir lista':
+        ('Repeat list',
+         'リストをリピート'),
+    'Ir a SoundCloud':
+        ('Go to SoundCloud',
+         'SoundCloudへ'),
+    'No se pudo conectar con SoundCloud. Inténtalo de nuevo más tarde.':
+        ('Could not connect to SoundCloud. Try again later.',
+         'SoundCloudに接続できませんでした。しばらくしてからもう一度お試しください。'),
+    'SoundCloud no respondió. Inténtalo de nuevo.':
+        ('SoundCloud did not respond. Try again.',
+         'SoundCloudから応答がありません。もう一度お試しください。'),
+    'Cargando la playlist…':
+        ('Loading playlist…',
+         'プレイリストを読み込み中…'),
+    '«%s» · %d canciones · %d playlists':
+        ('“%s” · %d songs · %d playlists',
+         '「%s」 · %d曲 · プレイリスト%d件'),
+    'Escucha música en streaming desde Internet.':
+        ('Stream music from the Internet.',
+         'インターネットから音楽をストリーミング再生します。'),
+    'Busca canciones, artistas o playlists. Algunas canciones solo permiten escuchar un fragmento de 30 segundos. Tu música de la tarjeta SD está en «En la consola».':
+        ('Search for songs, artists or playlists. Some songs only allow a 30-second preview. Your SD card music is in “On this console”.',
+         '曲、アーティスト、プレイリストを検索できます。一部の曲は30秒のプレビューのみ再生できます。SDカードの音楽は「本体」にあります。'),
+    '%s Buscar · %s Reproducir · %s Opciones':
+        ('%s Search · %s Play · %s Options',
+         '%s 検索 · %s 再生 · %s オプション'),
+    'En la consola':
+        ('On this console',
+         '本体'),
+    'Conectando con SoundCloud.':
+        ('Connecting to SoundCloud.',
+         'SoundCloudに接続しています。'),
+    'No se pudo buscar':
+        ('Search failed',
+         '検索できませんでした'),
+    'Sin resultados':
+        ('No results',
+         '結果がありません'),
+    'Prueba con otras palabras.':
+        ('Try different words.',
+         '別のキーワードでお試しください。'),
+    'Busca en SoundCloud':
+        ('Search SoundCloud',
+         'SoundCloudで検索'),
+    'Toca la lupa o pulsa X para buscar canciones, artistas o playlists.':
+        ('Tap the magnifier or press X to search for songs, artists or playlists.',
+         '虫眼鏡をタップするかXを押して、曲、アーティスト、プレイリストを検索します。'),
+    ' · Fragmento de 30 s':
+        (' · 30 s preview',
+         ' · 30秒プレビュー'),
+    'Playlist · %s · 1 canción':
+        ('Playlist · %s · 1 song',
+         'プレイリスト · %s · 1曲'),
+    'Playlist · %s · %d canciones':
+        ('Playlist · %s · %d songs',
+         'プレイリスト · %s · %d曲'),
+    'Escucha SoundCloud en streaming y la música de tu tarjeta SD. Sigue sonando en segundo plano.':
+        ('Stream SoundCloud and play the music on your SD card. Keeps playing in the background.',
+         'SoundCloudのストリーミングとSDカードの音楽を再生します。バックグラウンドでも再生を続けます。'),
+    'Buscar en SoundCloud':
+        ('Search SoundCloud',
+         'SoundCloudで検索'),
     '%s Cola de descargas (%d)':
         ('%s Download queue (%d)',
          '%s ダウンロードキュー(%d)'),
@@ -2419,9 +2500,6 @@ TR = {
     '¿Eliminar las canciones sin datos?':
         ('Delete the songs without details?',
          '情報なしの曲を削除しますか?'),
-    'Toda la música de la SD, por canciones, artistas y álbumes. Sigue sonando en segundo plano.':
-        ('All the music on the SD card, by songs, artists and albums. Keeps playing in the background.',
-         'SDカードのすべての音楽を曲・アーティスト・アルバム別に。バックグラウンドでも再生できます。'),
     '1 canción a la papelera':
         ('1 song moved to the trash',
          '1曲をゴミ箱へ移動しました'),
