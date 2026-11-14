@@ -212,15 +212,26 @@ bool cb_is_homebrew(u64 tid)
 static bool is_luma(void)
 {
 	s64 v = 0;
-	return R_SUCCEEDED(svcGetSystemInfo(&v, 0x10000, 0));
+	bool ok = R_SUCCEEDED(svcGetSystemInfo(&v, 0x10000, 0));
+	if (ok) // (la versión: mayor, menor y revisión en los bytes 3, 2 y 1)
+		util_log("compartir: Luma3DS %u.%u.%u", (unsigned)(v >> 24 & 0xFF), (unsigned)(v >> 16 & 0xFF), (unsigned)(v >> 8 & 0xFF));
+	return ok;
 }
+// la llamada, como en Luma3DS (csvc.s): una función aparte, para que op, out y name vayan en r0, r1 y r2 sin depender del
+// compilador (con ensamblador en línea, la sesión llegaba vacía aunque Luma respondía 0)
+__asm__(".section .text.luma_control_service, \"ax\", %progbits\n"
+        ".arm\n"
+        ".global luma_control_service\n"
+        ".type luma_control_service, %function\n"
+        ".align 2\n"
+        "luma_control_service:\n"
+        "    svc 0xB0\n"
+        "    bx lr\n"
+        ".previous\n");
+Result luma_control_service(u32 op, Handle *out, const char *name);
 static Result luma_steal_session(Handle *out, const char *name)
 {
-	register u32 r0 __asm__("r0") = 0;
-	register Handle *r1 __asm__("r1") = out;
-	register const char *r2 __asm__("r2") = name;
-	__asm__ volatile("svc 0xB0" : "+r"(r0) : "r"(r1), "r"(r2) : "r3", "r12", "memory");
-	return (Result)r0;
+	return luma_control_service(0, out, name); // SERVICEOP_STEAL_CLIENT_SESSION
 }
 
 // la cabecera del programa (ExHeader_Info, 0x400): solo la da fs:REG (como a loader). En la consola, sus sesiones las
@@ -234,7 +245,8 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 	if (!own && is_luma()) {
 		Handle h = 0;
 		Result r2 = luma_steal_session(&h, "fs:REG");
-		util_log("compartir: fs:REG ocupado (%08lX); sesión compartida por Luma3DS: %08lX", (unsigned long)r, (unsigned long)r2);
+		util_log("compartir: fs:REG ocupado (%08lX); sesión compartida por Luma3DS: %08lX, handle %08lX", (unsigned long)r, (unsigned long)r2,
+		         (unsigned long)h);
 		if (R_SUCCEEDED(r2) && h) {
 			*fsRegGetSessionHandle() = h;
 			stolen = true, r = 0;
@@ -248,7 +260,8 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 		if (R_SUCCEEDED(r = FSREG_LoadProgram(&ph, &pi))) {
 			r = FSREG_GetProgramInfo((ExHeader_Info *)exh, 1, ph);
 			FSREG_UnloadProgram(ph);
-		}
+		} else
+			util_log("compartir: FSREG_LoadProgram: %08lX", (unsigned long)r);
 		if (own)
 			fsRegExit();
 		else {
