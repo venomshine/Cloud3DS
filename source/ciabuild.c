@@ -234,21 +234,23 @@ static Result luma_steal_session(Handle *out, const char *name)
 	return luma_control_service(0, out, name); // SERVICEOP_STEAL_CLIENT_SESSION
 }
 
-// la cabecera del programa (ExHeader_Info, 0x400): solo la da fs:REG (como a loader). En la consola, sus sesiones las
-// tienen siempre loader y pm (0xD0401834: no hay ninguna libre), así que se usa la de ellos a través de Luma3DS
+// la cabecera del programa (ExHeader_Info, 0x400), como la pide loader: el programa se registra en pxi:pm (Process9, que
+// descifra el NCCH) y se le pide su cabecera. (fs:REG solo sirve para lo que se carga desde el PC: con un título de la
+// SD respondía C8804465, «no encontrado».) La sesión de pxi:pm la tiene loader: si no hay otra libre, se usa la suya a
+// través de Luma3DS
 static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 {
 	srvSetBlockingPolicy(true); // (no bloquear: si no hay sesión libre, error al momento)
-	Result r = fsRegInit();
+	Result r = pxiPmInit();
 	srvSetBlockingPolicy(false);
 	bool own = R_SUCCEEDED(r), stolen = false;
 	if (!own && is_luma()) {
 		Handle h = 0;
-		Result r2 = luma_steal_session(&h, "fs:REG");
-		util_log("compartir: fs:REG ocupado (%08lX); sesión compartida por Luma3DS: %08lX, handle %08lX", (unsigned long)r, (unsigned long)r2,
+		Result r2 = luma_steal_session(&h, "pxi:pm");
+		util_log("compartir: pxi:pm ocupado (%08lX); sesión compartida por Luma3DS: %08lX, handle %08lX", (unsigned long)r, (unsigned long)r2,
 		         (unsigned long)h);
 		if (R_SUCCEEDED(r2) && h) {
-			*fsRegGetSessionHandle() = h;
+			*pxiPmGetSessionHandle() = h;
 			stolen = true, r = 0;
 		}
 	}
@@ -257,23 +259,23 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 		memset(&pi, 0, sizeof pi);
 		pi.programId = tid, pi.mediaType = MEDIATYPE_SD;
 		u64 ph = 0;
-		if (R_SUCCEEDED(r = FSREG_LoadProgram(&ph, &pi))) {
-			r = FSREG_GetProgramInfo((ExHeader_Info *)exh, 1, ph);
-			FSREG_UnloadProgram(ph);
+		if (R_SUCCEEDED(r = PXIPM_RegisterProgram(&ph, &pi, &pi))) { // (sin actualización: la misma, como hace pm)
+			r = PXIPM_GetProgramInfo((ExHeader_Info *)exh, ph);
+			PXIPM_UnregisterProgram(ph);
 		} else
-			util_log("compartir: FSREG_LoadProgram: %08lX", (unsigned long)r);
+			util_log("compartir: PXIPM_RegisterProgram: %08lX", (unsigned long)r);
 		if (own)
-			fsRegExit();
+			pxiPmExit();
 		else {
-			svcCloseHandle(*fsRegGetSessionHandle());
-			*fsRegGetSessionHandle() = 0;
+			svcCloseHandle(*pxiPmGetSessionHandle());
+			*pxiPmGetSessionHandle() = 0;
 		}
 	}
-	util_log("compartir: cabecera de %016llX por fs:REG: %08lX", (unsigned long long)tid, (unsigned long)r);
+	util_log("compartir: cabecera de %016llX por pxi:pm: %08lX", (unsigned long long)tid, (unsigned long)r);
 	if (R_SUCCEEDED(r))
 		return true;
 #ifdef TEST_CA_SD
-	{ // (solo en las pruebas con el emulador, que no tiene fs:REG: la cabecera, de un archivo)
+	{ // (solo en las pruebas con el emulador, que no tiene pxi:pm: la cabecera, de un archivo)
 		char p[96];
 		snprintf(p, sizeof p, APP_DIR "/prueba_exh_%016llX.bin", (unsigned long long)tid);
 		FILE *f = fopen(p, "rb");
@@ -284,7 +286,7 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 			return true;
 	}
 #endif
-	snprintf(err, en, _("No se pudo leer la cabecera de la app. Hace falta Luma3DS actualizado (fs:REG: %08lX)."), (unsigned long)r);
+	snprintf(err, en, _("No se pudo leer la cabecera de la app (pxi:pm: %08lX)."), (unsigned long)r);
 	return false;
 }
 

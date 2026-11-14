@@ -1,9 +1,9 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
-    'No se pudo leer la cabecera de la app. Hace falta Luma3DS actualizado (fs:REG: %08lX).':
-        ('Could not read the app header. An up-to-date Luma3DS is required (fs:REG: %08lX).',
-         'アプリのヘッダーを読み取れませんでした。最新のLuma3DSが必要です(fs:REG: %08lX)。'),
+    'No se pudo leer la cabecera de la app (pxi:pm: %08lX).':
+        ('Could not read the app header (pxi:pm: %08lX).',
+         'アプリのヘッダーを読み取れませんでした(pxi:pm: %08lX)。'),
     'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee con la consola girada a la izquierda, con zoom.':
         ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT from the SD card, with a library. Read with the console turned to the left, with zoom.',
          'SDカードのPDF、漫画・コミック(CBZ)、EPUB、DOCX、TXTをライブラリで管理。本体を左に回して、ズームしながら読めます。'),
