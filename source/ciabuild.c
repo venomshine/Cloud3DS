@@ -238,7 +238,7 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 			return true;
 	}
 #endif
-	snprintf(err, en, _("Esta consola no deja leer la cabecera de la app (fs:REG: %08lX)"), (unsigned long)r);
+	snprintf(err, en, _("Esta consola no permite leer la cabecera de la app (fs:REG: %08lX)"), (unsigned long)r);
 	return false;
 }
 
@@ -380,7 +380,7 @@ int cb_build(u64 tid, const char *path, volatile u64 *done, volatile u64 *total,
 			for (u32 b = 0; b < up(want, BLK); b += BLK)
 				sha(buf + b, BLK, l2 + (off + b) / BLK * 32);
 			if (!wr_at(&o, o_con + romfs_off + p3 + off, buf, want)) {
-				snprintf(err, en, "%s", _("No se pudo escribir en la SD (¿falta espacio?)"));
+				snprintf(err, en, "%s", _("No se pudo escribir en la SD. Comprueba el espacio disponible."));
 				goto out;
 			}
 			off += want;
@@ -406,7 +406,7 @@ int cb_build(u64 tid, const char *path, volatile u64 *done, volatile u64 *total,
 		}
 		wle32(rfs_hdr + 0x54, 0x5C);
 		if (!wr_at(&o, o_con + romfs_off, rfs_hdr, MU) || !wr_at(&o, o_con + romfs_off + p1, l1, l1s) || !wr_at(&o, o_con + romfs_off + p2, l2, l2s)) {
-			snprintf(err, en, "%s", _("No se pudo escribir en la SD (¿falta espacio?)"));
+			snprintf(err, en, "%s", _("No se pudo escribir en la SD. Comprueba el espacio disponible."));
 			goto out;
 		}
 		// relleno hasta el final de la RomFS
@@ -521,7 +521,7 @@ int cb_build(u64 tid, const char *path, volatile u64 *done, volatile u64 *total,
 	          wr_at(&o, o_tmd, tmd, sizeof tmd) && wr_at(&o, o_meta, meta, 0x3AC0);
 	free(meta);
 	if (!ok || fflush(o.f)) {
-		snprintf(err, en, "%s", _("No se pudo escribir en la SD (¿falta espacio?)"));
+		snprintf(err, en, "%s", _("No se pudo escribir en la SD. Comprueba el espacio disponible."));
 		goto out;
 	}
 	*done = *total;
@@ -535,9 +535,9 @@ out:
 		fclose(o.f);
 	if (ret) {
 		if (!err[0] && *cancel)
-			snprintf(err, en, "%s", _("Cancelado"));
+			snprintf(err, en, "%s", _("Operación cancelada"));
 		else if (!err[0])
-			snprintf(err, en, "%s", _("No se pudo escribir en la SD (¿falta espacio?)"));
+			snprintf(err, en, "%s", _("No se pudo escribir en la SD. Comprueba el espacio disponible."));
 		char sd2[300];
 		snprintf(sd2, sizeof sd2, "sdmc:%s", path);
 		remove(sd2);

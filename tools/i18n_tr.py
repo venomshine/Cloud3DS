@@ -37,15 +37,6 @@ TR = {
     'No se pudo completar la solicitud.':
         ('The request could not be completed.',
          'リクエストを完了できませんでした。'),
-    'Borrar el .cia después de instalarlo':
-        ('Delete the .cia after installing it',
-         'インストール後に .cia を削除'),
-    'Instalando… el .cia se borrará al terminar':
-        ('Installing… the .cia will be deleted when done',
-         'インストール中… 完了後に .cia を削除します'),
-    'Esta consola no deja leer la cabecera de la app (fs:REG: %08lX)':
-        ("This console won't let the app's header be read (fs:REG: %08lX)",
-         'このコンソールではアプリのヘッダーを読み取れません (fs:REG: %08lX)'),
     'No hay memoria suficiente':
         ('Not enough memory',
          'メモリが足りません'),
@@ -67,54 +58,24 @@ TR = {
     'No se pudo leer la RomFS de la app':
         ("Could not read the app's RomFS",
          'アプリのRomFSを読み取れませんでした'),
-    'No se pudo escribir en la SD (¿falta espacio?)':
-        ('Could not write to the SD card (out of space?)',
-         'SDカードに書き込めませんでした(空き容量不足?)'),
     'La app es demasiado grande':
         ('The app is too large',
          'アプリが大きすぎます'),
     'No se pudo leer lo escrito en la SD':
         ('Could not read back what was written to the SD card',
          'SDカードに書き込んだ内容を読み取れませんでした'),
-    'Cancelado':
-        ('Cancelled',
-         'キャンセルしました'),
     'Preparando «%s» para %s':
         ('Preparing “%s” for %s',
          '「%s」を準備中(宛先: %s)'),
     'No se pudo preparar %s':
         ('Could not prepare %s',
          '%s を準備できませんでした'),
-    'Aceptado: la otra consola está preparando el instalador…':
-        ('Accepted: the other console is preparing the installer…',
-         '承認されました:相手のコンソールがインストーラーを準備中…'),
     'Instalada':
         ('Installed',
          'インストール済み'),
     'Preparando «%s»':
         ('Preparing “%s”',
          '「%s」を準備中'),
-    'Para %s. Se arma su instalador a partir de lo instalado y luego se envía.':
-        ('For %s. Its installer is built from the installed app and then sent.',
-         '%s 宛て。インストール済みのアプリからインストーラーを作成して送信します。'),
-    'Se comparten las apps homebrew instaladas: al aceptar, se arma su instalador y se envía. Nunca juegos de cartucho, de la eShop ni del sistema.':
-        ('Installed homebrew apps are shared: when you accept, their installer is built and sent. Never cartridge, eShop or system titles.',
-         'インストール済みの自作アプリを共有します。承認するとインストーラーを作成して送信します。カード、eショップ、本体のタイトルは共有しません。'),
-    'Aquí salen las apps homebrew instaladas en esta consola.':
-        ('Homebrew apps installed on this console appear here.',
-         'このコンソールにインストールされた自作アプリがここに表示されます。'),
-    'Los CIA se instalan mientras se descargan; todo lo descargado queda en /Downloads.':
-        ('CIAs are installed while they download; everything downloaded stays in /Downloads.',
-         'CIAはダウンロード中にインストールされます。ダウンロードしたものはすべて /Downloads に保存されます。'),
-    'Lo descargado':
-        ('Downloaded',
-         'ダウンロード済み'),
-    'Aquí queda lo que descargues desde un enlace o un QR, desde la Nube o desde el Navegador.':
-        ('Whatever you download from a link or a QR code, from the Cloud or from the Browser ends up here.',
-         'リンクやQRコード、クラウド、ブラウザからダウンロードしたものはここに保存されます。'),
-    'Aún no hay nada · /Downloads':
-        ('Nothing yet · /Downloads',
-         'まだありません · /Downloads'),
     '1 elemento · /Downloads':
         ('1 item · /Downloads',
          '1件 · /Downloads'),
@@ -160,42 +121,18 @@ TR = {
     'Comunidad y ayuda':
         ('Community and help',
          'コミュニティとサポート'),
-    'Ábrelo con la cámara. Tu móvil debe estar en la misma red Wi-Fi.':
-        ('Open it with your camera. Your phone must be on the same Wi-Fi network.',
-         'カメラで読み取るだけ。本体と同じWi-Fiで使えます。'),
-    'Código fuente y nuevas versiones. Si encuentras un error, abre un issue y lo revisaré.':
-        ("Source code and new versions. If you find a bug, open an issue and I'll look into it.",
-         'コードと新しいバージョン。不具合があればissueを立ててください。確認します。'),
     'Únete a la comunidad: soporte, ideas y novedades de cada versión.':
         ('Join the community: support, ideas and news about every version.',
          'コミュニティに参加: サポート、アイデア、各バージョンの最新情報。'),
     'Escanea con tu móvil':
         ('Scan with your phone',
          'スマホでスキャン'),
-    'Si Cloud3DS te resulta útil, puedes invitarme a un café. Me ayuda a seguir mejorándolo.':
-        ('If Cloud3DS is useful to you, you can buy me a coffee. It helps me keep improving it.',
-         'Cloud3DSを気に入ったら、コーヒーをおごってください。とても助かります!'),
     'O escribe en el navegador:':
         ('Or type in your browser:',
          'またはブラウザで入力:'),
     'PIN':
         ('PIN',
          'PIN'),
-    'Recibido de %s':
-        ('Received from %s',
-         '%s から受信'),
-    'Enviado a %s':
-        ('Sent to %s',
-         '%s へ送信'),
-    'Recibiendo de %s':
-        ('Receiving from %s',
-         '%s から受信中'),
-    'Enviando a %s':
-        ('Sending to %s',
-         '%s へ送信中'),
-    'Cancelado o conexión perdida':
-        ('Canceled or connection lost',
-         'キャンセルまたは接続切れ'),
     '%s de %s':
         ('%s of %s',
          '%s / %s'),
@@ -205,18 +142,9 @@ TR = {
     'Completado':
         ('Done',
          '完了'),
-    '%s · PIN %s':
-        ('%s · PIN %s',
-         '%s · PIN %s'),
     'Tu nube local':
         ('Your local cloud',
          'あなたのローカルクラウド'),
-    'hecho por VENOMSHiNE':
-        ('made by VENOMSHiNE',
-         '制作: VENOMSHiNE'),
-    'Escanea para unirte al Discord de la comunidad.':
-        ('Scan to join the community Discord.',
-         'スキャンしてコミュニティのDiscordに参加。'),
     'Sin conexión Wi-Fi':
         ('No Wi-Fi connection',
          'Wi-Fiに接続されていません'),
@@ -226,9 +154,6 @@ TR = {
     'Esperando a que el router asigne una dirección IP…':
         ('Waiting for the router to assign an IP address…',
          'ルーターからIPアドレスを取得中…'),
-    'Preparando tu nube…':
-        ('Getting your cloud ready…',
-         'クラウドを準備中…'),
     'Recibido':
         ('Received',
          '受信'),
@@ -253,18 +178,12 @@ TR = {
     'No se pudo iniciar el servidor':
         ("Couldn't start the server",
          'サーバーを開始できません'),
-    'PIN cambiado por seguridad':
-        ('PIN changed for security',
-         '安全のためPINを変更'),
     'Demasiados intentos fallidos':
         ('Too many failed attempts',
          '失敗回数が多すぎます'),
     'Actividad':
         ('Activity',
          '履歴'),
-    'Todo listo':
-        ('All set',
-         '準備完了'),
     'Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS.':
         ('Close other network apps (such as FTPD) and reopen Cloud3DS.',
          '他のネットワークアプリ(FTPDなど)を閉じて、Cloud3DSを開き直してください。'),
@@ -286,9 +205,6 @@ TR = {
     '%s tendrá que volver a escanear el QR o escribir el PIN.':
         ('%s will need to scan the QR code or enter the PIN again.',
          '%s は再びQRコードの読み取りかPINの入力が必要になります。'),
-    'Aquí verás lo que subas o descargues desde tu móvil o tu PC.':
-        ('Files you upload or download from your phone or PC will appear here.',
-         'スマホやPCからアップロードするとここに表示されます。'),
     'Escanea el código QR de la pantalla superior para vincular tu móvil.':
         ('Scan the QR code on the top screen to pair your phone.',
          '上のQRコードをスマホで読み取って登録します。'),
@@ -316,15 +232,6 @@ TR = {
     'Proteger carpetas del sistema':
         ('Protect system folders',
          'システムフォルダを保護'),
-    'Pide confirmación en Nintendo 3DS, luma…':
-        ('Asks first in Nintendo 3DS, luma…',
-         'Nintendo 3DSやlumaでは確認します'),
-    'PIN nuevo':
-        ('New PIN',
-         '新しいPIN'),
-    'Invalida el QR y el PIN actuales':
-        ('Invalidates the current QR and PIN',
-         '現在のQRとPINを無効にします'),
     'Idioma':
         ('Language',
          '言語'),
@@ -340,18 +247,9 @@ TR = {
     'Acerca de Cloud3DS':
         ('About Cloud3DS',
          'Cloud3DSについて'),
-    'Mira la pantalla de arriba':
-        ('Look at the top screen',
-         '上画面をご覧ください'),
     'Salir':
         ('Exit',
          '終了'),
-    'Los dispositivos solo podrán ver y descargar':
-        ('Devices can only view and download',
-         '閲覧とダウンロードのみ'),
-    'Impide borrar Nintendo 3DS, 3ds, luma…':
-        ('Prevents deleting Nintendo 3DS, 3ds, luma…',
-         'Nintendo 3DS、3ds、lumaなどを削除不可に'),
     'Vinculado: %s':
         ('Paired: %s',
          '登録: %s'),
@@ -361,9 +259,6 @@ TR = {
     '¿Salir de Cloud3DS?':
         ('Exit Cloud3DS?',
          'Cloud3DSを終了しますか?'),
-    'Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrirla.':
-        ("Your cloud won't be available on your phone or PC until you open it again.",
-         'もう一度開くまで、スマホやPCからは使えなくなります。'),
     'recibiendo':
         ('receiving',
          '受信中'),
@@ -379,9 +274,6 @@ TR = {
     'Iniciando la red':
         ('Starting the network',
          'ネットワークを準備中'),
-    'Se mantiene hasta que lo cambies':
-        ('Stays the same until you change it',
-         '変更するまで同じです'),
     'Conectado al Wi-Fi':
         ('Connected to Wi-Fi',
          'Wi-Fiに接続済み'),
@@ -403,87 +295,12 @@ TR = {
     '%d h %d min':
         ('%d h %d min',
          '%d時間%d分'),
-    '%d evento':
-        ('%d event',
-         '%d 件'),
-    '%d eventos':
-        ('%d events',
-         '%d 件'),
-    'Aún no hay actividad':
-        ('No activity yet',
-         'まだ履歴はありません'),
-    '%d conectados · %d vinculados':
-        ('%d online · %d paired',
-         '接続中 %d · 登録 %d'),
-    'Ninguno vinculado todavía':
-        ('None paired yet',
-         'まだ登録なし'),
-    'Versión %s · por %s':
-        ('Version %s · by %s',
-         'バージョン %s · %s'),
-    'Permisos':
-        ('Permissions',
-         'アクセス権'),
-    'Lectura y escritura':
-        ('Read and write',
-         '読み書き'),
-    'Pueden subir, renombrar y borrar':
-        ('Can upload, rename and delete',
-         'アップロード・名前変更・削除できます'),
-    'Solo pueden ver y descargar':
-        ('Can only view and download',
-         '閲覧とダウンロードのみ'),
-    'Conectados ahora':
-        ('Online now',
-         '接続中'),
-    'Vinculados':
-        ('Paired',
-         '登録済み'),
     'Conectado':
         ('Connected',
          '接続中'),
-    'Ningún dispositivo vinculado':
-        ('No paired devices',
-         '登録されたデバイスはありません'),
-    'Escanea el QR de arriba con tu móvil':
-        ('Scan the QR code above with your phone',
-         '上のQRコードをスマホで読み取ってください'),
-    'Antes':
-        ('Earlier',
-         '以前'),
-    'Sube algo desde tu móvil o tu PC':
-        ('Upload something from your phone or PC',
-         'スマホやPCからアップロードしてください'),
-    'Borrar el historial':
-        ('Clear history',
-         '履歴を消去'),
-    'Acceso':
-        ('Access',
-         'アクセス'),
-    'Apariencia':
-        ('Appearance',
-         '外観'),
-    'Información':
-        ('Information',
-         '情報'),
     'Usa el idioma de la consola':
         ("Uses the console's language",
          '本体の言語を使用'),
-    'Creado por VENOMSHiNE · elige uno para ver su QR':
-        ('Made by VENOMSHiNE · pick one to see its QR',
-         '制作: VENOMSHiNE · 選ぶとQRを表示'),
-    'Únete a la comunidad':
-        ('Join the community',
-         'コミュニティに参加'),
-    'Invítame a un café':
-        ('Buy me a coffee',
-         'コーヒーをおごる'),
-    'Gracias por usarlo':
-        ('Thanks for using it',
-         'ご利用ありがとうございます'),
-    'La consola genera uno al azar':
-        ('The console generates one at random',
-         '本体がランダムに作成します'),
     '¿Borrar el historial?':
         ('Clear history?',
          '履歴を消去しますか?'),
@@ -493,15 +310,6 @@ TR = {
     'Borrar':
         ('Clear',
          '消去'),
-    'Sin Wi-Fi':
-        ('No Wi-Fi',
-         'Wi-Fiなし'),
-    'Error':
-        ('Error',
-         'エラー'),
-    'Preparando…':
-        ('Starting…',
-         '準備中…'),
     'Recibiendo':
         ('Receiving',
          '受信中'),
@@ -511,12 +319,6 @@ TR = {
     'Lista':
         ('List',
          'リスト'),
-    'Conecta la consola a tu Wi-Fi o al punto de acceso de tu móvil. El código aparecerá solo.':
-        ("Connect the console to your Wi-Fi or your phone's hotspot. The code will appear by itself.",
-         '本体をWi-Fiかスマホのテザリングに接続すると、コードが表示されます。'),
-    'Escanéalo con la cámara del móvil':
-        ("Scan it with your phone's camera",
-         'スマホのカメラで読み取ってください'),
     '%d dispositivo conectado':
         ('%d device online',
          '%d 台接続中'),
@@ -526,21 +328,6 @@ TR = {
     'Esperando conexión%.*s':
         ('Waiting for a device%.*s',
          '接続を待っています%.*s'),
-    'Conecta tu':
-        ('Connect your',
-         '本体を'),
-    'consola':
-        ('console',
-         '接続しよう'),
-    'Cloud3DS funciona en tu red local: el móvil o el PC tienen que estar en el mismo Wi-Fi.':
-        ('Cloud3DS works on your local network: your phone or PC must be on the same Wi-Fi.',
-         'Cloud3DSはローカルネットワークで動きます。スマホやPCは同じWi-Fiに接続してください。'),
-    'Abre tu':
-        ('Open your',
-         'あなたの'),
-    'nube local':
-        ('local cloud',
-         'ローカルクラウド'),
     'de %s':
         ('from %s',
          '%s から'),
@@ -550,33 +337,9 @@ TR = {
     'y %d más':
         ('and %d more',
          'ほか %d 件'),
-    'Código, novedades y nuevas versiones de mis proyectos.':
-        ('Code, news and new versions of my projects.',
-         'プロジェクトのコード、最新情報、新バージョン。'),
-    'Únete a la comunidad: dudas, ideas y avisos de actualizaciones.':
-        ('Join the community: questions, ideas and update news.',
-         'コミュニティに参加: 質問、アイデア、更新のお知らせ。'),
     'Al cambiar el PIN también se renueva el código QR. Los dispositivos vinculados seguirán conectados.':
         ('Changing the PIN also renews the QR code. Paired devices will stay connected.',
          '変更するとQRコードも新しくなります。登録済みの端末は接続されたままです。'),
-    'Escanéalo con tu teléfono':
-        ('Scan it with your phone',
-         'スマホで読み取ってください'),
-    'v%s · hecho por %s':
-        ('v%s · made by %s',
-         'v%s · 制作: %s'),
-    'Toca para expulsarlo: tendrá que volver a escanear el QR o escribir el PIN.':
-        ('Tap to remove it: it will need to scan the QR code or enter the PIN again.',
-         'タップで解除。再びQRコードかPINが必要になります。'),
-    'Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada.':
-        ("With “Read-only”, devices can view and download, but can't upload, rename or delete anything.",
-         '「読み取り専用」では閲覧とダウンロードのみで、アップロード・名前変更・削除はできません。'),
-    'Antes de borrar o cambiar Nintendo 3DS, luma/payloads, boot.firm y otras carpetas importantes, la web pide confirmación.':
-        ('Before deleting or changing Nintendo 3DS, luma/payloads, boot.firm and other important folders, the web page asks first.',
-         'Nintendo 3DS、luma/payloads、boot.firmなど重要なフォルダを削除・変更する前に確認します。'),
-    'Crea un PIN y un QR nuevos. Los dispositivos ya vinculados siguen conectados; los nuevos necesitarán el PIN nuevo.':
-        ('Creates a new PIN and QR code. Paired devices stay connected; new ones will need the new PIN.',
-         '新しいPINとQRを作成します。登録済みのデバイスはそのまま、新しいデバイスには新しいPINが必要です。'),
     'Idioma de la consola. La web usa el idioma de tu móvil o tu PC.':
         ("Console language. The web page uses your phone's or PC's language.",
          '本体の表示言語です。Webはスマホ・PCの言語を使います。'),
@@ -586,18 +349,6 @@ TR = {
     'Versión, créditos y enlaces a la comunidad.':
         ('Version, credits and community links.',
          'バージョン、クレジット、コミュニティへのリンク。'),
-    'Hoy en tu nube':
-        ('Today in your cloud',
-         '今日のクラウド'),
-    'Conectados':
-        ('Online',
-         '接続中'),
-    'Espacio libre':
-        ('Free space',
-         '空き容量'),
-    'Aquí verás lo que suban o descarguen':
-        ('Uploads and downloads will show up here',
-         'アップロードやダウンロードがここに表示されます'),
     'Código fuente e informes de errores':
         ('Source code and bug reports',
          'コードと不具合の報告'),
@@ -619,18 +370,9 @@ TR = {
     'Nuevo PIN y código QR generados':
         ('New PIN and QR code generated',
          '新しいPINとQRができました'),
-    'Código y nuevas versiones':
-        ('Code and new versions',
-         'コードと新バージョン'),
-    'Elige uno para ver su QR arriba':
-        ('Pick one to see its QR code above',
-         '選ぶと上画面にQRを表示'),
     'Escanéalo con tu móvil':
         ('Scan it with your phone',
          'スマホでスキャン'),
-    'Qué es y para qué sirve':
-        ("What it is and what it's for",
-         'このアプリについて'),
     'Software libre · licencia GPL-3.0':
         ('Free software · GPL-3.0 license',
          'フリーソフト · GPL-3.0'),
@@ -640,9 +382,6 @@ TR = {
     'Tu nube está lista':
         ('Your cloud is ready',
          'クラウドの準備ができました'),
-    'Pulsa SELECT para ver el código QR':
-        ('Press SELECT to show the QR code',
-         'SELECTでQRコードを表示'),
     'Copiado':
         ('Copied',
          'コピー'),
@@ -664,18 +403,12 @@ TR = {
     'No se pudo verificar la conexión segura. Comprueba la fecha y la hora de la consola.':
         ("Couldn't verify the secure connection. Check the console's date and time.",
          '安全な接続を確認できませんでした。本体の日付と時刻を確認してください。'),
-    'GitHub ha limitado las consultas por ahora. Inténtalo de nuevo en unos minutos.':
-        ('GitHub is limiting requests right now. Try again in a few minutes.',
-         'GitHubが一時的にアクセスを制限しています。数分後にもう一度お試しください。'),
     'Todavía no hay versiones publicadas.':
         ('No versions have been published yet.',
          'まだ公開されたバージョンはありません。'),
     'El archivo descargado no coincide con su SHA-256 y no se ha instalado.':
         ("The downloaded file doesn't match its SHA-256, so it wasn't installed.",
          'ダウンロードしたファイルがSHA-256と一致しないため、インストールしませんでした。'),
-    'La consola no pudo instalar la actualización. Prueba de nuevo o instálala con FBI.':
-        ("The console couldn't install the update. Try again or install it with FBI.",
-         '本体がアップデートをインストールできませんでした。もう一度試すか、FBIでインストールしてください。'),
     'No se pudo escribir en la tarjeta SD.':
         ("Couldn't write to the SD card.",
          'SDカードに書き込めませんでした。'),
@@ -721,15 +454,9 @@ TR = {
     'Reinicia Cloud3DS para usar la nueva versión.':
         ('Restart Cloud3DS to use the new version.',
          '新しいバージョンを使うには、Cloud3DSを再起動してください。'),
-    'Esta versión no incluye el archivo de comprobación (Cloud3DS.sha256), así que no se puede instalar desde aquí.':
-        ("This version doesn't include the checksum file (Cloud3DS.sha256), so it can't be installed from here.",
-         'このバージョンには確認用ファイル(Cloud3DS.sha256)がないため、ここからはインストールできません。'),
     'Novedades':
         ("What's new",
          '新機能'),
-    'Cloud3DS busca versiones nuevas en GitHub. Antes de instalar, comprueba que el archivo descargado es el original (SHA-256).':
-        ('Cloud3DS checks GitHub for new versions. Before installing, it verifies that the downloaded file is the original (SHA-256).',
-         'Cloud3DSはGitHubで新しいバージョンを確認します。インストール前に、ダウンロードしたファイルが本物か(SHA-256)を確認します。'),
     'Buscar versiones nuevas':
         ('Check for new versions',
          '新しいバージョンを確認'),
@@ -742,9 +469,6 @@ TR = {
     'Actualizar a la versión %s':
         ('Update to version %s',
          'バージョン%sにアップデート'),
-    'Se descarga, se comprueba y se instala':
-        ('Downloaded, verified and installed',
-         'ダウンロード、確認、インストール'),
     'Reiniciar Cloud3DS':
         ('Restart Cloud3DS',
          'Cloud3DSを再起動'),
@@ -757,9 +481,6 @@ TR = {
     'Versión instalada: v%s':
         ('Installed version: v%s',
          'インストール済み: v%s'),
-    'Se descargará la versión %s desde GitHub, se comprobará y se instalará. No apagues la consola mientras tanto.':
-        ("Version %s will be downloaded from GitHub, verified and installed. Don't turn off the console in the meantime.",
-         'バージョン%sをGitHubからダウンロードし、確認してインストールします。その間、本体の電源を切らないでください。'),
     '¿Actualizar Cloud3DS?':
         ('Update Cloud3DS?',
          'Cloud3DSをアップデートしますか?'),
@@ -775,33 +496,12 @@ TR = {
     'Instalado':
         ('Installed',
          'インストール済み'),
-    'Es Cloud3DS: actualízala desde Ajustes → Actualizaciones.':
-        ('This is Cloud3DS: update it from Settings → Updates.',
-         'Cloud3DSです。設定 → アップデートから更新してください。'),
-    'Versión %s · no está instalado':
-        ('Version %s · not installed',
-         'バージョン%s · 未インストール'),
-    'Versión %s · ya instalada (se reinstalará)':
-        ('Version %s · already installed (it will be reinstalled)',
-         'バージョン%s · インストール済み(再インストールします)'),
-    'Versión %s · ya tienes una más nueva (%s). La consola no deja bajar de versión.':
-        ("Version %s · you already have a newer one (%s). The console doesn't allow downgrades.",
-         'バージョン%s · より新しい%sがあります。本体はダウングレードできません。'),
-    'Versión %s · actualiza la %s instalada':
-        ('Version %s · updates the installed %s',
-         'バージョン%s · インストール済みの%sを更新'),
     'Instalar en la consola':
         ('Install on the console',
          '本体にインストール'),
     'Este juego es solo para New 3DS.':
         ('This game is for New 3DS only.',
          'このゲームはNew 3DS専用です。'),
-    'ID %016llX · pedido desde %s':
-        ('ID %016llX · requested from %s',
-         'ID %016llX · %sから'),
-    'y %d más esperando':
-        ('and %d more waiting',
-         'ほか%d件が待機中'),
     '%d CIA para instalar':
         ('%d CIA to install',
          'インストールするCIA: %d'),
@@ -817,9 +517,6 @@ TR = {
     'Solo guardar en la SD':
         ('Only save to the SD card',
          'SDカードに保存のみ'),
-    'Rechazar':
-        ('Decline',
-         '拒否'),
     'Instalando…':
         ('Installing…',
          'インストール中…'),
@@ -841,9 +538,6 @@ TR = {
     'En cola para instalar':
         ('Queued to install',
          'インストール待ち'),
-    'Inicio':
-        ('Home',
-         'ホーム'),
     'Capturas':
         ('Screenshots',
          'スクショ'),
@@ -859,9 +553,6 @@ TR = {
     'Partidas':
         ('Saves',
          'セーブ'),
-    'Aún no hay copias de tus partidas: hazlas con Checkpoint o JKSM':
-        ('No save backups yet: make them with Checkpoint or JKSM',
-         'セーブのバックアップはまだありません。CheckpointかJKSMで作成してください'),
     '1 elemento':
         ('1 item',
          '1件'),
@@ -880,12 +571,6 @@ TR = {
     'Carpeta vacía':
         ('Empty folder',
          '空のフォルダ'),
-    'Mover a…':
-        ('Move to…',
-         '移動…'),
-    'Copiar a…':
-        ('Copy to…',
-         'コピー…'),
     'Destacar':
         ('Highlight',
          '色分け'),
@@ -895,42 +580,12 @@ TR = {
     'La consola no reconoce este CIA':
         ("The console doesn't recognize this CIA",
          '本体がこのCIAを認識できません'),
-    'Cloud3DS se actualiza desde Ajustes → Actualizaciones':
-        ('Cloud3DS is updated from Settings → Updates',
-         'Cloud3DSは設定 → アップデートから更新します'),
-    'Ya tienes una versión más nueva instalada':
-        ('You already have a newer version installed',
-         'より新しいバージョンがインストールされています'),
-    'Se eliminarán «%s» y todo su contenido. Esta acción no se puede deshacer.':
-        ("“%s” and everything in it will be deleted. This can't be undone.",
-         '「%s」とその中身がすべて削除されます。元に戻せません。'),
-    'Se eliminará «%s» de la tarjeta SD. Esta acción no se puede deshacer.':
-        ("“%s” will be deleted from the SD card. This can't be undone.",
-         '「%s」をSDカードから削除します。元に戻せません。'),
     '¿Eliminar?':
         ('Delete?',
          '削除しますか?'),
-    'Ve a la carpeta de destino y pulsa X':
-        ('Go to the destination folder and press X',
-         '移動先のフォルダでXを押してください'),
     'Mover aquí':
         ('Move here',
          'ここに移動'),
-    'Copiar aquí':
-        ('Copy here',
-         'ここにコピー'),
-    'Carpeta protegida: elige otra':
-        ('Protected folder: choose another',
-         '保護されたフォルダです。別のフォルダを選んでください'),
-    'Ya existe «%s» aquí. Se guardará con otro nombre, como «%s (2)».':
-        ('“%s” already exists here. It will be saved with another name, like “%s (2)”.',
-         '「%s」はすでにあります。「%s (2)」のような別の名前で保存します。'),
-    'Ya existe':
-        ('Already exists',
-         'すでにあります'),
-    'Conservar ambos':
-        ('Keep both',
-         '両方残す'),
     'No se pudo mover':
         ("Couldn't move it",
          '移動できませんでした'),
@@ -946,9 +601,6 @@ TR = {
     'No se pudo copiar':
         ("Couldn't copy it",
          'コピーできませんでした'),
-    'Carpeta del sistema: no la borres ni la cambies si no sabes para qué sirve.':
-        ("System folder: don't delete or change it unless you know what it's for.",
-         'システムフォルダです。用途がわからない場合は削除や変更をしないでください。'),
     'Archivos':
         ('Files',
          'ファイル'),
@@ -985,9 +637,6 @@ TR = {
     'Crear carpeta':
         ('Create folder',
          'フォルダを作成'),
-    'Las partidas de los juegos van cifradas dentro de «Nintendo 3DS». Haz una copia con Checkpoint o JKSM y aparecerá aquí.':
-        ("Game saves are encrypted inside “Nintendo 3DS”. Back them up with Checkpoint or JKSM and they'll show up here.",
-         'セーブデータは「Nintendo 3DS」内で暗号化されています。CheckpointやJKSMでバックアップするとここに表示されます。'),
     'Carpeta del sistema':
         ('System folder',
          'システムフォルダ'),
@@ -1015,9 +664,6 @@ TR = {
     'Contenido':
         ('Contents',
          '中身'),
-    '%s (%llu bytes)':
-        ('%s (%llu bytes)',
-         '%s(%llu バイト)'),
     'Tamaño':
         ('Size',
          'サイズ'),
@@ -1060,9 +706,6 @@ TR = {
     'Vinculado':
         ('Paired',
          '登録日'),
-    'Última vez':
-        ('Last seen',
-         '最終接続'),
     'Nombre de la carpeta':
         ('Folder name',
          'フォルダ名'),
@@ -1159,9 +802,6 @@ TR = {
     '¿Salir sin guardar?':
         ('Leave without saving?',
          '保存せずに閉じますか?'),
-    'Los cambios que hiciste en este archivo se perderán.':
-        ('The changes you made to this file will be lost.',
-         'このファイルの変更は失われます。'),
     'Salir sin guardar':
         ('Leave without saving',
          '保存せずに閉じる'),
@@ -1177,15 +817,9 @@ TR = {
     'Solo lectura: el texto no está en UTF-8':
         ("Read-only: the text isn't UTF-8",
          '読み取り専用: UTF-8ではありません'),
-    'Línea %d de %d · Sin guardar':
-        ('Line %d of %d · Unsaved',
-         '%d / %d 行 · 未保存'),
     'Línea %d de %d':
         ('Line %d of %d',
          '%d / %d 行'),
-    'Editar':
-        ('Edit',
-         '編集'),
     'Añadir':
         ('Add',
          '追加'),
@@ -1198,9 +832,6 @@ TR = {
     'Guardar':
         ('Save',
          '保存'),
-    'Línea borrada':
-        ('Line deleted',
-         '行を削除しました'),
     'Se modificó desde otro dispositivo. Si guardas, esos cambios se perderán.':
         ('It was modified from another device. If you save, those changes will be lost.',
          '別のデバイスで変更されました。保存するとその変更は失われます。'),
@@ -1246,9 +877,6 @@ TR = {
     'Cancelar la copia':
         ('Cancel the copy',
          'コピーを取り消す'),
-    'No instalar':
-        ("Don't install",
-         'インストールしない'),
     'Documento de texto':
         ('Text document',
          'テキスト文書'),
@@ -1273,15 +901,9 @@ TR = {
     'Bloque':
         ('Block',
          'ブロック'),
-    'Menú':
-        ('Menu',
-         'メニュー'),
     'Cambiar tipo':
         ('Change type',
          '種類を変更'),
-    'Ahora es .%s':
-        ("Now it's .%s",
-         '今は .%s です'),
     'Carpetas':
         ('Folders',
          'フォルダ'),
@@ -1345,18 +967,12 @@ TR = {
     'Iconos':
         ('Icons',
          'アイコン'),
-    'Vista':
-        ('View',
-         '表示'),
     'Fecha':
         ('Date',
          '日付'),
     'Ordenar por':
         ('Sort by',
          '並べ替え'),
-    'No':
-        ('None',
-         'なし'),
     'Agrupar por':
         ('Group by',
          'グループ化'),
@@ -1408,9 +1024,6 @@ TR = {
     'Instalando %d CIA…':
         ('Installing %d CIA…',
          '%d 個のCIAをインストール中…'),
-    'Se eliminarán %d elementos de la tarjeta SD. Esta acción no se puede deshacer.':
-        ("%d items will be deleted from the SD card. This can't be undone.",
-         'SDカードから %d 個の項目を削除します。元に戻せません。'),
     'Destacar con un color':
         ('Highlight with a color',
          '色で目立たせる'),
@@ -1420,12 +1033,6 @@ TR = {
     'Copiar':
         ('Copy',
          'コピー'),
-    'Mover':
-        ('Move',
-         '移動'),
-    'Movidos: %d':
-        ('Moved: %d',
-         '移動しました: %d'),
     'Copiando %d elementos…':
         ('Copying %d items…',
          '%d 個をコピー中…'),
@@ -1438,9 +1045,6 @@ TR = {
     'Acciones':
         ('Actions',
          '操作'),
-    'A la papelera':
-        ('Moved to trash',
-         'ゴミ箱へ'),
     'Recuperado de la papelera':
         ('Restored from trash',
          'ゴミ箱から復元'),
@@ -1459,15 +1063,6 @@ TR = {
     'Recuperar':
         ('Restore',
          '元に戻す'),
-    'Eliminar para siempre':
-        ('Delete forever',
-         '完全に削除'),
-    '«%s» se borrará de la tarjeta SD. Esta acción no se puede deshacer.':
-        ("“%s” will be deleted from the SD card. This can't be undone.",
-         '「%s」はSDカードから削除されます。元に戻せません。'),
-    '¿Eliminar para siempre?':
-        ('Delete forever?',
-         '完全に削除しますか?'),
     'Papelera':
         ('Trash',
          'ゴミ箱'),
@@ -1477,9 +1072,6 @@ TR = {
     '¿Vaciar la papelera?':
         ('Empty the trash?',
          'ゴミ箱を空にしますか?'),
-    'Todo lo que hay en la papelera se borrará para siempre.':
-        ('Everything in the trash will be deleted forever.',
-         'ゴミ箱の中身はすべて完全に削除されます。'),
     '1 elemento · %s':
         ('1 item · %s',
          '1 項目 · %s'),
@@ -1510,9 +1102,6 @@ TR = {
     'Textos':
         ('Text',
          'テキスト'),
-    'Buscar aquí':
-        ('Search here',
-         'ここで検索'),
     'Buscando…':
         ('Searching…',
          '検索中…'),
@@ -1525,9 +1114,6 @@ TR = {
     '%d resultados':
         ('%d results',
          '%d 件'),
-    'Su carpeta':
-        ('Its folder',
-         'フォルダへ'),
     'Comparar con un valor':
         ('Compare with a value',
          '値と比較'),
@@ -1570,15 +1156,9 @@ TR = {
     'Descomprimiendo':
         ('Extracting',
          '展開中'),
-    'Se canceló':
-        ('Canceled',
-         'キャンセルしました'),
     'Un archivo del ZIP está dañado':
         ('A file in the ZIP is damaged',
          'ZIP内のファイルが壊れています'),
-    'Ya se está comprimiendo o extrayendo algo':
-        ('Something is already being compressed or extracted',
-         'すでに圧縮か展開をしています'),
     'No hay nada que comprimir':
         ("There's nothing to compress",
          '圧縮するものがありません'),
@@ -1645,9 +1225,6 @@ TR = {
     'Sin conexión a Internet':
         ('No Internet connection',
          'インターネットに接続していません'),
-    'Conexión no segura (certificado)':
-        ('Insecure connection (certificate)',
-         '安全でない接続（証明書）'),
     'Error de red':
         ('Network error',
          'ネットワークエラー'),
@@ -1678,18 +1255,6 @@ TR = {
     'Cancelada':
         ('Canceled',
          'キャンセル済み'),
-    'la suma no coincide':
-        ("checksum doesn't match",
-         'チェックサム不一致'),
-    'suma comprobada':
-        ('checksum OK',
-         'チェックサム一致'),
-    'Descargando: lo verás en Actividad':
-        ("Downloading: you'll see it in Activity",
-         'ダウンロード中：履歴で確認できます'),
-    'Descargando %d enlaces: los verás en Actividad':
-        ("Downloading %d links: you'll see them in Activity",
-         '%d 件をダウンロード中：履歴で確認できます'),
     'No se pudo abrir la cámara':
         ("Couldn't open the camera",
          'カメラを起動できませんでした'),
@@ -1711,15 +1276,6 @@ TR = {
     'Buscando un código QR…':
         ('Looking for a QR code…',
          'QRコードを探しています…'),
-    'Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se puede instalar al terminar.':
-        ("Any QR code with a link works, like FBI's. If it's a .cia, you can install it when it finishes.",
-         'FBIと同じく、リンク入りのQRコードなら使えます。.ciaなら完了後にインストールできます。'),
-    'Cámara de fuera':
-        ('Outer camera',
-         '外側カメラ'),
-    'Cámara de dentro':
-        ('Inner camera',
-         '内側カメラ'),
     'Enlace leído':
         ('Link read',
          '読み取ったリンク'),
@@ -1741,9 +1297,6 @@ TR = {
     'Escanear otro':
         ('Scan another',
          '別のコードを読み取る'),
-    'Descargar de un enlace':
-        ('Download a link',
-         'リンクからダウンロード'),
     'Pausar':
         ('Pause',
          '一時停止'),
@@ -1804,18 +1357,12 @@ TR = {
     'Solo letras sin acentos, números y guiones':
         ('Only plain letters, numbers and hyphens',
          '英字（アクセントなし）、数字、ハイフンのみ'),
-    'Ahora es %s.local':
-        ("It's now %s.local",
-         '%s.local になりました'),
     'Instalados':
         ('Installed',
          'インストール済み'),
     'Desinstalar':
         ('Uninstall',
          'アンインストール'),
-    'Se borrarán el juego, su actualización, sus DLC y su partida (%s). Si quieres conservar la partida, haz antes una copia.':
-        ('The game, its update, its DLC and its save (%s) will be deleted. To keep the save, back it up first.',
-         'ゲーム、更新データ、DLC、セーブデータ（%s）が削除されます。セーブを残すには先にバックアップしてください。'),
     '¿Desinstalar?':
         ('Uninstall?',
          'アンインストールしますか?'),
@@ -1837,12 +1384,6 @@ TR = {
     '1 · %s':
         ('1 · %s',
          '1 件 · %s'),
-    '%d · la última %s':
-        ('%d · latest %s',
-         '%d 件 · 最新 %s'),
-    'Ninguna todavía':
-        ('None yet',
-         'まだありません'),
     'Copias':
         ('Backups',
          'バックアップ'),
@@ -1858,21 +1399,12 @@ TR = {
     'No hay juegos ni apps instalados en la SD':
         ('No games or apps installed on the SD',
          'SDにインストールされたゲームやアプリはありません'),
-    '«%s» ocupa más de 1 GB y habría que volver a descargarlo o instalarlo. Esto no se puede deshacer.':
-        ("“%s” takes more than 1 GB and you'd have to download or install it again. This can't be undone.",
-         '「%s」は1 GB以上あり、再ダウンロードか再インストールが必要になります。元に戻せません。'),
-    '¿Seguro?':
-        ('Are you sure?',
-         '本当によろしいですか?'),
     'Desinstalado: %s':
         ('Uninstalled: %s',
          'アンインストールしました：%s'),
     'No se pudo desinstalar':
         ("Couldn't uninstall it",
          'アンインストールできませんでした'),
-    'Las capturas nuevas aparecen en la web abierta':
-        ('New screenshots show up in the open web page',
-         '新しいスクリーンショットを開いているWebに表示'),
     'Captura enviada a 1 dispositivo':
         ('Screenshot sent to 1 device',
          'スクリーンショットを1台に送りました'),
@@ -1906,99 +1438,42 @@ TR = {
     'Carpeta nueva':
         ('New folder',
          '新しいフォルダ'),
-    'Documento de texto nuevo':
-        ('New text document',
-         '新しいテキスト文書'),
     '%s libres':
         ('%s free',
          '空き %s'),
-    'Escanear un QR':
-        ('Scan a QR code',
-         'QRコードを読み取る'),
-    'Un archivo o la última versión de un proyecto de GitHub':
-        ('A file, or the latest release of a GitHub project',
-         'ファイル、またはGitHubプロジェクトの最新リリース'),
     'Con la cámara, como en FBI':
         ('With the camera, like in FBI',
          'FBIと同じく、カメラで'),
     'Tarjeta SD':
         ('SD card',
          'SDカード'),
-    'No se puede leer el espacio':
-        ('Unable to read free space',
-         '空き容量を読み取れません'),
-    'Queda poco espacio':
-        ('Running out of space',
-         '空き容量が少なくなっています'),
-    'Aquí verás lo que se sube, se descarga o se instala. Para traer algo, usa el botón central.':
-        ('Uploads, downloads and installs will appear here. To bring something in, use the center button.',
-         'アップロード、ダウンロード、インストールの記録がここに表示されます。何かを取り込むには中央のボタンを使います。'),
     'Traer a la consola':
         ('Bring to the console',
          '本体に取り込む'),
     'Conectar':
         ('Connect',
          '接続'),
-    'Ocultar QR':
-        ('Hide QR',
-         'QRを隠す'),
     'Móvil o PC\ncon QR y PIN':
         ('Phone or PC\nwith QR and PIN',
          'スマホやPCと\nQRとPINで接続'),
-    'Volver a la\ninformación':
-        ('Back to the\ninfo view',
-         '情報表示に\n戻る'),
     'Con la cámara,\ncomo en FBI':
         ('With the camera,\nlike in FBI',
          'カメラで読み取り\nFBIと同じ'),
     'Escribir\nun enlace':
         ('Type\na link',
          'リンクを\n入力'),
-    'Conectar un dispositivo':
-        ('Connect a device',
-         '端末を接続'),
     'Escanear un código QR':
         ('Scan a QR code',
          'QRコードを読み取る'),
-    'Descargar un enlace':
-        ('Download a link',
-         'リンクからダウンロード'),
-    'Muestra arriba el código QR y el PIN. Escanéalo con el móvil o escribe la dirección en el navegador del PC: tienen que estar en la misma red Wi-Fi.':
-        ('Shows the QR code and PIN on the top screen. Scan it with your phone or type the address in your PC browser; both must be on the same Wi-Fi network.',
-         '上画面にQRコードとPINを表示します。スマホで読み取るか、PCのブラウザにアドレスを入力してください。同じWi-Fiに接続している必要があります。'),
-    'Apunta la cámara de la consola a un código QR con un enlace, como los de las webs de homebrew o los de FBI.':
-        ('Point the console camera at a QR code with a link, such as those on homebrew sites or the ones FBI uses.',
-         '本体のカメラを、リンク入りのQRコード（自作ソフトのサイトやFBIで使うものなど）に向けてください。'),
-    'Escribe la dirección de un archivo o de un proyecto de GitHub; de GitHub se descarga su última versión.':
-        ('Type the address of a file or a GitHub project; for GitHub, the latest release is downloaded.',
-         'ファイルまたはGitHubプロジェクトのアドレスを入力します。GitHubの場合は最新リリースをダウンロードします。'),
-    'SELECT también lo muestra y lo oculta.':
-        ('SELECT also shows and hides it.',
-         'SELECTでも表示・非表示を切り替えられます。'),
-    'Los .cia se guardan en /cias y se pueden instalar al terminar. El resto, en %s.':
-        ('.cia files are saved to /cias and can be installed when finished. Everything else goes to %s.',
-         '.ciaは/ciasに保存され、完了後にインストールできます。それ以外は %s に保存されます。'),
-    'la raíz de la SD':
-        ('the root of the SD card',
-         'SDカードのルート'),
     'Las carpetas del sistema (Nintendo 3DS, 3ds, luma, boot.firm…) no se pueden renombrar, mover ni borrar, ni desde la consola ni desde la web.':
         ("System folders (Nintendo 3DS, 3ds, luma, boot.firm…) can't be renamed, moved or deleted, either on the console or from the web.",
          'システムフォルダ（Nintendo 3DS、3ds、luma、boot.firmなど）は、本体からもWebからも名前の変更・移動・削除ができません。'),
     'El PIN sirve para vincular un dispositivo sin escanear el QR. Se mantiene hasta que lo cambies; los ya vinculados siguen conectados.':
         ('The PIN lets you link a device without scanning the QR code. It stays the same until you change it; linked devices stay connected.',
          'PINを使うと、QRコードを読み取らずに端末を連携できます。変更するまで同じPINのままで、連携済みの端末は接続されたままです。'),
-    'El nombre de la consola en la red (para entrar por .local) y la instalación remota desde FBI.':
-        ("The console's network name (to connect via .local) and remote install from FBI.",
-         'ネットワーク上の本体名（.localで接続するため）とFBIからのリモートインストール。'),
-    'Cada captura de pantalla nueva aparece al momento en la web abierta, lista para descargar.':
-        ('Each new screenshot appears instantly in the open web page, ready to download.',
-         '新しいスクリーンショットは、開いているWebページにすぐ表示され、ダウンロードできます。'),
     'Busca versiones nuevas de Cloud3DS y las instala sin salir de la app.':
         ('Checks for new versions of Cloud3DS and installs them without leaving the app.',
          'Cloud3DSの新しいバージョンを確認し、アプリを閉じずにインストールします。'),
-    'Cierra Cloud3DS. Lo que se esté copiando o instalando se detiene.':
-        ('Closes Cloud3DS. Any copy or installation in progress stops.',
-         'Cloud3DSを終了します。進行中のコピーやインストールは中止されます。'),
     'Activado':
         ('On',
          'オン'),
@@ -2014,81 +1489,27 @@ TR = {
     'Escribe cuatro cifras que te resulten fáciles de recordar. El código QR se renueva con él y los dispositivos ya vinculados siguen conectados.':
         ('Enter four digits that are easy for you to remember. The QR code is renewed with it, and linked devices stay connected.',
          '覚えやすい4桁の数字を入力してください。QRコードも新しくなり、連携済みの端末は接続されたままです。'),
-    'La consola crea un PIN al azar y un código QR nuevo; los anteriores dejan de servir. Los dispositivos ya vinculados siguen conectados.':
-        ('The console creates a random PIN and a new QR code; the old ones stop working. Linked devices stay connected.',
-         '本体がランダムなPINと新しいQRコードを作成し、以前のものは使えなくなります。連携済みの端末は接続されたままです。'),
     'Activado: %s.local':
         ('On: %s.local',
          'オン: %s.local'),
-    'El navegador encuentra la consola por su nombre aunque cambie su IP. Funciona en la mayoría de móviles y PC; si alguno no lo admite, usa la IP.':
-        ("Browsers find the console by name even if its IP changes. It works on most phones and PCs; if one doesn't support it, use the IP.",
-         'IPが変わっても、ブラウザは名前で本体を見つけられます。ほとんどのスマホやPCで使えます。対応していない場合はIPを使ってください。'),
-    'Las apps de PC hechas para FBI (como servefiles o sendurls) pueden enviar CIA a la consola por el puerto 5000, igual que a FBI.':
-        ('PC apps made for FBI (such as servefiles or sendurls) can send CIAs to the console over port 5000, just like to FBI.',
-         'FBI用のPCアプリ（servefilesやsendurlsなど）から、FBIと同じようにポート5000でCIAを本体に送れます。'),
     'Ahora: %s.local':
         ('Now: %s.local',
          '現在: %s.local'),
-    'Si tienes varias consolas, dale a cada una su nombre (por ejemplo, 3ds-salon) para distinguirlas en la red.':
-        ('If you have several consoles, give each one its own name (for example, 3ds-livingroom) to tell them apart on the network.',
-         '本体が複数ある場合は、それぞれに名前（例: 3ds-living）を付けるとネットワーク上で区別できます。'),
     'No se pudo comprobar el certificado':
         ("Couldn't verify the certificate",
          '証明書を確認できませんでした'),
-    'Descargar sin comprobarlo':
-        ('Download without verifying',
-         '確認せずにダウンロード'),
     '¿Descargar sin comprobar el certificado?':
         ('Download without verifying the certificate?',
          '証明書を確認せずにダウンロードしますか？'),
-    'La consola no pudo comprobar que el servidor es quien dice ser. Si sigues, nada garantiza que el archivo no se haya cambiado por el camino. Hazlo solo si confías en el enlace y en tu red.':
-        ("The console couldn't verify that the server is who it claims to be. If you continue, nothing guarantees the file wasn't altered on the way. Only do it if you trust the link and your network.",
-         '本体はサーバーが本物であることを確認できませんでした。続けると、途中でファイルが書き換えられていない保証はありません。リンクとネットワークを信頼できる場合にのみ行ってください。'),
-    'Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se instala mientras se descarga.':
-        ("Any QR code with a link works, like the ones FBI uses. If it's a .cia, it installs while it downloads.",
-         'FBIで使うものなど、リンク入りのQRコードならどれでも使えます。.ciaならダウンロードしながらインストールします。'),
-    'Los .cia se instalan mientras se descargan, como en FBI. El resto se guarda en %s.':
-        ('.cia files install while they download, like in FBI. Everything else is saved to %s.',
-         '.ciaはFBIと同じくダウンロードしながらインストールされます。それ以外は %s に保存されます。'),
-    'Ese CIA no es de Cloud3DS.':
-        ("That CIA isn't Cloud3DS.",
-         'そのCIAはCloud3DSではありません。'),
-    'Ese archivo es de una versión anterior a la instalada: la consola no deja bajar de versión.':
-        ("That file is an older version than the one installed: the console doesn't allow downgrading.",
-         'そのファイルはインストール済みより古いバージョンです。本体はダウングレードできません。'),
     'El archivo está dañado o no es válido.':
         ('The file is damaged or invalid.',
          'ファイルが破損しているか、無効です。'),
-    'El archivo ya no está en la SD.':
-        ('The file is no longer on the SD card.',
-         'ファイルがSDカードにもうありません。'),
-    'Se instalará Cloud3DS v%s desde %s. No apagues la consola mientras tanto.':
-        ("Cloud3DS v%s will be installed from %s. Don't turn off the console in the meantime.",
-         'Cloud3DS v%s を %s からインストールします。その間は本体の電源を切らないでください。'),
-    'Se instalará Cloud3DS desde %s. No apagues la consola mientras tanto.':
-        ("Cloud3DS will be installed from %s. Don't turn off the console in the meantime.",
-         '%s からCloud3DSをインストールします。その間は本体の電源を切らないでください。'),
-    '¿Actualizar Cloud3DS desde la SD?':
-        ('Update Cloud3DS from the SD card?',
-         'SDカードからCloud3DSを更新しますか？'),
     'Instalar desde un archivo':
         ('Install from a file',
          'ファイルからインストール'),
-    'Un Cloud3DS .3dsx que hayas pasado a la SD':
-        ('A Cloud3DS .3dsx you copied to the SD card',
-         'SDカードにコピーしたCloud3DSの.3dsx'),
-    'El CIA de Cloud3DS que hayas pasado a la SD':
-        ('The Cloud3DS CIA you copied to the SD card',
-         'SDカードにコピーしたCloud3DSのCIA'),
     'No hay ningún Cloud3DS .3dsx en la SD':
         ("There's no Cloud3DS .3dsx on the SD card",
          'SDカードにCloud3DSの.3dsxがありません'),
-    'No hay ningún CIA de Cloud3DS en /cias, /Descargas ni en la raíz':
-        ("There's no Cloud3DS CIA in /cias, /Descargas or the root",
-         '/cias、/Descargas、ルートにCloud3DSのCIAがありません'),
-    'Es Cloud3DS %s: se instalará como actualización y luego se reinicia.':
-        ('This is Cloud3DS %s: it will be installed as an update, then restarted.',
-         'これはCloud3DS %sです。アップデートとしてインストールし、その後再起動します。'),
     'Actualizar Cloud3DS':
         ('Update Cloud3DS',
          'Cloud3DSを更新'),
@@ -2149,12 +1570,6 @@ TR = {
     'Copia de seguridad guardada (formato de Checkpoint)':
         ('Backup saved (Checkpoint format)',
          'バックアップを保存しました（Checkpoint形式）'),
-    'Crear copia de seguridad':
-        ('Create backup',
-         'バックアップを作成'),
-    'Ver copias de seguridad':
-        ('View backups',
-         'バックアップを表示'),
     'Este juego no tiene copias de seguridad':
         ('This game has no backups',
          'このゲームのバックアップはありません'),
@@ -2191,15 +1606,9 @@ TR = {
     'Selecciona un archivo para ver su información':
         ('Select a file to see its details',
          'ファイルを選ぶと詳細が表示されます'),
-    'Selecciona un juego para ver su información':
-        ('Select a game to see its details',
-         'ゲームを選ぶと詳細が表示されます'),
     'La selección incluye carpetas protegidas':
         ('The selection includes protected folders',
          '選択に保護されたフォルダが含まれています'),
-    'Supera los 4 GB, el límite de un ZIP':
-        ('Exceeds 4 GB, the ZIP limit',
-         'ZIPの上限である4 GBを超えています'),
     'No hay memoria suficiente para abrir este archivo':
         ('Not enough memory to open this file',
          'このファイルを開くためのメモリが足りません'),
@@ -2227,9 +1636,6 @@ TR = {
     'Se elimina':
         ('Deleted',
          '削除予定'),
-    '¿Necesitas ayuda? Escríbeme por GitHub o Discord.':
-        ('Need help? Contact me on GitHub or Discord.',
-         'お困りの場合は、GitHubまたはDiscordでご連絡ください。'),
     'También con START':
         ('Or press START',
          'STARTでも終了できます'),
@@ -2257,27 +1663,18 @@ TR = {
     'El archivo no es un ZIP válido o está dañado':
         ("Not a valid ZIP file, or it's damaged",
          '有効なZIPファイルではないか、破損しています'),
-    'Esa versión de GitHub no incluye ningún .cia':
-        ('That GitHub release has no .cia',
-         'そのGitHubリリースには.ciaがありません'),
     'El servidor ha denegado el acceso':
         ('The server denied access',
          'サーバーがアクセスを拒否しました'),
     'El nombre no es válido':
         ("That name isn't valid",
          '名前が無効です'),
-    'Nombre del dispositivo (déjalo vacío para usar el automático)':
-        ('Device name (leave empty for automatic)',
-         '端末名（空欄で自動）'),
     'Útil con varias consolas, p. ej. 3ds-salon.local':
         ('Useful with several consoles, e.g. 3ds-livingroom.local',
          '複数の本体がある場合に便利（例: 3ds-living.local）'),
     'Acceso por %s.local':
         ('Access via %s.local',
          '%s.local でアクセス'),
-    'Copia cancelada: el archivo se eliminó de la SD':
-        ('Copy canceled: the file was removed from the SD card',
-         'コピーを中止し、SDカードから削除しました'),
     'Enviado desde %s':
         ('Sent from %s',
          '%s から送信'),
@@ -2293,9 +1690,6 @@ TR = {
     'Icono de programa (SMDH)':
         ('Program icon (SMDH)',
          'プログラムのアイコン（SMDH）'),
-    'Ya está pendiente en la consola':
-        ('Already pending on the console',
-         'すでに本体で確認待ちです'),
     'En «%s»':
         ('In “%s”',
          '「%s」内'),
@@ -2332,9 +1726,6 @@ TR = {
     'Puedes seguir usando la consola mientras se calcula.':
         ("You can keep using the console while it's calculated.",
          '計算中も本体を使い続けられます。'),
-    'Todavía se está calculando':
-        ('Still calculating',
-         'まだ計算中です'),
     'Guardado junto al archivo como .sha256':
         ('Saved next to the file as .sha256',
          'ファイルの隣に .sha256 として保存しました'),
@@ -2371,27 +1762,12 @@ TR = {
     'Páginas web\nligeras':
         ('Lightweight\nweb pages',
          '軽量な\nWebページ'),
-    'Navegador (prototipo)':
-        ('Browser (prototype)',
-         'ブラウザ（試作）'),
-    'Abre páginas web ligeras: Wikipedia, blogs, foros, noticias y documentación. No ejecuta JavaScript.':
-        ("Opens lightweight web pages: Wikipedia, blogs, forums, news and documentation. It doesn't run JavaScript.",
-         'Wikipedia、ブログ、フォーラム、ニュース、ドキュメントなどの軽量なWebページを開きます。JavaScriptは実行しません。'),
-    'Un .html de la SD también se abre aquí desde Archivos.':
-        ('An .html file on the SD card also opens here from Files.',
-         'SDカードの.htmlもファイルからここで開けます。'),
-    'Dirección web (https://…)':
-        ('Web address (https://…)',
-         'Webアドレス（https://…）'),
     'No se pudo conectar con Microsoft. Comprueba el Wi-Fi.':
         ("Couldn't reach Microsoft. Check the Wi-Fi.",
          'Microsoftに接続できませんでした。Wi-Fiを確認してください。'),
     'El código caducó. Vuelve a pulsar «Conectar».':
         ('The code expired. Press “Connect” again.',
          'コードの期限が切れました。もう一度「接続」を押してください。'),
-    'Se rechazó el permiso en el móvil.':
-        ('Permission was declined on the phone.',
-         'スマホで許可が拒否されました。'),
     'El permiso se retiró desde la cuenta de Microsoft. Vuelve a conectar.':
         ('Access was removed from the Microsoft account. Connect again.',
          'Microsoftアカウントで許可が取り消されました。もう一度接続してください。'),
@@ -2416,9 +1792,6 @@ TR = {
     'O en el PC: %s':
         ('Or on a PC: %s',
          'またはPCで：%s'),
-    'Esperando a que aceptes en el móvil · caduca en %d min':
-        ('Waiting for you to accept on your phone · expires in %d min',
-         'スマホでの許可を待っています · あと%d分で期限切れ'),
     'Cargando…':
         ('Loading…',
          '読み込み中…'),
@@ -2428,12 +1801,6 @@ TR = {
     'Esta versión de prueba aún no tiene configurada la conexión con Microsoft.':
         ("This test build doesn't have the Microsoft connection set up yet.",
          'このテスト版ではMicrosoftとの接続がまだ設定されていません。'),
-    'Tus archivos de OneDrive en la consola, y las copias de tus partidas y capturas guardadas solas en la nube. Se conecta con un QR y un código, sin escribir contraseñas en la consola.':
-        ('Your OneDrive files on the console, with save and screenshot backups stored in the cloud automatically. Connect with a QR code and a code, without typing passwords on the console.',
-         'OneDriveのファイルを本体で使え、セーブデータとスクリーンショットのバックアップが自動でクラウドに保存されます。QRコードとコードで接続し、本体でパスワードを入力する必要はありません。'),
-    'Solo hace falta una vez: el permiso se guarda y se renueva solo.':
-        ('You only need to do this once: access is saved and renewed automatically.',
-         '一度だけで大丈夫です。許可は保存され、自動で更新されます。'),
     'Descargar a la SD':
         ('Download to the SD card',
          'SDカードにダウンロード'),
@@ -2449,18 +1816,12 @@ TR = {
     '¿Desconectar OneDrive?':
         ('Disconnect OneDrive?',
          'OneDriveの接続を解除しますか？'),
-    'Cloud3DS dejará de poder entrar en tu OneDrive. Tus archivos siguen en la nube.':
-        ('Cloud3DS will no longer be able to access your OneDrive. Your files stay in the cloud.',
-         'Cloud3DSはOneDriveにアクセスできなくなります。ファイルはクラウドに残ります。'),
     'Desconectar':
         ('Disconnect',
          '接続を解除'),
     'No se pudo cargar':
         ("Couldn't load",
          '読み込めませんでした'),
-    'Sube algo desde Archivos con «Subir a OneDrive».':
-        ('Upload something from Files with “Upload to OneDrive”.',
-         'ファイルの「OneDriveにアップロード」から追加できます。'),
     'Carpeta · 1 elemento':
         ('Folder · 1 item',
          'フォルダ · 1 項目'),
@@ -2470,93 +1831,33 @@ TR = {
     'Escanea el QR de arriba con el móvil':
         ('Scan the QR code above with your phone',
          '上のQRコードをスマホで読み取る'),
-    'Entra con tu cuenta de Microsoft (Outlook, Hotmail, Xbox…)':
-        ('Sign in with your Microsoft account (Outlook, Hotmail, Xbox…)',
-         'Microsoftアカウント（Outlook、Hotmail、Xboxなど）でサインイン'),
     'Escribe el código %s y pulsa «Permitir»':
         ('Enter the code %s and tap “Allow”',
          'コード %s を入力して「許可」を押す'),
-    'Cloud3DS podrá ver y guardar archivos en tu OneDrive. Puedes quitarle el permiso cuando quieras desde aquí o desde tu cuenta de Microsoft.':
-        ('Cloud3DS will be able to view and save files in your OneDrive. You can remove access at any time here or from your Microsoft account.',
-         'Cloud3DSはOneDriveのファイルを表示・保存できるようになります。許可はここまたはMicrosoftアカウントからいつでも取り消せます。'),
     'Nube sin configurar':
         ('Cloud not set up',
          'クラウド未設定'),
-    'Con tu cuenta de Microsoft, en el móvil, con un QR y un código.':
-        ('With your Microsoft account, on your phone, using a QR code and a code.',
-         'スマホでMicrosoftアカウントを使い、QRコードとコードで接続します。'),
     'Falta el ID de la app de Microsoft en esta versión de prueba.':
         ('This test build is missing the Microsoft app ID.',
          'このテスト版にはMicrosoftのアプリIDがありません。'),
-    'Pidiendo el código…':
-        ('Requesting the code…',
-         'コードを取得中…'),
     'Subir a OneDrive':
         ('Upload to OneDrive',
          'OneDriveにアップロード'),
     'Subiendo «%s» a OneDrive':
         ('Uploading “%s” to OneDrive',
          '「%s」をOneDriveにアップロード中'),
-    'Tu OneDrive\ny tus copias':
-        ('Your OneDrive\nand backups',
-         'OneDriveと\nバックアップ'),
     'Conecta tu\nOneDrive':
         ('Connect your\nOneDrive',
          'OneDriveを\n接続'),
-    'Tu OneDrive desde la consola: explora, sube y descarga, y guarda solas las copias de tus partidas y capturas.':
-        ('Your OneDrive from the console: browse, upload and download, and back up your saves and screenshots automatically.',
-         '本体からOneDriveを利用：閲覧、アップロード、ダウンロードができ、セーブデータとスクリーンショットを自動でバックアップします。'),
-    'Conecta tu cuenta de Microsoft con un QR y un código, sin escribir contraseñas en la consola. Después, tu OneDrive y tus copias, desde aquí.':
-        ('Connect your Microsoft account with a QR code and a code, without typing passwords on the console. Then your OneDrive and backups are right here.',
-         'QRコードとコードでMicrosoftアカウントを接続します。本体でパスワードを入力する必要はありません。接続後はここからOneDriveとバックアップを使えます。'),
-    'Las partidas se guardan en la carpeta Cloud3DS de tu OneDrive.':
-        ('Saves are stored in the Cloud3DS folder of your OneDrive.',
-         'セーブデータはOneDriveのCloud3DSフォルダに保存されます。'),
     'OneDrive desconectado':
         ('OneDrive disconnected',
          'OneDriveの接続を解除しました'),
-    'Tus archivos de OneDrive en la consola y copias automáticas de tus partidas y capturas. Se conecta con un QR y un código, sin contraseñas.':
-        ('Your OneDrive files on the console, plus automatic backups of your saves and screenshots. Connect with a QR code and a code, no passwords.',
-         'OneDriveのファイルを本体で使え、セーブデータとスクリーンショットを自動でバックアップします。QRコードとコードで接続し、パスワードは不要です。'),
     'La última copia no terminó. Se volverá a intentar.':
         ("The last backup didn't finish. It will be retried.",
          '前回のバックアップは完了しませんでした。もう一度試します。'),
-    'La última copia no terminó':
-        ("The last backup didn't finish",
-         '前回のバックアップは未完了'),
-    'Aún no hay copias en la nube':
-        ('No cloud backups yet',
-         'クラウドのバックアップはまだありません'),
-    'Tus partidas están a salvo':
-        ('Your saves are safe',
-         'セーブデータは保護されています'),
-    'La primera copia sube todas las partidas; las siguientes, solo las que cambien.':
-        ('The first backup uploads every save; later ones, only the ones that changed.',
-         '初回はすべてのセーブを、以降は変更されたものだけをアップロードします。'),
     'Se volverá a intentar. Comprueba el Wi-Fi y el espacio de OneDrive.':
         ('It will be retried. Check the Wi-Fi and your OneDrive space.',
          'もう一度試します。Wi-FiとOneDriveの空き容量を確認してください。'),
-    'Última copia: %s · 1 juego · %s subidos':
-        ('Last backup: %s · 1 game · %s uploaded',
-         '前回: %s · 1本 · %s アップロード'),
-    'Última copia: %s · %d juegos · %s subidos':
-        ('Last backup: %s · %d games · %s uploaded',
-         '前回: %s · %d本 · %s アップロード'),
-    'Última copia: %s · no había cambios':
-        ('Last backup: %s · nothing had changed',
-         '前回: %s · 変更なし'),
-    'Subiendo ahora':
-        ('Uploading now',
-         'アップロード中'),
-    'Ahora':
-        ('Now',
-         '現在'),
-    '%s · partida':
-        ('%s · save',
-         '%s · セーブ'),
-    '%s de %s · /Cloud3DS/Partidas/':
-        ('%s of %s · /Cloud3DS/Partidas/',
-         '%s / %s · /Cloud3DS/Partidas/'),
     '1 captura nueva':
         ('1 new screenshot',
          '新しいスクリーンショット 1枚'),
@@ -2566,45 +1867,6 @@ TR = {
     'Subiendo a /Cloud3DS/Capturas/':
         ('Uploading to /Cloud3DS/Capturas/',
          '/Cloud3DS/Capturas/ へアップロード中'),
-    'Nada pendiente. Las partidas que cambien se copian al abrir Cloud3DS.':
-        ('Nothing pending. Saves that change are backed up when Cloud3DS opens.',
-         '保留中のものはありません。変更されたセーブはCloud3DSを開いたときにバックアップされます。'),
-    'Nada pendiente. Las partidas que cambien se copian una vez al día.':
-        ('Nothing pending. Saves that change are backed up once a day.',
-         '保留中のものはありません。変更されたセーブは1日1回バックアップされます。'),
-    'Nada pendiente. Las partidas se copian solo con «Copiar ahora».':
-        ('Nothing pending. Saves are only backed up with "Back up now".',
-         '保留中のものはありません。セーブは「今すぐバックアップ」でのみ保存されます。'),
-    'Copias en la nube':
-        ('Cloud backups',
-         'クラウドバックアップ'),
-    'A mano':
-        ('Manual',
-         '手動'),
-    'Al abrir':
-        ('On open',
-         '起動時'),
-    'Cada día':
-        ('Daily',
-         '毎日'),
-    'Copiar ahora':
-        ('Back up now',
-         '今すぐバックアップ'),
-    'Las nuevas, al momento':
-        ('New ones, right away',
-         '新しいものをすぐに'),
-    'No se suben':
-        ('Not uploaded',
-         'アップロードしない'),
-    'Todas las partidas que cambiaron':
-        ('Every save that changed',
-         '変更されたすべてのセーブ'),
-    '%s · tus archivos siguen en la nube':
-        ('%s · your files stay in the cloud',
-         '%s · ファイルはクラウドに残ります'),
-    'Copiando las partidas a OneDrive':
-        ('Backing up saves to OneDrive',
-         'セーブをOneDriveにバックアップ中'),
     'Juego':
         ('Game',
          'ゲーム'),
@@ -2623,57 +1885,18 @@ TR = {
     'Borrando: %s (%s) · %s':
         ('Deleting: %s (%s) · %s',
          '削除中: %s (%s) · %s'),
-    'NO TOQUES NADA':
-        ("DON'T TOUCH ANYTHING",
-         '何も触らないで'),
-    'No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada.':
-        ("Don't turn off the console, don't remove the SD and don't press HOME. If it's cut off halfway, the console's game list can get damaged.",
-         '電源を切ったり、SDを抜いたり、HOMEを押したりしないでください。途中で止まると、本体のソフト一覧が壊れることがあります。'),
-    'Cuando termine, Cloud3DS sigue sola.':
-        ("When it's done, Cloud3DS carries on by itself.",
-         '終わるとCloud3DSは自動で戻ります。'),
     'Servidor apagado':
         ('Server off',
          'サーバーはオフ'),
-    'Se enciende en Conectar':
-        ('Turn it on in Connect',
-         '「接続」でオンにできます'),
-    'SELECT abre el menú':
-        ('SELECT opens the menu',
-         'SELECTでメニューを開く'),
     'Servidor encendido':
         ('Server on',
          'サーバーをオンにしました'),
-    'La web, cloud3ds.local, las subidas desde el PC y la instalación remota no funcionan. La nube, las descargas y el navegador siguen igual.':
-        ("The web page, cloud3ds.local, uploads from the PC and remote install don't work. The cloud, downloads and the browser keep working.",
-         'Webページ、cloud3ds.local、PCからのアップロード、リモートインストールは使えません。クラウド、ダウンロード、ブラウザはそのまま使えます。'),
-    'Apagado gasta menos batería. Se enciende aquí o con SELECT, en «Conectar».':
-        ('Off uses less battery. Turn it on here or with SELECT, in "Connect".',
-         'オフはバッテリーの消費が少なくなります。ここか、SELECTの「接続」でオンにできます。'),
     'Servidor para el PC y el móvil':
         ('Server for PC and phone',
          'PC・スマホ用サーバー'),
-    'Con él encendido, el móvil o el PC entran en la consola desde el navegador: ven, suben y bajan archivos e instalan CIA.':
-        ("While it's on, your phone or PC can open the console in a browser: browse, upload and download files and install CIAs.",
-         'オンの間、スマホやPCのブラウザから本体に入れます。ファイルの閲覧・アップロード・ダウンロードやCIAのインストールができます。'),
-    'Si no lo usas, puedes apagarlo: gasta menos batería.':
-        ("If you don't use it, you can turn it off: it saves battery.",
-         '使わないならオフにできます。バッテリーの節約になります。'),
-    'Apagado · la nube sigue funcionando':
-        ('Off · the cloud still works',
-         'オフ · クラウドは使えます'),
-    'Encendido · la web y las subidas':
-        ('On · web page and uploads',
-         'オン · Webとアップロード'),
     'Servidor\napagado':
         ('Server\noff',
          'サーバー\nオフ'),
-    'El servidor está apagado: al abrir esta tarjeta se enciende. Se vuelve a apagar en Ajustes, en «Conexión».':
-        ('The server is off: opening this card turns it on. Turn it off again in Settings, under "Connection".',
-         'サーバーはオフです。このカードを開くとオンになります。設定の「接続」でまたオフにできます。'),
-    'La ventana del QR se cierra sola en cuanto haces otra cosa.':
-        ('The QR window closes by itself as soon as you do something else.',
-         'ほかの操作をするとQRの画面は自動で閉じます。'),
     'Copia de seguridad':
         ('Backup',
          'バックアップ'),
@@ -2701,9 +1924,6 @@ TR = {
     'Borrando los datos extra · %s':
         ('Deleting the extra data · %s',
          '追加データを削除中 · %s'),
-    'Se está instalando. No apagues la consola, no saques la SD y no pulses HOME: si se corta a mitad, la instalación puede quedar dañada.':
-        ("Installing. Don't turn off the console, remove the SD card or press HOME: if it's interrupted, the installation may be damaged.",
-         'インストール中です。電源を切ったり、SDカードを抜いたり、HOMEボタンを押したりしないでください。中断するとインストールが破損するおそれがあります。'),
     'Actualización desinstalada':
         ('Update uninstalled',
          '更新データを削除しました'),
@@ -2713,30 +1933,18 @@ TR = {
     'Datos extra borrados (con copia en la SD)':
         ('Extra data deleted (backup saved on the SD card)',
          '追加データを削除しました(SDカードにバックアップ済み)'),
-    'No se pudo copiar: no se ha borrado nada':
-        ("Couldn't make the backup: nothing was deleted",
-         'バックアップできなかったため、何も削除していません'),
     'No se pudo completar':
         ("Couldn't complete the operation",
          '完了できませんでした'),
-    'Actívalo en Ajustes, en «Conexión», para conectar otros dispositivos.':
-        ('Turn it on in Settings > Connection to connect other devices.',
-         '他のデバイスと接続するには、設定の「接続」でオンにしてください。'),
     'Iniciando el servidor…':
         ('Starting the server…',
          'サーバーを起動中…'),
     'Sin transferencias en curso':
         ('No transfers in progress',
          '進行中の転送はありません'),
-    'Aquí verás el progreso de lo que envíes, recibas, descargues o instales.':
-        ("Here you'll see the progress of everything you send, receive, download or install.",
-         '送信・受信・ダウンロード・インストールの進行状況がここに表示されます。'),
     'Sin descargas en curso':
         ('No downloads in progress',
          '進行中のダウンロードはありません'),
-    'Los CIA se instalan mientras se descargan; el resto se guarda en la carpeta de descargas.':
-        ('CIA files are installed while they download; everything else is saved to the downloads folder.',
-         'CIAはダウンロードしながらインストールされます。その他のファイルはダウンロードフォルダに保存されます。'),
     'Descargas':
         ('Downloads',
          'ダウンロード'),
@@ -2749,9 +1957,6 @@ TR = {
     'Enlace del portapapeles':
         ('Link from the clipboard',
          'クリップボードのリンク'),
-    'El progreso se ve arriba y en Conectar, en «Actividad».':
-        ('Progress is shown above and in Connect > Activity.',
-         '進行状況は上画面と「接続」の「アクティビティ」で確認できます。'),
     'Descargando el enlace del portapapeles':
         ('Downloading the link from the clipboard',
          'クリップボードのリンクをダウンロード中'),
@@ -2761,9 +1966,6 @@ TR = {
     'Elige un dispositivo para ver su información y sus permisos.':
         ('Select a device to see its details and permissions.',
          'デバイスを選ぶと、情報と権限を確認できます。'),
-    'En el portapapeles: ve a otra carpeta y pulsa X para pegar':
-        ('On the clipboard: go to another folder and press X to paste',
-         'クリップボードにあります。別のフォルダでXを押すと貼り付けます'),
     'Cortar':
         ('Cut',
          '切り取り'),
@@ -2794,9 +1996,6 @@ TR = {
     '¿Desinstalar los DLC?':
         ('Uninstall the DLC?',
          'DLCを削除しますか?'),
-    'Se liberarán %s. Antes se hará una copia en /3ds/Checkpoint/extdata (se puede restaurar con Checkpoint); si la copia falla, no se borra nada. La partida no se toca.':
-        ("%s will be freed. A backup is saved first to /3ds/Checkpoint/extdata (it can be restored with Checkpoint); if the backup fails, nothing is deleted. The save data isn't touched.",
-         '%s が空きます。先に /3ds/Checkpoint/extdata へバックアップします(Checkpointで復元できます)。バックアップに失敗した場合は何も削除しません。セーブデータには影響しません。'),
     '¿Borrar los datos extra?':
         ('Delete the extra data?',
          '追加データを削除しますか?'),
@@ -2842,27 +2041,15 @@ TR = {
     'Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.':
         ('Transfer files with your phone or computer from the browser using a QR code. Includes activity and paired devices.',
          'QRコードを使い、スマホやPCのブラウザからファイルを転送します。アクティビティと登録済みデバイスも確認できます。'),
-    'Descarga desde un enlace o escaneando un código QR. Los CIA se instalan durante la descarga.':
-        ('Download from a link or by scanning a QR code. CIA files are installed during the download.',
-         'リンクやQRコードからダウンロードします。CIAはダウンロード中にインストールされます。'),
-    'Tu OneDrive desde la consola, con copia automática de partidas y capturas.':
-        ('Your OneDrive on the console, with automatic backup of saves and screenshots.',
-         '本体からOneDriveを利用。セーブデータとスクリーンショットを自動でバックアップします。'),
     'Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.':
         ('Connect your OneDrive account with a QR code, without typing passwords on the console.',
          'QRコードでOneDriveアカウントを接続します。本体でパスワードを入力する必要はありません。'),
     'Navegador web con JavaScript, favoritos e historial.':
         ('Web browser with JavaScript, bookmarks and history.',
          'JavaScript、ブックマーク、履歴に対応したWebブラウザ。'),
-    'Reproduce la música de la tarjeta SD, también en segundo plano.':
-        ('Plays music from the SD card, also in the background.',
-         'SDカードの音楽を再生します。バックグラウンド再生にも対応。'),
     'Conexión, seguridad, idioma, tema y actualizaciones.':
         ('Connection, security, language, theme and updates.',
          '接続、セキュリティ、言語、テーマ、アップデート。'),
-    'Elige una canción para reproducirla':
-        ('Select a song to play it',
-         '再生する曲を選んでください'),
     'Sin conectar':
         ('Not connected',
          '未接続'),
@@ -2902,27 +2089,9 @@ TR = {
     'Cancelando la descarga…':
         ('Canceling the download…',
          'ダウンロードをキャンセル中…'),
-    'Otro juego instalado usa estos datos extra: no se han borrado':
-        ("Another installed game uses this extra data: it wasn't deleted",
-         'ほかのインストール済みゲームがこの追加データを使用しているため、削除しませんでした'),
     'SELECT vuelve al inicio':
         ('SELECT returns to the home menu',
          'SELECTでホームに戻ります'),
-    'Aquí verás lo que envíes, recibas, descargues o instales. Para conectar el móvil o el PC, escanea el código QR de arriba.':
-        ("Here you'll see what you send, receive, download or install. To connect your phone or PC, scan the QR code above.",
-         '送信・受信・ダウンロード・インストールの状況がここに表示されます。スマホやPCを接続するには、上のQRコードを読み取ってください。'),
-    'Apagado gasta menos batería. Se enciende aquí o al abrir Conectar.':
-        ('Turning it off saves battery. Turn it on here or by opening Connect.',
-         'オフにするとバッテリーを節約できます。ここか「接続」を開くとオンになります。'),
-    'Descargando: lo verás en Conectar, en «Actividad»':
-        ('Downloading: see Connect > Activity',
-         'ダウンロード中:「接続」の「アクティビティ」で確認できます'),
-    'Descargando: lo verás en Descargas':
-        ('Downloading: see Downloads',
-         'ダウンロード中:「ダウンロード」で確認できます'),
-    'Descargando %d enlaces: los verás en Descargas':
-        ('Downloading %d links: see Downloads',
-         '%d件のリンクをダウンロード中:「ダウンロード」で確認できます'),
     '%s Abrir · %s Tamaño de los iconos · START Salir':
         ('%s Open · %s Icon size · START Exit',
          '%s 開く · %s アイコンサイズ · START 終了'),
@@ -2932,33 +2101,15 @@ TR = {
     'La última subida no terminó':
         ("The last upload didn't finish",
          '前回のアップロードは完了しませんでした'),
-    'Tus capturas se suben solas':
-        ('Your screenshots upload automatically',
-         'スクリーンショットは自動でアップロードされます'),
-    'Las capturas no se suben':
-        ("Screenshots aren't uploaded",
-         'スクリーンショットはアップロードされません'),
     'Cada captura nueva que hagas desde el menú de Rosalina se sube a /Cloud3DS/Capturas.':
         ('Every new screenshot you take from the Rosalina menu is uploaded to /Cloud3DS/Capturas.',
          'Rosalinaメニューで撮った新しいスクリーンショットは /Cloud3DS/Capturas にアップロードされます。'),
     'Actívalo abajo para subir cada captura nueva a /Cloud3DS/Capturas.':
         ('Turn it on below to upload every new screenshot to /Cloud3DS/Capturas.',
          '下でオンにすると、新しいスクリーンショットを /Cloud3DS/Capturas にアップロードします。'),
-    'Nada pendiente.':
-        ('Nothing pending.',
-         '保留中のものはありません。'),
     'Tus archivos de OneDrive en la consola, con subida automática de tus capturas. Se conecta con un QR y un código, sin contraseñas.':
         ('Your OneDrive files on the console, with automatic upload of your screenshots. Connect with a QR code and a code, no passwords.',
          '本体でOneDriveのファイルを利用でき、スクリーンショットも自動でアップロードされます。QRコードとコードで接続でき、パスワードは不要です。'),
-    'Descargando la carpeta en /Descargas: lo verás en Descargas':
-        ('Downloading the folder to /Descargas: see Downloads',
-         'フォルダを /Descargas にダウンロード中:「ダウンロード」で確認できます'),
-    'Copiado: pégalo con X en otra carpeta de la nube o en Archivos':
-        ('Copied: paste it with X in another cloud folder or in Files',
-         'コピーしました。クラウドの別のフォルダか「ファイル」でXを押すと貼り付けます'),
-    'Cortado: pégalo con X en otra carpeta de la nube':
-        ('Cut: paste it with X in another cloud folder',
-         '切り取りました。クラウドの別のフォルダでXを押すと移動します'),
     'Capturas en la nube':
         ('Screenshots in the cloud',
          'クラウドのスクリーンショット'),
@@ -2968,42 +2119,21 @@ TR = {
     'Subir ahora':
         ('Upload now',
          '今すぐアップロード'),
-    'Al momento, a /Cloud3DS/Capturas':
-        ('Right away, to /Cloud3DS/Capturas',
-         'すぐに /Cloud3DS/Capturas へ'),
-    'Las capturas que aún no se han subido':
-        ("Screenshots that haven't been uploaded yet",
-         'まだアップロードしていないスクリーンショット'),
     'Subiendo las capturas pendientes a OneDrive':
         ('Uploading pending screenshots to OneDrive',
          '保留中のスクリーンショットをOneDriveにアップロード中'),
-    'Copia algo en Archivos y pégalo aquí con X, o crea una carpeta con «+».':
-        ('Copy something in Files and paste it here with X, or create a folder with "+".',
-         '「ファイル」でコピーしてここでXを押すと貼り付けます。「+」でフォルダを作成できます。'),
     'Subir aquí':
         ('Upload here',
          'ここにアップロード'),
     'Moviendo a esta carpeta':
         ('Moving to this folder',
          'このフォルダに移動中'),
-    'Copiando en esta carpeta: OneDrive tarda unos segundos':
-        ('Copying to this folder: OneDrive takes a few seconds',
-         'このフォルダにコピー中:OneDriveの処理に数秒かかります'),
-    'Subiendo a OneDrive: lo verás en Conectar, en «Actividad»':
-        ('Uploading to OneDrive: see Connect > Activity',
-         'OneDriveにアップロード中:「接続」の「アクティビティ」で確認できます'),
     'Subiendo %d elementos a OneDrive':
         ('Uploading %d items to OneDrive',
          '%d件をOneDriveにアップロード中'),
     'Descargar aquí':
         ('Download here',
          'ここにダウンロード'),
-    'Descargando de OneDrive a esta carpeta: lo verás en Descargas':
-        ('Downloading from OneDrive to this folder: see Downloads',
-         'OneDriveからこのフォルダにダウンロード中:「ダウンロード」で確認できます'),
-    'Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben solas.':
-        ('Your OneDrive on the console: browse, upload, download and organize your files. New screenshots upload automatically.',
-         '本体でOneDriveを利用:ファイルの閲覧、アップロード、ダウンロード、整理ができます。新しいスクリーンショットは自動でアップロードされます。'),
     'Nombre de la carpeta nueva':
         ('Name of the new folder',
          '新しいフォルダの名前'),
@@ -3019,24 +2149,12 @@ TR = {
     'Cambiando el nombre en OneDrive':
         ('Renaming in OneDrive',
          'OneDriveで名前を変更中'),
-    'Descargando en /Descargas: lo verás en Descargas':
-        ('Downloading to /Descargas: see Downloads',
-         '/Descargas にダウンロード中:「ダウンロード」で確認できます'),
     '1 elemento irá a la papelera de tu OneDrive. Podrás recuperarlo desde la web de OneDrive.':
         ('1 item will go to your OneDrive recycle bin. You can restore it from the OneDrive website.',
          '1件がOneDriveのごみ箱に移動します。OneDriveのWebサイトから復元できます。'),
     '%d elementos irán a la papelera de tu OneDrive. Podrás recuperarlos desde la web de OneDrive.':
         ('%d items will go to your OneDrive recycle bin. You can restore them from the OneDrive website.',
          '%d件がOneDriveのごみ箱に移動します。OneDriveのWebサイトから復元できます。'),
-    'Guardado: subiendo a OneDrive':
-        ('Saved: uploading to OneDrive',
-         '保存しました。OneDriveにアップロード中'),
-    'Instalando desde OneDrive: lo verás en Descargas':
-        ('Installing from OneDrive: see Downloads',
-         'OneDriveからインストール中:「ダウンロード」で確認できます'),
-    'Espera a que termine de abrirse el anterior':
-        ('Wait until the previous one finishes opening',
-         '前のファイルが開き終わるまでお待ちください'),
     'No se pudo abrir «%s»':
         ('Couldn\'t open "%s"',
          '「%s」を開けませんでした'),
@@ -3067,21 +2185,9 @@ TR = {
     'Ya existen %d elementos aquí':
         ('%d items already exist here',
          '%d件は既にあります'),
-    'Descargando la carpeta: la tendrás en Descargas (/Downloads)':
-        ("Downloading the folder: you'll find it in Downloads (/Downloads)",
-         'フォルダをダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
-    'Descargando: lo tendrás en Descargas (/Downloads)':
-        ("Downloading: you'll find it in Downloads (/Downloads)",
-         'ダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
-    'Descargando %d enlaces: los tendrás en Descargas (/Downloads)':
-        ("Downloading %d links: you'll find them in Downloads (/Downloads)",
-         '%d件のリンクをダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
     'Aún no hay descargas':
         ('No downloads yet',
          'まだダウンロードはありません'),
-    'Aquí queda lo que descargues desde un enlace o un QR (botones de arriba, o X para un enlace), desde la Nube o desde el Navegador.':
-        ('Everything you download from a link or a QR code (buttons above, or X for a link), from the Cloud or from the Browser ends up here.',
-         'リンクやQRコード(上のボタン、リンクはX)、クラウド、ブラウザからダウンロードしたものはここに保存されます。'),
     'Descarga desde un enlace o un código QR, y abre lo descargado (carpeta /Downloads). Los CIA se instalan durante la descarga.':
         ('Download from a link or a QR code, and open what you downloaded (/Downloads folder). CIA files are installed during the download.',
          'リンクやQRコードからダウンロードし、ダウンロードしたものを開けます(/Downloadsフォルダ)。CIAはダウンロード中にインストールされます。'),
@@ -3091,18 +2197,12 @@ TR = {
     'Álbum desconocido':
         ('Unknown album',
          '不明なアルバム'),
-    'Tu música':
-        ('Your music',
-         'あなたの音楽'),
     '%d canciones · %d artistas · %d álbumes':
         ('%d songs · %d artists · %d albums',
          '%d曲 · %dアーティスト · %dアルバム'),
     'Buscando música en la SD… %d':
         ('Looking for music on the SD card… %d',
          'SDカードの音楽を検索中… %d'),
-    '%d canciones no tienen datos (título, artista o álbum): están en «Sin datos», donde puedes ocultarlas o eliminarlas si quieres.':
-        ('%d songs have no details (title, artist or album): they\'re in "No details", where you can hide or delete them if you want.',
-         '%d曲には情報(タイトル・アーティスト・アルバム)がありません。「情報なし」で非表示や削除ができます。'),
     'Las canciones se agrupan por artista y álbum según sus etiquetas.':
         ('Songs are grouped by artist and album using their tags.',
          '曲はタグに従ってアーティストとアルバムごとにまとめられます。'),
@@ -3127,9 +2227,6 @@ TR = {
     'No hay música':
         ('No music',
          '音楽がありません'),
-    'Se busca en toda la SD; la primera vez puede tardar un poco.':
-        ('The whole SD card is searched; the first time may take a while.',
-         'SDカード全体を検索します。初回は少し時間がかかることがあります。'),
     'Copia canciones MP3, OGG o WAV a la SD (por ejemplo, a /Music) y aparecerán aquí.':
         ('Copy MP3, OGG or WAV songs to the SD card (for example, to /Music) and they will show up here.',
          'MP3・OGG・WAVの曲をSDカード(例:/Music)にコピーするとここに表示されます。'),
@@ -3166,39 +2263,15 @@ TR = {
     'Eliminar (a la papelera)':
         ('Delete (to the trash)',
          '削除(ゴミ箱へ)'),
-    'Vuelve a estar en la biblioteca':
-        ("It's back in the library",
-         'ライブラリに戻しました'),
-    'Oculta: la verás con «Ver las ocultas»':
-        ('Hidden: you\'ll see it with "Show hidden"',
-         '非表示にしました。「非表示を表示」で見られます'),
-    '«%s» irá a la papelera de la SD. Podrás recuperarla durante unos días.':
-        ('"%s" will go to the SD trash. You can restore it for a few days.',
-         '「%s」はSDのゴミ箱に移動します。数日間は復元できます。'),
     '¿Eliminar la canción?':
         ('Delete the song?',
          '曲を削除しますか?'),
-    'Buscar música otra vez':
-        ('Search for music again',
-         '音楽を再検索'),
     'Buscar solo en /Music':
         ('Search only in /Music',
          '/Musicだけを検索'),
     'Buscar en toda la SD':
         ('Search the whole SD card',
          'SDカード全体を検索'),
-    'No ver las ocultas':
-        ("Don't show hidden",
-         '非表示を隠す'),
-    'Ver las ocultas':
-        ('Show hidden',
-         '非表示を表示'),
-    'Ocultar todas las sin datos':
-        ('Hide all without details',
-         '情報なしをすべて非表示'),
-    'Eliminar todas las sin datos':
-        ('Delete all without details',
-         '情報なしをすべて削除'),
     'Buscando música en la SD…':
         ('Looking for music on the SD card…',
          'SDカードの音楽を検索中…'),
@@ -3208,12 +2281,6 @@ TR = {
     'Buscando solo en las carpetas de música…':
         ('Searching only the music folders…',
          '音楽フォルダだけを検索中…'),
-    'Ocultas. Puedes volver a verlas desde ⋮':
-        ('Hidden. You can show them again from ⋮',
-         '非表示にしました。⋮から再表示できます'),
-    'Las %d canciones sin datos irán a la papelera de la SD. Podrás recuperarlas durante unos días.':
-        ('The %d songs without details will go to the SD trash. You can restore them for a few days.',
-         '情報なしの%d曲はSDのゴミ箱に移動します。数日間は復元できます。'),
     '¿Eliminar las canciones sin datos?':
         ('Delete the songs without details?',
          '情報なしの曲を削除しますか?'),
@@ -3229,51 +2296,21 @@ TR = {
     '«%s» quiere vincularse':
         ('"%s" wants to pair',
          '「%s」がペアリングを求めています'),
-    'Comprueba que en su pantalla sale el código %s. Una vez vinculadas, cada una puede ver las apps homebrew de la otra y pedírselas.':
-        ("Check that its screen shows the code %s. Once paired, each console can see the other's homebrew apps and request them.",
-         '相手の画面にコード %s が表示されているか確認してください。ペアリングすると、お互いのHomebrewアプリを見てリクエストできます。'),
     'Vincular':
         ('Pair',
          'ペアリング'),
-    '«%s» te pide una app':
-        ('"%s" is requesting an app',
-         '「%s」がアプリをリクエストしています'),
-    'Quiere «%s» (%s). Si aceptas, se le envía por la Wi-Fi.':
-        ('It wants "%s" (%s). If you accept, it is sent over Wi-Fi.',
-         '「%s」(%s)を求めています。承認するとWi-Fiで送信されます。'),
     'Enviar':
         ('Send',
          '送信'),
-    'Esperando a que acepte…':
-        ('Waiting for it to accept…',
-         '承認を待っています…'),
-    'Recibiendo: al terminar, se instala':
-        ("Receiving: it's installed when done",
-         '受信中:完了後にインストールします'),
-    'Recibiendo: queda en /3ds':
-        ('Receiving: saved in /3ds',
-         '受信中:/3dsに保存されます'),
-    'No lo aceptó':
-        ("It wasn't accepted",
-         '承認されませんでした'),
-    'No se pudo pedir':
-        ("Couldn't request it",
-         'リクエストできませんでした'),
     ' · No se comparte':
         (' · Not shared',
          ' · 共有しない'),
     'Vinculando':
         ('Pairing',
          'ペアリング中'),
-    'Comprueba que la otra consola enseña este mismo código y acepta allí la vinculación.':
-        ('Check that the other console shows this same code and accept the pairing there.',
-         '相手の本体に同じコードが表示されているか確認し、そちらで承認してください。'),
     'B Cancelar':
         ('B Cancel',
          'B キャンセル'),
-    'A Pedir esta app':
-        ('A Request this app',
-         'A このアプリをリクエスト'),
     'A Volver a compartir':
         ('A Share again',
          'A 再び共有する'),
@@ -3286,12 +2323,6 @@ TR = {
     'Esta consola: %s':
         ('This console: %s',
          'この本体:%s'),
-    'Las dos consolas, en la misma Wi-Fi y con Cloud3DS abierto. Elige la otra para vincularlas (una sola vez); luego verás sus apps y podrás pedírselas.':
-        ("Both consoles on the same Wi-Fi with Cloud3DS open. Choose the other one to pair them (only once); then you'll see its apps and can request them.",
-         '両方の本体を同じWi-Fiにつなぎ、Cloud3DSを開いてください。相手を選んでペアリングすると(1回だけ)、相手のアプリを見てリクエストできます。'),
-    'Solo se comparte homebrew: los .3dsx de /3ds y los CIA sin cifrar. Nunca juegos de cartucho, de eShop ni del sistema.':
-        ('Only homebrew is shared: .3dsx files in /3ds and unencrypted CIA files. Never cartridge, eShop or system titles.',
-         '共有できるのはHomebrewだけです(/3dsの.3dsxと暗号化されていないCIA)。カートリッジ・eShop・システムのタイトルは共有しません。'),
     'Vinculadas':
         ('Paired',
          'ペアリングしました'),
@@ -3310,69 +2341,24 @@ TR = {
     'Buscando consolas en la Wi-Fi…':
         ('Looking for consoles on the Wi-Fi…',
          'Wi-Fi上の本体を検索中…'),
-    'Pidiendo su lista…':
-        ('Requesting its list…',
-         'リストを取得中…'),
-    'No contesta':
-        ('No answer',
-         '応答がありません'),
-    'No ofrece nada':
-        ('Nothing offered',
-         '共有しているものはありません'),
-    'Un momento.':
-        ('One moment.',
-         '少々お待ちください。'),
     'Comprueba que la otra consola tiene Cloud3DS abierto y está en la misma Wi-Fi.':
         ('Check that the other console has Cloud3DS open and is on the same Wi-Fi.',
          '相手の本体でCloud3DSが開いていて、同じWi-Fiにつながっているか確認してください。'),
-    'No tiene apps homebrew para compartir (o las ha ocultado).':
-        ('It has no homebrew apps to share (or has hidden them).',
-         '共有できるHomebrewアプリがありません(または非表示にしています)。'),
     'Nada que compartir':
         ('Nothing to share',
          '共有するものがありません'),
-    'Aquí salen los .3dsx de /3ds y los CIA homebrew de la SD.':
-        ('Here you see the .3dsx files in /3ds and the homebrew CIA files on the SD card.',
-         '/3dsの.3dsxとSDカードのHomebrew CIAがここに表示されます。'),
     'Buscando consolas…':
         ('Looking for consoles…',
          '本体を検索中…'),
-    'Abre Cloud3DS en la otra consola, en la misma Wi-Fi. Si no aparece, añádela por su IP con «+» (la ves en Conectar).':
-        ('Open Cloud3DS on the other console, on the same Wi-Fi. If it doesn\'t show up, add it by its IP with "+" (you\'ll find it in Connect).',
-         '同じWi-Fiにある相手の本体でCloud3DSを開いてください。表示されない場合は「+」でIPを入力して追加できます(IPは「接続」で確認できます)。'),
-    'Vinculada · en la red':
-        ('Paired · on the network',
-         'ペアリング済み · ネットワーク上'),
-    'Vinculada · no se ve ahora':
-        ('Paired · not visible now',
-         'ペアリング済み · 現在は見えません'),
     ' · De confianza':
         (' · Trusted',
          ' · 信頼済み'),
-    'En la red · A para vincular':
-        ('On the network · A to pair',
-         'ネットワーク上 · Aでペアリング'),
-    'Pedida: la otra consola tiene que aceptarla':
-        ('Requested: the other console has to accept it',
-         'リクエストしました。相手の本体で承認が必要です'),
     'Vinculando…':
         ('Pairing…',
          'ペアリング中…'),
-    'Acepta en la otra consola. B para cancelar.':
-        ('Accept on the other console. B to cancel.',
-         '相手の本体で承認してください。Bでキャンセル。'),
     'Ver sus apps':
         ('See its apps',
          'アプリを見る'),
-    'Quitar de confianza':
-        ('Remove from trusted',
-         '信頼を解除'),
-    'De confianza: enviarle sin preguntar':
-        ('Trusted: send to it without asking',
-         '信頼する:確認せずに送信'),
-    'Pedir esta app':
-        ('Request this app',
-         'このアプリをリクエスト'),
     'Volver a compartir':
         ('Share again',
          '再び共有する'),
@@ -3382,16 +2368,502 @@ TR = {
     'Compartir':
         ('Share',
          '共有'),
-    'Pasa aplicaciones homebrew a otra consola en la misma Wi-Fi: vincúlalas una vez, mira sus apps y pídelas.':
-        ('Transfer homebrew apps to another console on the same Wi-Fi: pair them once, browse its apps and request them.',
-         '同じWi-Fiの別の本体にHomebrewアプリを送れます。一度ペアリングすれば、相手のアプリを見てリクエストできます。'),
-    'IP de la otra consola (la ves en su Conectar)':
-        ("The other console's IP (shown in its Connect)",
-         '相手の本体のIP(「接続」に表示されます)'),
-    'Preguntando a esa IP…':
-        ('Asking that IP…',
-         'そのIPに問い合わせ中…'),
     'Esa IP no es válida':
         ("That IP isn't valid",
          'そのIPは無効です'),
+    'Enviado a la papelera':
+        ('Moved to trash',
+         'ゴミ箱へ'),
+    'No se puede leer el espacio disponible':
+        ('Unable to read free space',
+         '空き容量を読み取れません'),
+    'Espacio disponible bajo':
+        ('Low free space',
+         '空き容量が少なくなっています'),
+    'GitHub ha limitado temporalmente las consultas. Inténtalo de nuevo en unos minutos.':
+        ('GitHub is limiting requests right now. Try again in a few minutes.',
+         'GitHubが一時的にアクセスを制限しています。数分後にもう一度お試しください。'),
+    'La consola no pudo instalar la actualización. Inténtalo de nuevo o instálala con FBI.':
+        ("The console couldn't install the update. Try again or install it with FBI.",
+         '本体がアップデートをインストールできませんでした。もう一度試すか、FBIでインストールしてください。'),
+    'Este archivo CIA no corresponde a Cloud3DS.':
+        ('This CIA file is not Cloud3DS.',
+         'そのCIAはCloud3DSではありません。'),
+    'El archivo corresponde a una versión anterior a la instalada. La consola no permite instalar versiones anteriores.':
+        ('This file is an older version than the installed one. The console does not allow installing older versions.',
+         'そのファイルはインストール済みより古いバージョンです。本体はダウングレードできません。'),
+    'El archivo ya no se encuentra en la tarjeta SD.':
+        ('The file is no longer on the SD card.',
+         'ファイルがSDカードにもうありません。'),
+    'Esta versión no incluye el archivo de verificación (Cloud3DS.sha256), por lo que no se puede instalar desde aquí.':
+        ("This version doesn't include the checksum file (Cloud3DS.sha256), so it can't be installed from here.",
+         'このバージョンには確認用ファイル(Cloud3DS.sha256)がないため、ここからはインストールできません。'),
+    'Cloud3DS busca versiones nuevas en GitHub y, antes de instalarlas, verifica la integridad del archivo descargado (SHA-256).':
+        ('Cloud3DS checks GitHub for new versions and, before installing them, verifies the integrity of the downloaded file (SHA-256).',
+         'Cloud3DSはGitHubで新しいバージョンを確認します。インストール前に、ダウンロードしたファイルが本物か(SHA-256)を確認します。'),
+    'Es Cloud3DS %s. Se instalará como actualización y la aplicación se reiniciará.':
+        ('This is Cloud3DS %s. It will be installed as an update and the app will restart.',
+         'これはCloud3DS %sです。アップデートとしてインストールし、その後再起動します。'),
+    'Versión %s · No instalado':
+        ('Version %s · not installed',
+         'バージョン%s · 未インストール'),
+    'Versión %s · Ya instalada (se reinstalará)':
+        ('Version %s · already installed (it will be reinstalled)',
+         'バージョン%s · インストール済み(再インストールします)'),
+    'Versión %s · Hay una versión más reciente instalada (%s). La consola no permite instalar versiones anteriores.':
+        ('Version %s · A newer version is installed (%s). The console does not allow installing older versions.',
+         'バージョン%s · より新しい%sがあります。本体はダウングレードできません。'),
+    'Versión %s · Actualiza la versión %s instalada':
+        ('Version %s · updates the installed %s',
+         'バージョン%s · インストール済みの%sを更新'),
+    'y %d más en espera':
+        ('and %d more waiting',
+         'ほか%d件が待機中'),
+    'Eliminar el archivo .cia después de instalarlo':
+        ('Delete the .cia after installing it',
+         'インストール後に .cia を削除'),
+    'Instalando. El archivo .cia se eliminará al terminar.':
+        ('Installing. The .cia file will be deleted when finished.',
+         'インストール中… 完了後に .cia を削除します'),
+    'Copia cancelada. El archivo se eliminó de la SD.':
+        ('Copy canceled: the file was removed from the SD card',
+         'コピーを中止し、SDカードから削除しました'),
+    'Escanéalo con la cámara. El móvil debe estar conectado a la misma red Wi-Fi.':
+        ('Scan it with the camera. Your phone must be on the same Wi-Fi network.',
+         'カメラで読み取るだけ。本体と同じWi-Fiで使えます。'),
+    'Código fuente y nuevas versiones. Si encuentras un error, puedes notificarlo abriendo una incidencia (issue).':
+        ('Source code and new versions. If you find a bug, you can report it by opening an issue.',
+         'ソースコードと新しいバージョン。不具合を見つけたら、issue を作成して報告できます。'),
+    'Si Cloud3DS te resulta útil, puedes apoyar su desarrollo con una donación.':
+        ('If you find Cloud3DS useful, you can support its development with a donation.',
+         'Cloud3DS が役に立ったら、寄付で開発を支援できます。'),
+    'v%s · desarrollado por %s':
+        ('v%s · developed by %s',
+         'v%s · 制作: %s'),
+    'Para obtener ayuda, contacta por GitHub o Discord.':
+        ('For help, get in touch on GitHub or Discord.',
+         'サポートが必要な場合は、GitHub または Discord でお問い合わせください。'),
+    'desarrollado por VENOMSHiNE':
+        ('developed by VENOMSHiNE',
+         '制作: VENOMSHiNE'),
+    'Apoyar el desarrollo':
+        ('Support development',
+         '開発を支援'),
+    'NO INTERRUMPAS LA OPERACIÓN':
+        ('DO NOT INTERRUPT',
+         '操作を中断しないでください'),
+    'Instalación en curso. No apagues la consola, no extraigas la tarjeta SD ni pulses HOME: si se interrumpe, la instalación podría quedar dañada.':
+        ('Installation in progress. Do not turn off the console, remove the SD card or press HOME: if interrupted, the installation could be damaged.',
+         'インストール中です。電源を切ったり、SDカードを抜いたり、HOMEボタンを押したりしないでください。中断するとインストールが破損するおそれがあります。'),
+    'No apagues la consola, no extraigas la tarjeta SD ni pulses HOME. Si se interrumpe, la lista de títulos de la consola podría quedar dañada.':
+        ("Do not turn off the console, remove the SD card or press HOME. If interrupted, the console's title list could be damaged.",
+         '電源を切ったり、SDを抜いたり、HOMEを押したりしないでください。途中で止まると、本体のソフト一覧が壊れることがあります。'),
+    'Cloud3DS continuará automáticamente al terminar.':
+        ('Cloud3DS will continue automatically when finished.',
+         '終わるとCloud3DSは自動で戻ります。'),
+    'No se pudo crear la copia de seguridad. No se ha eliminado nada.':
+        ('The backup could not be created. Nothing was deleted.',
+         'バックアップできなかったため、何も削除していません'),
+    'Otro título instalado usa estos datos extra. No se han eliminado.':
+        ('Another installed title uses this extra data. It was not deleted.',
+         'ほかのインストール済みゲームがこの追加データを使用しているため、削除しませんでした'),
+    'Actívalo en Ajustes > Conexión para conectar otros dispositivos.':
+        ('Turn it on in Settings > Connection to connect other devices.',
+         '他のデバイスと接続するには、設定の「接続」でオンにしてください。'),
+    'Los archivos CIA se instalan durante la descarga. Todo lo descargado se guarda en /Downloads.':
+        ('CIA files are installed while downloading. Everything downloaded is saved to /Downloads.',
+         'CIAはダウンロード中にインストールされます。ダウンロードしたものはすべて /Downloads に保存されます。'),
+    'Esa versión de GitHub no incluye ningún archivo .cia':
+        ('That GitHub release has no .cia',
+         'そのGitHubリリースには.ciaがありません'),
+    'la suma de comprobación no coincide':
+        ('checksum mismatch',
+         'チェックサム不一致'),
+    'suma de comprobación correcta':
+        ('checksum verified',
+         'チェックサム一致'),
+    'Se denegó el permiso desde el móvil.':
+        ('Permission was denied on the phone.',
+         'スマホで許可が拒否されました。'),
+    'Subida automática de capturas activada':
+        ('Automatic screenshot upload on',
+         'スクリーンショットの自動アップロード: オン'),
+    'Subida automática de capturas desactivada':
+        ('Automatic screenshot upload off',
+         'スクリーンショットの自動アップロード: オフ'),
+    'No hay elementos pendientes.':
+        ('Nothing pending.',
+         '保留中のものはありません。'),
+    'Pendiente de confirmación en el móvil · caduca en %d min':
+        ('Waiting for confirmation on your phone · expires in %d min',
+         'スマホでの許可を待っています · あと%d分で期限切れ'),
+    'Solo es necesario una vez: el permiso se guarda y se renueva automáticamente.':
+        ('Only needed once: the permission is saved and renewed automatically.',
+         '一度だけで大丈夫です。許可は保存され、自動で更新されます。'),
+    'Descargando la carpeta en Descargas (/Downloads)':
+        ('Downloading the folder to Downloads (/Downloads)',
+         'フォルダをダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
+    'Descargando en Descargas (/Downloads)':
+        ('Downloading to Downloads (/Downloads)',
+         'ダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
+    'Copiado. Pulsa X en otra carpeta de la Nube o en Archivos para pegarlo.':
+        ('Copied. Press X in another Cloud folder or in Files to paste it.',
+         'コピーしました。クラウドの別のフォルダか「ファイル」でXを押すと貼り付けます'),
+    'Cortado. Pulsa X en otra carpeta de la Nube para pegarlo.':
+        ('Cut. Press X in another Cloud folder to paste it.',
+         '切り取りました。クラウドの別のフォルダでXを押すと移動します'),
+    'Cloud3DS dejará de tener acceso a tu OneDrive. Tus archivos permanecerán en la nube.':
+        ('Cloud3DS will no longer have access to your OneDrive. Your files will remain in the cloud.',
+         'Cloud3DSはOneDriveにアクセスできなくなります。ファイルはクラウドに残ります。'),
+    'Al instante, en /Cloud3DS/Capturas':
+        ('Right away, to /Cloud3DS/Capturas',
+         'すぐに /Cloud3DS/Capturas へ'),
+    'Sube las capturas pendientes':
+        ('Upload pending screenshots',
+         '未アップロードのスクリーンショットをアップロード'),
+    '%s · Tus archivos permanecen en la nube':
+        ('%s · your files stay in the cloud',
+         '%s · ファイルはクラウドに残ります'),
+    'Copia un elemento en Archivos y pégalo aquí con X, o crea una carpeta con «+».':
+        ('Copy something in Files and paste it here with X, or create a folder with "+".',
+         '「ファイル」でコピーしてここでXを押すと貼り付けます。「+」でフォルダを作成できます。'),
+    'Copiando en esta carpeta. OneDrive puede tardar unos segundos.':
+        ('Copying to this folder. OneDrive may take a few seconds.',
+         'このフォルダにコピー中:OneDriveの処理に数秒かかります'),
+    'Subiendo a OneDrive. Puedes seguir el progreso en Conectar > Actividad.':
+        ('Uploading to OneDrive. You can follow the progress in Connect > Activity.',
+         'OneDriveにアップロード中:「接続」の「アクティビティ」で確認できます'),
+    'Inicia sesión con tu cuenta de Microsoft (Outlook, Hotmail, Xbox…)':
+        ('Sign in with your Microsoft account (Outlook, Hotmail, Xbox…)',
+         'Microsoftアカウント（Outlook、Hotmail、Xboxなど）でサインイン'),
+    'Conéctala con tu cuenta de Microsoft desde el móvil, mediante un código QR y un código de verificación.':
+        ('Connect it with your Microsoft account from your phone, using a QR code and a verification code.',
+         'スマホでMicrosoftアカウントを使い、QRコードとコードで接続します。'),
+    'Solicitando el código…':
+        ('Requesting the code…',
+         'コードを取得中…'),
+    'Sin actividad reciente':
+        ('No recent activity',
+         '最近のアクティビティはありません'),
+    'Aquí aparecerá lo que envíes, recibas, descargues o instales. Para conectar el móvil o el PC, escanea el código QR de la pantalla superior.':
+        ("Here you'll see what you send, receive, download or install. To connect your phone or PC, scan the QR code above.",
+         '送信・受信・ダウンロード・インストールの状況がここに表示されます。スマホやPCを接続するには、上のQRコードを読み取ってください。'),
+    'Aquí se muestra el progreso de lo que envíes, recibas, descargues o instales.':
+        ("Here you'll see the progress of everything you send, receive, download or install.",
+         '送信・受信・ダウンロード・インストールの進行状況がここに表示されます。'),
+    'Operación cancelada':
+        ('Operation canceled',
+         'キャンセルしました'),
+    'Supera los 4 GB, el tamaño máximo de un ZIP':
+        ('Exceeds 4 GB, the ZIP limit',
+         'ZIPの上限である4 GBを超えています'),
+    'Ya hay una compresión o extracción en curso':
+        ('A compression or extraction is already in progress',
+         'すでに圧縮か展開をしています'),
+    'Se perderán los cambios realizados en este archivo.':
+        ('The changes you made to this file will be lost.',
+         'このファイルの変更は失われます。'),
+    'Guardado. Subiendo a OneDrive…':
+        ('Saved: uploading to OneDrive',
+         '保存しました。OneDriveにアップロード中'),
+    'Ya está pendiente de instalación en la consola':
+        ('Already pending installation on the console',
+         'すでに本体で確認待ちです'),
+    'Instalando desde OneDrive. Puedes seguir el progreso en Descargas.':
+        ('Installing from OneDrive. You can follow the progress in Downloads.',
+         'OneDriveからインストール中:「ダウンロード」で確認できます'),
+    'Espera a que termine de abrirse el archivo anterior':
+        ('Wait until the previous one finishes opening',
+         '前のファイルが開き終わるまでお待ちください'),
+    'Descargando %d enlaces en Descargas (/Downloads)':
+        ('Downloading %d links to Downloads (/Downloads)',
+         '%d件のリンクをダウンロード中:「ダウンロード」(/Downloads)に保存されます'),
+    'Admite cualquier código QR con un enlace, como los de FBI. Los archivos .cia se instalan durante la descarga.':
+        ("Accepts any QR code with a link, like FBI's. .cia files are installed while downloading.",
+         'FBIで使うものなど、リンク入りのQRコードならどれでも使えます。.ciaならダウンロードしながらインストールします。'),
+    'Cámara exterior':
+        ('Outer camera',
+         '外側カメラ'),
+    'Cámara interior':
+        ('Inner camera',
+         '内側カメラ'),
+    'Copiado al portapapeles. Abre otra carpeta y pulsa X para pegar.':
+        ('Copied to the clipboard. Open another folder and press X to paste.',
+         'クリップボードにあります。別のフォルダでXを押すと貼り付けます'),
+    'El cálculo aún no ha terminado':
+        ('The calculation has not finished yet',
+         'まだ計算中です'),
+    'Se liberarán %s. Antes se creará una copia en /3ds/Checkpoint/extdata (se puede restaurar con Checkpoint); si la copia falla, no se elimina nada. La partida no se modifica.':
+        ("%s will be freed. A backup is saved first to /3ds/Checkpoint/extdata (it can be restored with Checkpoint); if the backup fails, nothing is deleted. The save data isn't touched.",
+         '%s が空きます。先に /3ds/Checkpoint/extdata へバックアップします(Checkpointで復元できます)。バックアップに失敗した場合は何も削除しません。セーブデータには影響しません。'),
+    'Se eliminarán el juego, su actualización, sus DLC y su partida (%s). Si quieres conservar la partida, crea antes una copia de seguridad.':
+        ('The game, its update, its DLC and its save (%s) will be deleted. To keep the save, back it up first.',
+         'ゲーム、更新データ、DLC、セーブデータ（%s）が削除されます。セーブを残すには先にバックアップしてください。'),
+    'Ninguna':
+        ('None',
+         'まだありません'),
+    '%d · última: %s':
+        ('%d · latest: %s',
+         '%d 件 · 最新 %s'),
+    'Eliminar definitivamente':
+        ('Delete forever',
+         '完全に削除'),
+    '¿Eliminar definitivamente?':
+        ('Delete forever?',
+         '完全に削除しますか?'),
+    '«%s» se eliminará de la tarjeta SD. Esta acción no se puede deshacer.':
+        ("“%s” will be deleted from the SD card. This can't be undone.",
+         '「%s」はSDカードから削除されます。元に戻せません。'),
+    'Descargar sin verificar':
+        ('Download without verifying',
+         '確認せずにダウンロード'),
+    'La consola no pudo verificar la identidad del servidor. Si continúas, no hay garantía de que el archivo no se haya modificado durante la transferencia. Continúa solo si confías en el enlace y en tu red.':
+        ("The console could not verify the server's identity. If you continue, there is no guarantee the file was not modified in transit. Continue only if you trust the link and your network.",
+         '本体はサーバーが本物であることを確認できませんでした。続けると、途中でファイルが書き換えられていない保証はありません。リンクとネットワークを信頼できる場合にのみ行ってください。'),
+    'Biblioteca de música':
+        ('Music library',
+         'ミュージックライブラリ'),
+    '%d canciones no tienen etiquetas (título, artista o álbum). Aparecen en «Sin datos», donde puedes ocultarlas o eliminarlas.':
+        ('%d songs have no tags (title, artist or album). They appear in “No data”, where you can hide or delete them.',
+         '%d曲には情報(タイトル・アーティスト・アルバム)がありません。「情報なし」で非表示や削除ができます。'),
+    'Se analiza toda la tarjeta SD. La primera vez puede tardar unos minutos.':
+        ('The whole SD card is scanned. The first time may take a few minutes.',
+         'SDカード全体を検索します。初回は少し時間がかかることがあります。'),
+    'Canción oculta. Puedes mostrarla con «Mostrar ocultas».':
+        ('Song hidden. You can show it with “Show hidden”.',
+         '非表示にしました。「非表示を表示」で見られます'),
+    'La canción vuelve a mostrarse en la biblioteca':
+        ('The song is shown in the library again',
+         'ライブラリに戻しました'),
+    '«%s» se moverá a la papelera de la SD. Podrás recuperarla durante unos días.':
+        ('"%s" will go to the SD trash. You can restore it for a few days.',
+         '「%s」はSDのゴミ箱に移動します。数日間は復元できます。'),
+    'Volver a buscar música':
+        ('Search for music again',
+         '音楽を再検索'),
+    'No mostrar ocultas':
+        ("Don't show hidden",
+         '非表示の曲を表示しない'),
+    'Mostrar ocultas':
+        ('Show hidden',
+         '非表示の曲を表示'),
+    'Ocultar todas las canciones sin datos':
+        ('Hide all without details',
+         '情報なしをすべて非表示'),
+    'Eliminar todas las canciones sin datos':
+        ('Delete all without details',
+         '情報なしをすべて削除'),
+    'Canciones ocultadas. Puedes volver a mostrarlas desde ⋮.':
+        ('Songs hidden. You can show them again from ⋮.',
+         '非表示にしました。⋮から再表示できます'),
+    'Las %d canciones sin datos se moverán a la papelera de la SD. Podrás recuperarlas durante unos días.':
+        ('The %d songs without details will go to the SD trash. You can restore them for a few days.',
+         '情報なしの%d曲はSDのゴミ箱に移動します。数日間は復元できます。'),
+    'Archivos descargados':
+        ('Downloaded files',
+         'ダウンロードしたファイル'),
+    'Todo el contenido de la papelera se eliminará de forma permanente.':
+        ('Everything in the trash will be deleted forever.',
+         'ゴミ箱の中身はすべて完全に削除されます。'),
+    'Las partidas de los juegos se guardan cifradas dentro de «Nintendo 3DS». Crea una copia con Checkpoint o JKSM y aparecerá aquí.':
+        ("Game saves are encrypted inside “Nintendo 3DS”. Back them up with Checkpoint or JKSM and they'll show up here.",
+         'セーブデータは「Nintendo 3DS」内で暗号化されています。CheckpointやJKSMでバックアップするとここに表示されます。'),
+    'Aquí se guarda lo que descargues desde un enlace, un código QR, la Nube o el Navegador.':
+        ('Whatever you download from a link or a QR code, from the Cloud or from the Browser ends up here.',
+         'リンクやQRコード、クラウド、ブラウザからダウンロードしたものはここに保存されます。'),
+    'Tipo cambiado a .%s':
+        ('Type changed to .%s',
+         '種類を .%s に変更しました'),
+    'Ya hay una versión más reciente instalada':
+        ('You already have a newer version installed',
+         'より新しいバージョンがインストールされています'),
+    'Descargando de OneDrive a esta carpeta. Puedes seguir el progreso en Descargas.':
+        ('Downloading from OneDrive to this folder. You can follow the progress in Downloads.',
+         'OneDriveからこのフォルダにダウンロード中:「ダウンロード」で確認できます'),
+    'Carpeta protegida. Elige otra.':
+        ('Protected folder: choose another',
+         '保護されたフォルダです。別のフォルダを選んでください'),
+    'Elementos movidos: %d':
+        ('Moved: %d',
+         '移動しました: %d'),
+    'Ubicación':
+        ('Location',
+         '場所'),
+    'La consola genera un PIN aleatorio y un nuevo código QR; los anteriores dejan de ser válidos. Los dispositivos ya vinculados siguen conectados.':
+        ('The console creates a random PIN and a new QR code; the old ones stop working. Linked devices stay connected.',
+         '本体がランダムなPINと新しいQRコードを作成し、以前のものは使えなくなります。連携済みの端末は接続されたままです。'),
+    'Sin servidor no están disponibles la web, cloud3ds.local, las subidas desde el PC ni la instalación remota. La Nube, las descargas y el Navegador funcionan con normalidad.':
+        ('Without the server, the web interface, cloud3ds.local, PC uploads and remote installation are unavailable. The Cloud, downloads and the Browser work normally.',
+         'Webページ、cloud3ds.local、PCからのアップロード、リモートインストールは使えません。クラウド、ダウンロード、ブラウザはそのまま使えます。'),
+    'Desactivado consume menos batería. Se activa aquí o al abrir Conectar.':
+        ('Turning it off saves battery. Turn it on here or by opening Connect.',
+         'オフにするとバッテリーを節約できます。ここか「接続」を開くとオンになります。'),
+    'Con el servidor activo, el móvil o el PC acceden a la consola desde el navegador para ver, subir y descargar archivos e instalar CIA.':
+        ("While it's on, your phone or PC can open the console in a browser: browse, upload and download files and install CIAs.",
+         'オンの間、スマホやPCのブラウザから本体に入れます。ファイルの閲覧・アップロード・ダウンロードやCIAのインストールができます。'),
+    'Si no lo usas, puedes desactivarlo para ahorrar batería.':
+        ("If you don't use it, you can turn it off: it saves battery.",
+         '使わないならオフにできます。バッテリーの節約になります。'),
+    'Permite acceder a la consola por su nombre aunque cambie su IP. Funciona en la mayoría de móviles y PC; si alguno no lo admite, usa la IP.':
+        ("Browsers find the console by name even if its IP changes. It works on most phones and PCs; if one doesn't support it, use the IP.",
+         'IPが変わっても、ブラウザは名前で本体を見つけられます。ほとんどのスマホやPCで使えます。対応していない場合はIPを使ってください。'),
+    'Las aplicaciones de PC diseñadas para FBI (como servefiles o sendurls) pueden enviar CIA a la consola por el puerto 5000, igual que a FBI.':
+        ('PC apps made for FBI (such as servefiles or sendurls) can send CIAs to the console over port 5000, just like to FBI.',
+         'FBI用のPCアプリ（servefilesやsendurlsなど）から、FBIと同じようにポート5000でCIAを本体に送れます。'),
+    'Si tienes varias consolas, asigna un nombre distinto a cada una (por ejemplo, 3ds-salon) para distinguirlas en la red.':
+        ('If you have several consoles, give each one its own name (for example, 3ds-livingroom) to tell them apart on the network.',
+         '本体が複数ある場合は、それぞれに名前（例: 3ds-living）を付けるとネットワーク上で区別できます。'),
+    'Con «Solo lectura», los dispositivos pueden ver y descargar archivos, pero no subir, renombrar ni eliminar.':
+        ("With “Read-only”, devices can view and download, but can't upload, rename or delete anything.",
+         '「読み取り専用」では閲覧とダウンロードのみで、アップロード・名前変更・削除はできません。'),
+    'El nombre de la consola en la red (para acceder mediante .local) y la instalación remota desde FBI.':
+        ("The console's network name (to connect via .local) and remote install from FBI.",
+         'ネットワーク上の本体名（.localで接続するため）とFBIからのリモートインストール。'),
+    'Cada captura de pantalla nueva aparece al instante en la web abierta, lista para descargar.':
+        ('Each new screenshot appears instantly in the open web page, ready to download.',
+         '新しいスクリーンショットは、開いているWebページにすぐ表示され、ダウンロードできます。'),
+    'Cierra Cloud3DS. Se detendrán las copias e instalaciones en curso.':
+        ('Closes Cloud3DS. Any copy or installation in progress stops.',
+         'Cloud3DSを終了します。進行中のコピーやインストールは中止されます。'),
+    'Desactivado · La Nube sigue disponible':
+        ('Off · The Cloud remains available',
+         'オフ · クラウドは引き続き利用できます'),
+    'Activado · Web y subidas disponibles':
+        ('On · Web and uploads available',
+         'オン · Web とアップロードが利用可能'),
+    'La consola genera uno aleatorio':
+        ('The console generates one at random',
+         '本体がランダムに作成します'),
+    'Un archivo .3dsx de Cloud3DS copiado en la SD':
+        ('A Cloud3DS .3dsx file copied to the SD card',
+         'SDカードにコピーしたCloud3DSの.3dsx'),
+    'Un archivo CIA de Cloud3DS copiado en la SD':
+        ('A Cloud3DS CIA file copied to the SD card',
+         'SDカードにコピーしたCloud3DSのCIA'),
+    'Se descarga, se verifica y se instala':
+        ('Downloaded, verified and installed',
+         'ダウンロード、確認、インストール'),
+    'No se encontró ningún CIA de Cloud3DS en /cias, /Downloads ni en la raíz de la SD':
+        ('No Cloud3DS CIA was found in /cias, /Downloads or the SD root',
+         '/cias、/Descargas、ルートにCloud3DSのCIAがありません'),
+    'Se descargará la versión %s desde GitHub, se verificará y se instalará. No apagues la consola durante el proceso.':
+        ("Version %s will be downloaded from GitHub, verified and installed. Don't turn off the console in the meantime.",
+         'バージョン%sをGitHubからダウンロードし、確認してインストールします。その間、本体の電源を切らないでください。'),
+    'Se instalará Cloud3DS desde %s. No apagues la consola durante el proceso.':
+        ("Cloud3DS will be installed from %s. Don't turn off the console in the meantime.",
+         '%s からCloud3DSをインストールします。その間は本体の電源を切らないでください。'),
+    'Se instalará Cloud3DS v%s desde %s. No apagues la consola durante el proceso.':
+        ("Cloud3DS v%s will be installed from %s. Don't turn off the console in the meantime.",
+         'Cloud3DS v%s を %s からインストールします。その間は本体の電源を切らないでください。'),
+    'Archivos de\nOneDrive':
+        ('OneDrive\nfiles',
+         'OneDrive の\nファイル'),
+    'Comprueba que en su pantalla aparece el código %s. Una vez vinculadas, cada consola podrá ver las apps homebrew de la otra y solicitarlas.':
+        ("Check that the code %s appears on its screen. Once paired, each console can see the other's homebrew apps and request them.",
+         '相手の画面にコード %s が表示されているか確認してください。ペアリングすると、お互いのHomebrewアプリを見てリクエストできます。'),
+    '«%s» solicita una app':
+        ('“%s” is requesting an app',
+         '「%s」がアプリをリクエストしています'),
+    'Solicita «%s» (%s). Si aceptas, se enviará por la red Wi-Fi.':
+        ('It requests “%s” (%s). If you accept, it will be sent over Wi-Fi.',
+         '「%s」(%s)を求めています。承認するとWi-Fiで送信されます。'),
+    'Comprueba que la otra consola muestra este mismo código y acepta la vinculación desde ella.':
+        ('Check that the other console shows this same code and accept the pairing there.',
+         '相手の本体に同じコードが表示されているか確認し、そちらで承認してください。'),
+    'Destino: %s. Se está generando el instalador a partir de la app instalada; después se enviará.':
+        ('Destination: %s. The installer is being generated from the installed app and will then be sent.',
+         '%s 宛て。インストール済みのアプリからインストーラーを作成して送信します。'),
+    'A Solicitar esta app':
+        ('A Request this app',
+         'A このアプリをリクエスト'),
+    'Solicitar esta app':
+        ('Request this app',
+         'このアプリをリクエスト'),
+    'Ambas consolas deben estar en la misma red Wi-Fi y con Cloud3DS abierto. Selecciona la otra consola para vincularlas (solo la primera vez); después podrás ver sus apps y solicitarlas.':
+        ('Both consoles must be on the same Wi-Fi network with Cloud3DS open. Select the other console to pair them (first time only); you can then see its apps and request them.',
+         '両方の本体を同じWi-Fiにつなぎ、Cloud3DSを開いてください。相手を選んでペアリングすると(1回だけ)、相手のアプリを見てリクエストできます。'),
+    'Se comparten las apps homebrew instaladas: al aceptar una solicitud, se genera su instalador y se envía. No se comparten juegos de cartucho, de la eShop ni del sistema.':
+        ('Installed homebrew apps are shared: when a request is accepted, its installer is generated and sent. Cartridge, eShop and system titles are never shared.',
+         'インストール済みの自作アプリを共有します。承認するとインストーラーを作成して送信します。カード、eショップ、本体のタイトルは共有しません。'),
+    'Obteniendo su lista de apps…':
+        ('Getting its app list…',
+         'リストを取得中…'),
+    'No responde':
+        ('No answer',
+         '応答がありません'),
+    'Sin apps disponibles':
+        ('No apps available',
+         '利用できるアプリはありません'),
+    'Espera un momento.':
+        ('One moment.',
+         '少々お待ちください。'),
+    'No tiene apps homebrew disponibles para compartir.':
+        ('It has no homebrew apps available to share.',
+         '共有できるHomebrewアプリがありません(または非表示にしています)。'),
+    'Aquí aparecen las apps homebrew instaladas en esta consola.':
+        ('Homebrew apps installed on this console appear here.',
+         'このコンソールにインストールされた自作アプリがここに表示されます。'),
+    'Abre Cloud3DS en la otra consola, conectada a la misma red Wi-Fi. Si no aparece, añádela por su IP con «+» (se muestra en su app Conectar).':
+        ('Open Cloud3DS on the other console, on the same Wi-Fi network. If it does not appear, add it by its IP with “+” (shown in its Connect app).',
+         '同じWi-Fiにある相手の本体でCloud3DSを開いてください。表示されない場合は「+」でIPを入力して追加できます(IPは「接続」で確認できます)。'),
+    'Vinculada · Disponible':
+        ('Paired · Available',
+         'ペアリング済み · ネットワーク上'),
+    'Vinculada · No disponible ahora':
+        ('Paired · Not available now',
+         'ペアリング済み · 現在は見えません'),
+    'Disponible · Pulsa A para vincular':
+        ('Available · Press A to pair',
+         'ネットワーク上 · Aでペアリング'),
+    'Solicitud enviada. La otra consola debe aceptarla.':
+        ('Request sent. The other console must accept it.',
+         'リクエストしました。相手の本体で承認が必要です'),
+    'Acepta la vinculación en la otra consola. Pulsa B para cancelar.':
+        ('Accept the pairing on the other console. Press B to cancel.',
+         '相手の本体で承認してください。Bでキャンセル。'),
+    'Quitar de las consolas de confianza':
+        ('Remove from trusted consoles',
+         '信頼済みから外す'),
+    'Marcar como de confianza (enviar sin confirmar)':
+        ('Mark as trusted (send without confirming)',
+         '信頼済みにする(確認なしで送信)'),
+    'Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben automáticamente.':
+        ('Your OneDrive on the console: browse, upload, download and organize your files. New screenshots upload automatically.',
+         '本体でOneDriveを利用:ファイルの閲覧、アップロード、ダウンロード、整理ができます。新しいスクリーンショットは自動でアップロードされます。'),
+    'Comparte apps homebrew instaladas con otra consola de la misma red Wi-Fi: vincúlalas una vez, consulta sus apps y solicítalas.':
+        ('Share installed homebrew apps with another console on the same Wi-Fi network: pair them once, browse its apps and request them.',
+         '同じWi-Fiの別の本体にHomebrewアプリを送れます。一度ペアリングすれば、相手のアプリを見てリクエストできます。'),
+    'Sin archivos · /Downloads':
+        ('No files · /Downloads',
+         'ファイルなし · /Downloads'),
+    'El progreso se muestra arriba y en Conectar > Actividad.':
+        ('Progress is shown above and in Connect > Activity.',
+         '進行状況は上画面と「接続」の「アクティビティ」で確認できます。'),
+    '«%s» ocupa más de 1 GB y habría que volver a descargarlo o instalarlo. Esta acción no se puede deshacer.':
+        ("“%s” takes more than 1 GB and you'd have to download or install it again. This can't be undone.",
+         '「%s」は1 GB以上あり、再ダウンロードか再インストールが必要になります。元に戻せません。'),
+    '¿Continuar?':
+        ('Continue?',
+         '続行しますか?'),
+    'Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrir Cloud3DS.':
+        ("Your cloud won't be available on your phone or PC until you open it again.",
+         'もう一度開くまで、スマホやPCからは使えなくなります。'),
+    'Nombre en la red: %s.local':
+        ('Network name: %s.local',
+         'ネットワーク名: %s.local'),
+    'IP de la otra consola (se muestra en su app Conectar)':
+        ('IP of the other console (shown in its Connect app)',
+         '相手の本体のIP(「接続」に表示されます)'),
+    'Conectando con esa IP…':
+        ('Connecting to that IP…',
+         'そのIPに問い合わせ中…'),
+    'Nombre del dispositivo (déjalo vacío para usar el nombre automático)':
+        ('Device name (leave empty for automatic)',
+         '端末名（空欄で自動）'),
+    'Esta consola no permite leer la cabecera de la app (fs:REG: %08lX)':
+        ("This console won't let the app's header be read (fs:REG: %08lX)",
+         'このコンソールではアプリのヘッダーを読み取れません (fs:REG: %08lX)'),
+    'No se pudo escribir en la SD. Comprueba el espacio disponible.':
+        ('Could not write to the SD card. Check the available space.',
+         'SDカードに書き込めませんでした(空き容量不足?)'),
 }

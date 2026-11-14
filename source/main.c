@@ -275,7 +275,7 @@ static void ev_info(const Event *e, char *title, size_t tn, char *sub, size_t sn
 		break;
 	case EV_DELETE:
 		*ic = IC_TRASH; *col = T.danger;
-		snprintf(sub, sn, "%s · %s", _("A la papelera"), e->device);
+		snprintf(sub, sn, "%s · %s", _("Enviado a la papelera"), e->device);
 		break;
 	case EV_PAIRED:
 		*ic = IC_LINK; *col = T.accent2;
@@ -415,7 +415,7 @@ static void sd_bar(float a)
 	float ty = y + 9;
 	if (!tot) {
 		text_draw(_("Tarjeta SD"), lx, ty, TS_SUB, col_alpha(T.text, a));
-		text_draw_right(_("No se puede leer el espacio"), rx, ty, TS_SUB, col_alpha(T.text3, a));
+		text_draw_right(_("No se puede leer el espacio disponible"), rx, ty, TS_SUB, col_alpha(T.text3, a));
 		return;
 	}
 	char fs[24], ts[24], r1[48], r2[48];
@@ -426,7 +426,7 @@ static void sd_bar(float a)
 	float w2 = text_width(r2, TS_SUB);
 	text_draw_right(r2, rx, ty, TS_SUB, col_alpha(T.text3, a));
 	text_draw_right(r1, rx - w2 - 5, ty, TS_SUB, col_alpha(low ? T.danger : T.text, a));
-	text_draw(low ? _("Queda poco espacio") : _("Tarjeta SD"), lx, ty, TS_SUB, col_alpha(low ? T.danger : T.text, a));
+	text_draw(low ? _("Espacio disponible bajo") : _("Tarjeta SD"), lx, ty, TS_SUB, col_alpha(low ? T.danger : T.text, a));
 	// la barra: lo usado
 	float by = y + SDB_H - 15, bh = 6;
 	float used = (float)((double)(tot - fr) / tot);
@@ -510,23 +510,23 @@ static const char *upd_err_text(const char *e)
 	if (!strcmp(e, "tls"))
 		return _("No se pudo verificar la conexión segura. Comprueba la fecha y la hora de la consola.");
 	if (!strcmp(e, "rate"))
-		return _("GitHub ha limitado las consultas por ahora. Inténtalo de nuevo en unos minutos.");
+		return _("GitHub ha limitado temporalmente las consultas. Inténtalo de nuevo en unos minutos.");
 	if (!strcmp(e, "no_release"))
 		return _("Todavía no hay versiones publicadas.");
 	if (!strcmp(e, "sha"))
 		return _("El archivo descargado no coincide con su SHA-256 y no se ha instalado.");
 	if (!strcmp(e, "am"))
-		return _("La consola no pudo instalar la actualización. Prueba de nuevo o instálala con FBI.");
+		return _("La consola no pudo instalar la actualización. Inténtalo de nuevo o instálala con FBI.");
 	if (!strcmp(e, "io"))
 		return _("No se pudo escribir en la tarjeta SD.");
 	if (!strcmp(e, "not_self"))
-		return _("Ese CIA no es de Cloud3DS.");
+		return _("Este archivo CIA no corresponde a Cloud3DS.");
 	if (!strcmp(e, "older"))
-		return _("Ese archivo es de una versión anterior a la instalada: la consola no deja bajar de versión.");
+		return _("El archivo corresponde a una versión anterior a la instalada. La consola no permite instalar versiones anteriores.");
 	if (!strcmp(e, "bad_cia") || !strcmp(e, "bad_file"))
 		return _("El archivo está dañado o no es válido.");
 	if (!strcmp(e, "not_found"))
-		return _("El archivo ya no está en la SD.");
+		return _("El archivo ya no se encuentra en la tarjeta SD.");
 	return _("No se pudo completar. Inténtalo de nuevo más tarde.");
 }
 
@@ -589,7 +589,7 @@ static void update_top(void)
 		return;
 	}
 	if (U.upd.st == UPD_AVAILABLE && !U.upd.has_file) {
-		text_wrap_lines(_("Esta versión no incluye el archivo de comprobación (Cloud3DS.sha256), así que no se puede instalar desde aquí."),
+		text_wrap_lines(_("Esta versión no incluye el archivo de verificación (Cloud3DS.sha256), por lo que no se puede instalar desde aquí."),
 		                W, TS_BODY, 4, X, y, T.text2, true);
 		return;
 	}
@@ -607,7 +607,7 @@ static void update_top(void)
 		text_wrap_lines(notes, W, 0.42f, 8, X, y + 16, T.text2, true);
 		return;
 	}
-	text_wrap_lines(_("Cloud3DS busca versiones nuevas en GitHub. Antes de instalar, comprueba que el archivo descargado es el original (SHA-256)."),
+	text_wrap_lines(_("Cloud3DS busca versiones nuevas en GitHub y, antes de instalarlas, verifica la integridad del archivo descargado (SHA-256)."),
 	                W, TS_BODY, 4, X, y, T.text3, true);
 }
 
@@ -639,18 +639,18 @@ static void ins_version_line(const InsReq *r, char *out, size_t n, u32 *col)
 	ins_ver_text(r->ver, a, sizeof a);
 	*col = T.text3;
 	if (r->self) {
-		snprintf(out, n, _("Es Cloud3DS %s: se instalará como actualización y luego se reinicia."), a);
+		snprintf(out, n, _("Es Cloud3DS %s. Se instalará como actualización y la aplicación se reiniciará."), a);
 		*col = T.ok;
 	} else if (r->inst_ver < 0) {
-		snprintf(out, n, _("Versión %s · no está instalado"), a);
+		snprintf(out, n, _("Versión %s · No instalado"), a);
 	} else if (r->inst_ver == r->ver) {
-		snprintf(out, n, _("Versión %s · ya instalada (se reinstalará)"), a);
+		snprintf(out, n, _("Versión %s · Ya instalada (se reinstalará)"), a);
 	} else if (r->inst_ver > r->ver) {
-		snprintf(out, n, _("Versión %s · ya tienes una más nueva (%s). La consola no deja bajar de versión."), a,
+		snprintf(out, n, _("Versión %s · Hay una versión más reciente instalada (%s). La consola no permite instalar versiones anteriores."), a,
 		         ins_ver_text((u16)r->inst_ver, b, sizeof b));
 		*col = T.warn;
 	} else {
-		snprintf(out, n, _("Versión %s · actualiza la %s instalada"), a, ins_ver_text((u16)r->inst_ver, b, sizeof b));
+		snprintf(out, n, _("Versión %s · Actualiza la versión %s instalada"), a, ins_ver_text((u16)r->inst_ver, b, sizeof b));
 		*col = T.ok;
 	}
 }
@@ -699,7 +699,7 @@ static void install_top(float a)
 	text_draw_clip(_("Instalar en la consola"), tx, y, tw, TS_SUB, col_alpha(T.accent, a));
 	if (U.ins_pend > 1) {
 		char more[48];
-		snprintf(more, sizeof more, _("y %d más esperando"), U.ins_pend - 1);
+		snprintf(more, sizeof more, _("y %d más en espera"), U.ins_pend - 1);
 		text_draw_right(more, X + W, y, TS_SUB, col_alpha(T.text3, a));
 	}
 	y += 15;
@@ -820,7 +820,7 @@ static void install_card(void)
 		if (on)
 			draw_icon(IC_CHECK, cx + 8, cy + 8, 11, 0xFFFFFFFF);
 		char t[96];
-		snprintf(t, sizeof t, "%s %s", GLYPH_Y, _("Borrar el .cia después de instalarlo"));
+		snprintf(t, sizeof t, "%s %s", GLYPH_Y, _("Eliminar el archivo .cia después de instalarlo"));
 		text_draw_clip(t, cx + 24, cy + (16 - text_lineh(TS_SUB)) / 2, INS_BW - 40, TS_SUB, on ? T.text : T.text2);
 		by += INS_DEL_H;
 	}
@@ -872,11 +872,11 @@ static bool install_input(void)
 	if (self_upd)
 		toast_icon(_("Actualizando Cloud3DS…"), IC_DOWNLOAD, T.ok);
 	else if (what == INS_ACCEPT)
-		toast_icon(del ? _("Instalando… el .cia se borrará al terminar") : _("Instalando…"), IC_DOWNLOAD, T.ok);
+		toast_icon(del ? _("Instalando. El archivo .cia se eliminará al terminar.") : _("Instalando…"), IC_DOWNLOAD, T.ok);
 	else if (what == INS_KEEP)
 		toast_icon(_("Guardado en la SD sin instalar"), IC_FOLDER, T.accent);
 	else if (up)
-		toast_icon(_("Copia cancelada: el archivo se eliminó de la SD"), IC_TRASH, T.text3);
+		toast_icon(_("Copia cancelada. El archivo se eliminó de la SD."), IC_TRASH, T.text3);
 	return true;
 }
 
@@ -979,7 +979,7 @@ static void connect_col(float a, float dy)
 {
 	float x = COL_X, y = QR_Y + dy;
 	text_draw_clip(_("Escanea con tu móvil"), x, y + 2, COL_W, 0.55f, col_alpha(T.text, a));
-	int nl = text_wrap_lines(_("Ábrelo con la cámara. Tu móvil debe estar en la misma red Wi-Fi."), COL_W, TS_SUB, 3, x,
+	int nl = text_wrap_lines(_("Escanéalo con la cámara. El móvil debe estar conectado a la misma red Wi-Fi."), COL_W, TS_SUB, 3, x,
 	                         y + 24, col_alpha(T.text3, a), true);
 	// en japonés las líneas son más altas: la raya y lo que sigue bajan lo que haga falta (hasta el PIN)
 	float dy2 = fmaxf(0, y + 24 + nl * text_lineh(TS_SUB) + 4 - (y + 66));
@@ -1298,9 +1298,9 @@ static void about_top(void)
 	const float X = 222, W = TOP_W - X - 16;
 	if (sel >= AB_GITHUB && sel <= AB_KOFI) {
 		static const char *const NAMES[3] = {"GitHub", "Discord", "Ko-fi"};
-		const char *desc[3] = {_("Código fuente y nuevas versiones. Si encuentras un error, abre un issue y lo revisaré."),
+		const char *desc[3] = {_("Código fuente y nuevas versiones. Si encuentras un error, puedes notificarlo abriendo una incidencia (issue)."),
 		                       _("Únete a la comunidad: soporte, ideas y novedades de cada versión."),
-		                       _("Si Cloud3DS te resulta útil, puedes invitarme a un café. Me ayuda a seguir mejorándolo.")};
+		                       _("Si Cloud3DS te resulta útil, puedes apoyar su desarrollo con una donación.")};
 		int k = sel - AB_GITHUB;
 		/* el QR con su marco blanco termina en x≈212: el texto empieza 24 px después */
 		const float QX = 236, QW = TOP_W - QX - 14;
@@ -1325,11 +1325,11 @@ static void about_top(void)
 		float w = text_width(APP_NAME, 1.05f);
 		text_draw_grad(APP_NAME, LX - w / 2, 136, 1.05f, g_time * 0.1f, 1);
 		char vb[80];
-		snprintf(vb, sizeof vb, _("v%s · hecho por %s"), APP_VERSION, "VENOMSHiNE");
+		snprintf(vb, sizeof vb, _("v%s · desarrollado por %s"), APP_VERSION, "VENOMSHiNE");
 		text_draw_center(vb, LX, 178, TS_SUB, T.text2);
 		text_draw(_("Gracias por usar Cloud3DS"), X, 18, TS_TITLE, T.text);
 		// los dos textos tienen que caber antes de la licencia: si no (japonés), se reduce un poco la letra
-		const char *t1 = _(ABOUT_TEXT), *t2 = _("¿Necesitas ayuda? Escríbeme por GitHub o Discord.");
+		const char *t1 = _(ABOUT_TEXT), *t2 = _("Para obtener ayuda, contacta por GitHub o Discord.");
 		float sc = 0.42f;
 		while (sc > 0.34f && 46 + (text_wrap_lines(t1, W, sc, 12, 0, 0, 0, false) + text_wrap_lines(t2, W, sc, 4, 0, 0, 0, false)) *
 		                              text_lineh(sc) + 8 > 212)
@@ -1369,7 +1369,7 @@ static void splash_bot(float alpha)
 		draw_circle(148 + i * 12, 112, 3 + ph * 1.5f, col_alpha(brand_grad(i / 3.0f), ta * (0.4f + ph * 0.6f)));
 	}
 	text_draw_center("v" APP_VERSION, 160, 200, TS_SUB, col_alpha(T.text3, ta));
-	text_draw_center(_("hecho por VENOMSHiNE"), 160, 214, TS_SUB, col_alpha(T.text3, ta));
+	text_draw_center(_("desarrollado por VENOMSHiNE"), 160, 214, TS_SUB, col_alpha(T.text3, ta));
 }
 
 static void files_top(float a);
@@ -1567,9 +1567,9 @@ static void un_card(void)
 	draw_circle(cx, 62, 28 + 3 * k, col_alpha(T.accent, a * (0.15f + 0.1f * k)));
 	draw_circle(cx, 62, 22, col_alpha(T.accent, a));
 	draw_icon(IC_POWER, cx, 62, 22, col_alpha(0xFFFFFFFF, a));
-	text_draw_center(_("NO TOQUES NADA"), cx, 98, 0.85f, col_alpha(T.text, a));
-	wrap_center(UN.ins_mode ? _("Se está instalando. No apagues la consola, no saques la SD y no pulses HOME: si se corta a mitad, la instalación puede quedar dañada.")
-	                     : _("No apagues la consola, no saques la SD y no pulses HOME. Si se corta a mitad, la lista de juegos de la consola puede quedar dañada."), cx,
+	text_draw_center(_("NO INTERRUMPAS LA OPERACIÓN"), cx, 98, 0.85f, col_alpha(T.text, a));
+	wrap_center(UN.ins_mode ? _("Instalación en curso. No apagues la consola, no extraigas la tarjeta SD ni pulses HOME: si se interrumpe, la instalación podría quedar dañada.")
+	                     : _("No apagues la consola, no extraigas la tarjeta SD ni pulses HOME. Si se interrumpe, la lista de títulos de la consola podría quedar dañada."), cx,
 	            132, BOT_W - 40, TS_SUB, 4, col_alpha(T.text, a));
 	if (UN.ins_mode && ins_streaming()) { // descargando e instalando a la vez: se puede cancelar sin riesgo
 		char cl[64];
@@ -1578,7 +1578,7 @@ static void un_card(void)
 		draw_rrect(cx - cw / 2, SCR_H - 54, cw, 26, 13, col_alpha(T.surface2, a));
 		text_draw_center(cl, cx, SCR_H - 41 - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.text, a));
 	} else
-		wrap_center(_("Cuando termine, Cloud3DS sigue sola."), cx, SCR_H - 44, BOT_W - 40, TS_SUB, 1, col_alpha(T.text3, a));
+		wrap_center(_("Cloud3DS continuará automáticamente al terminar."), cx, SCR_H - 44, BOT_W - 40, TS_SUB, 1, col_alpha(T.text3, a));
 }
 
 // cada vuelta: al terminar el hilo, se avisa y se vuelve a leer la lista
@@ -1593,8 +1593,8 @@ static void un_poll(void)
 	UN.busy = false;
 	if (UN.kind != UN_ALL) { // por partes: su aviso
 		const char *ok = UN.kind == UN_UPD ? _("Actualización desinstalada") : UN.kind == UN_DLC ? _("DLC desinstalados") : _("Datos extra borrados (con copia en la SD)");
-		const char *ko = UN.res == -3 ? _("No se pudo copiar: no se ha borrado nada")
-		               : UN.res == -4 ? _("Otro juego instalado usa estos datos extra: no se han borrado")
+		const char *ko = UN.res == -3 ? _("No se pudo crear la copia de seguridad. No se ha eliminado nada.")
+		               : UN.res == -4 ? _("Otro título instalado usa estos datos extra. No se han eliminado.")
 		                              : _("No se pudo completar");
 		toast_icon(UN.res == 0 ? ok : ko, UN.res == 0 ? IC_TRASH : IC_CLOSE, UN.res == 0 ? T.ok : T.danger);
 		titles_reload();
@@ -1648,7 +1648,7 @@ static void conn_top(void)
 	else if (V.srv_error[0])
 		card_message(IC_INFO, T.warn, _("No se pudo iniciar el servidor"), _("Cierra otras aplicaciones de red (como FTPD) y vuelve a abrir Cloud3DS."));
 	else if (V.srv_off)
-		card_message(IC_POWER, T.text3, _("Servidor apagado"), _("Actívalo en Ajustes, en «Conexión», para conectar otros dispositivos."));
+		card_message(IC_POWER, T.text3, _("Servidor apagado"), _("Actívalo en Ajustes > Conexión para conectar otros dispositivos."));
 	else if (!V.running) {
 		card();
 		draw_arc(TOP_W / 2, CARD_Y + 80, 16, 3, g_time * 6, g_time * 6 + 4.2f, T.accent);
@@ -1674,7 +1674,7 @@ static void activity_top(void)
 	if (any || mu_on())
 		mini_body(1);
 	else
-		app_idle_top(IC_CLOCK, _("Sin transferencias en curso"), _("Aquí verás el progreso de lo que envíes, recibas, descargues o instales."));
+		app_idle_top(IC_CLOCK, _("Sin transferencias en curso"), _("Aquí se muestra el progreso de lo que envíes, recibas, descargues o instales."));
 }
 
 
@@ -1694,7 +1694,7 @@ static void dl_top(void)
 	} else if (f)
 		mini_body(1);
 	else
-		app_idle_top(IC_DOWNLOAD, _("Sin descargas en curso"), _("Los CIA se instalan mientras se descargan; todo lo descargado queda en /Downloads."));
+		app_idle_top(IC_DOWNLOAD, _("Sin descargas en curso"), _("Los archivos CIA se instalan durante la descarga. Todo lo descargado se guarda en /Downloads."));
 }
 static void titles_space_bar(void);
 static bool f_is_titles(void);
@@ -1996,7 +1996,7 @@ static const char *dl_err_text(const char *e)
 	static const struct { const char *k, *v; } E[] = {
 		{"offline", N_("Sin conexión a Internet")}, {"tls", N_("No se pudo comprobar el certificado")}, {"net", N_("Error de red")},
 		{"not_found", N_("No existe (404)")}, {"denied", N_("El servidor ha denegado el acceso")}, {"http", N_("Error del servidor")},
-		{"no_space", N_("No hay espacio en la SD")}, {"io", N_("No se pudo escribir en la SD")}, {"no_cia", N_("Esa versión de GitHub no incluye ningún .cia")},
+		{"no_space", N_("No hay espacio en la SD")}, {"io", N_("No se pudo escribir en la SD")}, {"no_cia", N_("Esa versión de GitHub no incluye ningún archivo .cia")},
 		{"unzip", N_("No se pudo descomprimir")}};
 	for (size_t i = 0; i < ARRAY_LEN(E); i++)
 		if (!strcmp(e, E[i].k))
@@ -2034,9 +2034,9 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 		if (d->installed)
 			snprintf(out, n, "%s · %s", _("Instalado"), b);
 		else if (d->hash[0] && d->hash_ok == 0)
-			*col = T.danger, snprintf(out, n, "%s · %s", b, _("la suma no coincide"));
+			*col = T.danger, snprintf(out, n, "%s · %s", b, _("la suma de comprobación no coincide"));
 		else
-			snprintf(out, n, d->hash_ok == 1 ? "%s · %s · %s" : "%s · %s", b, d->hash_ok == 1 ? _("suma comprobada") : d->host, d->host);
+			snprintf(out, n, d->hash_ok == 1 ? "%s · %s · %s" : "%s · %s", b, d->hash_ok == 1 ? _("suma de comprobación correcta") : d->host, d->host);
 	}
 }
 
@@ -2078,7 +2078,7 @@ static const char *cl_err_text(const char *e)
 	if (!strcmp(e, "expired"))
 		return _("El código caducó. Vuelve a pulsar «Conectar».");
 	if (!strcmp(e, "declined"))
-		return _("Se rechazó el permiso en el móvil.");
+		return _("Se denegó el permiso desde el móvil.");
 	if (!strcmp(e, "revoked"))
 		return _("El permiso se retiró desde la cuenta de Microsoft. Vuelve a conectar.");
 	if (!strcmp(e, "upload"))
@@ -2127,7 +2127,7 @@ static void cl_backups_top(void)
 	draw_circle(X + 20, y + 20, 20, col_alpha(sc, 0.16f));
 	draw_icon(IC_CAMERA, X + 20, y + 20, 20, sc);
 	float tx = X + 52, tw = X + W - tx;
-	const char *t1 = err ? _("La última subida no terminó") : ci->caps ? _("Tus capturas se suben solas") : _("Las capturas no se suben");
+	const char *t1 = err ? _("La última subida no terminó") : ci->caps ? _("Subida automática de capturas activada") : _("Subida automática de capturas desactivada");
 	text_draw_clip(t1, tx, y + 3, tw, TS_TITLE, T.text);
 	const char *sub = err ? _("Se volverá a intentar. Comprueba el Wi-Fi y el espacio de OneDrive.")
 	                : ci->caps ? _("Cada captura nueva que hagas desde el menú de Rosalina se sube a /Cloud3DS/Capturas.")
@@ -2144,7 +2144,7 @@ static void cl_backups_top(void)
 		text_draw_clip(l, X + 46, y + 2, W - 46, TS_SUB, T.text);
 		text_draw_clip(_("Subiendo a /Cloud3DS/Capturas/"), X + 46, y + 4 + text_lineh(TS_SUB), W - 46, TS_SUB, T.text3);
 	} else
-		text_wrap_lines(_("Nada pendiente."), W, TS_SUB, 2, X, y, T.text2, true);
+		text_wrap_lines(_("No hay elementos pendientes."), W, TS_SUB, 2, X, y, T.text2, true);
 	toast_draw_top();
 }
 
@@ -2179,7 +2179,7 @@ static void cl_top(void)
 		u64 now = util_ms();
 		int mins = ci->code_until > now ? (int)((ci->code_until - now) / 60000) + 1 : 0;
 		char w[96];
-		snprintf(w, sizeof w, _("Esperando a que aceptes en el móvil · caduca en %d min"), mins);
+		snprintf(w, sizeof w, _("Pendiente de confirmación en el móvil · caduca en %d min"), mins);
 		int nl = text_wrap_lines(w, rw - 16, TS_SUB, 2, 0, 0, 0, false);
 		float wy = y0 + h - 10 - nl * text_lineh(TS_SUB);
 		// «O en el PC», en lo que quede entre el código y la espera (sin pisarla)
@@ -2266,7 +2266,7 @@ static void cl_top(void)
 	else
 		explain_top(1, IC_CLOUD, T.accent, _("Conecta tu OneDrive"),
 		            _("Tus archivos de OneDrive en la consola, con subida automática de tus capturas. Se conecta con un QR y un código, sin contraseñas."),
-		            ci->err[0] ? cl_err_text(ci->err) : _("Solo hace falta una vez: el permiso se guarda y se renueva solo."), ci->err[0] ? T.danger : T.text3);
+		            ci->err[0] ? cl_err_text(ci->err) : _("Solo es necesario una vez: el permiso se guarda y se renueva automáticamente."), ci->err[0] ? T.danger : T.text3);
 	sd_bar(1);
 	toast_draw_top();
 }
@@ -2304,13 +2304,13 @@ static void cl_options(void)
 				cloud_download_to(c, DL_DIR);
 			else
 				cloud_download(c); // (un .cia, a /cias, y se instala mientras baja)
-			toast_icon(c->dir ? _("Descargando la carpeta: la tendrás en Descargas (/Downloads)") : _("Descargando: lo tendrás en Descargas (/Downloads)"), IC_DOWNLOAD, T.ok);
+			toast_icon(c->dir ? _("Descargando la carpeta en Descargas (/Downloads)") : _("Descargando en Descargas (/Downloads)"), IC_DOWNLOAD, T.ok);
 		} else if (act[r] == 3 || act[r] == 4) {
 			fp_clear(); // un solo portapapeles: lo de Archivos se sustituye
 			CC.mode = act[r] == 3 ? CC_COPY : CC_CUT;
 			CC.n = 1;
 			CC.it[0] = *c;
-			toast_icon(act[r] == 3 ? _("Copiado: pégalo con X en otra carpeta de la nube o en Archivos") : _("Cortado: pégalo con X en otra carpeta de la nube"),
+			toast_icon(act[r] == 3 ? _("Copiado. Pulsa X en otra carpeta de la Nube o en Archivos para pegarlo.") : _("Cortado. Pulsa X en otra carpeta de la Nube para pegarlo."),
 			           IC_DUP, T.accent2);
 		} else if (act[r] == 5)
 			CLU.want_ren = CLU.om_item + 1;
@@ -2343,7 +2343,7 @@ static void cl_options(void)
 				for (int i = 0; i < CLU.n; i++)
 					if (CLU.mark[i])
 						cloud_download_to(&CLU.it[i], DL_DIR);
-				toast_icon(_("Descargando: lo tendrás en Descargas (/Downloads)"), IC_DOWNLOAD, T.ok);
+				toast_icon(_("Descargando en Descargas (/Downloads)"), IC_DOWNLOAD, T.ok);
 				CLU.ms = false;
 			} else if (mr == 1 || mr == 2) {
 				fp_clear();
@@ -2352,7 +2352,7 @@ static void cl_options(void)
 				for (int i = 0; i < CLU.n && CC.n < (int)(sizeof CC.it / sizeof CC.it[0]); i++)
 					if (CLU.mark[i])
 						CC.it[CC.n++] = CLU.it[i];
-				toast_icon(mr == 1 ? _("Copiado: pégalo con X en otra carpeta de la nube o en Archivos") : _("Cortado: pégalo con X en otra carpeta de la nube"), IC_DUP,
+				toast_icon(mr == 1 ? _("Copiado. Pulsa X en otra carpeta de la Nube o en Archivos para pegarlo.") : _("Cortado. Pulsa X en otra carpeta de la Nube para pegarlo."), IC_DUP,
 				           T.accent2);
 				CLU.ms = false;
 			} else {
@@ -2374,7 +2374,7 @@ static void cl_options(void)
 	else if (hr == 1)
 		cloud_list(cloud_folder_id(), cloud_folder_name());
 	else if (hr == 2)
-		dialog_open(DLG_CLOUT, _("¿Desconectar OneDrive?"), _("Cloud3DS dejará de poder entrar en tu OneDrive. Tus archivos siguen en la nube."), _("Desconectar"), true);
+		dialog_open(DLG_CLOUT, _("¿Desconectar OneDrive?"), _("Cloud3DS dejará de tener acceso a tu OneDrive. Tus archivos permanecerán en la nube."), _("Desconectar"), true);
 }
 
 // abajo: las capturas en la nube (subir solas, subir ahora) y desconectar
@@ -2402,11 +2402,11 @@ static bool cl_backups_bottom(void)
 		const char *t = i == 0 ? _("Subir las capturas nuevas") : i == 1 ? _("Subir ahora") : _("Desconectar OneDrive");
 		char sb[200];
 		if (i == 0)
-			snprintf(sb, sizeof sb, "%s", ci->caps ? _("Al momento, a /Cloud3DS/Capturas") : _("Desactivado"));
+			snprintf(sb, sizeof sb, "%s", ci->caps ? _("Al instante, en /Cloud3DS/Capturas") : _("Desactivado"));
 		else if (i == 1)
-			snprintf(sb, sizeof sb, "%s", _("Las capturas que aún no se han subido"));
+			snprintf(sb, sizeof sb, "%s", _("Sube las capturas pendientes"));
 		else
-			snprintf(sb, sizeof sb, _("%s · tus archivos siguen en la nube"), ci->email[0] ? ci->email : ci->name);
+			snprintf(sb, sizeof sb, _("%s · Tus archivos permanecen en la nube"), ci->email[0] ? ci->email : ci->name);
 		text_draw_clip(t, tx, y + 3, tw - (i == 0 ? 44 : 0), TS_BODY, i == 2 ? col_lerp(T.danger, T.text, 0.35f) : T.text);
 		g_clip_ell = true;
 		text_draw_clip(sb, tx, y + 20, tw - (i == 0 ? 44 : 0), TS_SUB, T.text3);
@@ -2426,7 +2426,7 @@ static bool cl_backups_bottom(void)
 			cloud_backup_now();
 			toast_icon(_("Subiendo las capturas pendientes a OneDrive"), IC_UPLOAD, T.ok);
 		} else
-			dialog_open(DLG_CLOUT, _("¿Desconectar OneDrive?"), _("Cloud3DS dejará de poder entrar en tu OneDrive. Tus archivos siguen en la nube."), _("Desconectar"),
+			dialog_open(DLG_CLOUT, _("¿Desconectar OneDrive?"), _("Cloud3DS dejará de tener acceso a tu OneDrive. Tus archivos permanecerán en la nube."), _("Desconectar"),
 			            true);
 	}
 	if (back)
@@ -2501,7 +2501,7 @@ static void cl_bottom(void)
 				text_draw_center(_("Cargando…"), BOT_W / 2, VIEW_Y + 92, TS_SUB, T.text3);
 			} else
 				empty_state(IC_CLOUD, ci->err[0] ? _("No se pudo cargar") : _("Carpeta vacía"),
-				            ci->err[0] ? cl_err_text(ci->err) : _("Copia algo en Archivos y pégalo aquí con X, o crea una carpeta con «+»."));
+				            ci->err[0] ? cl_err_text(ci->err) : _("Copia un elemento en Archivos y pégalo aquí con X, o crea una carpeta con «+»."));
 		}
 		for (int i = 0; i < CLU.n; i++) {
 			float y = VIEW_Y + i * RH - CLU.l.off;
@@ -2574,13 +2574,13 @@ static void cl_bottom(void)
 				if (CC.mode) {
 					for (int k = 0; k < CC.n; k++)
 						CC.mode == CC_CUT ? cloud_move(&CC.it[k], par) : cloud_copy(&CC.it[k], par);
-					toast_icon(CC.mode == CC_CUT ? _("Moviendo a esta carpeta") : _("Copiando en esta carpeta: OneDrive tarda unos segundos"), IC_DUP, T.accent);
+					toast_icon(CC.mode == CC_CUT ? _("Moviendo a esta carpeta") : _("Copiando en esta carpeta. OneDrive puede tardar unos segundos."), IC_DUP, T.accent);
 					if (CC.mode == CC_CUT) // lo cortado ya no está donde estaba; lo copiado se puede volver a pegar
 						CC.mode = CC.n = 0;
 				} else {
 					int k = fp_upload(par);
 					char m[96];
-					snprintf(m, sizeof m, k == 1 ? _("Subiendo a OneDrive: lo verás en Conectar, en «Actividad»") : _("Subiendo %d elementos a OneDrive"), k);
+					snprintf(m, sizeof m, k == 1 ? _("Subiendo a OneDrive. Puedes seguir el progreso en Conectar > Actividad.") : _("Subiendo %d elementos a OneDrive"), k);
 					toast_icon(m, IC_UPLOAD, T.ok);
 				}
 			}
@@ -2589,7 +2589,7 @@ static void cl_bottom(void)
 		tab_header(_("Nube"), true);
 		float x = 10, w = BOT_W - 20, y = VIEW_Y + 4;
 		draw_rrect(x, y, w, 96, 14, T.surface);
-		const char *st[3] = {_("Escanea el QR de arriba con el móvil"), _("Entra con tu cuenta de Microsoft (Outlook, Hotmail, Xbox…)"), NULL};
+		const char *st[3] = {_("Escanea el QR de arriba con el móvil"), _("Inicia sesión con tu cuenta de Microsoft (Outlook, Hotmail, Xbox…)"), NULL};
 		char s3[96];
 		snprintf(s3, sizeof s3, _("Escribe el código %s y pulsa «Permitir»"), ci->user_code);
 		st[2] = s3;
@@ -2618,14 +2618,14 @@ static void cl_bottom(void)
 		draw_halo(BOT_W / 2, cy, 44, 0.3f);
 		draw_cloud(BOT_W / 2, cy, 20, 1);
 		text_draw_center(cfg ? _("Conecta tu OneDrive") : _("Nube sin configurar"), BOT_W / 2, cy + 26, TS_TITLE, T.text);
-		wrap_center(cfg ? _("Con tu cuenta de Microsoft, en el móvil, con un QR y un código.") : _("Falta el ID de la app de Microsoft en esta versión de prueba."),
+		wrap_center(cfg ? _("Conéctala con tu cuenta de Microsoft desde el móvil, mediante un código QR y un código de verificación.") : _("Falta el ID de la app de Microsoft en esta versión de prueba."),
 		            BOT_W / 2, cy + 48, 270, TS_SUB, 2, T.text3);
 		float bx = 40, bw = BOT_W - 80, by = SCR_H - TABBAR_H - QR_PAD - 6 - 32;
 		if (cfg) {
 			bool busy = ci->busy;
 			draw_rrect(bx, by, bw, 32, 16, busy ? T.surface2 : touch_in(bx, by, bw, 32) ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
 			char b[64];
-			snprintf(b, sizeof b, "%s %s", GLYPH_A, busy ? _("Pidiendo el código…") : _("Conectar"));
+			snprintf(b, sizeof b, "%s %s", GLYPH_A, busy ? _("Solicitando el código…") : _("Conectar"));
 			text_draw_center(b, BOT_W / 2, by + 16 - text_lineh(TS_BODY) / 2, TS_BODY, busy ? T.text3 : 0xFFFFFFFF);
 			if (!busy && (tap(bx, by, bw, 32) || (g_kdown & KEY_A)))
 				cloud_connect();
@@ -2701,7 +2701,7 @@ static void tab_activity(void)
 	int rows = NA + n + nd;
 	list_update(l, rows, RH);
 	if (!rows) {
-		empty_state(IC_CLOUD, _("Todo listo"), _("Aquí verás lo que envíes, recibas, descargues o instales. Para conectar el móvil o el PC, escanea el código QR de arriba."));
+		empty_state(IC_CLOUD, _("Sin actividad reciente"), _("Aquí aparecerá lo que envíes, recibas, descargues o instales. Para conectar el móvil o el PC, escanea el código QR de la pantalla superior."));
 		return;
 	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
@@ -2997,10 +2997,10 @@ static const char *zip_err_text(int r)
 	case ZIP_BAD: return _("El archivo no es un ZIP válido o está dañado");
 	case ZIP_UNSUP: return _("Este ZIP está protegido con contraseña o usa un formato no compatible");
 	case ZIP_NO_SPACE: return _("No hay espacio suficiente en la SD");
-	case ZIP_CANCELED: return _("Se canceló");
+	case ZIP_CANCELED: return _("Operación cancelada");
 	case ZIP_CRC: return _("Un archivo del ZIP está dañado");
-	case ZIP_TOO_BIG: return _("Supera los 4 GB, el límite de un ZIP");
-	case ZIP_BUSY: return _("Ya se está comprimiendo o extrayendo algo");
+	case ZIP_TOO_BIG: return _("Supera los 4 GB, el tamaño máximo de un ZIP");
+	case ZIP_BUSY: return _("Ya hay una compresión o extracción en curso");
 	case ZIP_EMPTY: return _("No hay nada que comprimir");
 	default: return _("No se pudo leer o escribir en la SD");
 	}
@@ -4031,7 +4031,7 @@ static bool vw_dirty(void)
 static void vw_try_close(void)
 {
 	if (vw_dirty())
-		dialog_open(DLG_TXTDISCARD, _("¿Salir sin guardar?"), _("Los cambios que hiciste en este archivo se perderán."), _("Salir sin guardar"), true);
+		dialog_open(DLG_TXTDISCARD, _("¿Salir sin guardar?"), _("Se perderán los cambios realizados en este archivo."), _("Salir sin guardar"), true);
 	else
 		vw_close();
 }
@@ -4569,7 +4569,7 @@ static void vw_save(bool force)
 		VW.doc.size = sz;
 	if (VW.cloud) { // de la nube: se vuelve a subir, en lugar del que había
 		cloud_upload_replace(VW.path + 5 * !strncmp(VW.path, "sdmc:", 5), VW.cparent);
-		toast_icon(_("Guardado: subiendo a OneDrive"), IC_UPLOAD, T.ok);
+		toast_icon(_("Guardado. Subiendo a OneDrive…"), IC_UPLOAD, T.ok);
 		return;
 	}
 	state_lock();
@@ -4624,7 +4624,7 @@ static bool f_open_item(int vi)
 	} else if (!strcasecmp(f_ext(e->name), "cia") && strlen(full) < 256) {
 		char err[24] = "";
 		if (ins_request(full, G.console, false, err, sizeof err) < 0)
-			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está pendiente en la consola")
+			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está pendiente de instalación en la consola")
 			                                                                                                  : _("La consola no reconoce este CIA"),
 			           IC_CLOSE, T.danger);
 		else
@@ -4659,7 +4659,7 @@ static void cl_open_item(int i)
 	const char *ext = f_ext(c->name);
 	if (!strcasecmp(ext, "cia")) { // se instala mientras baja, como al pedirlo desde Descargas
 		cloud_download(c);
-		toast_icon(_("Instalando desde OneDrive: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+		toast_icon(_("Instalando desde OneDrive. Puedes seguir el progreso en Descargas."), IC_DOWNLOAD, T.ok);
 		return;
 	}
 	FEnt fe = {0};
@@ -4678,7 +4678,7 @@ static void cl_open_item(int i)
 	util_strlcpy(CO.parent, cl_parent(), sizeof CO.parent);
 	if (!cloud_open(c, k == CO_ZIP ? DL_DIR : CLOUD_CACHE)) {
 		CO.kind = CO_NONE;
-		toast_icon(_("Espera a que termine de abrirse el anterior"), IC_CLOCK, T.text2);
+		toast_icon(_("Espera a que termine de abrirse el archivo anterior"), IC_CLOCK, T.text2);
 	}
 }
 
@@ -5193,7 +5193,7 @@ static void qrs_download(bool install)
 	for (int i = 0; i < QRS.nurl; i++)
 		ok += dl_add(QRS.url[i], QRS.dest, "", install ? DLA_INSTALL | DLA_STREAM : DLA_NONE, G.console, NULL) == 0; // pedido aquí: se instala mientras baja
 	char m[120];
-	snprintf(m, sizeof m, ok == 1 ? _("Descargando: lo tendrás en Descargas (/Downloads)") : _("Descargando %d enlaces: los tendrás en Descargas (/Downloads)"), ok);
+	snprintf(m, sizeof m, ok == 1 ? _("Descargando en Descargas (/Downloads)") : _("Descargando %d enlaces en Descargas (/Downloads)"), ok);
 	toast_icon(ok ? m : _("El enlace no es válido"), ok ? IC_GLOBE : IC_CLOSE, ok ? T.accent : T.danger);
 	qrs_close();
 }
@@ -5264,11 +5264,11 @@ static void qrs_draw(void)
 			wrap_center(e, BOT_W / 2, y + 80, BOT_W - 40, TS_SUB, 4, T.text3);
 		} else {
 			text_draw_center(_("Buscando un código QR…"), BOT_W / 2, y + 78, TS_BODY, T.text);
-			wrap_center(_("Vale cualquier QR con un enlace, como los de FBI. Si es un .cia, se instala mientras se descarga."),
+			wrap_center(_("Admite cualquier código QR con un enlace, como los de FBI. Los archivos .cia se instalan durante la descarga."),
 			            BOT_W / 2, y + 100, BOT_W - 40, TS_SUB, 3, T.text3);
 		}
 		char sw[64];
-		snprintf(sw, sizeof sw, "%s %s", GLYPH_X, QRS.inner ? _("Cámara de fuera") : _("Cámara de dentro"));
+		snprintf(sw, sizeof sw, "%s %s", GLYPH_X, QRS.inner ? _("Cámara exterior") : _("Cámara interior"));
 		float sx = BOT_W / 2 - 80;
 		draw_rrect(sx, SCR_H - 50, 160, 30, 15, touch_in(sx, SCR_H - 50, 160, 30) ? T.surface2 : T.surface);
 		text_draw_center(sw, BOT_W / 2, SCR_H - 35 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
@@ -5485,7 +5485,7 @@ static void ms_copy_move(int mode)
 	FP.mode = mode;
 	CC.mode = CC.n = 0; // (un solo portapapeles: lo copiado en la nube se sustituye)
 	ms_end();
-	toast_icon(_("En el portapapeles: ve a otra carpeta y pulsa X para pegar"), IC_DUP, T.accent);
+	toast_icon(_("Copiado al portapapeles. Abre otra carpeta y pulsa X para pegar."), IC_DUP, T.accent);
 }
 
 static void ms_install(void)
@@ -5704,7 +5704,7 @@ static void hs_draw(void)
 	const u32 col[2] = {done ? T.accent : T.text3, done ? T.text : T.text3};
 	int r = sheet_list(&HS.open, &HS.just, &HS.anim, &HS.sel, nm ? nm + 1 : HS.path, ic, lab, col, 2);
 	if (r >= 0 && !done) {
-		toast_icon(_("Todavía se está calculando"), IC_CLOCK, T.text2);
+		toast_icon(_("El cálculo aún no ha terminado"), IC_CLOCK, T.text2);
 		HS.open = true; // la hoja sigue abierta
 	} else if (r == 0) {
 		HS.open = true, HS.want_cmp = true; // el teclado, fuera del dibujo
@@ -6153,7 +6153,7 @@ static void tt_draw(void)
 	if (r == 5) {
 		char msg[320], sz[24];
 		util_fmt_size(sz, sizeof sz, (u64)TT.ext);
-		snprintf(msg, sizeof msg, _("Se liberarán %s. Antes se hará una copia en /3ds/Checkpoint/extdata (se puede restaurar con Checkpoint); si la copia falla, no se borra nada. La partida no se toca."), sz);
+		snprintf(msg, sizeof msg, _("Se liberarán %s. Antes se creará una copia en /3ds/Checkpoint/extdata (se puede restaurar con Checkpoint); si la copia falla, no se elimina nada. La partida no se modifica."), sz);
 		dialog_open(DLG_EXTDEL, _("¿Borrar los datos extra?"), msg, _("Copiar y borrar"), true);
 		return;
 	}
@@ -6174,7 +6174,7 @@ static void tt_draw(void)
 	} else {
 		char msg[300], sz[24];
 		util_fmt_size(sz, sizeof sz, t->size + t->upd_size + t->dlc_size);
-		snprintf(msg, sizeof msg, _("Se borrarán el juego, su actualización, sus DLC y su partida (%s). Si quieres conservar la partida, haz antes una copia."), sz);
+		snprintf(msg, sizeof msg, _("Se eliminarán el juego, su actualización, sus DLC y su partida (%s). Si quieres conservar la partida, crea antes una copia de seguridad."), sz);
 		U.dlg_arg = (int)(t - TI);
 		dialog_open(DLG_UNINSTALL, _("¿Desinstalar?"), msg, _("Desinstalar"), true);
 	}
@@ -6267,9 +6267,9 @@ static void titles_top(float a)
 		util_strlcpy(v, "…", sizeof v);
 	else if (TT.copies) {
 		f_fmt_date(b1, sizeof b1, TT.last);
-		snprintf(v, sizeof v, TT.copies == 1 ? _("1 · %s") : _("%d · la última %s"), TT.copies, b1);
+		snprintf(v, sizeof v, TT.copies == 1 ? _("1 · %s") : _("%d · última: %s"), TT.copies, b1);
 	} else
-		util_strlcpy(v, _("Ninguna todavía"), sizeof v);
+		util_strlcpy(v, _("Ninguna"), sizeof v);
 	y = info_row(rx, y, rw, _("Copias"), v, rdy && TT.copies ? T.text2 : T.text3, a);
 	if (t->dlc) {
 		util_fmt_size(b1, sizeof b1, t->dlc_size);
@@ -6319,15 +6319,15 @@ static void ts_draw(void)
 {
 	const FEnt *e = f_selected();
 	static const IconId ic[2] = {IC_REFRESH, IC_TRASH};
-	const char *lab[2] = {_("Recuperar"), _("Eliminar para siempre")};
+	const char *lab[2] = {_("Recuperar"), _("Eliminar definitivamente")};
 	const u32 col[2] = {T.ok, T.danger};
 	int r = sheet_list(&TS.open, &TS.just, &TS.anim, &TS.sel, e ? e->name : "", ic, lab, col, 2);
 	if (r == 0 && e)
 		trash_do_restore(F.v[F.sel].idx);
 	else if (r == 1 && e) {
 		char msg[200];
-		snprintf(msg, sizeof msg, _("«%s» se borrará de la tarjeta SD. Esta acción no se puede deshacer."), e->name);
-		dialog_open(DLG_TRASHDEL, _("¿Eliminar para siempre?"), msg, _("Eliminar"), true);
+		snprintf(msg, sizeof msg, _("«%s» se eliminará de la tarjeta SD. Esta acción no se puede deshacer."), e->name);
+		dialog_open(DLG_TRASHDEL, _("¿Eliminar definitivamente?"), msg, _("Eliminar"), true);
 	}
 }
 
@@ -6367,7 +6367,7 @@ static void ds_draw(void)
 		if (d->st == DL_PAUSED || d->st == DL_FAIL)
 			acts[n] = A_RESUME, ic[n] = IC_REFRESH, lab[n] = d->st == DL_FAIL ? _("Reintentar") : _("Reanudar"), col[n++] = T.accent;
 		if (d->st == DL_FAIL && !strcmp(d->err, "tls"))
-			acts[n] = A_INSECURE, ic[n] = IC_SHIELD, lab[n] = _("Descargar sin comprobarlo"), col[n++] = T.warn;
+			acts[n] = A_INSECURE, ic[n] = IC_SHIELD, lab[n] = _("Descargar sin verificar"), col[n++] = T.warn;
 		if (d->st == DL_DONE && cia)
 			acts[n] = A_INSTALL, ic[n] = IC_DOWNLOAD, lab[n] = _("Instalar"), col[n++] = T.ok;
 		if (d->st == DL_DONE && zip)
@@ -6387,7 +6387,7 @@ static void ds_draw(void)
 	case A_INSECURE:
 		U.dlg_arg = (int)d->id;
 		dialog_open(DLG_DLINSECURE, _("¿Descargar sin comprobar el certificado?"),
-		            _("La consola no pudo comprobar que el servidor es quien dice ser. Si sigues, nada garantiza que el archivo no se haya cambiado por el camino. Hazlo solo si confías en el enlace y en tu red."),
+		            _("La consola no pudo verificar la identidad del servidor. Si continúas, no hay garantía de que el archivo no se haya modificado durante la transferencia. Continúa solo si confías en el enlace y en tu red."),
 		            _("Descargar"), true);
 		break;
 	case A_RESUME: dl_op(d->id, DL_RESUME); break;
@@ -6396,7 +6396,7 @@ static void ds_draw(void)
 	case A_INSTALL: {
 		char err[24] = "";
 		if (strlen(d->path) >= 256 || ins_request(d->path, G.console, false, err, sizeof err) < 0)
-			toast_icon(!strcmp(err, "already") ? _("Ya está pendiente en la consola") : _("La consola no reconoce este CIA"), IC_CLOSE, T.danger);
+			toast_icon(!strcmp(err, "already") ? _("Ya está pendiente de instalación en la consola") : _("La consola no reconoce este CIA"), IC_CLOSE, T.danger);
 		else
 			ins_refresh();
 		break;
@@ -6733,7 +6733,7 @@ static void ml_top(void)
 	draw_circle(X + 30, y0 + 40, 26, col_alpha(T.accent, 0.16f));
 	draw_icon(IC_SPEAKER, X + 30, y0 + 40, 24, T.accent);
 	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
-	text_draw_clip(_("Tu música"), tx, y, tw, TS_TITLE, T.text);
+	text_draw_clip(_("Biblioteca de música"), tx, y, tw, TS_TITLE, T.text);
 	y += text_lineh(TS_TITLE) + 4;
 	int na = 0, nb = 0;
 	{ // (artistas y álbumes distintos)
@@ -6776,7 +6776,7 @@ static void ml_top(void)
 	y += 10;
 	char l3[200];
 	if (ML.nnotag)
-		snprintf(l3, sizeof l3, _("%d canciones no tienen datos (título, artista o álbum): están en «Sin datos», donde puedes ocultarlas o eliminarlas si quieres."), ML.nnotag);
+		snprintf(l3, sizeof l3, _("%d canciones no tienen etiquetas (título, artista o álbum). Aparecen en «Sin datos», donde puedes ocultarlas o eliminarlas."), ML.nnotag);
 	else
 		snprintf(l3, sizeof l3, "%s", _("Las canciones se agrupan por artista y álbum según sus etiquetas."));
 	y += text_wrap_lines(l3, W, TS_SUB, 3, X, y, T.text2, true) * text_lineh(TS_SUB) + 8;
@@ -6843,7 +6843,7 @@ static void ml_bottom(void)
 		int found;
 		bool sc = mlib_scanning(&found);
 		empty_state(IC_SPEAKER, sc ? _("Buscando música…") : _("No hay música"),
-		            sc ? _("Se busca en toda la SD; la primera vez puede tardar un poco.") : _("Copia canciones MP3, OGG o WAV a la SD (por ejemplo, a /Music) y aparecerán aquí."));
+		            sc ? _("Se analiza toda la tarjeta SD. La primera vez puede tardar unos minutos.") : _("Copia canciones MP3, OGG o WAV a la SD (por ejemplo, a /Music) y aparecerán aquí."));
 	}
 	for (int i = 0; i < cnt; i++) {
 		float y = VIEW_Y + i * RH - l->off;
@@ -6954,7 +6954,7 @@ static void ml_bottom(void)
 				ml_play(ML.om_i, a == 4);
 			} else if (m && a == 5) {
 				mlib_hide(m->path, !m->hidden);
-				toast_icon(m->hidden ? _("Vuelve a estar en la biblioteca") : _("Oculta: la verás con «Ver las ocultas»"), IC_CHECK, T.text2);
+				toast_icon(m->hidden ? _("La canción vuelve a mostrarse en la biblioteca") : _("Canción oculta. Puedes mostrarla con «Mostrar ocultas»."), IC_CHECK, T.text2);
 			} else if (m && a == 6) {
 				char dir[256];
 				util_strlcpy(dir, m->path, sizeof dir);
@@ -6966,7 +6966,7 @@ static void ml_bottom(void)
 			} else if (m && a == 7) {
 				util_strlcpy(ML.del_path, m->path, sizeof ML.del_path);
 				char msg[300], tb[96];
-				snprintf(msg, sizeof msg, _("«%s» irá a la papelera de la SD. Podrás recuperarla durante unos días."), ml_title(m, tb, sizeof tb));
+				snprintf(msg, sizeof msg, _("«%s» se moverá a la papelera de la SD. Podrás recuperarla durante unos días."), ml_title(m, tb, sizeof tb));
 				dialog_open(DLG_MLDEL, _("¿Eliminar la canción?"), msg, _("Eliminar"), true);
 			}
 		}
@@ -6977,12 +6977,12 @@ static void ml_bottom(void)
 		const char *lab[6];
 		u32 col[6];
 		int act[6], n = 0;
-		ic[n] = IC_REFRESH, lab[n] = _("Buscar música otra vez"), col[n] = T.text, act[n++] = 0;
+		ic[n] = IC_REFRESH, lab[n] = _("Volver a buscar música"), col[n] = T.text, act[n++] = 0;
 		ic[n] = IC_FOLDER, lab[n] = mlib_where() == MLS_ALL ? _("Buscar solo en /Music") : _("Buscar en toda la SD"), col[n] = T.text, act[n++] = 1;
-		ic[n] = ML.show_hidden ? IC_CLOSE : IC_CHECK, lab[n] = ML.show_hidden ? _("No ver las ocultas") : _("Ver las ocultas"), col[n] = T.text, act[n++] = 2;
+		ic[n] = ML.show_hidden ? IC_CLOSE : IC_CHECK, lab[n] = ML.show_hidden ? _("No mostrar ocultas") : _("Mostrar ocultas"), col[n] = T.text, act[n++] = 2;
 		if (ML.tab == MLT_NOTAG && ML.n) {
-			ic[n] = IC_CLOSE, lab[n] = _("Ocultar todas las sin datos"), col[n] = T.text, act[n++] = 3;
-			ic[n] = IC_TRASH, lab[n] = _("Eliminar todas las sin datos"), col[n] = T.danger, act[n++] = 4;
+			ic[n] = IC_CLOSE, lab[n] = _("Ocultar todas las canciones sin datos"), col[n] = T.text, act[n++] = 3;
+			ic[n] = IC_TRASH, lab[n] = _("Eliminar todas las canciones sin datos"), col[n] = T.danger, act[n++] = 4;
 		}
 		int r = sheet_list(&ML.hm, &ML.hm_just, &ML.hm_anim, &ML.hm_sel, _("Música"), ic, lab, col, n);
 		if (r >= 0) {
@@ -6998,10 +6998,10 @@ static void ml_bottom(void)
 			else if (a == 3) {
 				for (int k = 0; k < ML.n; k++)
 					mlib_hide(ML.lib[ML.ix[k]].path, true);
-				toast_icon(_("Ocultas. Puedes volver a verlas desde ⋮"), IC_CHECK, T.text2);
+				toast_icon(_("Canciones ocultadas. Puedes volver a mostrarlas desde ⋮."), IC_CHECK, T.text2);
 			} else if (a == 4) {
 				char msg[200];
-				snprintf(msg, sizeof msg, _("Las %d canciones sin datos irán a la papelera de la SD. Podrás recuperarlas durante unos días."), ML.n);
+				snprintf(msg, sizeof msg, _("Las %d canciones sin datos se moverán a la papelera de la SD. Podrás recuperarlas durante unos días."), ML.n);
 				ML.del_path[0] = 0;
 				dialog_open(DLG_MLDEL, _("¿Eliminar las canciones sin datos?"), msg, _("Eliminar"), true);
 			}
@@ -7040,7 +7040,7 @@ static void tab_files(void)
 		f_reload_keep();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = f_app_root() && U.app != AP_DL; // (en lo descargado, la flecha vuelve a las tarjetas)
-	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : f_app_root() && U.app == AP_DL ? _("Lo descargado") : root && U.app == AP_MUSIC ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
+	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : f_app_root() && U.app == AP_DL ? _("Archivos descargados") : root && U.app == AP_MUSIC ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
 	char sq[160];
 	if (F.search) {
 		snprintf(sq, sizeof sq, "«%s»", SR.q);
@@ -7128,7 +7128,7 @@ static void tab_files(void)
 			draw_rrect(vx, 6, vw, 20, 10, touch_in(vx, 4, vw, 24) ? col_alpha(T.danger, 0.35f) : col_alpha(T.danger, 0.16f));
 			text_draw_center(vt, vx + vw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.danger);
 			if (!g_dialog.open && hdr_hit(vx, 6, vw, 20))
-				dialog_open(DLG_TRASHEMPTY, _("¿Vaciar la papelera?"), _("Todo lo que hay en la papelera se borrará para siempre."), _("Vaciar"), true);
+				dialog_open(DLG_TRASHEMPTY, _("¿Vaciar la papelera?"), _("Todo el contenido de la papelera se eliminará de forma permanente."), _("Vaciar"), true);
 		}
 		if (root && !g_dialog.open && U.buttons && (g_kdown & KEY_B)) {
 			hm_show();
@@ -7483,7 +7483,7 @@ static void tab_files(void)
 			f_reload_keep();
 		}
 	} else if (F.nosaves) {
-		wrap_center(_("Las partidas de los juegos van cifradas dentro de «Nintendo 3DS». Haz una copia con Checkpoint o JKSM y aparecerá aquí."),
+		wrap_center(_("Las partidas de los juegos se guardan cifradas dentro de «Nintendo 3DS». Crea una copia con Checkpoint o JKSM y aparecerá aquí."),
 		            BOT_W / 2, my + 14, BOT_W - 40, TS_SUB, 4, T.text3);
 	} else if (F.search && F.n == 0) {
 		if (!SR.done)
@@ -7505,7 +7505,7 @@ static void tab_files(void)
 		text_draw_center(t, BOT_W / 2, my + 62, TS_SUB, T.text3);
 	} else if (!F.err && F.n == 0 && U.app == AP_DL && f_app_root()) {
 		text_draw_center(_("Aún no hay descargas"), BOT_W / 2, my + 30, TS_BODY, T.text3);
-		wrap_center(_("Aquí queda lo que descargues desde un enlace o un QR, desde la Nube o desde el Navegador."),
+		wrap_center(_("Aquí se guarda lo que descargues desde un enlace, un código QR, la Nube o el Navegador."),
 		            BOT_W / 2, my + 52, BOT_W - 40, TS_SUB, 4, T.text3);
 	} else if (F.err || F.n == 0) {
 		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
@@ -7749,7 +7749,7 @@ static void f_set_type(const char *ext)
 			}
 		}
 	char msg[80];
-	snprintf(msg, sizeof msg, _("Ahora es .%s"), ext);
+	snprintf(msg, sizeof msg, _("Tipo cambiado a .%s"), ext);
 	toast_icon(msg, IC_CODE, T.accent);
 }
 
@@ -7867,7 +7867,7 @@ static void fa_run(int a)
 		char err[24] = "";
 		int id = strlen(full) < 256 ? ins_request(full, G.console, false, err, sizeof err) : -1;
 		if (id < 0) {
-			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está pendiente en la consola")
+			toast_icon(!strcmp(err, "system_title") ? _("Por seguridad, no se instalan títulos del sistema") : !strcmp(err, "already") ? _("Ya está pendiente de instalación en la consola")
 			                                                                                                  : _("La consola no reconoce este CIA"),
 			           IC_CLOSE, T.danger);
 			return;
@@ -7881,14 +7881,14 @@ static void fa_run(int a)
 			util_strlcpy(UL.f[0].path, full, sizeof UL.f[0].path);
 			ins_ver_text(r.ver, UL.f[0].ver, sizeof UL.f[0].ver);
 			char msg[400];
-			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS v%s desde %s. No apagues la consola mientras tanto."), UL.f[0].ver, full);
+			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS v%s desde %s. No apagues la consola durante el proceso."), UL.f[0].ver, full);
 			U.dlg_arg = 0;
 			dialog_open(DLG_UPDFILE, _("¿Actualizar desde la SD?"), msg, _("Actualizar"), false);
 			return;
 		}
 		if (r.inst_ver >= 0 && r.inst_ver > r.ver) {
 			ins_decide(id, INS_KEEP);
-			toast_icon(_("Ya tienes una versión más nueva instalada"), IC_INFO, T.warn);
+			toast_icon(_("Ya hay una versión más reciente instalada"), IC_INFO, T.warn);
 			return;
 		}
 		ins_decide(id, INS_ACCEPT);
@@ -7908,7 +7908,7 @@ static void fa_run(int a)
 		util_strlcpy(FP.src, full, sizeof FP.src);
 		util_strlcpy(FP.name, e->name, sizeof FP.name);
 		FP.src_dir = e->dir;
-		toast_icon(_("En el portapapeles: ve a otra carpeta y pulsa X para pegar"), IC_DUP, T.accent);
+		toast_icon(_("Copiado al portapapeles. Abre otra carpeta y pulsa X para pegar."), IC_DUP, T.accent);
 	}
 }
 
@@ -8138,7 +8138,7 @@ static void f_pick_bar(void)
 		else if ((g_kdown & KEY_X) || tap(10, y, w - 60, 30)) {
 			for (int k = 0; k < CC.n; k++)
 				cloud_download_to(&CC.it[k], F.path);
-			toast_icon(_("Descargando de OneDrive a esta carpeta: lo verás en Descargas"), IC_DOWNLOAD, T.ok);
+			toast_icon(_("Descargando de OneDrive a esta carpeta. Puedes seguir el progreso en Descargas."), IC_DOWNLOAD, T.ok);
 			if (CC.mode == CC_CUT) // (en la nube no se borra: de la nube a la SD siempre es una copia)
 				CC.mode = CC.n = 0;
 		}
@@ -8207,7 +8207,7 @@ static void f_paste(int policy)
 	}
 	if (FP.n > 1) { // varios: lo que ya exista, según lo elegido (sustituir, los dos u omitir)
 		if (V.protect_sys && fsx_is_system(F.path) && strcmp(F.path, "/")) {
-			toast_icon(_("Carpeta protegida: elige otra"), IC_LOCK, T.warn);
+			toast_icon(_("Carpeta protegida. Elige otra."), IC_LOCK, T.warn);
 			return;
 		}
 		int done = 0;
@@ -8260,7 +8260,7 @@ static void f_paste(int policy)
 			}
 		}
 		char msg[64];
-		snprintf(msg, sizeof msg, FP.mode == FA_MOVE ? _("Movidos: %d") : _("Copiando %d elementos…"), done);
+		snprintf(msg, sizeof msg, FP.mode == FA_MOVE ? _("Elementos movidos: %d") : _("Copiando %d elementos…"), done);
 		toast_icon(msg, IC_FOLDER, FP.mode == FA_MOVE ? T.accent2 : T.accent);
 		if (FP.mode == FA_MOVE) // lo cortado ya no está donde estaba; lo copiado se puede volver a pegar
 			FP.mode = 0, FP.n = 0;
@@ -8274,7 +8274,7 @@ static void f_paste(int policy)
 		return;
 	}
 	if (V.protect_sys && fsx_is_system(F.path) && strcmp(F.path, "/")) {
-		toast_icon(_("Carpeta protegida: elige otra"), IC_LOCK, T.warn);
+		toast_icon(_("Carpeta protegida. Elige otra."), IC_LOCK, T.warn);
 		return;
 	}
 	bool d;
@@ -8612,7 +8612,7 @@ static void files_top(float a)
 	const char *open_l = F.cia_ok ? _("Instalar") : _("Abrir");
 	char hint[96];
 	if (F.search)
-		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, open_l, GLYPH_Y, _("Opciones"), GLYPH_X, _("Su carpeta"));
+		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, open_l, GLYPH_Y, _("Opciones"), GLYPH_X, _("Ubicación"));
 	else if (can_open)
 		snprintf(hint, sizeof hint, "%s %s   %s %s   %s %s", GLYPH_A, open_l, GLYPH_Y, _("Opciones"), GLYPH_X, _("Nuevo"));
 	else
@@ -8786,35 +8786,35 @@ static void settings_sub_top(float a)
 		if (i == PIN_CUSTOM)
 			explain_top(a, IC_KEY, T.accent2, _("Definir un PIN"), _("Escribe cuatro cifras que te resulten fáciles de recordar. El código QR se renueva con él y los dispositivos ya vinculados siguen conectados."), foot, T.text3);
 		else
-			explain_top(a, IC_REFRESH, T.accent2, _("PIN aleatorio nuevo"), _("La consola crea un PIN al azar y un código QR nuevo; los anteriores dejan de servir. Los dispositivos ya vinculados siguen conectados."), foot, T.text3);
+			explain_top(a, IC_REFRESH, T.accent2, _("PIN aleatorio nuevo"), _("La consola genera un PIN aleatorio y un nuevo código QR; los anteriores dejan de ser válidos. Los dispositivos ya vinculados siguen conectados."), foot, T.text3);
 		return;
 	}
 	int i = U.list[TAB_COUNT + 4].sel;
 	if (i == 0 || V.srv_off) {
 		if (V.srv_off)
 			explain_top(a, IC_LOCK, T.text3, _("Servidor apagado"),
-			            _("La web, cloud3ds.local, las subidas desde el PC y la instalación remota no funcionan. La nube, las descargas y el navegador siguen igual."),
-			            _("Apagado gasta menos batería. Se enciende aquí o al abrir Conectar."), T.text3);
+			            _("Sin servidor no están disponibles la web, cloud3ds.local, las subidas desde el PC ni la instalación remota. La Nube, las descargas y el Navegador funcionan con normalidad."),
+			            _("Desactivado consume menos batería. Se activa aquí o al abrir Conectar."), T.text3);
 		else
 			explain_top(a, IC_WIFI, T.ok, _("Servidor para el PC y el móvil"),
-			            _("Con él encendido, el móvil o el PC entran en la consola desde el navegador: ven, suben y bajan archivos e instalan CIA."),
-			            _("Si no lo usas, puedes apagarlo: gasta menos batería."), T.text3);
+			            _("Con el servidor activo, el móvil o el PC acceden a la consola desde el navegador para ver, subir y descargar archivos e instalar CIA."),
+			            _("Si no lo usas, puedes desactivarlo para ahorrar batería."), T.text3);
 		return;
 	}
 	i--;
 	if (i == 0) {
 		snprintf(foot, sizeof foot, V.mdns ? _("Activado: %s.local") : _("Desactivado"), V.net_name);
 		explain_top(a, IC_GLOBE, T.ok, _("Nombre en la red"),
-		            _("El navegador encuentra la consola por su nombre aunque cambie su IP. Funciona en la mayoría de móviles y PC; si alguno no lo admite, usa la IP."),
+		            _("Permite acceder a la consola por su nombre aunque cambie su IP. Funciona en la mayoría de móviles y PC; si alguno no lo admite, usa la IP."),
 		            foot, V.mdns ? T.ok : T.text3);
 	} else if (i == 1)
 		explain_top(a, IC_LAPTOP, T.accent, _("Instalación remota (FBI)"),
-		            _("Las apps de PC hechas para FBI (como servefiles o sendurls) pueden enviar CIA a la consola por el puerto 5000, igual que a FBI."),
+		            _("Las aplicaciones de PC diseñadas para FBI (como servefiles o sendurls) pueden enviar CIA a la consola por el puerto 5000, igual que a FBI."),
 		            V.fbi_remote ? _("Activado") : _("Desactivado"), V.fbi_remote ? T.ok : T.text3);
 	else {
 		snprintf(foot, sizeof foot, _("Ahora: %s.local"), V.net_name);
 		explain_top(a, IC_PEN, T.accent2, _("Cambiar el nombre"),
-		            _("Si tienes varias consolas, dale a cada una su nombre (por ejemplo, 3ds-salon) para distinguirlas en la red."), foot, T.text3);
+		            _("Si tienes varias consolas, asigna un nombre distinto a cada una (por ejemplo, 3ds-salon) para distinguirlas en la red."), foot, T.text3);
 	}
 }
 
@@ -8832,16 +8832,16 @@ static void settings_top(float a)
 	const char *TT_[SET_COUNT] = {_("Solo lectura"), _("Proteger carpetas del sistema"), _("PIN"), _("Conexión"), _("Capturas al instante"),
 	                              _("Idioma"), _("Tema"), _("Actualizaciones"), _("Acerca de Cloud3DS"), _("Salir")};
 	const char *D[SET_COUNT] = {
-	    _("Con «Solo lectura», los dispositivos pueden ver y descargar, pero no subir, renombrar ni borrar nada."),
+	    _("Con «Solo lectura», los dispositivos pueden ver y descargar archivos, pero no subir, renombrar ni eliminar."),
 	    _("Las carpetas del sistema (Nintendo 3DS, 3ds, luma, boot.firm…) no se pueden renombrar, mover ni borrar, ni desde la consola ni desde la web."),
 	    _("El PIN sirve para vincular un dispositivo sin escanear el QR. Se mantiene hasta que lo cambies; los ya vinculados siguen conectados."),
-	    _("El nombre de la consola en la red (para entrar por .local) y la instalación remota desde FBI."),
-	    _("Cada captura de pantalla nueva aparece al momento en la web abierta, lista para descargar."),
+	    _("El nombre de la consola en la red (para acceder mediante .local) y la instalación remota desde FBI."),
+	    _("Cada captura de pantalla nueva aparece al instante en la web abierta, lista para descargar."),
 	    _("Idioma de la consola. La web usa el idioma de tu móvil o tu PC."),
 	    _("Tema oscuro o claro para la consola. La web sigue el tema de tu móvil o tu PC."),
 	    _("Busca versiones nuevas de Cloud3DS y las instala sin salir de la app."),
 	    _("Versión, créditos y enlaces a la comunidad."),
-	    _("Cierra Cloud3DS. Lo que se esté copiando o instalando se detiene."),
+	    _("Cierra Cloud3DS. Se detendrán las copias e instalaciones en curso."),
 	};
 	const float X = CARD_X + 16, W = CARD_W - 32;
 	float cx = X + 26, cy = y0 + 16 + 26;
@@ -8994,9 +8994,9 @@ static void settings_conn(void)
 		if (i == 0) {
 			snprintf(title, sizeof title, "%s", _("Servidor para el PC y el móvil"));
 			if (V.srv_off)
-				snprintf(sub, sizeof sub, "%s", _("Apagado · la nube sigue funcionando"));
+				snprintf(sub, sizeof sub, "%s", _("Desactivado · La Nube sigue disponible"));
 			else
-				snprintf(sub, sizeof sub, "%s", _("Encendido · la web y las subidas"));
+				snprintf(sub, sizeof sub, "%s", _("Activado · Web y subidas disponibles"));
 			ic = IC_WIFI, col = V.srv_off ? T.text3 : T.ok;
 		} else if (i == 1) {
 			snprintf(title, sizeof title, "%s", _("Nombre en la red"));
@@ -9090,7 +9090,7 @@ static void settings_pin(void)
 		bool t = row(l, i, y, RH);
 		row_icon(28, y + RH / 2, i == PIN_CUSTOM ? IC_KEY : IC_REFRESH, T.accent2);
 		text_draw_clip(i == PIN_CUSTOM ? _("Definir un PIN") : _("PIN aleatorio nuevo"), 50, y + 6, 230, TS_BODY, T.text);
-		text_draw_clip(i == PIN_CUSTOM ? _("Cuatro cifras fáciles de recordar") : _("La consola genera uno al azar"),
+		text_draw_clip(i == PIN_CUSTOM ? _("Cuatro cifras fáciles de recordar") : _("La consola genera uno aleatorio"),
 		               50, y + 23, 230, TS_SUB, T.text3);
 		if (t || activate(l, i)) {
 			if (i == PIN_CUSTOM)
@@ -9125,9 +9125,9 @@ static void ul_draw(void)
 	if (r >= 0 && r < UL.n) {
 		char msg[400];
 		if (UL.f[r].ver[0])
-			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS v%s desde %s. No apagues la consola mientras tanto."), UL.f[r].ver, UL.f[r].path);
+			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS v%s desde %s. No apagues la consola durante el proceso."), UL.f[r].ver, UL.f[r].path);
 		else
-			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS desde %s. No apagues la consola mientras tanto."), UL.f[r].path);
+			snprintf(msg, sizeof msg, _("Se instalará Cloud3DS desde %s. No apagues la consola durante el proceso."), UL.f[r].path);
 		U.dlg_arg = r;
 		dialog_open(DLG_UPDFILE, _("¿Actualizar desde la SD?"), msg, _("Actualizar"), false);
 	}
@@ -9156,11 +9156,11 @@ static void settings_update(void)
 			toggle(BOT_W - 52, y + RH / 2 - 10, U.t_upd);
 		} else if (i == R_FILE) {
 			title = _("Instalar desde un archivo");
-			sub = envIsHomebrew() ? _("Un Cloud3DS .3dsx que hayas pasado a la SD") : _("El CIA de Cloud3DS que hayas pasado a la SD");
+			sub = envIsHomebrew() ? _("Un archivo .3dsx de Cloud3DS copiado en la SD") : _("Un archivo CIA de Cloud3DS copiado en la SD");
 			ic = IC_FOLDER, col = busy ? T.text3 : T.warn;
 		} else if (U.upd.st == UPD_AVAILABLE && U.upd.has_file) {
 			snprintf(tb, sizeof tb, _("Actualizar a la versión %s"), U.upd.latest);
-			title = tb, sub = _("Se descarga, se comprueba y se instala");
+			title = tb, sub = _("Se descarga, se verifica y se instala");
 			ic = IC_DOWNLOAD, col = T.ok;
 		} else if (U.upd.st == UPD_DONE && !envIsHomebrew()) {
 			title = _("Reiniciar Cloud3DS"), sub = _("Para usar la nueva versión");
@@ -9185,13 +9185,13 @@ static void settings_update(void)
 		} else if (i == R_FILE) {
 			UL.n = upd_find_local(UL.f, 6);
 			if (!UL.n)
-				toast_icon(envIsHomebrew() ? _("No hay ningún Cloud3DS .3dsx en la SD") : _("No hay ningún CIA de Cloud3DS en /cias, /Descargas ni en la raíz"),
+				toast_icon(envIsHomebrew() ? _("No hay ningún Cloud3DS .3dsx en la SD") : _("No se encontró ningún CIA de Cloud3DS en /cias, /Downloads ni en la raíz de la SD"),
 				           IC_INFO, T.warn);
 			else
 				UL.open = UL.just = true, UL.sel = 0;
 		} else if (U.upd.st == UPD_AVAILABLE && U.upd.has_file) {
 			char msg[200];
-			snprintf(msg, sizeof msg, _("Se descargará la versión %s desde GitHub, se comprobará y se instalará. No apagues la consola mientras tanto."),
+			snprintf(msg, sizeof msg, _("Se descargará la versión %s desde GitHub, se verificará y se instalará. No apagues la consola durante el proceso."),
 			         U.upd.latest);
 			dialog_open(DLG_UPDATE, _("¿Actualizar Cloud3DS?"), msg, _("Actualizar"), false);
 		} else if (U.upd.st == UPD_DONE) {
@@ -9215,7 +9215,7 @@ static void settings_about(void)
 	const u32 COL[AB_COUNT] = {T.accent, col_hex(0x6E7681), col_hex(0x5865F2), col_hex(0xFF5E5B)};
 	const char *title[AB_COUNT] = {"Cloud3DS " APP_VERSION, "GitHub", "Discord", "Ko-fi"};
 	const char *sub[AB_COUNT] = {_("Gracias por usar Cloud3DS"), _("Código fuente e informes de errores"), _("Comunidad y ayuda"),
-	                             _("Invítame a un café")};
+	                             _("Apoyar el desarrollo")};
 	for (int i = 0; i < AB_COUNT; i++) {
 		float y = VIEW_Y + i * RH - l->off;
 		row(l, i, y, RH);
@@ -9393,7 +9393,7 @@ static void qa_card_text(int i, const char **lab, const char **sb)
 	switch (i) {
 	case QA_CLOUD:
 		*lab = _("Nube");
-		*sb = cl_connected() ? _("Tu OneDrive\ny tus copias") : _("Conecta tu\nOneDrive");
+		*sb = cl_connected() ? _("Archivos de\nOneDrive") : _("Conecta tu\nOneDrive");
 		break;
 	case QA_CONNECT:
 		*lab = _("Conectar");
@@ -9481,12 +9481,12 @@ static void sh_prompts(void)
 	U.dlg_arg = sp.rid;
 	if (sp.kind == SP_PAIR) {
 		snprintf(t, sizeof t, _("«%s» quiere vincularse"), sp.who);
-		snprintf(m, sizeof m, _("Comprueba que en su pantalla sale el código %s. Una vez vinculadas, cada una puede ver las apps homebrew de la otra y pedírselas."), sp.code);
+		snprintf(m, sizeof m, _("Comprueba que en su pantalla aparece el código %s. Una vez vinculadas, cada consola podrá ver las apps homebrew de la otra y solicitarlas."), sp.code);
 		dialog_open(DLG_SHARE, t, m, _("Vincular"), false);
 	} else {
 		util_fmt_size(sz, sizeof sz, sp.size);
-		snprintf(t, sizeof t, _("«%s» te pide una app"), sp.who);
-		snprintf(m, sizeof m, _("Quiere «%s» (%s). Si aceptas, se le envía por la Wi-Fi."), sp.item, sz);
+		snprintf(t, sizeof t, _("«%s» solicita una app"), sp.who);
+		snprintf(m, sizeof m, _("Solicita «%s» (%s). Si aceptas, se enviará por la red Wi-Fi."), sp.item, sz);
 		dialog_open(DLG_SHARE, t, m, _("Enviar"), false);
 	}
 }
@@ -9529,7 +9529,7 @@ static void sh_top(void)
 	if (pst == 1) { // vinculando: el código, a lo grande
 		text_draw_center(_("Vinculando"), TOP_W / 2, y0 + 16, TS_TITLE, T.text);
 		text_draw_center(code, TOP_W / 2, y0 + 44, 1.6f, T.accent);
-		wrap_center(_("Comprueba que la otra consola enseña este mismo código y acepta allí la vinculación."), TOP_W / 2, y0 + 110, W, TS_SUB, 3, T.text2);
+		wrap_center(_("Comprueba que la otra consola muestra este mismo código y acepta la vinculación desde ella."), TOP_W / 2, y0 + 110, W, TS_SUB, 3, T.text2);
 		text_draw_center(_("B Cancelar"), TOP_W / 2, y0 + h - 24, TS_SUB, T.text3);
 		return;
 	}
@@ -9542,7 +9542,7 @@ static void sh_top(void)
 		char t[160];
 		snprintf(t, sizeof t, _("Preparando «%s»"), bn);
 		text_draw_clip(t, tx, y0 + 18, tw, TS_TITLE, T.text);
-		snprintf(t, sizeof t, _("Para %s. Se arma su instalador a partir de lo instalado y luego se envía."), bw);
+		snprintf(t, sizeof t, _("Destino: %s. Se está generando el instalador a partir de la app instalada; después se enviará."), bw);
 		text_wrap_lines(t, tw, TS_SUB, 3, tx, y0 + 20 + text_lineh(TS_TITLE) + 4, T.text2, true);
 		float f = bt ? (float)((double)bd / bt) : 0, by = y0 + h - 40;
 		draw_rrect(X, by, W, 8, 4, T.surface2);
@@ -9565,7 +9565,7 @@ static void sh_top(void)
 		char sub[200];
 		sh_kind_text(it, sub, sizeof sub);
 		text_wrap_lines(sub, tw, TS_SUB, 3, tx, y0 + 20 + text_lineh(TS_TITLE) + 4, T.text2, true);
-		const char *hint = SH.level == 1 ? _("A Pedir esta app") : it->hidden ? _("A Volver a compartir") : _("A Dejar de compartir");
+		const char *hint = SH.level == 1 ? _("A Solicitar esta app") : it->hidden ? _("A Volver a compartir") : _("A Dejar de compartir");
 		text_draw_right(hint, X + W, y0 + h - 10 - text_lineh(TS_SUB), TS_SUB, T.text3);
 		return;
 	}
@@ -9580,10 +9580,10 @@ static void sh_top(void)
 	y = fmaxf(y + text_lineh(TS_SUB), y0 + 76) + 8;
 	draw_rect(X, y, W, 1, T.divider);
 	y += 10;
-	y += text_wrap_lines(_("Las dos consolas, en la misma Wi-Fi y con Cloud3DS abierto. Elige la otra para vincularlas (una sola vez); luego verás sus apps y podrás pedírselas."),
+	y += text_wrap_lines(_("Ambas consolas deben estar en la misma red Wi-Fi y con Cloud3DS abierto. Selecciona la otra consola para vincularlas (solo la primera vez); después podrás ver sus apps y solicitarlas."),
 	                     W, TS_SUB, 4, X, y, T.text2, true) *
 	         text_lineh(TS_SUB) + 6;
-	text_wrap_lines(_("Se comparten las apps homebrew instaladas: al aceptar, se arma su instalador y se envía. Nunca juegos de cartucho, de la eShop ni del sistema."), W, TS_SUB, 3, X, y,
+	text_wrap_lines(_("Se comparten las apps homebrew instaladas: al aceptar una solicitud, se genera su instalador y se envía. No se comparten juegos de cartucho, de la eShop ni del sistema."), W, TS_SUB, 3, X, y,
 	                T.text3, true);
 }
 
@@ -9671,12 +9671,12 @@ static void sh_bottom(void)
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
 	if (!cnt) {
 		if (SH.level == 1)
-			empty_state(IC_SEND, SH.loading ? _("Pidiendo su lista…") : SH.failed ? _("No contesta") : _("No ofrece nada"),
-			            SH.loading ? _("Un momento.") : SH.failed ? _("Comprueba que la otra consola tiene Cloud3DS abierto y está en la misma Wi-Fi.") : _("No tiene apps homebrew para compartir (o las ha ocultado)."));
+			empty_state(IC_SEND, SH.loading ? _("Obteniendo su lista de apps…") : SH.failed ? _("No responde") : _("Sin apps disponibles"),
+			            SH.loading ? _("Espera un momento.") : SH.failed ? _("Comprueba que la otra consola tiene Cloud3DS abierto y está en la misma Wi-Fi.") : _("No tiene apps homebrew disponibles para compartir."));
 		else if (SH.view == 1)
-			empty_state(IC_GEM, _("Nada que compartir"), _("Aquí salen las apps homebrew instaladas en esta consola."));
+			empty_state(IC_GEM, _("Nada que compartir"), _("Aquí aparecen las apps homebrew instaladas en esta consola."));
 		else
-			empty_state(IC_DEVICES, _("Buscando consolas…"), _("Abre Cloud3DS en la otra consola, en la misma Wi-Fi. Si no aparece, añádela por su IP con «+» (la ves en Conectar)."));
+			empty_state(IC_DEVICES, _("Buscando consolas…"), _("Abre Cloud3DS en la otra consola, conectada a la misma red Wi-Fi. Si no aparece, añádela por su IP con «+» (se muestra en su app Conectar)."));
 	}
 	for (int i = 0; i < cnt; i++) {
 		float y = VIEW_Y + i * RH - l->off;
@@ -9704,9 +9704,9 @@ static void sh_bottom(void)
 				draw_circle(41, y + RH / 2 + 10, 4, T.ok);
 			util_strlcpy(t1, p->name[0] ? p->name : "3DS", sizeof t1);
 			if (p->paired)
-				snprintf(t2, sizeof t2, "%s%s", p->online ? _("Vinculada · en la red") : _("Vinculada · no se ve ahora"), p->trusted ? _(" · De confianza") : "");
+				snprintf(t2, sizeof t2, "%s%s", p->online ? _("Vinculada · Disponible") : _("Vinculada · No disponible ahora"), p->trusted ? _(" · De confianza") : "");
 			else
-				snprintf(t2, sizeof t2, "%s", _("En la red · A para vincular"));
+				snprintf(t2, sizeof t2, "%s", _("Disponible · Pulsa A para vincular"));
 		}
 		g_clip_ell = l->sel != i;
 		text_draw_clip(t1, 54, y + 6, BOT_W - 94, TS_BODY, T.text);
@@ -9722,7 +9722,7 @@ static void sh_bottom(void)
 		else if (open) {
 			if (SH.level == 1) {
 				share_request(SH.cat_peer, SH.items[i].id);
-				toast_icon(_("Pedida: la otra consola tiene que aceptarla"), IC_SEND, T.accent);
+				toast_icon(_("Solicitud enviada. La otra consola debe aceptarla."), IC_SEND, T.accent);
 			} else if (SH.view == 1)
 				share_hide(SH.items[i].path, !SH.items[i].hidden);
 			else {
@@ -9744,7 +9744,7 @@ static void sh_bottom(void)
 	if (sheet)
 		g_kdown = kd, g_krepeat = kr, g_touch = tc;
 	if (pst == 1) // vinculando: tapa la lista (el código está arriba)
-		empty_state(IC_LINK, _("Vinculando…"), _("Acepta en la otra consola. B para cancelar."));
+		empty_state(IC_LINK, _("Vinculando…"), _("Acepta la vinculación en la otra consola. Pulsa B para cancelar."));
 	// opciones: de una consola o de una app propia
 	IconId ic[4];
 	const char *lab[4];
@@ -9756,7 +9756,7 @@ static void sh_bottom(void)
 		util_strlcpy(title, op->name, sizeof title);
 		if (op->paired) {
 			ic[n] = IC_GEM, lab[n] = _("Ver sus apps"), col[n] = T.text, act[n++] = 0;
-			ic[n] = op->trusted ? IC_CLOSE : IC_SHIELD, lab[n] = op->trusted ? _("Quitar de confianza") : _("De confianza: enviarle sin preguntar"), col[n] = T.text, act[n++] = 1;
+			ic[n] = op->trusted ? IC_CLOSE : IC_SHIELD, lab[n] = op->trusted ? _("Quitar de las consolas de confianza") : _("Marcar como de confianza (enviar sin confirmar)"), col[n] = T.text, act[n++] = 1;
 			ic[n] = IC_LOGOUT, lab[n] = _("Desvincular"), col[n] = T.danger, act[n++] = 2;
 		} else
 			ic[n] = IC_LINK, lab[n] = _("Vincular"), col[n] = T.accent, act[n++] = 3;
@@ -9764,7 +9764,7 @@ static void sh_bottom(void)
 		const ShareItem *it = &SH.items[SH.om_i];
 		util_strlcpy(title, it->name, sizeof title);
 		if (SH.level == 1)
-			ic[n] = IC_DOWNLOAD, lab[n] = _("Pedir esta app"), col[n] = T.ok, act[n++] = 4;
+			ic[n] = IC_DOWNLOAD, lab[n] = _("Solicitar esta app"), col[n] = T.ok, act[n++] = 4;
 		else
 			ic[n] = it->hidden ? IC_CHECK : IC_CLOSE, lab[n] = it->hidden ? _("Volver a compartir") : _("No compartir esta app"), col[n] = T.text, act[n++] = 5;
 	}
@@ -9785,7 +9785,7 @@ static void sh_bottom(void)
 			SH.pair_seen = 1;
 		} else if (a == 4) {
 			share_request(SH.cat_peer, SH.items[SH.om_i].id);
-			toast_icon(_("Pedida: la otra consola tiene que aceptarla"), IC_SEND, T.accent);
+			toast_icon(_("Solicitud enviada. La otra consola debe aceptarla."), IC_SEND, T.accent);
 		} else if (a == 5)
 			share_hide(SH.items[SH.om_i].path, !SH.items[SH.om_i].hidden);
 	}
@@ -9835,11 +9835,11 @@ static const char *ap_desc(int i)
 	case AP_CONNECT: return _("Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.");
 	case AP_DL: return _("Descarga desde un enlace o un código QR, y abre lo descargado (carpeta /Downloads). Los CIA se instalan durante la descarga.");
 	case AP_CLOUD:
-		return cl_connected() ? _("Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben solas.")
+		return cl_connected() ? _("Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben automáticamente.")
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
 	case AP_MUSIC: return _("Toda la música de la SD, por canciones, artistas y álbumes. Sigue sonando en segundo plano.");
-	case AP_SHARE: return _("Pasa aplicaciones homebrew a otra consola en la misma Wi-Fi: vincúlalas una vez, mira sus apps y pídelas.");
+	case AP_SHARE: return _("Comparte apps homebrew instaladas con otra consola de la misma red Wi-Fi: vincúlalas una vez, consulta sus apps y solicítalas.");
 	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
 	}
 }
@@ -10220,7 +10220,7 @@ static void dl_bottom(void)
 	bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
 	char cnt[64];
 	if (DLV_n == 0)
-		util_strlcpy(cnt, _("Aún no hay nada · /Downloads"), sizeof cnt);
+		util_strlcpy(cnt, _("Sin archivos · /Downloads"), sizeof cnt);
 	else
 		snprintf(cnt, sizeof cnt, DLV_n == 1 ? _("1 elemento · /Downloads") : _("%d elementos · /Downloads"), DLV_n);
 	struct { IconId ic; u32 col; const char *t, *s; int act; } C[4];
@@ -10252,7 +10252,7 @@ static void dl_bottom(void)
 	}
 	if (!g_dialog.open && (g_kdown & KEY_A))
 		run = C[sel].act;
-	text_draw_center(_("El progreso se ve arriba y en Conectar, en «Actividad»."), BOT_W / 2, SCR_H - 18, TS_SUB, T.text3);
+	text_draw_center(_("El progreso se muestra arriba y en Conectar > Actividad."), BOT_W / 2, SCR_H - 18, TS_SUB, T.text3);
 	if (run == 0)
 		U.want_dlurl = true;
 	else if (run == 1)
@@ -10495,8 +10495,8 @@ static void handle_dialog(int ctx, bool ok)
 		const TitleInfo *t = &TI[U.dlg_arg];
 		if (t->size + t->upd_size + t->dlc_size >= (1ull << 30)) { // lo grande se confirma dos veces
 			char msg[200];
-			snprintf(msg, sizeof msg, _("«%s» ocupa más de 1 GB y habría que volver a descargarlo o instalarlo. Esto no se puede deshacer."), t->title);
-			dialog_open(DLG_UNINSTALL2, _("¿Seguro?"), msg, _("Desinstalar"), true);
+			snprintf(msg, sizeof msg, _("«%s» ocupa más de 1 GB y habría que volver a descargarlo o instalarlo. Esta acción no se puede deshacer."), t->title);
+			dialog_open(DLG_UNINSTALL2, _("¿Continuar?"), msg, _("Desinstalar"), true);
 		} else
 			ctx = DLG_UNINSTALL2;
 	}
@@ -10628,7 +10628,7 @@ static void exit_text(char *msg, size_t n, bool *danger)
 			x = &V.xfers[i];
 	*danger = cnt > 0;
 	if (!cnt) {
-		util_strlcpy(msg, _("Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrirla."), n);
+		util_strlcpy(msg, _("Tu nube dejará de estar disponible en el móvil y en el PC hasta que vuelvas a abrir Cloud3DS."), n);
 		return;
 	}
 	char name[64];
@@ -10867,7 +10867,7 @@ static void update(void)
 				state_unlock();
 				remote_changed();
 				char m[96];
-				snprintf(m, sizeof m, _("Ahora es %s.local"), nm);
+				snprintf(m, sizeof m, _("Nombre en la red: %s.local"), nm);
 				toast_icon(m, IC_CHECK, T.ok);
 			}
 		}
@@ -10883,7 +10883,7 @@ static void update(void)
 		bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
 		if (kb_input(_("Enlace para descargar (https://…)"), clu ? cl : "https://", url, sizeof url, false, false) && url[0]) {
 			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
-				toast_icon(_("Descargando: lo tendrás en Descargas (/Downloads)"), IC_GLOBE, T.accent);
+				toast_icon(_("Descargando en Descargas (/Downloads)"), IC_GLOBE, T.accent);
 			else
 				toast_icon(_("El enlace no es válido"), IC_CLOSE, T.danger);
 		}
@@ -11056,9 +11056,9 @@ static void update(void)
 	if (SH.want_ip) { // Compartir: añadir una consola por su IP
 		SH.want_ip = false;
 		char ip[32];
-		if (kb_input(_("IP de la otra consola (la ves en su Conectar)"), "192.168.", ip, sizeof ip, false, false) && ip[0]) {
+		if (kb_input(_("IP de la otra consola (se muestra en su app Conectar)"), "192.168.", ip, sizeof ip, false, false) && ip[0]) {
 			if (share_add_ip(ip))
-				toast_icon(_("Preguntando a esa IP…"), IC_DEVICES, T.accent);
+				toast_icon(_("Conectando con esa IP…"), IC_DEVICES, T.accent);
 			else
 				toast_icon(_("Esa IP no es válida"), IC_CLOSE, T.danger);
 		}
@@ -11092,7 +11092,7 @@ static void update(void)
 		U.want_rename = -1;
 		char nm[48];
 		// vacío: vuelve al nombre automático (el de la red o el modelo)
-		if (V.dev[i].used && kb_input(_("Nombre del dispositivo (déjalo vacío para usar el automático)"), V.dev[i].named == NAME_CUSTOM ? V.dev[i].name : "",
+		if (V.dev[i].used && kb_input(_("Nombre del dispositivo (déjalo vacío para usar el nombre automático)"), V.dev[i].named == NAME_CUSTOM ? V.dev[i].name : "",
 		                              nm, sizeof nm, false, false)) {
 			state_lock();
 			if (G.dev[i].used && !strcmp(G.dev[i].token, V.dev[i].token))
