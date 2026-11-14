@@ -6,6 +6,7 @@
  * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
  */
 #include "share.h"
+#include "ciabuild.h"
 #include "cJSON.h"
 #include "dl.h"
 #include "fsx.h"
@@ -29,11 +30,12 @@
 #define SH_REQS 16
 #define SH_HIDE 64
 
-enum { J_NONE, J_DISCOVER, J_PAIR, J_CATALOG, J_REQ };
+enum { J_NONE, J_DISCOVER, J_PAIR, J_CATALOG, J_REQ, J_MINE };
+#define SH_BUILD_DIR "/3ds/Cloud3DS/compartir" /* el instalador armado de una app instalada (el último) */
 
 typedef struct {
 	int rid, kind; // SP_PAIR o SP_SEND
-	int st;        // 0 esperando, 1 aceptado, 2 rechazado
+	int st;        // 0 esperando, 1 aceptado (listo para enviar), 2 rechazado, 3 aceptado y armándose su CIA, 4 no se pudo armar
 	u64 t;
 	// vincular: quién y lo que trae
 	char pid[17], pname[48], code[8], tok_theirs[33], tok_mine[33];
@@ -42,7 +44,7 @@ typedef struct {
 	// enviar: a quién y qué
 	int peer;
 	char path[256], name[64];
-	u64 size;
+	u64 size, tid; // tid: una app instalada (se arma su CIA al aceptarlo)
 	bool asked;    // (ya se le preguntó a la consola)
 } Req;
 
@@ -233,34 +235,6 @@ bool share_cia_homebrew(const char *path)
 	return ok;
 }
 
-typedef struct {
-	char (*names)[256];
-	bool *dirs;
-	u64 *sizes;
-	int n, cap;
-} Ents;
-static bool ents_cb(const FsxEntry *e, void *u)
-{
-	Ents *l = u;
-	if (l->n == l->cap) {
-		int nc = l->cap ? l->cap * 2 : 32;
-		void *a = realloc(l->names, nc * sizeof *l->names), *b = realloc(l->dirs, nc * sizeof *l->dirs), *c = realloc(l->sizes, nc * sizeof *l->sizes);
-		if (a)
-			l->names = a;
-		if (b)
-			l->dirs = b;
-		if (c)
-			l->sizes = c;
-		if (!a || !b || !c)
-			return false;
-		l->cap = nc;
-	}
-	util_strlcpy(l->names[l->n], e->name, sizeof l->names[0]);
-	l->dirs[l->n] = e->dir, l->sizes[l->n] = e->size;
-	l->n++;
-	return true;
-}
-
 static bool hidden_path(const char *p)
 {
 	for (int i = 0; i < S.nhide; i++)
@@ -269,88 +243,36 @@ static bool hidden_path(const char *p)
 	return false;
 }
 
-// añade a out lo compartible de dir: .3dsx (también un nivel más abajo, como /3ds/App/App.3dsx) y .cia homebrew
-static void scan_dir(const char *dir, ShareItem *out, int *n, int depth)
-{
-	Ents l = {0};
-	fsx_list(dir, false, ents_cb, &l);
-	for (int i = 0; i < l.n && *n < SHARE_ITEMS; i++) {
-		char p[256];
-		snprintf(p, sizeof p, "%s%s%s", dir, strcmp(dir, "/") ? "/" : "", l.names[i]);
-		if (l.dirs[i]) {
-			if (depth < 1 && strcasecmp(p, "/3ds/Cloud3DS") && strcasecmp(p, "/3ds/Checkpoint"))
-				scan_dir(p, out, n, depth + 1);
-			continue;
-		}
-		const char *x = strrchr(l.names[i], '.');
-		int kind = x && !strcasecmp(x, ".3dsx") ? SK_3DSX : x && !strcasecmp(x, ".cia") ? SK_CIA : -1;
-		if (kind < 0)
-			continue;
-		ShareItem *it = &out[*n];
-		memset(it, 0, sizeof *it);
-		util_strlcpy(it->path, p, sizeof it->path);
-		it->kind = kind, it->size = l.sizes[i];
-		if (kind == SK_3DSX)
-			it->has_icon = smdh_3dsx(p, it->name, sizeof it->name, it->author, sizeof it->author, it->icon);
-		else {
-			if (!share_cia_homebrew(p))
-				continue;
-			it->has_icon = false;
-		}
-		if (!it->name[0]) {
-			util_strlcpy(it->name, l.names[i], sizeof it->name);
-			char *dot = strrchr(it->name, '.');
-			if (dot)
-				*dot = 0;
-		}
-		it->hidden = hidden_path(p);
-		it->id = *n;
-		(*n)++;
-	}
-	free(l.names), free(l.dirs), free(l.sizes);
-}
-
+// lo que ofrece esta consola: sus apps homebrew instaladas (en el hilo de Compartir o en el del servidor, nunca en la interfaz)
 static void refresh_mine(bool force)
 {
 	u64 now = util_ms();
-	if (!force && S.mine && now - S.mine_at < 30000)
+	lock();
+	bool fresh = !force && S.mine && now - S.mine_at < 30000;
+	unlock();
+	if (fresh)
 		return;
+	CbTitle *t = NULL;
+	int nt = cb_list(&t);
 	ShareItem *out = malloc(sizeof(ShareItem) * SHARE_ITEMS);
-	if (!out)
+	if (!out) {
+		free(t);
 		return;
-	int n = 0;
-	static const char *const DIRS[] = {"/3ds", "/cias", "/CIAs", DL_DIR, "/"};
-	for (size_t d = 0; d < sizeof DIRS / sizeof DIRS[0]; d++) {
-		Ents l = {0}; // (la raíz: solo sus archivos, no se baja por todas sus carpetas)
-		if (!strcmp(DIRS[d], "/")) {
-			fsx_list("/", false, ents_cb, &l);
-			for (int i = 0; i < l.n && n < SHARE_ITEMS; i++) {
-				const char *x = strrchr(l.names[i], '.');
-				if (l.dirs[i] || !x || (strcasecmp(x, ".cia") && strcasecmp(x, ".3dsx")))
-					continue;
-				char p[256];
-				snprintf(p, sizeof p, "/%s", l.names[i]);
-				ShareItem *it = &out[n];
-				memset(it, 0, sizeof *it);
-				util_strlcpy(it->path, p, sizeof it->path);
-				it->kind = !strcasecmp(x, ".3dsx") ? SK_3DSX : SK_CIA, it->size = l.sizes[i];
-				if (it->kind == SK_CIA && !share_cia_homebrew(p))
-					continue;
-				if (it->kind == SK_3DSX)
-					it->has_icon = smdh_3dsx(p, it->name, sizeof it->name, it->author, sizeof it->author, it->icon);
-				if (!it->name[0]) {
-					util_strlcpy(it->name, l.names[i], sizeof it->name);
-					char *dot = strrchr(it->name, '.');
-					if (dot)
-						*dot = 0;
-				}
-				it->hidden = hidden_path(p);
-				it->id = n++;
-			}
-			free(l.names), free(l.dirs), free(l.sizes);
-		} else
-			scan_dir(DIRS[d], out, &n, DIRS[d][1] == '3' ? 0 : 1);
 	}
+	int n = 0;
+	for (int i = 0; i < nt && n < SHARE_ITEMS; i++) {
+		ShareItem *it = &out[n];
+		memset(it, 0, sizeof *it);
+		snprintf(it->path, sizeof it->path, "@t%016llX", (unsigned long long)t[i].tid);
+		util_strlcpy(it->name, t[i].name, sizeof it->name);
+		util_strlcpy(it->author, t[i].author, sizeof it->author);
+		it->kind = SK_TITLE, it->size = t[i].size;
+		it->has_icon = t[i].has_icon;
+		memcpy(it->icon, t[i].icon, sizeof it->icon);
+		it->hidden = hidden_path(it->path);
+		it->id = n++;
+	}
+	free(t);
 	lock();
 	free(S.mine);
 	S.mine = out, S.nmine = n, S.mine_at = now;
@@ -691,8 +613,9 @@ static void do_req(int peer, int item)
 		rid = cJSON_IsNumber(r) ? r->valueint : -1;
 		cJSON_Delete(j);
 	}
-	int v = rid >= 0 ? 0 : -1;
-	for (int k = 0; v == 0 && k < 180 && !S.quit; k++) { // hasta 3 minutos a que lo acepten
+	int v = rid >= 0 ? 0 : -1, waited = 0;
+	// hasta 3 minutos a que lo acepten y, aceptado, hasta 20 a que la otra consola arme el instalador
+	for (int k = 0; (v == 0 || v == 3) && k < 180 + 1200 && !S.quit; k++) {
 		char q2[96];
 		snprintf(q2, sizeof q2, "t=%s&rid=%d", p.tok_out, rid);
 		free(m.p), m.p = NULL, m.n = 0;
@@ -702,7 +625,11 @@ static void do_req(int peer, int item)
 			v = cJSON_IsNumber(ss) ? ss->valueint : -1;
 			cJSON_Delete(s);
 		}
-		if (v == 0)
+		if (v == 0 && ++waited > 180)
+			v = 2;
+		if (v == 3)
+			set_item_st(peer, item, SHR_PREP);
+		if (v == 0 || v == 3)
 			svcSleepThread(1000000000ll);
 	}
 	free(m.p);
@@ -715,14 +642,15 @@ static void do_req(int peer, int item)
 	struct in_addr ia = {p.ip};
 	snprintf(url, sizeof url, "http://%s:%d/api/share/file?t=%s&rid=%d", inet_ntoa(ia), p.port ? p.port : 80, p.tok_out, rid);
 	char fname[80];
-	snprintf(fname, sizeof fname, "%s.%s", it.name[0] ? it.name : "app", it.kind == SK_CIA ? "cia" : "3dsx");
+	bool cia = it.kind == SK_CIA || it.kind == SK_TITLE;
+	snprintf(fname, sizeof fname, "%s.%s", it.name[0] ? it.name : "app", cia ? "cia" : "3dsx");
 	for (char *c = fname; *c; c++)
 		if (strchr("\\/:*?\"<>|", *c))
 			*c = '_';
-	const char *dir = it.kind == SK_CIA ? DL_DIR : "/3ds";
+	const char *dir = cia ? DL_DIR : "/3ds";
 	fsx_mkdirs(dir);
 	u32 did = 0;
-	if (dl_add(url, dir, "", it.kind == SK_CIA ? DLA_INSTALL : DLA_NONE, p.name, &did) == 0) {
+	if (dl_add(url, dir, "", cia ? DLA_INSTALL : DLA_NONE, p.name, &did) == 0) {
 		dl_set_name(did, fname);
 		set_item_st(peer, item, SHR_DOWNLOADING);
 	} else
@@ -771,12 +699,122 @@ static void thread_main(void *arg)
 				do_catalog(peer);
 			else if (type == J_REQ)
 				do_req(peer, item);
+			else if (type == J_MINE)
+				refresh_mine(true);
 			continue;
 		}
 		if (last_disc && now - last_disc > 20000) // mientras se usa, se vuelve a preguntar de vez en cuando
 			do_discover(), last_disc = now;
 		LightEvent_WaitTimeout(&S.ev, 150 * 1000000ll);
 	}
+}
+
+/* ---------------------------------------------------------------- armar el instalador de una app instalada */
+
+static struct {
+	Thread thr;
+	LightEvent ev;
+	int q[8], nq;
+	volatile u64 done, total;
+	volatile bool cancel;
+	bool busy;
+	char name[64], who[48], err[160];
+	u64 err_t;
+} B;
+
+static Req *find_req(int rid);
+
+static bool rm_cb(const FsxEntry *e, void *u)
+{
+	(void)u;
+	char p[300];
+	snprintf(p, sizeof p, "sdmc:" SH_BUILD_DIR "/%s", e->name);
+	if (!e->dir)
+		remove(p);
+	return true;
+}
+
+static void build_thread(void *arg)
+{
+	(void)arg;
+	while (!S.quit) {
+		LightEvent_WaitTimeout(&B.ev, 500 * 1000000ll);
+		for (;;) {
+			int rid = -1;
+			u64 tid = 0;
+			lock();
+			if (B.nq) {
+				rid = B.q[0];
+				memmove(B.q, B.q + 1, sizeof B.q[0] * --B.nq);
+				Req *r = find_req(rid);
+				if (r && r->st == 3) {
+					tid = r->tid;
+					util_strlcpy(B.name, r->name, sizeof B.name);
+					util_strlcpy(B.who, r->peer >= 0 && r->peer < S.np ? S.p[r->peer].name : "3DS", sizeof B.who);
+					B.busy = true, B.done = 0, B.total = 1, B.cancel = false;
+					S.rev++;
+				}
+			}
+			unlock();
+			if (rid < 0 || S.quit)
+				break;
+			if (!tid)
+				continue;
+			// solo se guarda el último: lo anterior se borra antes de armar otro
+			fsx_mkdirs(SH_BUILD_DIR);
+			fsx_list(SH_BUILD_DIR, false, rm_cb, NULL);
+			char path[128], err[160];
+			snprintf(path, sizeof path, SH_BUILD_DIR "/%016llX.cia", (unsigned long long)tid);
+			int r = cb_build(tid, path, &B.done, &B.total, &B.cancel, err, sizeof err);
+			lock();
+			Req *q = find_req(rid);
+			if (q && q->st == 3) {
+				q->st = r == 0 ? 1 : 4;
+				if (r == 0)
+					util_strlcpy(q->path, path, sizeof q->path);
+			}
+			if (r) {
+				snprintf(B.err, sizeof B.err, "%s: %s", B.name, err);
+				B.err_t = util_ms();
+			}
+			B.busy = false;
+			S.rev++;
+			unlock();
+		}
+	}
+}
+
+// (con el cerrojo tomado) aceptada una app instalada: a armar su CIA
+static void build_queue(Req *r)
+{
+	r->st = 3;
+	if (B.nq < 8)
+		B.q[B.nq++] = r->rid;
+	else
+		r->st = 4;
+	if (!B.thr) {
+		LightEvent_Init(&B.ev, RESET_ONESHOT);
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		B.thr = threadCreate(build_thread, NULL, 64 * 1024, prio + 2, -2, false); // (por detrás de la interfaz y de la red)
+		if (!B.thr)
+			r->st = 4, B.nq = 0;
+	}
+	LightEvent_Signal(&B.ev);
+}
+
+int share_build_state(char *name, size_t nn, char *who, size_t wn, u64 *done, u64 *total)
+{
+	lock();
+	int st = B.busy ? 1 : B.err[0] && util_ms() - B.err_t < 12000 ? -1 : 0;
+	if (st == 1) {
+		util_strlcpy(name, B.name, nn);
+		util_strlcpy(who, B.who, wn);
+		*done = B.done, *total = B.total;
+	} else if (st == -1)
+		util_strlcpy(name, B.err, nn);
+	unlock();
+	return st;
 }
 
 /* ---------------------------------------------------------------- uso */
@@ -796,6 +834,13 @@ void share_init(void)
 void share_exit(void)
 {
 	S.quit = true;
+	B.cancel = true;
+	if (B.thr) {
+		LightEvent_Signal(&B.ev);
+		threadJoin(B.thr, 5000000000ull);
+		threadFree(B.thr);
+		B.thr = NULL;
+	}
 	if (S.thr) {
 		LightEvent_Signal(&S.ev);
 		threadJoin(S.thr, 3000000000ull);
@@ -930,7 +975,11 @@ void share_request(int peer, int item)
 
 int share_mine(ShareItem *out, int max)
 {
-	refresh_mine(false);
+	lock();
+	bool stale = !S.mine || util_ms() - S.mine_at > 30000;
+	unlock();
+	if (stale) // (se vuelve a leer en el hilo de Compartir: aquí, lo último leído)
+		push(J_MINE, 0, 0);
 	lock();
 	int n = S.nmine < max ? S.nmine : max;
 	if (n)
@@ -986,6 +1035,8 @@ void share_answer(int rid, bool yes)
 		if (r->rid != rid || r->st)
 			continue;
 		r->st = yes ? 1 : 2;
+		if (yes && r->kind == SP_SEND && r->tid)
+			build_queue(r);
 		if (yes && r->kind == SP_PAIR) { // vinculada: entra en la lista con los dos tokens
 			rand_hex(r->tok_mine, 32);
 			int k = 0;
@@ -1140,8 +1191,12 @@ int share_srv_req(int peer, int item)
 		util_strlcpy(r->path, it->path, sizeof r->path);
 		util_strlcpy(r->name, it->name, sizeof r->name);
 		r->size = it->size;
-		if (S.p[peer].trusted) // de confianza: sin preguntar
+		r->tid = it->kind == SK_TITLE ? strtoull(it->path + 2, NULL, 16) : 0;
+		if (S.p[peer].trusted) { // de confianza: sin preguntar
 			r->st = 1, r->asked = true;
+			if (r->tid)
+				build_queue(r);
+		}
 		rid = r->rid;
 		S.rev++;
 	}
@@ -1162,7 +1217,7 @@ bool share_srv_file(int peer, int rid, char *path, size_t n, char *who, size_t w
 {
 	lock();
 	Req *r = find_req(rid);
-	bool ok = r && r->kind == SP_SEND && r->peer == peer && r->st == 1;
+	bool ok = r && r->kind == SP_SEND && r->peer == peer && r->st == 1 && r->path[0] != '@';
 	if (ok) {
 		util_strlcpy(path, r->path, n);
 		util_strlcpy(who, peer < S.np ? S.p[peer].name : "3DS", wn);
@@ -1170,7 +1225,9 @@ bool share_srv_file(int peer, int rid, char *path, size_t n, char *who, size_t w
 	unlock();
 	if (!ok)
 		return false;
-	// justo antes de enviar, otra vez: que siga siendo homebrew (un .3dsx, o un CIA sin cifrar)
+	// justo antes de enviar, otra vez: que siga siendo homebrew
+	if (!strncmp(path, SH_BUILD_DIR "/", sizeof SH_BUILD_DIR)) // (el CIA armado de una app instalada)
+		return cb_is_homebrew(strtoull(path + sizeof SH_BUILD_DIR, NULL, 16));
 	const char *x = strrchr(path, '.');
 	return x && (!strcasecmp(x, ".3dsx") || (!strcasecmp(x, ".cia") && share_cia_homebrew(path)));
 }

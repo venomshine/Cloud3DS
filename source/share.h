@@ -13,17 +13,17 @@
  * - Las consolas se encuentran con un aviso UDP por difusión (puerto SHARE_PORT) o se añaden por su IP.
  * - Se vinculan una vez: las dos enseñan el mismo código de 4 cifras y la que recibe la petición la acepta. Cada una
  *   le da a la otra un token; con él se ven sus apps y se piden.
- * - Solo se comparte homebrew: los .3dsx de /3ds y los CIA de la SD que sean aplicaciones sin cifrar (NoCrypto).
- *   Nada del sistema, de cartucho ni de eShop: se vuelve a comprobar justo antes de enviar.
+ * - Se ofrecen las apps homebrew instaladas: al aceptar un pedido, se arma su instalador (CIA) a partir de lo instalado
+ *   (ciabuild.c) y se envía. Nada del sistema, de cartucho ni de la eShop: se vuelve a comprobar justo antes de enviar.
  * - Cada pedido lo acepta quien lo da, salvo que tenga a quien lo pide como «de confianza».
- * - Lo recibido se baja con el gestor de descargas: un .3dsx, a /3ds; un CIA, a /Downloads y a instalar. */
+ * - Lo recibido se baja con el gestor de descargas, a /Downloads, y se instala. */
 
 #define SHARE_PORT 47331
 #define SHARE_PEERS 16
 #define SHARE_ITEMS 96
 
-enum { SK_3DSX, SK_CIA };
-enum { SHR_NONE, SHR_WAIT, SHR_DOWNLOADING, SHR_DONE, SHR_REFUSED, SHR_FAIL }; /* lo pedido a otra consola */
+enum { SK_3DSX, SK_CIA, SK_TITLE }; /* SK_TITLE: una app instalada (se envía su CIA, armado al aceptarla) */
+enum { SHR_NONE, SHR_WAIT, SHR_DOWNLOADING, SHR_DONE, SHR_REFUSED, SHR_FAIL, SHR_PREP }; /* lo pedido a otra consola (PREP: la otra arma el instalador) */
 
 typedef struct {
 	char id[17], name[48];
@@ -73,6 +73,8 @@ int  share_catalog(ShareItem *out, int max, int *peer, bool *loading, bool *fail
 void share_request(int peer, int item);            /* pedir una app (y bajarla cuando la acepten) */
 int  share_mine(ShareItem *out, int max);          /* lo que ofrece esta consola */
 void share_hide(const char *path, bool hide);
+/* armando el instalador de una app para otra consola: 1 (name, who, done/total), -1 falló hace poco (name: el porqué), 0 nada */
+int  share_build_state(char *name, size_t nn, char *who, size_t wn, u64 *done, u64 *total);
 /* lo que hay que contestar (el primero); share_answer lo contesta */
 bool share_prompt(SharePrompt *out);
 void share_answer(int rid, bool yes);

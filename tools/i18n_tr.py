@@ -1,6 +1,66 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Esta consola no deja leer la cabecera de la app (fs:REG: %08lX)':
+        ("This console won't let the app's header be read (fs:REG: %08lX)",
+         'このコンソールではアプリのヘッダーを読み取れません (fs:REG: %08lX)'),
+    'No hay memoria suficiente':
+        ('Not enough memory',
+         'メモリが足りません'),
+    'No se pudo abrir el gestor de títulos':
+        ('Could not open the title manager',
+         'タイトル管理を開けませんでした'),
+    'Solo se pueden compartir apps homebrew':
+        ('Only homebrew apps can be shared',
+         '共有できるのは自作アプリだけです'),
+    'No se pudo leer el programa de la app':
+        ("Could not read the app's program",
+         'アプリのプログラムを読み取れませんでした'),
+    'No se pudo crear el archivo en la SD':
+        ('Could not create the file on the SD card',
+         'SDカードにファイルを作成できませんでした'),
+    'La app es demasiado grande para la memoria libre':
+        ('The app is too large for the free memory',
+         '空きメモリに対してアプリが大きすぎます'),
+    'No se pudo leer la RomFS de la app':
+        ("Could not read the app's RomFS",
+         'アプリのRomFSを読み取れませんでした'),
+    'No se pudo escribir en la SD (¿falta espacio?)':
+        ('Could not write to the SD card (out of space?)',
+         'SDカードに書き込めませんでした(空き容量不足?)'),
+    'La app es demasiado grande':
+        ('The app is too large',
+         'アプリが大きすぎます'),
+    'No se pudo leer lo escrito en la SD':
+        ('Could not read back what was written to the SD card',
+         'SDカードに書き込んだ内容を読み取れませんでした'),
+    'Cancelado':
+        ('Cancelled',
+         'キャンセルしました'),
+    'Preparando «%s» para %s':
+        ('Preparing “%s” for %s',
+         '「%s」を準備中(宛先: %s)'),
+    'No se pudo preparar %s':
+        ('Could not prepare %s',
+         '%s を準備できませんでした'),
+    'Aceptado: la otra consola está preparando el instalador…':
+        ('Accepted: the other console is preparing the installer…',
+         '承認されました:相手のコンソールがインストーラーを準備中…'),
+    'Instalada':
+        ('Installed',
+         'インストール済み'),
+    'Preparando «%s»':
+        ('Preparing “%s”',
+         '「%s」を準備中'),
+    'Para %s. Se arma su instalador a partir de lo instalado y luego se envía.':
+        ('For %s. Its installer is built from the installed app and then sent.',
+         '%s 宛て。インストール済みのアプリからインストーラーを作成して送信します。'),
+    'Se comparten las apps homebrew instaladas: al aceptar, se arma su instalador y se envía. Nunca juegos de cartucho, de la eShop ni del sistema.':
+        ('Installed homebrew apps are shared: when you accept, their installer is built and sent. Never cartridge, eShop or system titles.',
+         'インストール済みの自作アプリを共有します。承認するとインストーラーを作成して送信します。カード、eショップ、本体のタイトルは共有しません。'),
+    'Aquí salen las apps homebrew instaladas en esta consola.':
+        ('Homebrew apps installed on this console appear here.',
+         'このコンソールにインストールされた自作アプリがここに表示されます。'),
     'Los CIA se instalan mientras se descargan; todo lo descargado queda en /Downloads.':
         ('CIAs are installed while they download; everything downloaded stays in /Downloads.',
          'CIAはダウンロード中にインストールされます。ダウンロードしたものはすべて /Downloads に保存されます。'),

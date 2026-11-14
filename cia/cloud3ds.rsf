@@ -168,6 +168,7 @@ AccessControlInfo:
    - dsp::DSP
    - frd:u
    - fs:USER
+   - fs:REG
    - gsp::Gpu
    - gsp::Lcd
    - hid:USER

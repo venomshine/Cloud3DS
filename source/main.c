@@ -9424,6 +9424,23 @@ static void sh_refresh(void)
 // lo que preguntan otras consolas: un diálogo (si no hay otro abierto ni nada delicado en marcha)
 static void sh_prompts(void)
 {
+	// armando el instalador de una app para otra consola: se avisa al empezar y si falla (esté donde esté)
+	static int bst;
+	char bn[200], bw[48];
+	u64 bd, bt;
+	int b = share_build_state(bn, sizeof bn, bw, sizeof bw, &bd, &bt);
+	if (b != bst) {
+		if (b == 1) {
+			char m[160];
+			snprintf(m, sizeof m, _("Preparando «%s» para %s"), bn, bw);
+			toast_icon(m, IC_SEND, T.accent);
+		} else if (b == -1) {
+			char m[260];
+			snprintf(m, sizeof m, _("No se pudo preparar %s"), bn);
+			toast_icon(m, IC_CLOSE, T.danger);
+		}
+		bst = b;
+	}
 	SharePrompt sp;
 	if (g_dialog.open || guard_on() || !share_prompt(&sp))
 		return;
@@ -9445,12 +9462,13 @@ static void sh_kind_text(const ShareItem *it, char *out, size_t n)
 {
 	char sz[24];
 	util_fmt_size(sz, sizeof sz, it->size);
-	const char *st = it->st == SHR_WAIT ? _("Esperando a que acepte…") : it->st == SHR_DOWNLOADING ? (it->kind == SK_CIA ? _("Recibiendo: al terminar, se instala") : _("Recibiendo: queda en /3ds"))
+	const char *st = it->st == SHR_WAIT ? _("Esperando a que acepte…") : it->st == SHR_PREP ? _("Aceptado: la otra consola está preparando el instalador…")
+	                 : it->st == SHR_DOWNLOADING ? (it->kind == SK_3DSX ? _("Recibiendo: queda en /3ds") : _("Recibiendo: al terminar, se instala"))
 	                 : it->st == SHR_REFUSED ? _("No lo aceptó") : it->st == SHR_FAIL ? _("No se pudo pedir") : NULL;
 	if (st)
 		snprintf(out, n, "%s", st);
 	else
-		snprintf(out, n, "%s%s%s · %s%s", it->author, it->author[0] ? " · " : "", it->kind == SK_CIA ? "CIA" : "3DSX", sz,
+		snprintf(out, n, "%s%s%s · %s%s", it->author, it->author[0] ? " · " : "", it->kind == SK_TITLE ? _("Instalada") : it->kind == SK_CIA ? "CIA" : "3DSX", sz,
 		         it->hidden ? _(" · No se comparte") : "");
 }
 
@@ -9469,6 +9487,25 @@ static void sh_top(void)
 		text_draw_center(code, TOP_W / 2, y0 + 44, 1.6f, T.accent);
 		wrap_center(_("Comprueba que la otra consola enseña este mismo código y acepta allí la vinculación."), TOP_W / 2, y0 + 110, W, TS_SUB, 3, T.text2);
 		text_draw_center(_("B Cancelar"), TOP_W / 2, y0 + h - 24, TS_SUB, T.text3);
+		return;
+	}
+	char bn[200], bw[48];
+	u64 bd = 0, bt = 1;
+	if (share_build_state(bn, sizeof bn, bw, sizeof bw, &bd, &bt) == 1) { // armando el instalador que se va a enviar
+		draw_circle(X + 30, y0 + 40, 26, col_alpha(ap_col(AP_SHARE), 0.16f));
+		draw_icon(IC_SEND, X + 30, y0 + 40, 24, ap_col(AP_SHARE));
+		float tx = X + 70, tw = X + W - tx;
+		char t[160];
+		snprintf(t, sizeof t, _("Preparando «%s»"), bn);
+		text_draw_clip(t, tx, y0 + 18, tw, TS_TITLE, T.text);
+		snprintf(t, sizeof t, _("Para %s. Se arma su instalador a partir de lo instalado y luego se envía."), bw);
+		text_wrap_lines(t, tw, TS_SUB, 3, tx, y0 + 20 + text_lineh(TS_TITLE) + 4, T.text2, true);
+		float f = bt ? (float)((double)bd / bt) : 0, by = y0 + h - 40;
+		draw_rrect(X, by, W, 8, 4, T.surface2);
+		draw_rrect(X, by, fmaxf(8, W * fminf(1, f)), 8, 4, T.accent);
+		char pc[16];
+		snprintf(pc, sizeof pc, "%d %%", (int)(f * 100));
+		text_draw_right(pc, X + W, by + 12, TS_SUB, T.text2);
 		return;
 	}
 	List *l = &SH.l[SH.level ? 2 : SH.view];
@@ -9502,7 +9539,7 @@ static void sh_top(void)
 	y += text_wrap_lines(_("Las dos consolas, en la misma Wi-Fi y con Cloud3DS abierto. Elige la otra para vincularlas (una sola vez); luego verás sus apps y podrás pedírselas."),
 	                     W, TS_SUB, 4, X, y, T.text2, true) *
 	         text_lineh(TS_SUB) + 6;
-	text_wrap_lines(_("Solo se comparte homebrew: los .3dsx de /3ds y los CIA sin cifrar. Nunca juegos de cartucho, de eShop ni del sistema."), W, TS_SUB, 3, X, y,
+	text_wrap_lines(_("Se comparten las apps homebrew instaladas: al aceptar, se arma su instalador y se envía. Nunca juegos de cartucho, de la eShop ni del sistema."), W, TS_SUB, 3, X, y,
 	                T.text3, true);
 }
 
@@ -9593,7 +9630,7 @@ static void sh_bottom(void)
 			empty_state(IC_SEND, SH.loading ? _("Pidiendo su lista…") : SH.failed ? _("No contesta") : _("No ofrece nada"),
 			            SH.loading ? _("Un momento.") : SH.failed ? _("Comprueba que la otra consola tiene Cloud3DS abierto y está en la misma Wi-Fi.") : _("No tiene apps homebrew para compartir (o las ha ocultado)."));
 		else if (SH.view == 1)
-			empty_state(IC_GEM, _("Nada que compartir"), _("Aquí salen los .3dsx de /3ds y los CIA homebrew de la SD."));
+			empty_state(IC_GEM, _("Nada que compartir"), _("Aquí salen las apps homebrew instaladas en esta consola."));
 		else
 			empty_state(IC_DEVICES, _("Buscando consolas…"), _("Abre Cloud3DS en la otra consola, en la misma Wi-Fi. Si no aparece, añádela por su IP con «+» (la ves en Conectar)."));
 	}
