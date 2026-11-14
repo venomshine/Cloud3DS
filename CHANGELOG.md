@@ -13,6 +13,8 @@
 - Música: biblioteca de toda la SD por canciones, artistas y álbumes (etiquetas ID3 y Vorbis), con «Sin datos» para lo que no las tiene (ocultar o eliminar, opcional). El reproductor (MP3, OGG y WAV) sigue sonando con la tapa cerrada.
 - Compartir: pasar apps homebrew instaladas entre consolas en la misma Wi-Fi, vinculándolas una vez con un código; cada pedido lo acepta quien da, salvo las consolas «de confianza». Al aceptar, se arma el CIA a partir de lo instalado y la otra consola lo instala.
 - Descargas: todo lo descargado queda en /Downloads; la app Descargas lo abre desde su tarjeta «Ver lo descargado».
+- Lector: PDF, manga (CBZ), EPUB, DOCX y TXT con biblioteca y progreso; lectura en horizontal o como un libro (consola de lado), y manga de derecha a izquierda.
+- Descargas: la app enseña arriba las descargas recientes, su progreso y sus errores; si el servicio HTTP del sistema no acepta la cadena de certificados propia, usa la del sistema.
 - Registro de congelaciones: si la interfaz deja de responder más de medio segundo, net.log apunta dónde y cuánto duró.
 - Todos los botones de las cabeceras también con la cruceta (↑ desde lo primero de la lista).
 - Al pegar algo que ya existe: reemplazar (o combinar carpetas), conservar ambos u omitir.

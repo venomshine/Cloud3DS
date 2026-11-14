@@ -67,6 +67,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
   - **Descargas:** desde un enlace, escaneando un código QR o con el enlace copiado; la última tarjeta, «Ver lo descargado», abre `/Downloads`, donde queda todo lo descargado (también desde la Nube o el Navegador). Los CIA se instalan mientras se descargan.
   - **Nube:** OneDrive en la consola, como Archivos: abre fotos y textos (y guarda los cambios en la nube), música, páginas, ZIP y CIA; copia, corta, cambia el nombre, elimina, crea carpetas y selecciona varios. Comparte el portapapeles con Archivos: lo copiado en la SD se sube con X y lo copiado en la nube se descarga en cualquier carpeta de la SD. Las capturas nuevas se suben solas.
   - **Música:** busca la música de la SD y la agrupa por canciones, artistas y álbumes según sus etiquetas; lo que no las tiene va aparte, en «Sin datos», donde se puede ocultar o eliminar (siempre opcional). Sigue sonando en segundo plano.
+  - **Lector:** PDF, manga y cómics (CBZ), EPUB, DOCX y TXT con su biblioteca (recientes, todos y por carpetas, con la página por la que vas). Se lee en horizontal (una página repartida entre las dos pantallas) o con la consola de lado, como un libro (una página en cada pantalla); el manga, de derecha a izquierda. Usa [MuPDF](https://mupdf.com).
   - **Compartir:** pasa apps homebrew instaladas a otra consola en la misma Wi-Fi, como Zapya. Se vinculan una vez comprobando un código, cada una ve las apps instaladas de la otra y las pide; quien da acepta cada pedido (o marca a la otra como «de confianza») y Cloud3DS arma su instalador (CIA) a partir de lo instalado, lo envía y la otra lo instala. Solo homebrew: nunca juegos de cartucho, de la eShop ni del sistema.
   - **Navegador** (experimental) y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
 - **Operaciones delicadas protegidas:** al instalar, desinstalar o borrar datos aparece una pantalla de espera que bloquea los botones y HOME hasta que termina, para que no se corte a mitad. Una descarga que se está instalando se puede cancelar sin riesgo.
@@ -120,6 +121,7 @@ source/   código de la app
   titles.c        títulos instalados: tamaños, copias de la partida, desinstalar por partes, datos extra
   dl.c            descargas de Internet (curl)
   ciabuild.c      armar el CIA de una app homebrew instalada (Compartir)
+  reader.c        el Lector: MuPDF en su hilo y la biblioteca
   cloud.c         OneDrive
   music.c         reproductor de música
   browser.c       navegador web (experimental; brcss, brlayout, jsdom, canvas, svg)
