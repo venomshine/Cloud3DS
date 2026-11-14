@@ -847,13 +847,27 @@ static void do_caps(void)
 	}
 }
 
+// el enlace de descarga (ya autorizado, para el gestor de descargas) de un archivo; si no viene, se apunta por qué
+static const cJSON *item_dl_url(const cJSON *j, const char *id)
+{
+	const cJSON *u = cJSON_GetObjectItemCaseSensitive(j, "@microsoft.graph.downloadUrl");
+	if (!cJSON_IsString(u))
+		u = cJSON_GetObjectItemCaseSensitive(j, "@content.downloadUrl");
+	if (!cJSON_IsString(u)) {
+		const cJSON *e = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(j, "error"), "code");
+		util_log("nube: %s sin enlace de descarga (%s)", id, cJSON_IsString(e) ? e->valuestring : j ? "sin el campo" : "sin respuesta");
+		return NULL;
+	}
+	return u;
+}
+
 static void do_download(const char *id, const char *name)
 {
 	char path[300];
-	snprintf(path, sizeof path, "/me/drive/items/%s?$select=id,name,@microsoft.graph.downloadUrl", id);
+	snprintf(path, sizeof path, "/me/drive/items/%s", id); // (con $select, OneDrive personal no da el enlace de descarga)
 	long code;
 	cJSON *j = graph_json(path, &code);
-	const cJSON *u = cJSON_GetObjectItemCaseSensitive(j, "@microsoft.graph.downloadUrl");
+	const cJSON *u = item_dl_url(j, id);
 	if (!cJSON_IsString(u)) {
 		cJSON_Delete(j);
 		set_err("download");
@@ -1006,10 +1020,10 @@ static void do_copy(const char *id, const char *parent)
 static bool dl_file_to(const char *id, const char *name, const char *dir)
 {
 	char path[300];
-	snprintf(path, sizeof path, "/me/drive/items/%s?$select=id,name,@microsoft.graph.downloadUrl", id);
+	snprintf(path, sizeof path, "/me/drive/items/%s", id); // (con $select, OneDrive personal no da el enlace de descarga)
 	long code;
 	cJSON *j = graph_json(path, &code);
-	const cJSON *u = cJSON_GetObjectItemCaseSensitive(j, "@microsoft.graph.downloadUrl");
+	const cJSON *u = item_dl_url(j, id);
 	u32 did = 0;
 	bool ok = cJSON_IsString(u) && dl_add(u->valuestring, dir, "", DLA_NONE, "OneDrive", &did) == 0;
 	if (ok)
@@ -1076,10 +1090,10 @@ static void do_download_to(const char *id, const char *name, const char *dir, bo
 static void do_open(const char *id, const char *name, const char *dir)
 {
 	char path[300];
-	snprintf(path, sizeof path, "/me/drive/items/%s?$select=id,name,@microsoft.graph.downloadUrl", id);
+	snprintf(path, sizeof path, "/me/drive/items/%s", id); // (con $select, OneDrive personal no da el enlace de descarga)
 	long code = 0;
 	cJSON *j = graph_json(path, &code);
-	const cJSON *u = cJSON_GetObjectItemCaseSensitive(j, "@microsoft.graph.downloadUrl");
+	const cJSON *u = item_dl_url(j, id);
 	u32 did = 0;
 	char old[720];
 	snprintf(old, sizeof old, "sdmc:%s/%s", dir, name);
