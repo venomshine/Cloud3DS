@@ -522,6 +522,7 @@ struct ScStream {
 	u8 *cover;
 	int cw, ch;
 	volatile bool cover_ready;
+	bool thr_done, orphan; // (bajo lk) el hilo terminó; nadie lo espera: lo libera el hilo al acabar
 };
 
 typedef struct {
@@ -636,7 +637,7 @@ static bool hls_open(const ScTrack *t, HlsList *pl, Fmp4Cfg *cfg, char *err, siz
 	return ok;
 }
 
-static void stream_thread(void *arg)
+static void stream_run(void *arg)
 {
 	ScStream *s = arg;
 	dl_set_thread_stop(&s->stop, NULL);
@@ -699,6 +700,29 @@ static void stream_thread(void *arg)
 	s->eof = true;
 }
 
+static void stream_free(ScStream *s)
+{
+	for (int i = 0; i < QMAX; i++)
+		seg_free(&s->q[i]);
+	if (s->dec)
+		NeAACDecClose(s->dec);
+	free(s->cover);
+	free(s);
+}
+
+// el hilo de la red: si al terminar ya nadie lo espera (la canción se cambió mientras conectaba), libera él el streaming
+static void stream_thread(void *arg)
+{
+	ScStream *s = arg;
+	stream_run(s);
+	LightLock_Lock(&s->lk);
+	s->thr_done = true;
+	bool orphan = s->orphan;
+	LightLock_Unlock(&s->lk);
+	if (orphan)
+		stream_free(s);
+}
+
 ScStream *sc_stream_open(const char *id)
 {
 	ScStream *s = calloc(1, sizeof *s);
@@ -711,7 +735,7 @@ ScStream *sc_stream_open(const char *id)
 	LightLock_Init(&s->lk);
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-	s->thr = threadCreate(stream_thread, s, 48 * 1024, prio + 1, -2, false); // (la red, por detrás del audio)
+	s->thr = threadCreate(stream_thread, s, 48 * 1024, prio + 1, -2, true); // (la red, por detrás del audio; se suelta solo)
 	if (!s->thr) {
 		free(s);
 		return NULL;
@@ -789,17 +813,14 @@ void sc_stream_close(ScStream *s)
 {
 	if (!s)
 		return;
-	s->stop = true;
-	if (s->thr) {
-		threadJoin(s->thr, 10000000000ull);
-		threadFree(s->thr);
-	}
-	for (int i = 0; i < QMAX; i++)
-		seg_free(&s->q[i]);
-	if (s->dec)
-		NeAACDecClose(s->dec);
-	free(s->cover);
-	free(s);
+	s->stop = true; // (sin esperar: una petición puede tardar hasta 30 s en volver)
+	LightLock_Lock(&s->lk);
+	bool done = s->thr_done;
+	if (!done)
+		s->orphan = true;
+	LightLock_Unlock(&s->lk);
+	if (done)
+		stream_free(s);
 }
 
 /* ================================================================ descargar (solo si el autor lo permite)

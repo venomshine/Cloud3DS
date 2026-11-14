@@ -57,20 +57,16 @@ void dl_set_thread_stop(volatile bool *a, volatile bool *b)
 	t_stop1 = a, t_stop2 = b;
 }
 static bool t_stopped(void) { return (t_stop1 && *t_stop1) || (t_stop2 && *t_stop2); }
-// httpc, a sorbos de 1 s mirando si se dejó: hasta «secs» segundos sin nada
+// httpc: una sola espera de hasta «secs» segundos. No se puede esperar a sorbos: en la consola, después de una espera
+// que se agota, la siguiente devuelve 0xD8A0A03C (estado no válido) y la petición se pierde. Con la conexión segura, la
+// respuesta tarda a menudo más de un segundo (en el emulador no: por eso allí funcionaba)
 static Result hc_status(httpcContext *ctx, u32 *code, int secs)
 {
-	Result r = HTTPC_RESULTCODE_TIMEDOUT;
-	for (int i = 0; i < secs && r == (Result)HTTPC_RESULTCODE_TIMEDOUT && !t_stopped(); i++)
-		r = httpcGetResponseStatusCodeTimeout(ctx, code, 1000000000ull);
-	return r;
+	return t_stopped() ? HTTPC_RESULTCODE_TIMEDOUT : httpcGetResponseStatusCodeTimeout(ctx, code, (u64)secs * 1000000000ull);
 }
 static Result hc_recv(httpcContext *ctx, u8 *buf, u32 n, int secs)
 {
-	Result r = HTTPC_RESULTCODE_TIMEDOUT;
-	for (int i = 0; i < secs && r == (Result)HTTPC_RESULTCODE_TIMEDOUT && !t_stopped(); i++)
-		r = httpcReceiveDataTimeout(ctx, buf, n, 1000000000ull);
-	return r;
+	return t_stopped() ? HTTPC_RESULTCODE_TIMEDOUT : httpcReceiveDataTimeout(ctx, buf, n, (u64)secs * 1000000000ull);
 }
 
 static __thread bool t_noresolve; /* la última petición con libcurl: el nombre del servidor no existe (DNS) */
