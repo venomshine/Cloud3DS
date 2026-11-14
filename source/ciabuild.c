@@ -206,13 +206,41 @@ bool cb_is_homebrew(u64 tid)
 	return ok;
 }
 
-// la cabecera del programa (ExHeader_Info, 0x400): solo la da fs:REG (como a loader). Sin esperar si está ocupado
+// Luma3DS: svcControlService (0xB0) con SERVICEOP_STEAL_CLIENT_SESSION (0): una sesión de un servicio que ya no admite
+// más (la comparte con quien la tenga). Solo si es Luma (GetSystemInfo 0x10000 solo existe en Luma): en otro sistema,
+// esa llamada no existe y colgaría la consola
+static bool is_luma(void)
+{
+	s64 v = 0;
+	return R_SUCCEEDED(svcGetSystemInfo(&v, 0x10000, 0));
+}
+static Result luma_steal_session(Handle *out, const char *name)
+{
+	register u32 r0 __asm__("r0") = 0;
+	register Handle *r1 __asm__("r1") = out;
+	register const char *r2 __asm__("r2") = name;
+	__asm__ volatile("svc 0xB0" : "+r"(r0) : "r"(r1), "r"(r2) : "r3", "r12", "memory");
+	return (Result)r0;
+}
+
+// la cabecera del programa (ExHeader_Info, 0x400): solo la da fs:REG (como a loader). En la consola, sus sesiones las
+// tienen siempre loader y pm (0xD0401834: no hay ninguna libre), así que se usa la de ellos a través de Luma3DS
 static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 {
 	srvSetBlockingPolicy(true); // (no bloquear: si no hay sesión libre, error al momento)
 	Result r = fsRegInit();
 	srvSetBlockingPolicy(false);
-	if (R_SUCCEEDED(r)) {
+	bool own = R_SUCCEEDED(r), stolen = false;
+	if (!own && is_luma()) {
+		Handle h = 0;
+		Result r2 = luma_steal_session(&h, "fs:REG");
+		util_log("compartir: fs:REG ocupado (%08lX); sesión compartida por Luma3DS: %08lX", (unsigned long)r, (unsigned long)r2);
+		if (R_SUCCEEDED(r2) && h) {
+			*fsRegGetSessionHandle() = h;
+			stolen = true, r = 0;
+		}
+	}
+	if (own || stolen) {
 		FS_ProgramInfo pi;
 		memset(&pi, 0, sizeof pi);
 		pi.programId = tid, pi.mediaType = MEDIATYPE_SD;
@@ -221,7 +249,12 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 			r = FSREG_GetProgramInfo((ExHeader_Info *)exh, 1, ph);
 			FSREG_UnloadProgram(ph);
 		}
-		fsRegExit();
+		if (own)
+			fsRegExit();
+		else {
+			svcCloseHandle(*fsRegGetSessionHandle());
+			*fsRegGetSessionHandle() = 0;
+		}
 	}
 	util_log("compartir: cabecera de %016llX por fs:REG: %08lX", (unsigned long long)tid, (unsigned long)r);
 	if (R_SUCCEEDED(r))
@@ -238,7 +271,7 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 			return true;
 	}
 #endif
-	snprintf(err, en, _("Esta consola no permite leer la cabecera de la app (fs:REG: %08lX)"), (unsigned long)r);
+	snprintf(err, en, _("No se pudo leer la cabecera de la app. Hace falta Luma3DS actualizado (fs:REG: %08lX)."), (unsigned long)r);
 	return false;
 }
 

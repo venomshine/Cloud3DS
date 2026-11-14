@@ -1,6 +1,6 @@
 /* Generado por tools/gen_i18n.py: no editar a mano */
 static const TrEntry TR_TAB[] = {
-	{"Esta consola no permite leer la cabecera de la app (fs:REG: %08lX)", "This console won't let the app's header be read (fs:REG: %08lX)", "このコンソールではアプリのヘッダーを読み取れません (fs:REG: %08lX)"},
+	{"No se pudo leer la cabecera de la app. Hace falta Luma3DS actualizado (fs:REG: %08lX).", "Could not read the app header. An up-to-date Luma3DS is required (fs:REG: %08lX).", "アプリのヘッダーを読み取れませんでした。最新のLuma3DSが必要です(fs:REG: %08lX)。"},
 	{"No hay memoria suficiente", "Not enough memory", "メモリが足りません"},
 	{"No se pudo abrir el gestor de títulos", "Could not open the title manager", "タイトル管理を開けませんでした"},
 	{"Solo se pueden compartir apps homebrew", "Only homebrew apps can be shared", "共有できるのは自作アプリだけです"},

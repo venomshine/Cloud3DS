@@ -1,6 +1,9 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'No se pudo leer la cabecera de la app. Hace falta Luma3DS actualizado (fs:REG: %08lX).':
+        ('Could not read the app header. An up-to-date Luma3DS is required (fs:REG: %08lX).',
+         'アプリのヘッダーを読み取れませんでした。最新のLuma3DSが必要です(fs:REG: %08lX)。'),
     'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee con la consola girada a la izquierda, con zoom.':
         ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT from the SD card, with a library. Read with the console turned to the left, with zoom.',
          'SDカードのPDF、漫画・コミック(CBZ)、EPUB、DOCX、TXTをライブラリで管理。本体を左に回して、ズームしながら読めます。'),
@@ -3076,9 +3079,6 @@ TR = {
     'Nombre del dispositivo (déjalo vacío para usar el nombre automático)':
         ('Device name (leave empty for automatic)',
          '端末名（空欄で自動）'),
-    'Esta consola no permite leer la cabecera de la app (fs:REG: %08lX)':
-        ("This console won't let the app's header be read (fs:REG: %08lX)",
-         'このコンソールではアプリのヘッダーを読み取れません (fs:REG: %08lX)'),
     'No se pudo escribir en la SD. Comprueba el espacio disponible.':
         ('Could not write to the SD card. Check the available space.',
          'SDカードに書き込めませんでした(空き容量不足?)'),
