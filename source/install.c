@@ -520,7 +520,10 @@ struct InsStream {
 	Handle h;
 	u64 tid, off;
 	u16 ver;
+	u8 *buf; // lo que llega se junta aquí y se escribe en bloques de STREAM_BLK
+	size_t nbuf;
 };
+#define STREAM_BLK (64 * 1024)
 
 int ins_stream_need(const u8 *h, size_t n)
 {
@@ -570,7 +573,11 @@ InsStream *ins_stream_begin(const u8 *h, size_t n, char *err, size_t en)
 		return NULL;
 	}
 	InsStream *s = calloc(1, sizeof *s);
+	if (s && !(s->buf = malloc(STREAM_BLK)))
+		free(s), s = NULL;
 	if (!s || R_FAILED(amInit())) {
+		if (s)
+			free(s->buf);
 		free(s);
 		I.streaming = false;
 		util_strlcpy(err, "am", en);
@@ -584,6 +591,7 @@ InsStream *ins_stream_begin(const u8 *h, size_t n, char *err, size_t en)
 		util_log("instalar (descarga): AM_StartCiaInstall 0x%08lX", (unsigned long)r);
 		util_strlcpy(err, am_error(r), en);
 		amExit();
+		free(s->buf);
 		free(s);
 		I.streaming = false;
 		return NULL;
@@ -594,22 +602,45 @@ InsStream *ins_stream_begin(const u8 *h, size_t n, char *err, size_t en)
 	return s;
 }
 
-bool ins_stream_write(InsStream *s, const void *d, size_t n, char *err, size_t en)
+static bool stream_flush(InsStream *s, char *err, size_t en)
 {
+	if (!s->nbuf)
+		return true;
 	u32 w = 0;
-	Result r = FSFILE_Write(s->h, &w, s->off, d, n, 0);
-	if (R_FAILED(r) || w != n) {
-		util_log("instalar (descarga): escribir 0x%08lX en %llu", (unsigned long)r, (unsigned long long)s->off);
-		util_strlcpy(err, am_error(r), en);
+	Result r = FSFILE_Write(s->h, &w, s->off, s->buf, (u32)s->nbuf, 0);
+	if (R_FAILED(r) || w != s->nbuf) {
+		util_log("instalar (descarga): escribir 0x%08lX en %llu (%u bytes)", (unsigned long)r, (unsigned long long)s->off, (unsigned)s->nbuf);
+		if (err)
+			util_strlcpy(err, am_error(r), en);
 		return false;
 	}
-	s->off += n;
+	s->off += s->nbuf, s->nbuf = 0;
+	return true;
+}
+
+// a AM en bloques de 64 KB (el último, lo que quede), como FBI: con el tamaño de cada trozo que llega de la red, AM
+// rechazaba a veces la escritura con 0xE0E083F2 (tamaño no alineado) y la instalación se cortaba
+bool ins_stream_write(InsStream *s, const void *d, size_t n, char *err, size_t en)
+{
+	const u8 *p = d;
+	while (n) {
+		size_t k = STREAM_BLK - s->nbuf;
+		if (k > n)
+			k = n;
+		memcpy(s->buf + s->nbuf, p, k);
+		s->nbuf += k, p += k, n -= k;
+		if (s->nbuf == STREAM_BLK && !stream_flush(s, err, en))
+			return false;
+	}
 	return true;
 }
 
 const char *ins_stream_end(InsStream *s, bool ok)
 {
 	const char *e = NULL;
+	static char fe[32];
+	if (ok && !stream_flush(s, fe, sizeof fe)) // (lo que quedaba)
+		ok = false, e = fe;
 	if (!ok)
 		AM_CancelCIAInstall(s->h);
 	else {
@@ -622,9 +653,10 @@ const char *ins_stream_end(InsStream *s, bool ok)
 	amExit();
 	if (ok && !e)
 		install_seed(s->tid);
+	free(s->buf);
 	free(s);
 	I.streaming = false;
-	return ok ? e : "canceled";
+	return ok ? e : e ? e : "canceled";
 }
 
 static void ins_thread(void *arg)
