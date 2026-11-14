@@ -397,3 +397,58 @@ const char *clip_text(void)
 {
 	return CLIP;
 }
+
+/* ---------------------------------------------------------------- vigilante de la interfaz */
+
+volatile const char *g_where = "inicio";
+volatile bool g_wd_pause;
+volatile u32 g_frames;
+static Thread wd_thr;
+static volatile bool wd_quit;
+extern int g_app_now; /* (main.c) la app abierta, para el registro */
+
+static void wd_thread(void *arg)
+{
+	(void)arg;
+	u32 last = g_frames;
+	u64 t0 = util_ms(), worst = 0;
+	bool stuck = false;
+	const char *where = "";
+	while (!wd_quit) {
+		svcSleepThread(100000000ull);
+		u32 f = g_frames;
+		u64 now = util_ms();
+		if (f != last || g_wd_pause) {
+			if (stuck) {
+				util_log("interfaz: vuelve tras %llu ms (estaba en %s, app %d)", (unsigned long long)(now - t0), where, g_app_now);
+				if (now - t0 > worst)
+					worst = now - t0;
+			}
+			stuck = false, last = f, t0 = now;
+			continue;
+		}
+		if (!stuck && now - t0 >= 500) {
+			stuck = true;
+			where = (const char *)g_where;
+			util_log("interfaz: parada desde hace %llu ms en %s (app %d)", (unsigned long long)(now - t0), where, g_app_now);
+		}
+	}
+}
+
+void wd_start(void)
+{
+	if (wd_thr)
+		return;
+	wd_quit = false;
+	wd_thr = threadCreate(wd_thread, NULL, 16 * 1024, 0x19, -2, false); /* por delante de todo: aunque la interfaz no suelte la CPU */
+}
+
+void wd_stop(void)
+{
+	if (!wd_thr)
+		return;
+	wd_quit = true;
+	threadJoin(wd_thr, 1000000000ull);
+	threadFree(wd_thr);
+	wd_thr = NULL;
+}

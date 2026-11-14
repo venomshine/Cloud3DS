@@ -41,6 +41,15 @@ bool util_utf8_valid(const char *s);
 /* Registro de diagnóstico en la SD */
 void util_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
+/* vigilante de la interfaz: si deja de dibujar más de medio segundo, lo apunta en el registro con dónde estaba
+ * (g_where, que la interfaz va poniendo) y cuánto duró. g_wd_pause: esperas que no cuentan (HOME, reposo, teclado) */
+extern volatile const char *g_where;
+extern volatile bool g_wd_pause;
+extern volatile u32 g_frames;
+#define WHERE(s) (g_where = (s))
+void wd_start(void);
+void wd_stop(void);
+
 /* base64 (también la variante de URL) a bytes; out con sitio para n*3/4. Devuelve cuántos */
 size_t util_b64_decode(const char *in, size_t n, u8 *out);
 

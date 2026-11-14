@@ -8,6 +8,7 @@
 // Cloud3DS - componentes de interfaz
 #include "ui.h"
 #include "i18n.h"
+#include "util.h"
 #include "qrcodegen.h"
 #include <string.h>
 #include <stdio.h>
@@ -553,7 +554,9 @@ bool kb_input(const char *hint, const char *initial, char *out, int outsz, bool 
     if (password) swkbdSetPasswordMode(&kb, SWKBD_PASSWORD_HIDE_DELAY);
     swkbdSetValidation(&kb, SWKBD_ANYTHING, 0, 0);
     char *buf = calloc(1, outsz);
+    g_wd_pause = true; // (el teclado del sistema: esperar no es quedarse parada)
     SwkbdButton b = swkbdInputText(&kb, buf, outsz);
+    g_wd_pause = false;
     bool ok = b == SWKBD_BUTTON_RIGHT;
     if (ok) snprintf(out, outsz, "%s", buf);
     free(buf);
@@ -569,7 +572,9 @@ bool kb_pin(const char *hint, char *out, int outsz) {
     swkbdSetFeatures(&kb, SWKBD_DARKEN_TOP_SCREEN | SWKBD_FIXED_WIDTH);
     swkbdSetValidation(&kb, SWKBD_FIXEDLEN, 0, 0);
     char buf[8] = "";
+    g_wd_pause = true;
     SwkbdButton b = swkbdInputText(&kb, buf, sizeof buf);
+    g_wd_pause = false;
     if (b != SWKBD_BUTTON_RIGHT || strlen(buf) != 4 || strspn(buf, "0123456789") != 4) return false;
     snprintf(out, outsz, "%s", buf);
     return true;

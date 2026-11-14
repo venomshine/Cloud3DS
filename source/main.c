@@ -3509,6 +3509,7 @@ static void sr_close(void)
 	f_load(SR.scope);
 }
 
+int g_app_now; // (para el registro del vigilante)
 static char FILES_LAST[512] = "/"; // la última carpeta de Archivos
 static bool TI_by_size; // Títulos: ordenados por tamaño (si no, por nombre)
 
@@ -3566,6 +3567,7 @@ static void ti_fill(void)
 
 static void f_load(const char *path)
 {
+	WHERE("leer una carpeta");
 	// la pulsación (A o el dedo) que lleva a otra carpeta se queda aquí: si siguiera, abriría lo que quede debajo en la nueva
 	if (strcmp(F.path, path)) {
 		g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y);
@@ -3801,6 +3803,7 @@ static bool f_is_txt(const FEnt *e);
 // lee lo que hace falta para la pantalla de arriba: icono y datos del CIA o .3dsx, foto en pequeño…
 static void f_info_refresh(void)
 {
+	WHERE("información de lo elegido");
 	int idx = f_selected() ? F.v[F.sel].idx : -1;
 	if (idx == F.info_for)
 		return;
@@ -5090,6 +5093,7 @@ static const char *dl_dest_dir(const char *url)
 
 static void qrs_open(void)
 {
+	WHERE("abrir el escáner de QR");
 	if (!QRS.px)
 		QRS.px = malloc(QRCAM_W * QRCAM_H * 2);
 	if (!QRS.px)
@@ -9803,6 +9807,7 @@ static void hm_show(void)
 // abrir una aplicación: lo que tiene pantalla propia encima del inicio (vuelve sola aquí) o la suya
 static void hm_launch(int i)
 {
+	WHERE("abrir una app");
 	hm_save();
 	if (U.app == AP_FILES && U.tab == TAB_FILES && (F.path[0] == '/' || F.trash))
 		util_strlcpy(FILES_LAST, F.path, sizeof FILES_LAST);
@@ -10330,6 +10335,7 @@ static void draw_bottom(void)
 // ------------------------------------------------------------ lógica
 static void handle_dialog(int ctx, bool ok)
 {
+	WHERE("contestar un diálogo");
 	if (ctx == DLG_SHARE) { // otra consola: vincularse o que le envíe una app (también al decir que no)
 		share_answer(U.dlg_arg, ok);
 		return;
@@ -11168,7 +11174,17 @@ int main(int argc, char **argv)
 	U.want_rename = -1;
 
 	u64 last_save = util_ms();
-	while (aptMainLoop() && !U.quit) {
+	wd_start();
+	for (;;) {
+		WHERE("aptMainLoop (HOME o reposo)");
+		g_wd_pause = true; // (en HOME o en reposo no se dibuja: no es quedarse parada)
+		bool run = aptMainLoop();
+		g_wd_pause = false;
+		if (!run || U.quit)
+			break;
+		g_frames++;
+		g_app_now = hm_is_open() ? -1 : U.app;
+		WHERE("leer botones");
 		input_update();
 		gfx_tick();
 
@@ -11176,6 +11192,7 @@ int main(int argc, char **argv)
 		// (para que «conectado ahora» esté al día)
 		u64 now = util_ms();
 		bool dirty = false;
+		WHERE("copiar el estado (espera al servidor)");
 		// con la pantalla de espera, sin esperar a otro hilo: si el estado está ocupado, se copia en la vuelta siguiente
 		if (guard_on() ? state_trylock() : (state_lock(), true)) {
 			if (G.rev != s_rev || xfer_active() || now - s_copy_t > 1000) {
@@ -11187,15 +11204,18 @@ int main(int argc, char **argv)
 			state_unlock();
 		}
 
+		WHERE("avisos");
 		watch_events();
 		s_events_seen = true;
 		int upd_was = U.upd.st;
+		WHERE("actualizaciones");
 		upd_get(&U.upd);
 		// actualizada desde un archivo o desde GitHub: se ofrece reiniciar ya (si se abrió como CIA)
 		if (U.upd.st == UPD_DONE && upd_was != UPD_DONE && !envIsHomebrew() && !g_dialog.open)
 			dialog_open(DLG_UPDRESTART, _("Cloud3DS se ha actualizado"), _("Se usará la nueva versión al volver a abrirla. ¿Reiniciar Cloud3DS ahora?"),
 			            _("Reiniciar"), false);
 		static int ins_tick;
+		WHERE("cola de instalación");
 		if (U.ins_pend || ins_busy() || ++ins_tick % 20 == 0) { // la cola solo se copia entera cuando hace falta
 			int before = U.ins_pend;
 			ins_refresh();
@@ -11209,16 +11229,24 @@ int main(int argc, char **argv)
 		}
 		if (U.upd.st == UPD_AVAILABLE)
 			U.upd_seen = U.upd.rev;
+		WHERE("tapa y reposo");
 		lid_and_sleep();
+		WHERE("Compartir: avisos");
 		sh_prompts();
+		WHERE("update");
 		update();
 
+		WHERE("empezar a dibujar");
 		gfx_frame_begin();
+		WHERE("pantalla de arriba");
 		draw_top();
+		WHERE("pantalla de abajo");
 		draw_bottom();
+		WHERE("terminar de dibujar");
 		gfx_frame_end();
 
 		if (dirty && now - last_save > 3000 && !xfer_active() && !guard_on()) {
+			WHERE("guardar la configuración");
 			state_lock();
 			config_save();
 			state_unlock();
@@ -11226,6 +11254,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	wd_stop();
 	if (UN.busy) { // apagando a mitad de desinstalar: se espera a que AM termine
 		threadJoin(UN.thr, U64_MAX);
 		threadFree(UN.thr);
