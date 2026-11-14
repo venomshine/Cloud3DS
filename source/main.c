@@ -10699,7 +10699,11 @@ static struct {
 	int st, page, pages;     // st: RD_*
 	bool reflow, first;      // first: aún no se colocó en la página guardada
 	int saved_page, saved_pages;
-	int orient;              // 0 horizontal; 1 libro con la pantalla de arriba a la izquierda; 2 al revés
+	int view;                // RVV_*: horizontal, libro o panel táctil
+	int orient;              // cómo se sostiene: 0 normal; 1 de lado con la pantalla de arriba a la izquierda; 2 al revés
+	int pzoom;               // panel táctil: 0 la página entera; 1 al ancho; 2-4, más
+	float pcx, pcy;          // panel táctil: lo que se ve (0-1 en cada sentido de la página)
+	u64 legend_t;            // desde cuándo se enseñan los botones (al abrir)
 	bool rtl;                // libro: de derecha a izquierda (manga)
 	bool autorot;            // libro: girar solo hacia el lado al que se gire la consola (acelerómetro)
 	float ax;                // (el acelerómetro, suavizado)
@@ -10729,9 +10733,14 @@ static void rv_cfg_load(void)
 	done = true;
 	FILE *f = fopen(RV_CFG, "r");
 	char ln[64];
+	bool view = false;
 	while (f && fgets(ln, sizeof ln, f)) {
 		if (!strncmp(ln, "orient=", 7))
 			RV.orient = clampf(atoi(ln + 7), 0, 2);
+		else if (!strncmp(ln, "view=", 5))
+			RV.view = clampf(atoi(ln + 5), 0, 2), view = true;
+		else if (!strncmp(ln, "pzoom=", 6))
+			RV.pzoom = clampf(atoi(ln + 6), 0, 4);
 		else if (!strncmp(ln, "rtl=", 4))
 			RV.rtl = atoi(ln + 4) != 0;
 		else if (!strncmp(ln, "zoom=", 5))
@@ -10743,12 +10752,18 @@ static void rv_cfg_load(void)
 	}
 	if (f)
 		fclose(f);
+	if (!view) // (de antes de las vistas: de lado era el libro)
+		RV.view = RV.orient ? 1 : 0;
+	if (RV.view == 0)
+		RV.orient = 0;
 }
 static void rv_cfg_save(void)
 {
 	FILE *f = fopen(RV_CFG, "w");
 	if (f)
-		fprintf(f, "orient=%d\nrtl=%d\nzoom=%d\nem=%d\nauto=%d\n", RV.orient, RV.rtl ? 1 : 0, RV.zoom, RV.em, RV.autorot ? 1 : 0), fclose(f);
+		fprintf(f, "view=%d\norient=%d\nrtl=%d\nzoom=%d\npzoom=%d\nem=%d\nauto=%d\n", RV.view, RV.orient, RV.rtl ? 1 : 0, RV.zoom, RV.pzoom, RV.em,
+		        RV.autorot ? 1 : 0),
+		    fclose(f);
 }
 
 static const char *rd_kind_name(int k)
@@ -11011,15 +11026,15 @@ static void rl_bottom(void)
 	}
 	if (RL.level == 0) {
 		tab_header_w("", false, 0);
-		const char *opts[3] = {_("Recientes"), _("Todos"), _("Carpetas")};
-		float sw = (BOT_W - 40 - 36) / 3;
-		int r = segmented(40, 5, sw * 3, 22, opts, 3, RL.tab, false);
-		for (int k = 0; k < 3; k++)
+		const char *opts[2] = {_("Recientes"), _("Todos")}; // (cada documento dice su carpeta: no hace falta otra pestaña)
+		float sw = (BOT_W - 40 - 36) / 2;
+		int r = segmented(40, 5, sw * 2, 22, opts, 2, RL.tab, false);
+		for (int k = 0; k < 2; k++)
 			if (hdr_hit(40 + k * sw, 5, sw, 22))
 				r = k;
 		if ((g_kdown & (KEY_L | KEY_ZL)) && RL.tab > 0)
 			r = RL.tab - 1;
-		if ((g_kdown & (KEY_R | KEY_ZR)) && RL.tab < 2)
+		if ((g_kdown & (KEY_R | KEY_ZR)) && RL.tab < 1)
 			r = RL.tab + 1;
 		if (r >= 0 && r != RL.tab)
 			RL.tab = r, RL.l[0].sel = 0, RL.l[0].off = RL.l[0].target = 0;
@@ -11049,7 +11064,7 @@ static void rl_bottom(void)
 		int found;
 		bool sc = rlib_scanning(&found);
 		if (RL.tab == RLT_RECENT && RL.nlib)
-			empty_state(IC_CLOCK, _("Sin lecturas recientes"), _("Aquí aparecerán los documentos que abras, con la página en la que te quedaste. Elige un documento en «Todos» o «Carpetas»."));
+			empty_state(IC_CLOCK, _("Sin lecturas recientes"), _("Aquí aparecerán los documentos que abras, con la página en la que te quedaste. Elige un documento en «Todos»."));
 		else
 			empty_state(IC_BOOK, sc ? _("Buscando documentos…") : _("No hay documentos"),
 			            sc ? _("Se analiza la tarjeta SD. La primera vez puede tardar unos minutos.")
@@ -11193,7 +11208,8 @@ static void rv_open(const char *path, int ret_app)
 	RV.saved_pages = 0;
 	RV.saved_page = rlib_last_page(path, &RV.saved_pages);
 	RV.page = 0, RV.pages = 0, RV.first = true, RV.relaying = false;
-	RV.scroll = 0, RV.cx = -1, RV.menu = false, RV.hud_t = util_ms();
+	RV.scroll = 0, RV.cx = -1, RV.menu = false, RV.hud_t = RV.legend_t = util_ms();
+	RV.pcx = RV.rtl ? 1 : 0, RV.pcy = 0;
 	RV.st = RD_OPENING;
 	RV.open = rd_open(path);
 	if (!RV.open)
@@ -11211,12 +11227,116 @@ static void rv_close(void)
 		RL.built = 0xFFFFFFFF; // (el progreso cambió)
 }
 
-static bool rv_book(void) { return RV.orient != 0; }
+// ---- cómo se lee. Vista: 0 horizontal (la página a lo ancho de las dos pantallas), 1 libro (dos páginas, la consola de
+// lado), 2 panel táctil (la página arriba; abajo, el panel para moverse, pasar página y ampliar). orient: cómo se
+// sostiene la consola (0 normal; 1 de lado con la pantalla de arriba a la izquierda; 2 al revés)
+enum { RVV_SCROLL, RVV_BOOK, RVV_PAD };
+static bool rv_book(void) { return RV.view == RVV_BOOK; }
+static bool rv_pad(void) { return RV.view == RVV_PAD; }
+static bool rv_side(void) { return RV.orient != 0; }
 static int rv_rot(void) { return RV.orient == 1 ? 90 : RV.orient == 2 ? 270 : 0; }
 static int rv_zoom_w(void)
 {
 	static const int Z[4] = {320, 400, 560, 720};
 	return RV.reflow ? 320 : Z[RV.zoom];
+}
+#define RV_PZ_N 5 // panel: página entera, al ancho, 150 %, 200 % y 250 % del ancho
+static const char *rv_pz_name(int z)
+{
+	static char t[16];
+	if (z == 0)
+		return _("Página entera");
+	if (z == 1)
+		return _("Ajustar al ancho");
+	snprintf(t, sizeof t, "%d %%", 100 + (z - 1) * 50);
+	return t;
+}
+
+// ---- lo que se ve en la pantalla de abajo, en el sentido en que se lee: con la consola de lado, la interfaz va girada
+// como la página. (lx, ly) en un lienzo de RF_W × RF_H; en la pantalla, (x, y)
+static float RF_W = 320, RF_H = 240;
+static void rf_pt(float lx, float ly, float *x, float *y)
+{
+	if (RV.orient == 1)
+		*x = BOT_W - ly, *y = lx;
+	else if (RV.orient == 2)
+		*x = ly, *y = SCR_H - lx;
+	else
+		*x = lx, *y = ly;
+}
+static void rf_unpt(float x, float y, float *lx, float *ly)
+{
+	if (RV.orient == 1)
+		*lx = y, *ly = BOT_W - x;
+	else if (RV.orient == 2)
+		*lx = SCR_H - y, *ly = x;
+	else
+		*lx = x, *ly = y;
+}
+// un rectángulo del lienzo, en la pantalla
+static void rf_rect(float lx, float ly, float lw, float lh, float *x, float *y, float *w, float *h)
+{
+	float x0, y0, x1, y1;
+	rf_pt(lx, ly, &x0, &y0);
+	rf_pt(lx + lw, ly + lh, &x1, &y1);
+	*x = fminf(x0, x1), *y = fminf(y0, y1), *w = fabsf(x1 - x0), *h = fabsf(y1 - y0);
+}
+static void rf_begin(void)
+{
+	RF_W = rv_side() ? SCR_H : BOT_W, RF_H = rv_side() ? BOT_W : SCR_H;
+	C2D_Flush();
+	C2D_ViewReset();
+	if (RV.orient == 1)
+		C2D_ViewTranslate(BOT_W, 0), C2D_ViewRotateDegrees(90);
+	else if (RV.orient == 2)
+		C2D_ViewTranslate(0, SCR_H), C2D_ViewRotateDegrees(-90);
+}
+static void rf_end(void)
+{
+	C2D_Flush();
+	C2D_ViewReset();
+}
+// el toque, en el lienzo
+typedef struct {
+	bool down, held, up, drag;
+	float x, y, sx, sy, px, py;
+} RfTouch;
+static RfTouch rf_touch(void)
+{
+	RfTouch t = {g_touch.down, g_touch.held, g_touch.up, g_touch.drag, 0, 0, 0, 0, 0, 0};
+	rf_unpt(g_touch.x, g_touch.y, &t.x, &t.y);
+	rf_unpt(g_touch.sx, g_touch.sy, &t.sx, &t.sy);
+	rf_unpt(g_touch.px, g_touch.py, &t.px, &t.py);
+	return t;
+}
+static bool rf_in(const RfTouch *t, float x, float y, float w, float h) { return t->x >= x && t->x < x + w && t->y >= y && t->y < y + h; }
+static bool rf_tap(const RfTouch *t, float x, float y, float w, float h)
+{
+	return t->up && !t->drag && rf_in(t, x, y, w, h) && t->sx >= x && t->sx < x + w && t->sy >= y && t->sy < y + h;
+}
+// la cruceta y el Circle Pad, en el sentido en que se lee (arriba, abajo, izquierda, derecha del lienzo)
+static void rf_keys(u32 *up, u32 *down, u32 *left, u32 *right)
+{
+	const u32 U_ = KEY_DUP | KEY_CPAD_UP, D_ = KEY_DDOWN | KEY_CPAD_DOWN, L_ = KEY_DLEFT | KEY_CPAD_LEFT, R_ = KEY_DRIGHT | KEY_CPAD_RIGHT;
+	if (RV.orient == 1) // (el lienzo, girado a la derecha: su abajo es la izquierda de la consola)
+		*up = R_, *down = L_, *left = U_, *right = D_;
+	else if (RV.orient == 2)
+		*up = L_, *down = R_, *left = D_, *right = U_;
+	else
+		*up = U_, *down = D_, *left = L_, *right = R_;
+}
+
+static void rv_relayout(int keep);
+static void rv_set_view(int v)
+{
+	RV.view = v;
+	if (v == RVV_SCROLL)
+		RV.orient = 0;
+	else if (v == RVV_BOOK && !RV.orient)
+		RV.orient = 1;
+	RV.cx = -1, RV.legend_t = util_ms();
+	rv_drop_tex();
+	rv_relayout(RV.page);
 }
 
 // lo que se recoloca (TXT, DOCX, EPUB): el tamaño de su página depende de cómo se lea
@@ -11224,7 +11344,11 @@ static void rv_relayout(int keep)
 {
 	if (!RV.reflow)
 		return;
-	float w = rv_book() ? 240 : 320, h = rv_book() ? 380 : 480;
+	float w = 320, h = 480;
+	if (rv_book())
+		w = 240, h = 380;
+	else if (rv_pad())
+		w = rv_side() ? 240 : 400, h = rv_side() ? 400 : 240;
 	RV.lgen = rd_layout(w, h, (float)RV.em, keep);
 	RV.relaying = true;
 	rv_drop_tex();
@@ -11244,10 +11368,18 @@ static int rv_screen_page(int s)
 
 static void rv_req(int s, int page, RdReq *r)
 {
-	r->page = page, r->rot = rv_rot();
+	r->page = page, r->rot = rv_rot(), r->fit = 0;
 	if (rv_book())
-		r->tw = s == 0 ? TOP_W : BOT_W, r->th = SCR_H, r->fit = 0;
-	else
+		r->tw = s == 0 ? TOP_W : BOT_W, r->th = SCR_H;
+	else if (rv_pad()) { // entera o, desde «al ancho», ampliada (el ancho de la lectura es el alto si se sostiene de lado)
+		static const float F[RV_PZ_N] = {0, 1, 1.5f, 2, 2.5f};
+		if (RV.reflow || RV.pzoom == 0)
+			r->tw = TOP_W, r->th = SCR_H;
+		else if (rv_side())
+			r->tw = 1024, r->th = (int)(SCR_H * F[RV.pzoom]);
+		else
+			r->tw = (int)(TOP_W * F[RV.pzoom]), r->th = 1024;
+	} else
 		r->tw = rv_zoom_w(), r->th = 1024, r->fit = 1;
 }
 
@@ -11256,13 +11388,13 @@ static bool rv_req_eq(const RdReq *a, const RdReq *b)
 	return a->page == b->page && a->tw == b->tw && a->th == b->th && a->rot == b->rot && a->fit == b->fit;
 }
 
-// cada vuelta: el estado del documento y lo que hay que tener dibujado
-// libro: con el acelerómetro, hacia el lado al que se gira la consola (la gravedad, a lo largo del eje X de la
-// consola: negativa con la pantalla de arriba a la izquierda). Medio segundo apuntando al otro lado para cambiar
+// con el acelerómetro, hacia el lado al que se gira la consola (la gravedad a lo largo del eje X de la consola: negativa
+// con la pantalla de arriba a la izquierda). Medio segundo apuntando al otro lado para cambiar. En el libro solo se pasa
+// de un lado al otro; en el panel táctil, también a la posición normal
 static void rv_autorot(void)
 {
 	static bool on;
-	if (!rv_book() || !RV.autorot) {
+	if (RV.view == RVV_SCROLL || !RV.autorot) {
 		if (on)
 			HIDUSER_DisableAccelerometer(), on = false;
 		return;
@@ -11276,8 +11408,8 @@ static void rv_autorot(void)
 	accelVector a;
 	hidAccelRead(&a);
 	RV.ax = RV.ax * 0.85f + a.x * 0.15f;
-	int want = RV.ax < -220 ? 1 : RV.ax > 220 ? 2 : 0;
-	if (!want || want == RV.orient) {
+	int want = RV.ax < -220 ? 1 : RV.ax > 220 ? 2 : (rv_pad() && fabsf(RV.ax) < 90) ? 0 : RV.orient;
+	if (want == RV.orient) {
 		RV.ax_t = 0;
 		return;
 	}
@@ -11286,6 +11418,7 @@ static void rv_autorot(void)
 	else if (util_ms() - RV.ax_t > 500) {
 		RV.orient = want, RV.ax_t = 0;
 		RV.hud_t = util_ms();
+		rv_relayout(RV.page);
 	}
 }
 
@@ -11336,9 +11469,10 @@ static void rv_poll(void)
 		int w, h;
 		if (rd_get(&r, &px, &w, &h)) {
 			tex_from_rgb565(&RV.tex[s], px, w, h);
+			tex_nearest(&RV.tex[s]); // (se dibuja a píxel entero: nítida)
 			free(px);
 			RV.have[s] = r, RV.has[s] = true;
-			if (!rv_book() && s == 0) { // página nueva en horizontal: centrada
+			if (RV.view == RVV_SCROLL && s == 0) { // página nueva en horizontal: centrada
 				if (RV.cx < 0 || RV.tex[0].w <= BOT_W)
 					RV.cx = RV.tex[0].w / 2.0f;
 			}
@@ -11348,7 +11482,7 @@ static void rv_poll(void)
 	int step = rv_book() ? 2 : 1;
 	int pre[3] = {RV.page + step, RV.page + 2 * step, RV.page - step};
 	for (int k = 0; k < 3; k++) {
-		for (int s = 0; s < (rv_book() ? 2 : 1); s++) {
+		for (int s = 0; s < ns; s++) {
 			int save = RV.page;
 			RV.page = pre[k];
 			int p = RV.page >= 0 && RV.page < RV.pages ? rv_screen_page(s) : -1;
@@ -11377,6 +11511,9 @@ static void rv_go(int page)
 	bool fwd = page > RV.page;
 	RV.page = page, RV.dirty = true, RV.hud_t = util_ms();
 	RV.scroll = fwd ? -1e9f : 1e9f; // (al principio de la siguiente o al final de la anterior)
+	// panel: al principio de la siguiente (arriba, por el lado por el que se empieza) o al final de la anterior
+	RV.pcy = fwd ? 0 : 1;
+	RV.pcx = (fwd != RV.rtl) ? 0 : 1;
 }
 
 // horizontal: una franja de la página, de alto SCR_H, desde «top» (en píxeles de la página), centrada en cx
@@ -11384,13 +11521,57 @@ static void rv_strip(const Texture *t, float sw, float top)
 {
 	if (!t->ok)
 		return;
+	top = floorf(top);
 	float th = t->h, tw = t->w;
 	float y0 = fmaxf(0, top), y1 = fminf(th, top + SCR_H);
 	if (y1 <= y0)
 		return;
-	float x0 = tw <= sw ? 0 : fmaxf(0, fminf(tw - sw, RV.cx - sw / 2)), x1 = fminf(tw, x0 + sw);
-	float dx = tw <= sw ? (sw - tw) / 2 : 0;
+	float x0 = tw <= sw ? 0 : floorf(fmaxf(0, fminf(tw - sw, RV.cx - sw / 2))), x1 = fminf(tw, x0 + sw);
+	float dx = tw <= sw ? floorf((sw - tw) / 2) : 0;
 	draw_texture_part((Texture *)t, dx, y0 - top, x1 - x0, y1 - y0, x0 / tw, y0 / th, x1 / tw, y1 / th);
+}
+
+// panel: el tamaño de la página en el sentido de la lectura y la parte que se ve (en píxeles de la página, enteros)
+typedef struct {
+	float W, H;   // la página
+	float SW, SH; // la pantalla de arriba
+	float x, y;   // esquina de lo que se ve
+	float vw, vh; // lo que se ve
+	float dx, dy; // margen (si la página es más pequeña que la pantalla)
+} RvView;
+static bool rv_view(RvView *v)
+{
+	if (!RV.has[0])
+		return false;
+	const Texture *t = &RV.tex[0];
+	v->W = rv_side() ? t->h : t->w, v->H = rv_side() ? t->w : t->h;
+	v->SW = rv_side() ? SCR_H : TOP_W, v->SH = rv_side() ? TOP_W : SCR_H;
+	v->vw = fminf(v->W, v->SW), v->vh = fminf(v->H, v->SH);
+	RV.pcx = clampf(RV.pcx, 0, 1), RV.pcy = clampf(RV.pcy, 0, 1);
+	v->x = floorf((v->W - v->vw) * RV.pcx), v->y = floorf((v->H - v->vh) * RV.pcy);
+	v->dx = floorf((v->SW - v->vw) / 2), v->dy = floorf((v->SH - v->vh) / 2);
+	return true;
+}
+
+// panel: lo que se ve, en la pantalla de arriba (la textura ya va girada como la consola)
+static void rv_pad_top(void)
+{
+	RvView v;
+	if (!rv_view(&v))
+		return;
+	Texture *t = &RV.tex[0];
+	float tw = t->w, th = t->h, sx, sy, sw, sh, ux, uy, uw, uh;
+	if (RV.orient == 1) { // (en la página girada a la derecha: x = alto − y, y = x)
+		sx = v.SH - v.dy - v.vh, sy = v.dx, sw = v.vh, sh = v.vw;
+		ux = v.H - v.y - v.vh, uy = v.x, uw = v.vh, uh = v.vw;
+	} else if (RV.orient == 2) { // (a la izquierda: x = y, y = ancho − x)
+		sx = v.dy, sy = v.SW - v.dx - v.vw, sw = v.vh, sh = v.vw;
+		ux = v.y, uy = v.W - v.x - v.vw, uw = v.vh, uh = v.vw;
+	} else {
+		sx = v.dx, sy = v.dy, sw = v.vw, sh = v.vh;
+		ux = v.x, uy = v.y, uw = v.vw, uh = v.vh;
+	}
+	draw_texture_part(t, sx, sy, sw, sh, ux / tw, uy / th, (ux + uw) / tw, (uy + uh) / th);
 }
 
 static void rv_spinner(float cx, float cy)
@@ -11416,10 +11597,12 @@ static void rv_top(void)
 	}
 	if (rv_book()) {
 		if (RV.has[0]) {
-			const Texture *t = &RV.tex[0];
-			draw_texture((Texture *)t, (TOP_W - t->w) / 2.0f, (SCR_H - t->h) / 2.0f, t->w, t->h, 1);
+			Texture *t = &RV.tex[0];
+			draw_texture(t, floorf((TOP_W - t->w) / 2.0f), floorf((SCR_H - t->h) / 2.0f), t->w, t->h, 1);
 		}
-	} else if (RV.has[0]) {
+	} else if (rv_pad())
+		rv_pad_top();
+	else if (RV.has[0]) {
 		const Texture *t = &RV.tex[0];
 		float th = t->h, total = SCR_H * 2;
 		float mn = th <= total ? (th - total) / 2 : 0, mx = th <= total ? mn : th - total;
@@ -11445,35 +11628,186 @@ static void rv_top(void)
 }
 
 static void rv_menu(void);
+static void rv_exit_doc(void)
+{
+	int ret = RV.ret_app;
+	rv_close();
+	if (ret != AP_READER && ret != U.app)
+		hm_launch(ret);
+}
+
+// los botones de cada vista (en el menú y, al abrir, unos segundos en pantalla)
+static int rv_legend(const char **out)
+{
+	static char l[6][96];
+	int n = 0;
+	snprintf(l[n++], sizeof l[0], _("%s %s Página anterior y siguiente"), GLYPH_L, GLYPH_R);
+	if (RV.view == RVV_SCROLL)
+		snprintf(l[n++], sizeof l[0], _("%s Bajar y subir · ← → Cambiar de página"), GLYPH_DPAD);
+	else if (rv_pad())
+		snprintf(l[n++], sizeof l[0], _("%s Moverse por la página · %s Zoom"), GLYPH_DPAD, GLYPH_Y);
+	else
+		snprintf(l[n++], sizeof l[0], _("%s Pasar página en el sentido de la lectura"), GLYPH_DPAD);
+	if (!rv_pad())
+		snprintf(l[n++], sizeof l[0], _("%s Cambiar de vista · Tocar el centro: menú"), GLYPH_Y);
+	snprintf(l[n++], sizeof l[0], _("%s Menú · %s Salir"), GLYPH_X, GLYPH_B);
+	for (int i = 0; i < n; i++)
+		out[i] = l[i];
+	return n;
+}
+
+static void rv_cycle_view(void)
+{
+	rv_set_view((RV.view + 1) % 3);
+	toast_icon(RV.view == RVV_SCROLL ? _("Vista horizontal") : RV.view == RVV_BOOK ? _("Vista de libro (consola de lado)") : _("Panel táctil"), IC_FLIP, T.accent);
+}
+
+static void rv_pad_zoom(int d)
+{
+	if (RV.reflow)
+		return;
+	int z = RV.pzoom + d;
+	if (z < 0 || z >= RV_PZ_N)
+		return;
+	RV.pzoom = z;
+	toast_icon(rv_pz_name(z), IC_SEARCH, T.accent);
+}
+
+// un botón del lienzo (icono y, si cabe, su nombre debajo)
+static bool rf_button(const RfTouch *tc, float x, float y, float w, float h, IconId ic, const char *label, bool on)
+{
+	bool p = tc->held && rf_in(tc, x, y, w, h);
+	draw_rrect(x, y, w, h, 10, p ? 0xFF4A4A4A : on ? 0xFF3A3A3A : 0xFF2E2E2E);
+	if (label) {
+		draw_icon(ic, x + w / 2, y + h / 2 - 7, 15, on ? 0xFFFFFFFF : 0xFF9A9A9A);
+		text_draw_center_clip(label, x + w / 2, y + h - 4 - text_lineh(0.42f), w - 4, 0.42f, on ? 0xFFE0E0E0 : 0xFF8A8A8A);
+	} else
+		draw_icon(ic, x + w / 2, y + h / 2, 16, on ? 0xFFFFFFFF : 0xFF8A8A8A);
+	return on && rf_tap(tc, x, y, w, h);
+}
+
+// panel táctil (la pantalla de abajo): el mapa de la página con lo que se ve, y los botones
+static void rv_pad_bottom(const RfTouch *tc)
+{
+	const bool narrow = RF_W < 300; // (de lado: los botones en dos filas)
+	const float W = RF_W, H = RF_H, BH = narrow ? 40 : 46, AY = 30, AH = H - AY - (narrow ? 2 * BH + 6 : BH) - 10;
+	// cabecera: el documento y la página
+	char pg[32];
+	snprintf(pg, sizeof pg, "%d / %d", RV.page + 1, RV.pages);
+	float pw = text_width(pg, TS_SUB);
+	text_draw_clip(RV.name, 10, 8, W - pw - 30, TS_SUB, 0xFFB0B0B0);
+	text_draw(pg, W - 10 - pw, 8, TS_SUB, 0xFFE0E0E0);
+	// el mapa: la página entera y, encima, lo que se ve arriba. Arrastrar mueve lo que se ve (como un panel táctil)
+	RvView v;
+	bool have = rv_view(&v);
+	float mx = 10, my = AY, mw = W - 20, mh = AH;
+	draw_rrect(mx, my, mw, mh, 12, 0xFF262626);
+	if (have) {
+		float k = fminf((mw - 16) / v.W, (mh - 16) / v.H), pw2 = v.W * k, ph = v.H * k;
+		float px = mx + (mw - pw2) / 2, py = my + (mh - ph) / 2;
+		rf_end(); // (la miniatura: la textura ya va girada como la consola, se dibuja sin girar)
+		float sx, sy, sw, sh;
+		rf_rect(px, py, pw2, ph, &sx, &sy, &sw, &sh);
+		draw_texture(&RV.tex[0], sx, sy, sw, sh, 0.9f);
+		rf_begin();
+		if (v.vw < v.W || v.vh < v.H)
+			draw_rrect_outline(px + v.x * k, py + v.y * k, v.vw * k, v.vh * k, 3, 2, T.accent);
+		if (tc->held && tc->drag && rf_in(tc, mx, my, mw, mh) && tc->sy >= my && tc->sy < my + mh) {
+			if (v.W > v.vw)
+				RV.pcx += (tc->x - tc->px) / k / (v.W - v.vw);
+			if (v.H > v.vh)
+				RV.pcy += (tc->y - tc->py) / k / (v.H - v.vh);
+		}
+		if (rf_tap(tc, mx, my, mw, mh)) { // tocar: a los lados, página anterior o siguiente; en medio, el menú
+			int side = tc->x < mx + mw / 4 ? -1 : tc->x > mx + mw * 3 / 4 ? 1 : 0;
+			if (side && RV.rtl)
+				side = -side;
+			if (side)
+				rv_go(RV.page + side);
+			else
+				RV.menu = RV.menu_just = true, RV.menu_sel = 0;
+		}
+		u64 since = util_ms() - RV.legend_t;
+		if (since < 4000) {
+			const char *h = _("Arrastra para moverte · Toca los lados para pasar página");
+			text_draw_center_clip(h, mx + mw / 2, my + mh - 6 - text_lineh(TS_SUB), mw - 12, TS_SUB, 0xFFB0B0B0);
+		}
+	} else if (RV.st == RD_OPEN)
+		rv_spinner(mx + mw / 2, my + mh / 2);
+	// botones: anterior, reducir, ampliar, siguiente y menú (en el sentido de la lectura)
+	// (con el sentido de derecha a izquierda, «Anterior» queda a la derecha)
+	const float gap = 6;
+	float x[5], y[5], w[5], by = H - BH - 6;
+	if (narrow) { // arriba: anterior y siguiente; abajo: reducir, ampliar y menú
+		float bw2 = (W - 20 - gap) / 2, bw3 = (W - 20 - gap * 2) / 3, by1 = by - BH - gap;
+		x[0] = RV.rtl ? 10 + bw2 + gap : 10, x[3] = RV.rtl ? 10 : 10 + bw2 + gap, y[0] = y[3] = by1, w[0] = w[3] = bw2;
+		for (int i = 0; i < 3; i++)
+			x[(int[]){1, 2, 4}[i]] = 10 + i * (bw3 + gap), y[(int[]){1, 2, 4}[i]] = by, w[(int[]){1, 2, 4}[i]] = bw3;
+	} else {
+		float bw = (W - 20 - gap * 4) / 5;
+		int ord[5] = {0, 1, 2, 3, 4};
+		if (RV.rtl)
+			ord[0] = 3, ord[3] = 0;
+		for (int i = 0; i < 5; i++)
+			x[ord[i]] = 10 + i * (bw + gap), y[ord[i]] = by, w[ord[i]] = bw;
+	}
+	bool zoomable = !RV.reflow;
+	if (rf_button(tc, x[0], y[0], w[0], BH, RV.rtl ? IC_CHEV_RIGHT : IC_CHEV_LEFT, _("Anterior"), RV.page > 0))
+		rv_go(RV.page - 1);
+	if (rf_button(tc, x[1], y[1], w[1], BH, IC_SEARCH, _("Reducir"), zoomable && RV.pzoom > 0))
+		rv_pad_zoom(-1);
+	if (rf_button(tc, x[2], y[2], w[2], BH, IC_PLUS, _("Ampliar"), zoomable && RV.pzoom < RV_PZ_N - 1))
+		rv_pad_zoom(1);
+	if (rf_button(tc, x[3], y[3], w[3], BH, RV.rtl ? IC_CHEV_LEFT : IC_CHEV_RIGHT, _("Siguiente"), RV.page + 1 < RV.pages))
+		rv_go(RV.page + 1);
+	if (rf_button(tc, x[4], y[4], w[4], BH, IC_MENU, _("Menú"), true))
+		RV.menu = RV.menu_just = true, RV.menu_sel = 0;
+}
 
 static void rv_bottom(void)
 {
 	draw_rect(0, 0, BOT_W, SCR_H, 0xFF202020);
 	if (rv_book()) {
 		if (RV.has[1]) {
-			const Texture *t = &RV.tex[1];
-			draw_texture((Texture *)t, (BOT_W - t->w) / 2.0f, (SCR_H - t->h) / 2.0f, t->w, t->h, 1);
+			Texture *t = &RV.tex[1];
+			draw_texture(t, floorf((BOT_W - t->w) / 2.0f), floorf((SCR_H - t->h) / 2.0f), t->w, t->h, 1);
 		} else if (rv_screen_page(1) >= 0 && RV.st == RD_OPEN)
 			rv_spinner(BOT_W / 2, SCR_H / 2);
-	} else if (RV.has[0])
+	} else if (RV.view == RVV_SCROLL && RV.has[0])
 		rv_strip(&RV.tex[0], BOT_W, RV.scroll + SCR_H);
-	// número de página, un momento al cambiar
-	u64 since = util_ms() - RV.hud_t;
-	if (RV.pages > 0 && since < 1800 && !RV.menu) {
-		char t[48];
-		if (rv_book() && RV.page + 1 < RV.pages)
-			snprintf(t, sizeof t, "%d-%d / %d", RV.page + 1, RV.page + 2, RV.pages);
-		else
-			snprintf(t, sizeof t, "%d / %d", RV.page + 1, RV.pages);
-		float a = since < 1400 ? 1 : 1 - (since - 1400) / 400.0f;
-		float w = text_width(t, TS_SUB) + 20;
-		draw_rrect((BOT_W - w) / 2, SCR_H - 30, w, 22, 11, col_alpha(0xD0000000, a));
-		text_draw_center(t, BOT_W / 2, SCR_H - 30 + (22 - text_lineh(TS_SUB)) / 2, TS_SUB, col_alpha(0xFFFFFFFF, a));
+	RfTouch tc = rf_touch();
+	rf_begin();
+	if (rv_pad() && RV.st != RD_ERROR)
+		rv_pad_bottom(RV.menu || g_dialog.open ? &(RfTouch){0} : &tc);
+	// número de página, un momento al cambiar; al abrir, también los botones
+	u64 since = util_ms() - RV.hud_t, lsince = util_ms() - RV.legend_t;
+	if (!rv_pad() && RV.pages > 0 && !RV.menu) {
+		if (lsince < 5000) {
+			const char *lg[6];
+			int n = rv_legend(lg);
+			float a = lsince < 4400 ? 1 : 1 - (lsince - 4400) / 600.0f, lh = text_lineh(TS_SUB) + 3, h = n * lh + 16;
+			float y = RF_H - h - 10;
+			draw_rrect(10, y, RF_W - 20, h, 12, col_alpha(0xE0000000, a));
+			for (int i = 0; i < n; i++)
+				text_draw_clip(lg[i], 20, y + 8 + i * lh, RF_W - 40, TS_SUB, col_alpha(0xFFE0E0E0, a));
+		} else if (since < 1800) {
+			char t[48];
+			if (rv_book() && RV.page + 1 < RV.pages)
+				snprintf(t, sizeof t, "%d-%d / %d", RV.page + 1, RV.page + 2, RV.pages);
+			else
+				snprintf(t, sizeof t, "%d / %d", RV.page + 1, RV.pages);
+			float a = since < 1400 ? 1 : 1 - (since - 1400) / 400.0f;
+			float w = text_width(t, TS_SUB) + 20;
+			draw_rrect((RF_W - w) / 2, RF_H - 30, w, 22, 11, col_alpha(0xD0000000, a));
+			text_draw_center(t, RF_W / 2, RF_H - 30 + (22 - text_lineh(TS_SUB)) / 2, TS_SUB, col_alpha(0xFFFFFFFF, a));
+		}
 	}
 	if (RV.menu || g_dialog.open) {
 		rv_menu();
+		rf_end();
 		return;
 	}
+	rf_end();
 	if (RV.st == RD_ERROR) {
 		text_draw_center(_("B Volver"), BOT_W / 2, SCR_H / 2, TS_BODY, 0xFFB0B0B0);
 		if ((g_kdown & KEY_B) || g_touch.up)
@@ -11482,10 +11816,7 @@ static void rv_bottom(void)
 	}
 	// botones
 	if (g_kdown & KEY_B) {
-		int ret = RV.ret_app;
-		rv_close();
-		if (ret != AP_READER && ret != U.app)
-			hm_launch(ret);
+		rv_exit_doc();
 		return;
 	}
 	if (g_kdown & KEY_SELECT) {
@@ -11497,30 +11828,52 @@ static void rv_bottom(void)
 		RV.menu = RV.menu_just = true, RV.menu_sel = 0;
 		return;
 	}
-	if (g_kdown & KEY_Y) { // horizontal ↔ libro (con el giro automático, el lado lo da la consola; si no, de uno a otro)
-		RV.orient = RV.autorot ? (RV.orient ? 0 : 1) : (RV.orient + 1) % 3;
-		RV.cx = -1;
-		rv_drop_tex();
-		rv_relayout(RV.page);
-		toast_icon(RV.orient == 0 ? _("Modo horizontal") : RV.orient == 1 ? _("Modo libro (consola en vertical)") : _("Modo libro, orientación inversa"),
-		           IC_FLIP, T.accent);
+	if (g_kdown & KEY_Y) {
+		if (rv_pad() && !RV.reflow) // (en el panel, el zoom: de la página entera hasta el 250 % y vuelta)
+			rv_pad_zoom(RV.pzoom == RV_PZ_N - 1 ? -(RV_PZ_N - 1) : 1);
+		else
+			rv_cycle_view();
 		return;
 	}
 	if (RV.pages <= 0)
 		return;
+	if (g_kdown & (KEY_A | KEY_B | KEY_X | KEY_Y | KEY_L | KEY_R | KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT))
+		RV.legend_t = 0; // (con el primer botón, la ayuda se va)
 	int step = rv_book() ? 2 : 1;
+	u32 up, down, left, right;
+	rf_keys(&up, &down, &left, &right);
 	u32 next = KEY_R | KEY_ZR | KEY_A, prev = KEY_L | KEY_ZL;
-	if (!rv_book())
+	if (RV.view == RVV_SCROLL)
 		next |= KEY_DRIGHT | KEY_CPAD_RIGHT, prev |= KEY_DLEFT | KEY_CPAD_LEFT;
-	else { // la cruceta, según cómo se sostiene: «siguiente» es la flecha que apunta hacia donde se lee
-		u32 right = RV.orient == 1 ? KEY_DDOWN | KEY_CPAD_DOWN : KEY_DUP | KEY_CPAD_UP, left = RV.orient == 1 ? KEY_DUP | KEY_CPAD_UP : KEY_DDOWN | KEY_CPAD_DOWN;
+	else if (rv_book()) // la cruceta, según cómo se sostiene: «siguiente» es la flecha que apunta hacia donde se lee
 		next |= RV.rtl ? left : right, prev |= RV.rtl ? right : left;
-	}
 	if (g_krepeat & next)
 		rv_go(RV.page + step);
 	else if (g_krepeat & prev)
 		rv_go(RV.page - step);
-	if (!rv_book()) { // desplazarse por la página: cruceta, Circle Pad o el dedo; al final, a la siguiente
+	if (rv_pad()) { // moverse por la página: cruceta o Circle Pad (en el sentido de la lectura)
+		RvView v;
+		if (rv_view(&v)) {
+			u32 h = hidKeysHeld();
+			float sp = 6;
+			if (v.W > v.vw)
+				RV.pcx += ((h & right) ? sp : (h & left) ? -sp : 0) / (v.W - v.vw);
+			if (v.H > v.vh) {
+				float dy = (h & down) ? sp : (h & up) ? -sp : 0;
+				if (dy > 0 && RV.pcy >= 1 && (g_kdown & down)) // al final, a la siguiente
+					rv_go(RV.page + 1);
+				else if (dy < 0 && RV.pcy <= 0 && (g_kdown & up))
+					rv_go(RV.page - 1);
+				else
+					RV.pcy += dy / (v.H - v.vh);
+			} else if (g_kdown & down)
+				rv_go(RV.page + 1);
+			else if (g_kdown & up)
+				rv_go(RV.page - 1);
+		}
+		return;
+	}
+	if (RV.view == RVV_SCROLL) { // desplazarse por la página: cruceta, Circle Pad o el dedo; al final, a la siguiente
 		float th = RV.has[0] ? RV.tex[0].h : 0, total = SCR_H * 2;
 		float mx = th > total ? th - total : 0;
 		if (g_krepeat & KEY_DDOWN) {
@@ -11547,15 +11900,9 @@ static void rv_bottom(void)
 				RV.cx = fmaxf(BOT_W / 2.0f, fminf(RV.tex[0].w - BOT_W / 2.0f, RV.cx - (g_touch.x - g_touch.px)));
 		}
 	}
-	// tocar: a los lados (los de verdad, según cómo se sostiene), página anterior o siguiente; en medio, las opciones
-	if (g_touch.up && !g_touch.drag) {
-		int side = 0; // -1 a la izquierda, 1 a la derecha (vistos por quien lee)
-		if (!rv_book())
-			side = g_touch.x < BOT_W / 4 ? -1 : g_touch.x > BOT_W * 3 / 4 ? 1 : 0;
-		else {
-			int t = g_touch.y < SCR_H / 3 ? -1 : g_touch.y > SCR_H * 2 / 3 ? 1 : 0; // (arriba / abajo de la pantalla)
-			side = RV.orient == 1 ? t : -t;
-		}
+	// tocar: a los lados (en el sentido de la lectura), página anterior o siguiente; en medio, el menú
+	if (tc.up && !tc.drag) {
+		int side = tc.x < RF_W / 4 ? -1 : tc.x > RF_W * 3 / 4 ? 1 : 0;
 		if (side && rv_book() && RV.rtl)
 			side = -side;
 		if (side < 0)
@@ -11567,74 +11914,133 @@ static void rv_bottom(void)
 	}
 }
 
+static void text_draw_right_clip(const char *t, float rx, float y, float maxw, float sc, u32 c)
+{
+	float w = fminf(text_width(t, sc), maxw);
+	text_draw_clip(t, rx - w, y, maxw, sc, c);
+}
+
+// el menú del Lector: en el lienzo (girado con la consola), con lo que hace cada botón al final
 static void rv_menu(void)
 {
-	IconId ic[8];
-	const char *lab[8];
-	u32 col[8];
-	int act[8], n = 0;
-	static char pg[64];
-	ic[n] = IC_FLIP, col[n] = T.text, act[n++] = 0;
-	lab[n - 1] = RV.orient == 0 ? _("Modo libro (consola en vertical)") : _("Invertir la orientación");
-	if (RV.orient) // (y volver a horizontal, siempre a mano)
-		ic[n] = IC_BOOK, lab[n] = _("Modo horizontal"), col[n] = T.text, act[n++] = 9;
-	if (rv_book()) {
-		ic[n] = IC_UNDO, lab[n] = RV.rtl ? _("Leer de izquierda a derecha") : _("Leer de derecha a izquierda (manga)"), col[n] = T.text, act[n++] = 1;
-		ic[n] = RV.autorot ? IC_CHECK : IC_FLIP, lab[n] = RV.autorot ? _("Rotación automática: activada") : _("Activar la rotación automática"), col[n] = T.text, act[n++] = 8;
+	RfTouch tc = rf_touch();
+	if (g_dialog.open)
+		return;
+	if (RV.menu_just) {
+		RV.menu_just = false, RV.menu_anim = 0;
+		tc = (RfTouch){0}; // (el toque que lo abrió no cuenta)
 	}
-	if (!RV.reflow && !rv_book()) {
-		if (RV.zoom < 3)
-			ic[n] = IC_SEARCH, lab[n] = _("Ampliar"), col[n] = T.text, act[n++] = 2;
-		if (RV.zoom > 0)
-			ic[n] = IC_GRID, lab[n] = _("Ajustar a la pantalla"), col[n] = T.text, act[n++] = 3;
+	RV.menu_anim = approach(RV.menu_anim, 1, 14);
+	enum { M_VIEW, M_FLIP, M_AUTO, M_RTL, M_ZOOM, M_BIG, M_SMALL, M_PAGE, M_CLOSE };
+	struct { IconId ic; const char *t; const char *v; int act; } it[10];
+	int n = 0;
+	static char pg[48];
+	const char *vn = RV.view == RVV_SCROLL ? _("Horizontal") : RV.view == RVV_BOOK ? _("Libro") : _("Panel táctil");
+	it[n++] = (typeof(it[0])){IC_BOOK, _("Vista"), vn, M_VIEW};
+	if (rv_side())
+		it[n++] = (typeof(it[0])){IC_FLIP, _("Girar al otro lado"), NULL, M_FLIP};
+	if (RV.view != RVV_SCROLL)
+		it[n++] = (typeof(it[0])){IC_REFRESH, _("Rotación automática"), RV.autorot ? _("Sí") : _("No"), M_AUTO};
+	if (RV.view != RVV_SCROLL)
+		it[n++] = (typeof(it[0])){IC_UNDO, _("Sentido de lectura"), RV.rtl ? _("Derecha a izquierda") : _("Izquierda a derecha"), M_RTL};
+	if (!RV.reflow && RV.view != RVV_BOOK) {
+		static char zt[16];
+		if (rv_pad())
+			util_strlcpy(zt, rv_pz_name(RV.pzoom), sizeof zt);
+		else
+			snprintf(zt, sizeof zt, "%d %%", rv_zoom_w() * 100 / 320);
+		it[n++] = (typeof(it[0])){IC_SEARCH, _("Zoom"), zt, M_ZOOM};
 	}
 	if (RV.reflow) {
-		ic[n] = IC_TEXTSIZE, lab[n] = _("Letra más grande"), col[n] = T.text, act[n++] = 4;
-		ic[n] = IC_FONT, lab[n] = _("Letra más pequeña"), col[n] = T.text, act[n++] = 5;
+		it[n++] = (typeof(it[0])){IC_TEXTSIZE, _("Letra más grande"), NULL, M_BIG};
+		it[n++] = (typeof(it[0])){IC_FONT, _("Letra más pequeña"), NULL, M_SMALL};
 	}
 	if (RV.pages > 1) {
-		snprintf(pg, sizeof pg, _("Ir a la página… (%d de %d)"), RV.page + 1, RV.pages);
-		ic[n] = IC_BOOK, lab[n] = pg, col[n] = T.text, act[n++] = 6;
+		snprintf(pg, sizeof pg, _("%d de %d"), RV.page + 1, RV.pages);
+		it[n++] = (typeof(it[0])){IC_LIST, _("Ir a la página…"), pg, M_PAGE};
 	}
-	ic[n] = IC_CLOSE, lab[n] = _("Cerrar el documento"), col[n] = T.danger, act[n++] = 7;
-	int r = sheet_list(&RV.menu, &RV.menu_just, &RV.menu_anim, &RV.menu_sel, RV.name, ic, lab, col, n);
-	if (r < 0)
+	it[n++] = (typeof(it[0])){IC_CLOSE, _("Cerrar el documento"), NULL, M_CLOSE};
+	// teclas, en el sentido de la lectura
+	u32 up, down, left, right;
+	rf_keys(&up, &down, &left, &right);
+	if (g_krepeat & down)
+		RV.menu_sel = (RV.menu_sel + 1) % n, U.buttons = true;
+	if (g_krepeat & up)
+		RV.menu_sel = (RV.menu_sel + n - 1) % n, U.buttons = true;
+	if (RV.menu_sel >= n)
+		RV.menu_sel = n - 1;
+	// dibujo: un panel que ocupa el lienzo
+	const bool two = rv_side(); // (de lado, el lienzo es estrecho: el valor, debajo del nombre)
+	const float W = RF_W, H = RF_H, RH = two ? 34 : 24;
+	float a = RV.menu_anim;
+	draw_rect(0, 0, W, H, col_alpha(0xF0181818, a));
+	text_draw_clip(RV.name, 12, 8, W - 70, TS_SUB, col_alpha(0xFFB0B0B0, a));
+	float cw = text_width(_("Cerrar"), TS_SUB) + 30;
+	draw_rrect(W - cw - 8, 5, cw, 20, 10, col_alpha(0xFF333333, a));
+	text_draw_center(_("Cerrar"), W - 8 - cw / 2 + 6, 15 - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(0xFFE0E0E0, a));
+	draw_icon(IC_CLOSE, W - cw + 2, 15, 9, col_alpha(0xFFE0E0E0, a));
+	bool close = rf_tap(&tc, W - cw - 12, 0, cw + 12, 30) || (g_kdown & (KEY_B | KEY_X | KEY_START));
+	float y = 32;
+	int run = -1;
+	for (int i = 0; i < n; i++, y += RH) {
+		bool sel = U.buttons && RV.menu_sel == i;
+		bool pr = tc.held && rf_in(&tc, 6, y, W - 12, RH);
+		if (sel || pr)
+			draw_rrect(6, y, W - 12, RH - 2, 8, col_alpha(0xFF333333, a));
+		u32 c = it[i].act == M_CLOSE ? T.danger : 0xFFE6E6E6;
+		draw_icon(it[i].ic, 22, y + RH / 2 - 1, 13, col_alpha(c, a));
+		if (two && it[i].v) {
+			text_draw_clip(it[i].t, 38, y + 2, W - 50, TS_BODY, col_alpha(c, a));
+			text_draw_clip(it[i].v, 38, y + 3 + text_lineh(TS_BODY), W - 50, TS_SUB, col_alpha(T.accent, a));
+		} else {
+			float vw = it[i].v ? fminf(text_width(it[i].v, TS_SUB), W * 0.45f) : 0;
+			text_draw_clip(it[i].t, 38, y + (RH - 2 - text_lineh(TS_BODY)) / 2, W - 60 - vw, TS_BODY, col_alpha(c, a));
+			if (it[i].v)
+				text_draw_right_clip(it[i].v, W - 14, y + (RH - 2 - text_lineh(TS_SUB)) / 2, W * 0.45f, TS_SUB, col_alpha(T.accent, a));
+		}
+		if (rf_tap(&tc, 6, y, W - 12, RH))
+			run = i, RV.menu_sel = i;
+	}
+	if (g_kdown & KEY_A)
+		run = RV.menu_sel;
+	// los botones de esta vista
+	const char *lg[6];
+	int nl = rv_legend(lg);
+	float lh = text_lineh(TS_SUB) + 2, ly = H - nl * lh - 8;
+	if (ly > y + 4) {
+		draw_rect(12, ly - 6, W - 24, 1, col_alpha(0xFF3A3A3A, a));
+		for (int i = 0; i < nl; i++)
+			text_draw_clip(lg[i], 12, ly + i * lh, W - 24, TS_SUB, col_alpha(0xFF9A9A9A, a));
+	}
+	g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y | KEY_START);
+	if (close) {
+		RV.menu = false;
 		return;
-	switch (act[r]) {
-	case 9:
-		RV.orient = 0;
-		RV.cx = -1;
-		rv_drop_tex();
-		rv_relayout(RV.page);
-		break;
-	case 0:
-		if (RV.orient == 0)
-			RV.orient = 1; // a libro (con el giro automático, el lado lo pone la consola)
-		else
-			RV.orient = RV.orient == 1 ? 2 : 1, RV.autorot = false; // al otro lado, a mano: si no, el sensor lo devolvería
-		RV.cx = -1;
-		rv_drop_tex();
-		rv_relayout(RV.page);
-		break;
-	case 1: RV.rtl = !RV.rtl; break;
-	case 8: RV.autorot = !RV.autorot; break;
-	case 2:
-	case 3:
-		RV.zoom = act[r] == 2 ? RV.zoom + 1 : 0;
-		RV.cx = -1;
-		break;
-	case 4:
-	case 5:
-		RV.em = clampf(RV.em + (act[r] == 4 ? 1 : -1), 8, 20);
-		rv_relayout(RV.page);
-		break;
-	case 6: RV.want_page = true; break;
-	default: {
-		int ret = RV.ret_app;
-		rv_close();
-		if (ret != AP_READER && ret != U.app)
-			hm_launch(ret);
 	}
+	if (run < 0)
+		return;
+	switch (it[run].act) {
+	case M_VIEW: rv_set_view((RV.view + 1) % 3); break;
+	case M_FLIP:
+		RV.orient = RV.orient == 1 ? 2 : 1, RV.autorot = false; // (a mano: si no, el sensor lo devolvería)
+		rv_drop_tex();
+		rv_relayout(RV.page);
+		break;
+	case M_AUTO: RV.autorot = !RV.autorot; break;
+	case M_RTL: RV.rtl = !RV.rtl; break;
+	case M_ZOOM:
+		if (rv_pad())
+			RV.pzoom = (RV.pzoom + 1) % RV_PZ_N;
+		else
+			RV.zoom = (RV.zoom + 1) % 4, RV.cx = -1;
+		break;
+	case M_BIG:
+	case M_SMALL:
+		RV.em = clampf(RV.em + (it[run].act == M_BIG ? 1 : -1), 8, 20);
+		rv_relayout(RV.page);
+		break;
+	case M_PAGE: RV.menu = false, RV.want_page = true; break;
+	default: rv_exit_doc();
 	}
 }
 

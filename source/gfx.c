@@ -777,6 +777,11 @@ bool tex_from_rgb565(Texture *t, const u16 *px, int w, int h) {
     return true;
 }
 
+// a píxel entero, sin suavizar (páginas del Lector: se dibujan a su tamaño)
+void tex_nearest(Texture *t) {
+    if (t->ok) C3D_TexSetFilter(&t->tex, GPU_NEAREST, GPU_NEAREST);
+}
+
 void tex_free(Texture *t) {
     if (t->ok) C3D_TexDelete(&t->tex);
     t->ok = false;

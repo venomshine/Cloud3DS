@@ -1,6 +1,90 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Aquí aparecerán los documentos que abras, con la página en la que te quedaste. Elige un documento en «Todos».':
+        ('Documents you open will appear here, at the page where you left off. Choose a document in “All”.',
+         '開いた文書が、読み終えたページとともにここに表示されます。「すべて」から文書を選んでください。'),
+    'Página entera':
+        ('Whole page',
+         'ページ全体'),
+    'Ajustar al ancho':
+        ('Fit to width',
+         '幅に合わせる'),
+    '%s %s Página anterior y siguiente':
+        ('%s %s Previous and next page',
+         '%s %s 前のページ・次のページ'),
+    '%s Bajar y subir · ← → Cambiar de página':
+        ('%s Scroll down and up · ← → Change page',
+         '%s 上下にスクロール · ← → ページ移動'),
+    '%s Moverse por la página · %s Zoom':
+        ('%s Move around the page · %s Zoom',
+         '%s ページ内を移動 · %s ズーム'),
+    '%s Pasar página en el sentido de la lectura':
+        ('%s Turn the page in reading direction',
+         '%s 読む方向にページをめくる'),
+    '%s Cambiar de vista · Tocar el centro: menú':
+        ('%s Change view · Tap the center: menu',
+         '%s 表示を切り替え · 中央をタップ: メニュー'),
+    '%s Menú · %s Salir':
+        ('%s Menu · %s Exit',
+         '%s メニュー · %s 終了'),
+    'Vista horizontal':
+        ('Horizontal view',
+         '横表示'),
+    'Vista de libro (consola de lado)':
+        ('Book view (console on its side)',
+         'ブック表示(本体を縦に持つ)'),
+    'Panel táctil':
+        ('Touch panel',
+         'タッチパネル'),
+    'Arrastra para moverte · Toca los lados para pasar página':
+        ('Drag to move · Tap the sides to turn the page',
+         'ドラッグで移動 · 左右をタップでページをめくる'),
+    'Reducir':
+        ('Zoom out',
+         '縮小'),
+    'Menú':
+        ('Menu',
+         'メニュー'),
+    'Horizontal':
+        ('Horizontal',
+         '横'),
+    'Libro':
+        ('Book',
+         'ブック'),
+    'Vista':
+        ('View',
+         '表示'),
+    'Girar al otro lado':
+        ('Rotate to the other side',
+         '反対側に回転'),
+    'Rotación automática':
+        ('Auto-rotate',
+         '自動回転'),
+    'Sí':
+        ('Yes',
+         'はい'),
+    'No':
+        ('No',
+         'いいえ'),
+    'Sentido de lectura':
+        ('Reading direction',
+         '読む方向'),
+    'Derecha a izquierda':
+        ('Right to left',
+         '右から左'),
+    'Izquierda a derecha':
+        ('Left to right',
+         '左から右'),
+    'Zoom':
+        ('Zoom',
+         'ズーム'),
+    '%d de %d':
+        ('%d of %d',
+         '%d / %d'),
+    'Ir a la página…':
+        ('Go to page…',
+         'ページへ移動…'),
     '«%s» se guardó en /Music/SoundCloud':
         ('“%s” was saved to /Music/SoundCloud',
          '「%s」を/Music/SoundCloudに保存しました'),
@@ -199,27 +283,15 @@ TR = {
     'B Volver':
         ('B Back',
          'B 戻る'),
-    'Leer de izquierda a derecha':
-        ('Read left to right',
-         '左から右へ読む'),
-    'Leer de derecha a izquierda (manga)':
-        ('Read right to left (manga)',
-         '右から左へ読む(マンガ)'),
     'Ampliar':
         ('Zoom in',
          '拡大'),
-    'Ajustar a la pantalla':
-        ('Fit to screen',
-         '画面に合わせる'),
     'Letra más grande':
         ('Larger text',
          '文字を大きく'),
     'Letra más pequeña':
         ('Smaller text',
          '文字を小さく'),
-    'Ir a la página… (%d de %d)':
-        ('Go to page… (%d of %d)',
-         'ページへ移動…(%d / %d)'),
     'Cerrar el documento':
         ('Close the document',
          'ドキュメントを閉じる'),
@@ -3073,12 +3145,6 @@ TR = {
     'No se pudo escribir en la SD. Comprueba el espacio disponible.':
         ('Could not write to the SD card. Check the available space.',
          'SDカードに書き込めませんでした(空き容量不足?)'),
-    'Rotación automática: activada':
-        ('Auto-rotation: on',
-         '自動回転: オン'),
-    'Activar la rotación automática':
-        ('Turn on auto-rotation',
-         '自動回転をオンにする'),
     'Aquí aparecerán las descargas desde un enlace, un código QR o la Nube. Puedes pausarlas, reanudarlas o cancelarlas.':
         ('Downloads from a link, a QR code or the Cloud will appear here. You can pause, resume or cancel them.',
          'リンク、QRコード、クラウドからのダウンロードがここに表示されます。一時停止、再開、キャンセルができます。'),
@@ -3088,21 +3154,6 @@ TR = {
     'Sin lecturas recientes':
         ('No recent reading',
          '最近読んだものはありません'),
-    'Aquí aparecerán los documentos que abras, con la página en la que te quedaste. Elige un documento en «Todos» o «Carpetas».':
-        ('Documents you open will appear here, with the page where you left off. Choose a document in “All” or “Folders”.',
-         '開いたものが読んでいるページとともにここに表示されます。「すべて」または「フォルダー」から選んでください。'),
-    'Modo horizontal':
-        ('Horizontal mode',
-         '横向きモード'),
-    'Modo libro (consola en vertical)':
-        ('Book mode (console held vertically)',
-         'ブックモード(本体を縦に)'),
-    'Modo libro, orientación inversa':
-        ('Book mode, reversed orientation',
-         'ブックモード(逆向き)'),
-    'Invertir la orientación':
-        ('Reverse the orientation',
-         '向きを反転'),
     'Continuar la lectura':
         ('Continue reading',
          '続きを読む'),

@@ -106,6 +106,7 @@ float approach(float v, float target, float speed);   // suavizado exponencial
 typedef struct { C3D_Tex tex; Tex3DS_SubTexture sub; C2D_Image img; int w, h; bool ok; } Texture;
 bool tex_from_rgba(Texture *t, const u8 *rgba, int w, int h);   // w,h <= 1024
 bool tex_from_rgb565(Texture *t, const u16 *px, int w, int h);  // reutilizable (cámara)
+void tex_nearest(Texture *t);
 void tex_free(Texture *t);
 void draw_texture(Texture *t, float x, float y, float w, float h, float alpha);
 void draw_texture_tint(Texture *t, float x, float y, float w, float h, u32 col);
