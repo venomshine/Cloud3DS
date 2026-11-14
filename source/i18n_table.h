@@ -598,6 +598,7 @@ static const TrEntry TR_TAB[] = {
 	{"Las partidas de los juegos van cifradas dentro de «Nintendo 3DS». Haz una copia con Checkpoint o JKSM y aparecerá aquí.", "Game saves are encrypted inside “Nintendo 3DS”. Back them up with Checkpoint or JKSM and they'll show up here.", "セーブデータは「Nintendo 3DS」内で暗号化されています。CheckpointやJKSMでバックアップするとここに表示されます。"},
 	{"No se encontró nada con «%s»", "Nothing found for “%s”", "「%s」に一致するものはありません"},
 	{"La búsqueda incluye esta carpeta y todas sus subcarpetas.", "The search covers this folder and all its subfolders.", "このフォルダとすべてのサブフォルダを検索します。"},
+	{"Leyendo los títulos instalados…", "Reading installed titles…", "インストール済みのタイトルを読み込み中…"},
 	{"No hay juegos ni apps instalados en la SD", "No games or apps installed on the SD", "SDにインストールされたゲームやアプリはありません"},
 	{"La papelera está vacía", "The trash is empty", "ゴミ箱は空です"},
 	{"Los elementos eliminados se conservan %d días", "Deleted items are kept for %d days", "削除した項目は%d日間保持されます"},

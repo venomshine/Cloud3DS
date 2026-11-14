@@ -1729,6 +1729,9 @@ TR = {
     '%d títulos · %s':
         ('%d titles · %s',
          '%d タイトル · %s'),
+    'Leyendo los títulos instalados…':
+        ('Reading installed titles…',
+         'インストール済みのタイトルを読み込み中…'),
     'No hay juegos ni apps instalados en la SD':
         ('No games or apps installed on the SD',
          'SDにインストールされたゲームやアプリはありません'),

@@ -1550,6 +1550,7 @@ static void un_card(void)
 
 // cada vuelta: al terminar el hilo, se avisa y se vuelve a leer la lista
 static void titles_reload(void);
+static void tl_poll(void);
 static void un_poll(void)
 {
 	if (!UN.busy || !UN.done)
@@ -3506,11 +3507,59 @@ static void sr_close(void)
 }
 
 static bool TI_by_size; // Títulos: ordenados por tamaño (si no, por nombre)
+
+// la lista de títulos se lee en su hilo (leer el nombre de cada uno lleva su tiempo): mientras, se ve la anterior
+static struct {
+	Thread thr;
+	volatile bool done;
+	bool run, again;
+	TitleInfo *res;
+	int n;
+} TL;
+
+static void tl_thread(void *arg)
+{
+	(void)arg;
+	TL.n = titles_list(&TL.res);
+	TL.done = true;
+}
+
+static void tl_start(void)
+{
+	if (TL.run) { // ya se está leyendo: otra vez al terminar (lo de ahora puede llegar tarde)
+		TL.again = true;
+		return;
+	}
+	TL.run = true, TL.done = false, TL.res = NULL;
+	s32 prio = 0x30;
+	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	TL.thr = threadCreate(tl_thread, NULL, 32 * 1024, prio + 1, -2, false);
+	if (!TL.thr)
+		tl_thread(NULL);
+}
+
+static bool tl_loading(void) { return TL.run; }
 static int f_cmp_size_desc(const void *a, const void *b)
 {
 	const FEnt *x = a, *y = b;
 	return x->size < y->size ? 1 : x->size > y->size ? -1 : strcasecmp(x->name, y->name);
 }
+static void ti_fill(void)
+{
+	F.n = 0;
+	for (int i = 0; i < TI_n && F.n < F_MAX; i++) {
+		FEnt *e = &F.e[F.n++];
+		memset(e, 0, sizeof *e);
+		util_strlcpy(e->name, TI[i].title, sizeof e->name);
+		e->size = TI[i].size + TI[i].upd_size + TI[i].dlc_size;
+		e->tid = (u32)i;
+	}
+	if (TI_by_size) // los que más ocupan, primero
+		qsort(F.e, F.n, sizeof *F.e, f_cmp_size_desc);
+	F.err = F.missing = false;
+	f_build_view();
+}
+
 static void f_load(const char *path)
 {
 	// la pulsación (A o el dedo) que lleva a otra carpeta se queda aquí: si siguiera, abriría lo que quede debajo en la nueva
@@ -3531,25 +3580,10 @@ static void f_load(const char *path)
 	F.need_reload = false;
 	F.trash = !strcmp(path, "@trash");
 	F.titles = !strcmp(path, "@titles");
-	if (F.titles) { // juegos y apps de la SD, por nombre
-		if (!same || !TI) {
-			free(TI);
-			TI = NULL;
-			TI_n = titles_list(&TI);
-			if (TI_n < 0)
-				TI_n = 0;
-		}
-		for (int i = 0; i < TI_n && F.n < F_MAX; i++) {
-			FEnt *e = &F.e[F.n++];
-			memset(e, 0, sizeof *e);
-			util_strlcpy(e->name, TI[i].title, sizeof e->name);
-			e->size = TI[i].size + TI[i].upd_size + TI[i].dlc_size;
-			e->tid = (u32)i;
-		}
-		if (TI_by_size) // los que más ocupan, primero
-			qsort(F.e, F.n, sizeof *F.e, f_cmp_size_desc);
-		F.err = F.missing = false;
-		f_build_view();
+	if (F.titles) { // juegos y apps de la SD, por nombre: al entrar se ve lo último leído y se vuelve a leer en su hilo
+		if (!same || !TI)
+			tl_start();
+		ti_fill();
 		if (!same) {
 			ms_end();
 			F.sel = 0;
@@ -5861,6 +5895,146 @@ static struct {
 	s64 ext;        // cuánto ocupan sus datos extra (-1: no tiene)
 } TT;
 
+// lo de cada título que cuesta leer (icono, copias de la partida y datos extra) se lee en su hilo y se guarda: moverse
+// por la lista nunca espera a la SD; mientras llega, la pantalla de arriba enseña lo que ya sabe
+#define TW_N 16
+typedef struct {
+	u64  tid;
+	bool icon;
+	u16  px[48 * 48];
+	int  copies;
+	u64  last;
+	s64  ext;
+} TwEnt;
+static struct {
+	Thread thr;
+	LightEvent ev;
+	LightLock lk;
+	volatile bool quit;
+	bool init, has_want;
+	TitleInfo want;
+	u32 gen;
+	TwEnt e[TW_N];
+	int next;
+} TW;
+
+static void tw_thread(void *arg)
+{
+	(void)arg;
+	static TwEnt r;
+	while (!TW.quit) {
+		LightEvent_Wait(&TW.ev);
+		for (;;) {
+			LightLock_Lock(&TW.lk);
+			bool has = TW.has_want;
+			TitleInfo t = TW.want;
+			u32 gen = TW.gen;
+			TW.has_want = false;
+			LightLock_Unlock(&TW.lk);
+			if (!has || TW.quit)
+				break;
+			r.tid = t.tid;
+			r.icon = title_icon(t.tid, r.px);
+			r.copies = save_backups_count(&t, &r.last);
+			r.ext = extdata_size(&t);
+			LightLock_Lock(&TW.lk);
+			if (gen == TW.gen) { // (si se olvidó todo mientras se leía, esto ya no vale)
+				int k = 0;
+				while (k < TW_N && TW.e[k].tid != r.tid)
+					k++;
+				if (k == TW_N)
+					k = TW.next, TW.next = (TW.next + 1) % TW_N;
+				TW.e[k] = r;
+			}
+			LightLock_Unlock(&TW.lk);
+		}
+	}
+}
+
+// lo leído de un título; si aún no está, se pide (lo último pedido es lo siguiente que se lee) y devuelve false
+static bool tw_get(const TitleInfo *t, TwEnt *out, bool with_px)
+{
+	if (!TW.init) {
+		TW.init = true;
+		LightEvent_Init(&TW.ev, RESET_ONESHOT);
+		LightLock_Init(&TW.lk);
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		TW.thr = threadCreate(tw_thread, NULL, 64 * 1024, prio + 1, -2, false);
+	}
+	if (!TW.thr) { // sin hilo: como antes, aquí mismo
+		out->tid = t->tid;
+		out->icon = with_px && title_icon(t->tid, out->px);
+		out->copies = save_backups_count(t, &out->last);
+		out->ext = extdata_size(t);
+		return true;
+	}
+	bool ok = false;
+	LightLock_Lock(&TW.lk);
+	for (int k = 0; k < TW_N; k++)
+		if (TW.e[k].tid == t->tid) {
+			if (with_px)
+				*out = TW.e[k];
+			else
+				out->tid = t->tid, out->icon = TW.e[k].icon, out->copies = TW.e[k].copies, out->last = TW.e[k].last, out->ext = TW.e[k].ext;
+			ok = true;
+			break;
+		}
+	bool ask = !ok && (!TW.has_want || TW.want.tid != t->tid);
+	if (ask)
+		TW.want = *t, TW.has_want = true;
+	LightLock_Unlock(&TW.lk);
+	if (ask)
+		LightEvent_Signal(&TW.ev);
+	return ok;
+}
+
+// algo cambió (copia nueva, desinstalado, datos extra borrados): se vuelve a leer
+static void tw_forget(void)
+{
+	if (TW.init)
+		LightLock_Lock(&TW.lk);
+	TW.gen++;
+	for (int k = 0; k < TW_N; k++)
+		TW.e[k].tid = 0;
+	if (TW.init)
+		LightLock_Unlock(&TW.lk);
+	TT.info_tid = 0;
+}
+
+static void tw_exit(void)
+{
+	if (!TW.thr)
+		return;
+	TW.quit = true;
+	LightEvent_Signal(&TW.ev);
+	threadJoin(TW.thr, 3000000000ull);
+	threadFree(TW.thr);
+	TW.thr = NULL;
+}
+
+// pasa al título elegido lo que ya se haya leído de él; ¿está todo?
+static bool tt_sync(const TitleInfo *t)
+{
+	if (!t)
+		return false;
+	if (TT.info_tid == t->tid && TT.icon_tid == t->tid)
+		return true;
+	static TwEnt r;
+	bool need_px = TT.icon_tid != t->tid;
+	if (!tw_get(t, &r, need_px))
+		return false;
+	if (need_px) {
+		TT.icon_tid = t->tid;
+		if (r.icon)
+			tex_from_rgb565(&TT.icon, r.px, 48, 48);
+		else
+			tex_free(&TT.icon);
+	}
+	TT.info_tid = t->tid, TT.copies = r.copies, TT.last = r.last, TT.ext = r.ext;
+	return true;
+}
+
 static const TitleInfo *tt_selected(void)
 {
 	const FEnt *e = f_selected();
@@ -5876,7 +6050,7 @@ static void tt_backup(const TitleInfo *t)
 		event_add(EV_CREATE, t->title, G.console, 0);
 		state_unlock();
 		toast_icon(_("Copia de seguridad guardada (formato de Checkpoint)"), IC_CHECK, T.ok);
-		TT.info_tid = 0; // que se vuelvan a contar
+		tw_forget(); // que se vuelvan a contar
 	} else
 		toast_icon(r == -1 ? _("Este juego todavía no tiene datos guardados") : _("No se pudo crear la copia de seguridad"), IC_CLOSE, r == -1 ? T.warn : T.danger);
 }
@@ -5886,11 +6060,7 @@ static void tt_draw(void)
 	const TitleInfo *t = tt_selected();
 	if (!t && TT.open)
 		TT.open = false;
-	if (t && TT.info_tid != t->tid) { // cuántas copias tiene y sus datos extra (la pantalla de arriba usa lo mismo)
-		TT.info_tid = t->tid;
-		TT.copies = save_backups_count(t, &TT.last);
-		TT.ext = extdata_size(t);
-	}
+	bool rdy = tt_sync(t); // cuántas copias tiene y sus datos extra (la pantalla de arriba usa lo mismo)
 	// «Ver sus copias» solo si las hay; liberar espacio, por partes; Cloud3DS no se desinstala a sí mismo
 	IconId ic[6];
 	const char *lab[6];
@@ -5899,7 +6069,7 @@ static void tt_draw(void)
 	static char l_upd[80], l_dlc[80], l_ext[80];
 	bool self = t && title_is_self(t->tid);
 	ic[n] = IC_DOWNLOAD, lab[n] = _("Crear copia de la partida"), col[n] = T.ok, act[n++] = 0;
-	if (t && TT.copies > 0)
+	if (rdy && TT.copies > 0)
 		ic[n] = IC_FOLDER, lab[n] = _("Ver copias de la partida"), col[n] = T.text, act[n++] = 1;
 	if (t && !self && t->upd_size) {
 		char z[24];
@@ -5913,7 +6083,7 @@ static void tt_draw(void)
 		snprintf(l_dlc, sizeof l_dlc, _("Desinstalar los DLC (%s)"), z);
 		ic[n] = IC_GEM, lab[n] = l_dlc, col[n] = T.warn, act[n++] = 4;
 	}
-	if (t && !self && TT.ext > 0) {
+	if (rdy && !self && TT.ext > 0) {
 		char z[24];
 		util_fmt_size(z, sizeof z, (u64)TT.ext);
 		snprintf(l_ext, sizeof l_ext, _("Borrar los datos extra (%s)"), z);
@@ -6015,24 +6185,11 @@ static void titles_top(float a)
 		text_draw_right(_("Elige un título para gestionarlo"), X + W, y0 + h - 22, TS_SUB, col_alpha(T.text3, a));
 		return;
 	}
-	if (TT.icon_tid != t->tid) {
-		TT.icon_tid = t->tid;
-		u16 *px = malloc(48 * 48 * 2);
-		if (px && title_icon(t->tid, px))
-			tex_from_rgb565(&TT.icon, px, 48, 48);
-		else
-			tex_free(&TT.icon);
-		free(px);
-	}
-	if (TT.info_tid != t->tid) {
-		TT.info_tid = t->tid;
-		TT.copies = save_backups_count(t, &TT.last);
-		TT.ext = extdata_size(t);
-	}
+	bool rdy = tt_sync(t);
 	const float IS = h - 20;
 	float px = X - 4, py = y0 + 10;
 	draw_rrect(px, py, IS, IS, 12, col_alpha(T.surface2, a));
-	if (TT.icon.ok)
+	if (rdy && TT.icon.ok)
 		draw_texture(&TT.icon, px + (IS - 72) / 2, py + (IS - 72) / 2, 72, 72, a);
 	else
 		draw_icon(IC_GAMEPAD, px + IS / 2, py + IS / 2, 38, col_alpha(T.ok, a));
@@ -6060,18 +6217,20 @@ static void titles_top(float a)
 	} else
 		util_strlcpy(v, b1, sizeof v);
 	y = info_row(rx, y, rw, _("Tamaño"), v, T.text2, a);
-	if (TT.copies) {
+	if (!rdy)
+		util_strlcpy(v, "…", sizeof v);
+	else if (TT.copies) {
 		f_fmt_date(b1, sizeof b1, TT.last);
 		snprintf(v, sizeof v, TT.copies == 1 ? _("1 · %s") : _("%d · la última %s"), TT.copies, b1);
 	} else
 		util_strlcpy(v, _("Ninguna todavía"), sizeof v);
-	y = info_row(rx, y, rw, _("Copias"), v, TT.copies ? T.text2 : T.text3, a);
+	y = info_row(rx, y, rw, _("Copias"), v, rdy && TT.copies ? T.text2 : T.text3, a);
 	if (t->dlc) {
 		util_fmt_size(b1, sizeof b1, t->dlc_size);
 		snprintf(v, sizeof v, t->dlc == 1 ? _("1 contenido · %s") : _("%d contenidos · %s"), t->dlc, b1);
 		y = info_row(rx, y, rw, _("DLC"), v, T.text2, a);
 	}
-	if (TT.ext > 0) {
+	if (rdy && TT.ext > 0) {
 		util_fmt_size(b1, sizeof b1, (u64)TT.ext);
 		y = info_row(rx, y, rw, _("Datos extra"), b1, T.text2, a);
 	}
@@ -7328,6 +7487,8 @@ static void tab_files(void)
 			wrap_center(t, BOT_W / 2, my + 30, BOT_W - 40, TS_BODY, 2, T.text3);
 			wrap_center(_("La búsqueda incluye esta carpeta y todas sus subcarpetas."), BOT_W / 2, my + 74, BOT_W - 60, TS_SUB, 2, T.text3);
 		}
+	} else if (F.titles && F.n == 0 && tl_loading()) {
+		text_draw_center(_("Leyendo los títulos instalados…"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	} else if (F.titles && F.n == 0) {
 		text_draw_center(_("No hay juegos ni apps instalados en la SD"), BOT_W / 2, my + 40, TS_BODY, T.text3);
 	} else if (F.trash && F.n == 0) {
@@ -10362,6 +10523,7 @@ static void update(void)
 		return;
 	}
 	un_poll();
+	tl_poll();
 	static bool home_blocked;
 	bool g = guard_on();
 	if (g != home_blocked) // HOME a mitad de instalar o borrar sería peligroso
@@ -10872,12 +11034,42 @@ static void load_console_name(void)
 
 static void titles_reload(void)
 {
-	free(TI);
-	TI = NULL;
-	if (!strcmp(F.path, "@titles")) {
-		F.path[0] = 0; // que vuelva a leer la lista
-		f_load("@titles");
+	tw_forget();
+	tl_start();
+}
+
+// cada vuelta: la lista nueva, cuando llega; no mientras haya algo abierto que apunte a uno de la anterior
+static void tl_poll(void)
+{
+	if (!TL.run || !TL.done || g_dialog.open || TT.open || UN.busy)
+		return;
+	if (TL.thr) {
+		threadJoin(TL.thr, U64_MAX);
+		threadFree(TL.thr);
+		TL.thr = NULL;
 	}
+	TL.run = false;
+	const TitleInfo *s = tt_selected();
+	u64 keep = s ? s->tid : 0;
+	free(TI);
+	TI = TL.res, TI_n = TL.n < 0 ? 0 : TL.n;
+	TL.res = NULL;
+	if (TL.again) {
+		TL.again = false;
+		tl_start();
+	}
+	if (!F.titles)
+		return;
+	ti_fill();
+	for (int i = 0; keep && i < F.nv; i++)
+		if (F.v[i].kind == FV_ITEM && F.e[F.v[i].idx].tid < (u32)TI_n && TI[F.e[F.v[i].idx].tid].tid == keep)
+			F.sel = i;
+	if (F.sel >= F.nv)
+		F.sel = F.nv - 1;
+	if (F.sel < 0)
+		F.sel = 0;
+	F.target = fminf(F.target, fmaxf(0, F.total - VIEW_H));
+	F.info_for = -1;
 }
 
 int main(int argc, char **argv)
@@ -10895,6 +11087,7 @@ int main(int argc, char **argv)
 	fsx_init();
 	trash_init();
 	aptHook(&hook, apt_hook, NULL);
+	tl_start(); // la lista de títulos, ya en su hilo: al abrir Títulos está lista
 	hidSetRepeatParameters(18, 5);
 
 	server_set_enabled(!G.srv_off); // apagado desde Ajustes: se queda apagado al volver a abrir
@@ -10983,6 +11176,11 @@ int main(int argc, char **argv)
 	dl_exit();
 	ops_exit();
 	th_exit();
+	tw_exit();
+	if (TL.thr) {
+		threadJoin(TL.thr, U64_MAX);
+		threadFree(TL.thr);
+	}
 	ins_exit();
 	upd_exit();
 	tex_free(&U.ins_icon);
