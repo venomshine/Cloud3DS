@@ -7,6 +7,9 @@
  */
 #include "music.h"
 #include "img.h"
+#include "sc.h"
+
+#include <neaacdec.h>
 #include "util.h"
 
 #include <mpg123.h>
@@ -40,7 +43,7 @@ static struct {
 	bool cover_ok;
 } M;
 
-static const char *const EXTS[] = {"mp3", "ogg", "wav"};
+static const char *const EXTS[] = {"mp3", "ogg", "wav", "aac"};
 
 bool music_is_audio(const char *name)
 {
@@ -85,7 +88,14 @@ static bool dsp_up(void)
 /* ---------------------------------------------------------------- decodificadores */
 
 typedef struct {
-	int kind; /* 0 mp3, 1 ogg, 2 wav */
+	int kind; /* 0 mp3, 1 ogg, 2 wav, 3 SoundCloud, 4 AAC (ADTS) */
+	NeAACDecHandle aac;
+	u8 *ab;          /* AAC: lo leído del archivo */
+	u32 an, aat;     /* cuánto hay y por dónde va */
+	bool aeof;
+	ScStream *sc;
+	int cancel; /* SoundCloud: la orden que llegó mientras cargaba */
+	char err[32];
 	mpg123_handle *mh;
 	OggVorbis_File vf;
 	FILE *f;
@@ -135,9 +145,117 @@ static bool looks_mp3(const char *sp)
 	return ok;
 }
 
+static void set_loading(bool on)
+{
+	LightLock_Lock(&M.lock);
+	M.s.loading = on;
+	LightLock_Unlock(&M.lock);
+}
+
+// SoundCloud: abre el streaming y espera a que esté listo (sin dejar de atender las órdenes)
+static bool dec_open_sc(Dec *d, const char *id, MusicState *st)
+{
+	d->kind = 3;
+	ScTrack t;
+	if (sc_track(id, &t)) { // (lo que se carga, ya a la vista)
+		util_strlcpy(st->title, t.title, sizeof st->title), util_strlcpy(st->artist, t.artist, sizeof st->artist);
+		LightLock_Lock(&M.lock);
+		snprintf(M.s.title, sizeof M.s.title, "%s", t.title);
+		snprintf(M.s.artist, sizeof M.s.artist, "%s", t.artist);
+		M.s.pos_ms = 0, M.s.dur_ms = t.dur_ms;
+		LightLock_Unlock(&M.lock);
+	}
+	if (!(d->sc = sc_stream_open(id)))
+		return false;
+	set_loading(true);
+	char err[32] = "";
+	u32 dur = 0;
+	int r;
+	while (!(r = sc_stream_ready(d->sc, &d->rate, &d->chans, &dur, err, sizeof err))) {
+		int c = M.cmd;
+		if (M.quit || (c != C_NONE && c != C_TOGGLE)) {
+			M.cmd = C_NONE;
+			d->cancel = c;
+			break;
+		}
+		svcSleepThread(20 * 1000000ll);
+	}
+	set_loading(false);
+	st->dur_ms = dur;
+	if (r < 0)
+		snprintf(d->err, sizeof d->err, "sc_%s", err);
+	return r == 1;
+}
+
+/* AAC: la etiqueta ID3v2 del principio (la que pone la descarga de SoundCloud): título, artista, duración y carátula.
+ * Devuelve dónde empieza el audio */
+static long aac_id3(FILE *f, MusicState *st)
+{
+	u8 h[10];
+	if (fread(h, 1, 10, f) != 10 || memcmp(h, "ID3", 3) || h[3] < 3) {
+		fseek(f, 0, SEEK_SET);
+		return 0;
+	}
+	u32 n = (u32)(h[6] & 127) << 21 | (u32)(h[7] & 127) << 14 | (u32)(h[8] & 127) << 7 | (h[9] & 127);
+	u8 *b = n <= 2u << 20 ? malloc(n) : NULL;
+	if (b && fread(b, 1, n, f) == n) {
+		for (u32 p = 0; p + 10 <= n && b[p];) {
+			u32 fs = h[3] == 4 ? (u32)(b[p + 4] & 127) << 21 | (u32)(b[p + 5] & 127) << 14 | (u32)(b[p + 6] & 127) << 7 | (b[p + 7] & 127)
+			                   : (u32)b[p + 4] << 24 | (u32)b[p + 5] << 16 | (u32)b[p + 6] << 8 | b[p + 7];
+			if (!fs || p + 10 + fs > n)
+				break;
+			const u8 *fb = b + p + 10;
+			char *dst = !memcmp(b + p, "TIT2", 4) ? st->title : !memcmp(b + p, "TPE1", 4) ? st->artist : NULL;
+			if (dst && (fb[0] == 0 || fb[0] == 3)) // (latín-1 o UTF-8)
+				snprintf(dst, sizeof st->title, "%.*s", (int)fs - 1, (const char *)fb + 1);
+			else if (!memcmp(b + p, "TLEN", 4) && fs < 16) {
+				char t[16];
+				snprintf(t, sizeof t, "%.*s", (int)fs - 1, (const char *)fb + 1);
+				st->dur_ms = (u32)strtoul(t, NULL, 10);
+			} else if (!memcmp(b + p, "APIC", 4) && fs > 4 && fb[0] == 0) { // codificación, MIME, tipo, descripción y la imagen
+				const u8 *q = memchr(fb + 1, 0, fs - 1);
+				if (q && q + 2 < fb + fs) {
+					q += 2; // (el tipo)
+					const u8 *e = memchr(q, 0, (size_t)(fb + fs - q));
+					u8 *rgba;
+					int w, hh;
+					if (e && ++e < fb + fs && img_mem_fit(e, (size_t)(fb + fs - e), 160, 160, &rgba, &w, &hh) == IMG_OK) {
+						LightLock_Lock(&M.lock);
+						free(M.cover);
+						M.cover = rgba, M.cw = w, M.ch = hh, M.cover_ok = true;
+						LightLock_Unlock(&M.lock);
+					}
+				}
+			}
+			p += 10 + fs;
+		}
+	}
+	free(b);
+	fseek(f, 10 + (long)n, SEEK_SET);
+	return 10 + (long)n;
+}
+
+#define AAC_BUF (32 * 1024)
+
+static void aac_fill(Dec *d)
+{
+	if (d->aat) { // lo que queda, al principio
+		memmove(d->ab, d->ab + d->aat, d->an - d->aat);
+		d->an -= d->aat, d->aat = 0;
+	}
+	if (!d->aeof && d->an < AAC_BUF) {
+		size_t r = fread(d->ab + d->an, 1, AAC_BUF - d->an, d->f);
+		d->an += (u32)r;
+		if (!r)
+			d->aeof = true;
+	}
+}
+
 static bool dec_open(Dec *d, const char *path, MusicState *st)
 {
 	memset(d, 0, sizeof *d);
+	if (!strncmp(path, "sc:", 3))
+		return dec_open_sc(d, path + 3, st);
 	char sp[720];
 	snprintf(sp, sizeof sp, "sdmc:%s", path);
 	const char *x = strrchr(path, '.');
@@ -216,6 +334,26 @@ static bool dec_open(Dec *d, const char *path, MusicState *st)
 		}
 		return d->rate > 0 && (d->chans == 1 || d->chans == 2);
 	}
+	if (!strcasecmp(x, "aac")) { // AAC en ADTS (las descargas de SoundCloud)
+		d->kind = 4;
+		if (!(d->f = fopen(sp, "rb")) || !(d->ab = malloc(AAC_BUF)))
+			return false;
+		aac_id3(d->f, st);
+		aac_fill(d);
+		unsigned long rate;
+		unsigned char ch;
+		d->aac = NeAACDecOpen();
+		NeAACDecConfigurationPtr c = NeAACDecGetCurrentConfiguration(d->aac);
+		c->outputFormat = FAAD_FMT_16BIT;
+		c->downMatrix = 1;
+		NeAACDecSetConfiguration(d->aac, c);
+		long used = NeAACDecInit(d->aac, d->ab, d->an, &rate, &ch);
+		if (used < 0)
+			return false;
+		d->aat = (u32)used;
+		d->rate = (int)rate, d->chans = 2;
+		return rate > 0;
+	}
 	if (!strcasecmp(x, "wav")) { // PCM de 8 o 16 bits, mono o estéreo
 		d->kind = 2;
 		if (!(d->f = fopen(sp, "rb")))
@@ -259,12 +397,48 @@ static bool dec_open(Dec *d, const char *path, MusicState *st)
 static int dec_read(Dec *d, s16 *out)
 {
 	int got = 0;
+	if (d->kind == 3) { // -1: aún no ha llegado (se sigue esperando)
+		got = sc_stream_read(d->sc, out, FRAMES);
+		u8 *rgba;
+		int w, h;
+		if (sc_stream_cover(d->sc, &rgba, &w, &h)) {
+			LightLock_Lock(&M.lock);
+			free(M.cover);
+			M.cover = rgba, M.cw = w, M.ch = h, M.cover_ok = true;
+			M.s.cover_rev++;
+			LightLock_Unlock(&M.lock);
+		}
+		return got;
+	}
 	if (d->kind == 0) {
 		size_t done = 0;
 		int r = mpg123_read(d->mh, (u8 *)out, FRAMES * 4, &done);
 		got = (int)(done / 4);
 		if (r != MPG123_OK && r != MPG123_NEW_FORMAT && !got)
 			return 0;
+		return got;
+	}
+	if (d->kind == 4) { // tramas de 1024 muestras hasta llenar
+		while (got + 2048 <= FRAMES) {
+			aac_fill(d);
+			if (d->an - d->aat < 8)
+				break;
+			NeAACDecFrameInfo fi;
+			s16 *pcm = NeAACDecDecode(d->aac, &fi, d->ab + d->aat, d->an - d->aat);
+			if (fi.error) { // (una trama dañada: se busca la siguiente)
+				d->aat++;
+				continue;
+			}
+			d->aat += (u32)fi.bytesconsumed;
+			if (!fi.bytesconsumed)
+				break;
+			int ch = fi.channels ? fi.channels : 2, n = (int)(fi.samples / ch);
+			for (int i = 0; pcm && i < n; i++) {
+				out[(got + i) * 2] = pcm[i * ch];
+				out[(got + i) * 2 + 1] = ch > 1 ? pcm[i * ch + 1] : pcm[i * ch];
+			}
+			got += pcm ? n : 0;
+		}
 		return got;
 	}
 	static s16 tmp[FRAMES * 2];
@@ -300,7 +474,16 @@ static int dec_read(Dec *d, s16 *out)
 
 static void dec_close(Dec *d)
 {
-	if (d->kind == 0 && d->mh) {
+	if (d->kind == 3)
+		sc_stream_close(d->sc);
+	else if (d->kind == 4) {
+		if (d->aac)
+			NeAACDecClose(d->aac);
+		free(d->ab);
+		if (d->f)
+			fclose(d->f);
+	}
+	else if (d->kind == 0 && d->mh) {
 		mpg123_close(d->mh);
 		mpg123_delete(d->mh);
 	} else if (d->kind == 1 && d->f)
@@ -349,6 +532,7 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 		snprintf(path, sizeof path, "%s%s%s", M.s.dir, strcmp(M.s.dir, "/") ? "/" : "", M.list[idx]);
 	free(M.cover);
 	M.cover = NULL, M.cover_ok = false;
+	M.s.cover_rev++, M.s.idx = idx; // (la de la anterior, fuera ya)
 	LightLock_Unlock(&M.lock);
 	Dec d;
 	bool ok = dec_open(&d, path, &st);
@@ -365,10 +549,15 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 	snprintf(M.s.artist, sizeof M.s.artist, "%s", st.artist);
 	M.s.idx = idx, M.s.dur_ms = st.dur_ms, M.s.pos_ms = 0, M.s.track++;
 	M.s.st = ok ? MU_PLAY : MU_ERROR;
-	snprintf(M.s.err, sizeof M.s.err, "%s", ok ? "" : "bad_file");
+	snprintf(M.s.err, sizeof M.s.err, "%s", ok ? "" : d.err[0] ? d.err : "bad_file");
 	LightLock_Unlock(&M.lock);
 	if (!ok) {
+		int c = d.cancel;
 		dec_close(&d);
+		if (c) { // (una orden mientras cargaba: no es un fallo)
+			set_state(MU_PLAY, NULL);
+			return c;
+		}
 		return C_NONE; // a la siguiente
 	}
 	ndspChnReset(CH);
@@ -396,7 +585,7 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 				break;
 			}
 		}
-		bool busy = false;
+		bool busy = false, starved = false;
 		for (int i = 0; i < NBUF; i++) {
 			if (wb[i].status == NDSP_WBUF_QUEUED || wb[i].status == NDSP_WBUF_PLAYING) {
 				busy = true;
@@ -409,10 +598,16 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 			if (eof || paused)
 				continue;
 			int got = dec_read(&d, buf[i]);
-			if (got <= 0) {
+			if (got < 0) { // (SoundCloud: aún no ha llegado)
+				starved = true;
+				break;
+			}
+			if (got == 0) {
 				eof = true;
 				continue;
 			}
+			if (d.kind == 3 && M.s.loading)
+				set_loading(false);
 			// lo fuerte que suena (para la onda de arriba)
 			u64 acc = 0;
 			for (int k = 0; k < got * 2; k += 8)
@@ -428,6 +623,8 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 			M.s.level = lv > 1 ? 1 : lv;
 			LightLock_Unlock(&M.lock);
 		}
+		if (starved && !busy && !M.s.loading)
+			set_loading(true);
 		LightLock_Lock(&M.lock);
 		M.s.pos_ms = (u32)((played + (busy && !paused ? ndspChnGetSamplePos(CH) : 0)) * 1000 / (u64)d.rate);
 		LightLock_Unlock(&M.lock);
@@ -546,7 +743,7 @@ bool music_play(const char *dir, char (*names)[256], int n, int start)
 	if (!M.thr) {
 		s32 prio = 0x30;
 		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-		M.thr = threadCreate(music_thread, NULL, 32 * 1024, prio - 2, -2, false); // por delante de la interfaz: que no se corte
+		M.thr = threadCreate(music_thread, NULL, 64 * 1024, prio - 2, -2, false); // por delante de la interfaz: que no se corte
 	}
 	mu_send(C_PLAY);
 	return M.thr != NULL;

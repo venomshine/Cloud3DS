@@ -210,7 +210,7 @@ static void read_tags(MSong *m)
 	FILE *f = fopen(sp, "rb");
 	if (f) {
 		const char *x = strrchr(m->path, '.');
-		if (x && !strcasecmp(x, ".mp3"))
+		if (x && (!strcasecmp(x, ".mp3") || !strcasecmp(x, ".aac"))) // (.aac: las descargas de SoundCloud llevan ID3)
 			read_id3(f, m);
 		else if (x && !strcasecmp(x, ".ogg"))
 			read_vorbis(f, m);

@@ -12,7 +12,8 @@
 /* Reproductor de música: MP3, OGG (Vorbis) y WAV, en su propio hilo, así
  * sigue sonando mientras se usa el resto (y con la tapa cerrada). La carpeta
  * es la lista. El audio usa el firmware DSP de la consola si está en
- * /3ds/dspfirm.cdc y, si no, OpenDSP (libre), que va dentro de la app. */
+ * /3ds/dspfirm.cdc y, si no, OpenDSP (libre), que va dentro de la app.
+ * Una ruta «sc:<id>» es una canción de SoundCloud (sc.h), en streaming. */
 
 enum { MU_OFF, MU_PLAY, MU_PAUSE, MU_ERROR };
 enum { MR_OFF, MR_ALL, MR_ONE };
@@ -27,7 +28,9 @@ typedef struct {
 	int  repeat;          /* MR_* */
 	float level;          /* 0-1: lo fuerte que suena ahora (para la onda) */
 	u32  track;           /* cambia con cada canción (la carátula) */
+	u32  cover_rev;       /* cambia cuando llega la carátula (SoundCloud: después de empezar) */
 	char err[32];         /* «no_dsp», «bad_file»… */
+	bool loading;         /* SoundCloud: esperando a que llegue el audio */
 } MusicState;
 
 bool music_is_audio(const char *name);
