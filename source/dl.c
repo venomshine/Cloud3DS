@@ -85,7 +85,6 @@ const char *dl_last_ctype(void)
 {
 	return t_ctype;
 }
-#define HC_ROOTS "romfs:/certs/httpc_roots.bin"
 #define HC_BUF (256 * 1024)
 
 static struct {
@@ -348,45 +347,19 @@ static size_t mem_cb(char *d, size_t s, size_t m, void *u)
 
 /* ---------------------------------------------------------------- httpc
  * Se descarga con el servicio HTTP del sistema (httpc), como FBI: el TLS lo hace el propio
- * sistema y va mucho más rápido que libcurl+mbedTLS en la CPU de la app. El certificado se
- * comprueba con las raíces del sistema más las de romfs/certs/httpc_roots.bin (las modernas que
- * le faltan). Si httpc no consigue conectar (p. ej. un certificado que no sabe comprobar), se
- * prueba con libcurl, que lleva todas las raíces de Mozilla. Sin comprobar el certificado solo
- * se baja si el usuario lo pide para esa descarga. */
-static u32 hc_chain;
+ * sistema y va mucho más rápido que libcurl+mbedTLS en la CPU de la app. Las descargas no
+ * comprueban el certificado (como FBI); lo demás, con las raíces del propio sistema. Si httpc no
+ * consigue conectar (p. ej. un certificado que no sabe comprobar), se prueba con libcurl, que
+ * lleva todas las raíces de Mozilla.
+ * No se le añaden raíces propias (httpcCreateRootCertChain): en la consola eso agota el servicio
+ * y, desde entonces, todas sus peticiones fallan al momento con 0xD8A0A03C (en el emulador esas
+ * funciones no hacen nada, por eso allí no se notaba). */
 static bool hc_ready;
-static bool hc_chain_bad; // esta consola no acepta la cadena propia: solo las raíces del sistema
 
 static void hc_init(void)
 {
-	if (R_FAILED(httpcInit(0)))
-		return;
-	hc_ready = true;
-	if (R_FAILED(httpcCreateRootCertChain(&hc_chain))) {
-		hc_chain = 0;
-		return;
-	}
-	u32 h;
-	for (int id = SSLC_DefaultRootCert_Nintendo_CA; id <= SSLC_DefaultRootCert_DigiCert_EV; id++)
-		httpcRootCertChainAddDefaultCert(hc_chain, (SSLC_DefaultRootCert)id, &h);
-	FILE *f = fopen(HC_ROOTS, "rb");
-	int n = 0;
-	if (f) {
-		u8 len[4];
-		while (fread(len, 1, 4, f) == 4) {
-			u32 l = len[0] | len[1] << 8 | len[2] << 16 | (u32)len[3] << 24;
-			u8 *der = l < 8192 ? malloc(l) : NULL;
-			if (!der || fread(der, 1, l, f) != l) {
-				free(der);
-				break;
-			}
-			if (R_SUCCEEDED(httpcRootCertChainAddCert(hc_chain, der, l, &h)))
-				n++;
-			free(der);
-		}
-		fclose(f);
-	}
-	util_log("dl: httpc listo, %d raíces añadidas", n);
+	hc_ready = R_SUCCEEDED(httpcInit(0));
+	util_log("dl: httpc %s", hc_ready ? "listo" : "no disponible");
 }
 
 enum { HC_OK, HC_NOCONN, HC_HTTP, HC_NET, HC_ABORT, HC_WRITE };
@@ -394,7 +367,6 @@ enum { HC_OK, HC_NOCONN, HC_HTTP, HC_NET, HC_ABORT, HC_WRITE };
 /* abre la petición (siguiendo redirecciones) y la deja lista para leer el cuerpo */
 static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 range_from, const char *accept, u32 *code)
 {
-	bool own = true; // con la cadena de raíces propia (si falla, otra vez con las del sistema)
 	for (int redir = 0; redir < 10; redir++) {
 		Result r = httpcOpenContext(ctx, HTTPC_METHOD_GET, url, 0);
 		if (R_FAILED(r)) {
@@ -402,12 +374,8 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 			return HC_NOCONN;
 		}
 		httpcSetSSLOpt(ctx, verify ? SSLCOPT_Default : SSLCOPT_DisableVerify);
-		bool chain = verify && hc_chain && own && !hc_chain_bad;
-		if (chain)
-			httpcSelectRootCertChain(ctx, hc_chain);
 		httpcSetKeepAlive(ctx, HTTPC_KEEPALIVE_ENABLED);
 		httpcAddRequestHeaderField(ctx, "User-Agent", t_ua ? t_ua : UA);
-		httpcAddRequestHeaderField(ctx, "Connection", "Keep-Alive");
 		if (t_ua) // el navegador: el idioma, como cualquier navegador
 			httpcAddRequestHeaderField(ctx, "Accept-Language", "es-ES,es;q=0.9,en;q=0.7");
 		if (t_ua && !range_from) // y comprimido: HTML, CSS y JavaScript bajan unas 4 veces menos (lo
@@ -428,17 +396,9 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		if (R_SUCCEEDED(r))
 			r = hc_status(ctx, code, 30);
 		if (R_FAILED(r)) {
-			util_log("dl: httpc %s -> 0x%08lX%s", url, (unsigned long)r, chain ? " (con la cadena propia)" : "");
+			util_log("dl: httpc %s -> 0x%08lX", url, (unsigned long)r);
 			httpcCloseContext(ctx);
-			if (chain) { // en algunas consolas la cadena propia hace fallar todo: con las raíces del sistema
-				own = false, redir--;
-				continue;
-			}
 			return HC_NOCONN;
-		}
-		if (verify && hc_chain && !own && !hc_chain_bad) {
-			hc_chain_bad = true;
-			util_log("dl: httpc no acepta la cadena de raíces propia en esta consola: se usan las del sistema");
 		}
 		if (t_ck_set) { // httpc da la primera Set-Cookie (la de sesión, casi siempre)
 			char sc[1024] = "";
@@ -650,8 +610,6 @@ static int dl_request_hc(int method, const char *url0, const char *const *header
 		if (R_FAILED(httpcOpenContext(&ctx, (HTTPC_RequestMethod)method, url, 0)))
 			return DLF_NOCONN;
 		httpcSetSSLOpt(&ctx, SSLCOPT_Default);
-		if (hc_chain && !hc_chain_bad)
-			httpcSelectRootCertChain(&ctx, hc_chain);
 		httpcSetKeepAlive(&ctx, HTTPC_KEEPALIVE_ENABLED);
 		httpcAddRequestHeaderField(&ctx, "User-Agent", t_ua ? t_ua : UA);
 		if (t_ck_get) {
@@ -1575,8 +1533,6 @@ void dl_exit(void)
 		D.thr = NULL;
 	}
 	if (hc_ready) {
-		if (hc_chain)
-			httpcDestroyRootCertChain(hc_chain);
 		httpcExit();
 		hc_ready = false;
 	}
