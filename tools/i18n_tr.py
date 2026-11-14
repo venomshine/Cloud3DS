@@ -1,12 +1,6 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
-    'Girar solo: activado':
-        ('Auto-rotate: on',
-         '自動回転: オン'),
-    'Girar solo al girar la consola':
-        ('Rotate automatically with the console',
-         '本体の向きに合わせて自動回転'),
     '%s Cola de descargas (%d)':
         ('%s Download queue (%d)',
          '%s ダウンロードキュー(%d)'),
@@ -16,18 +10,12 @@ TR = {
     'La cola está vacía':
         ('The queue is empty',
          'キューは空です'),
-    'Lo que descargues desde un enlace, un QR o la Nube aparecerá aquí. Puedes pausarlo, reanudarlo o cancelarlo.':
-        ('What you download from a link, a QR code or the Cloud will appear here. You can pause, resume or cancel it.',
-         'リンク、QRコード、クラウドからのダウンロードがここに表示されます。一時停止、再開、キャンセルができます。'),
     'Sin descargas recientes':
         ('No recent downloads',
          '最近のダウンロードはありません'),
     'Descargas recientes':
         ('Recent downloads',
          '最近のダウンロード'),
-    'Gestiónalas en Conectar > Actividad':
-        ('Manage them in Connect > Activity',
-         '接続 > アクティビティで管理できます'),
     'Abrir en el Lector':
         ('Open in Reader',
          'リーダーで開く'),
@@ -37,9 +25,6 @@ TR = {
     'Lector':
         ('Reader',
          'リーダー'),
-    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee en horizontal o con la consola de lado, como un libro.':
-        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT from the SD card, with a library. Read horizontally or with the console on its side, like a book.',
-         'SDカードのPDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXTをライブラリで。横向きでも、本のように縦向きでも読めます。'),
     'Continuar: %s':
         ('Continue: %s',
          '続き: %s'),
@@ -70,24 +55,12 @@ TR = {
     'Buscando documentos en la SD… %d':
         ('Searching the SD card for documents… %d',
          'SDカードのドキュメントを検索中… %d'),
-    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Se puede leer en horizontal o con la consola de lado, como un libro; el manga, de derecha a izquierda.':
-        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT. Read horizontally or with the console on its side, like a book; manga, right to left.',
-         'PDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXT。横向きでも、本のように縦向きでも読めます。マンガは右から左へ。'),
-    'Los TXT se buscan solo en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Cualquier otro se abre desde Archivos.':
-        ('TXT files are only searched in reading folders (/Books, /Manga, /Documents, /Downloads…). Any other can be opened from Files.',
-         'TXTは読書用フォルダー(/Books、/Manga、/Documents、/Downloadsなど)だけで検索します。その他はファイルから開けます。'),
     'Recientes':
         ('Recent',
          '最近'),
     'Todos':
         ('All',
          'すべて'),
-    'Aún no has leído nada':
-        ("You haven't read anything yet",
-         'まだ何も読んでいません'),
-    'Lo que abras aparecerá aquí, con la página por la que vas. Elige un documento en «Todos» o «Carpetas».':
-        ("What you open will appear here, with the page you're on. Choose a document in “All” or “Folders”.",
-         '開いたものが読んでいるページとともにここに表示されます。「すべて」または「フォルダー」から選んでください。'),
     'Buscando documentos…':
         ('Searching for documents…',
          'ドキュメントを検索中…'),
@@ -109,9 +82,6 @@ TR = {
     '%s · %s · página %d de %d':
         ('%s · %s · page %d of %d',
          '%s · %s · %d / %d ページ'),
-    'Seguir leyendo':
-        ('Continue reading',
-         '続きを読む'),
     'Leer':
         ('Read',
          '読む'),
@@ -148,24 +118,6 @@ TR = {
     'B Volver':
         ('B Back',
          'B 戻る'),
-    'Lectura en horizontal':
-        ('Horizontal reading',
-         '横向きで読む'),
-    'Lectura como un libro (consola de lado)':
-        ('Book reading (console on its side)',
-         '本のように読む(本体を横に)'),
-    'Lectura como un libro, al otro lado':
-        ('Book reading, other side',
-         '本のように読む(反対向き)'),
-    'Leer como un libro (consola de lado)':
-        ('Read like a book (console on its side)',
-         '本のように読む(本体を横に)'),
-    'Girar al otro lado':
-        ('Rotate to the other side',
-         '反対向きにする'),
-    'Leer en horizontal':
-        ('Read horizontally',
-         '横向きで読む'),
     'Leer de izquierda a derecha':
         ('Read left to right',
          '左から右へ読む'),
@@ -274,9 +226,6 @@ TR = {
     '%d elementos · /Downloads':
         ('%d items · /Downloads',
          '%d件 · /Downloads'),
-    'Ver lo descargado':
-        ('View downloads',
-         'ダウンロードしたものを見る'),
     'Intentos de PIN fallidos':
         ('Failed PIN attempts',
          'PINの入力ミス'),
@@ -2134,9 +2083,6 @@ TR = {
     'Sin transferencias en curso':
         ('No transfers in progress',
          '進行中の転送はありません'),
-    'Sin descargas en curso':
-        ('No downloads in progress',
-         '進行中のダウンロードはありません'),
     'Descargas':
         ('Downloads',
          'ダウンロード'),
@@ -2380,9 +2326,6 @@ TR = {
     'Aún no hay descargas':
         ('No downloads yet',
          'まだダウンロードはありません'),
-    'Descarga desde un enlace o un código QR, y abre lo descargado (carpeta /Downloads). Los CIA se instalan durante la descarga.':
-        ('Download from a link or a QR code, and open what you downloaded (/Downloads folder). CIA files are installed during the download.',
-         'リンクやQRコードからダウンロードし、ダウンロードしたものを開けます(/Downloadsフォルダ)。CIAはダウンロード中にインストールされます。'),
     'Artista desconocido':
         ('Unknown artist',
          '不明なアーティスト'),
@@ -2662,9 +2605,6 @@ TR = {
     'Actívalo en Ajustes > Conexión para conectar otros dispositivos.':
         ('Turn it on in Settings > Connection to connect other devices.',
          '他のデバイスと接続するには、設定の「接続」でオンにしてください。'),
-    'Los archivos CIA se instalan durante la descarga. Todo lo descargado se guarda en /Downloads.':
-        ('CIA files are installed while downloading. Everything downloaded is saved to /Downloads.',
-         'CIAはダウンロード中にインストールされます。ダウンロードしたものはすべて /Downloads に保存されます。'),
     'Esa versión de GitHub no incluye ningún archivo .cia':
         ('That GitHub release has no .cia',
          'そのGitHubリリースには.ciaがありません'),
@@ -3028,9 +2968,6 @@ TR = {
     'Sin archivos · /Downloads':
         ('No files · /Downloads',
          'ファイルなし · /Downloads'),
-    'El progreso se muestra arriba y en Conectar > Actividad.':
-        ('Progress is shown above and in Connect > Activity.',
-         '進行状況は上画面と「接続」の「アクティビティ」で確認できます。'),
     '«%s» ocupa más de 1 GB y habría que volver a descargarlo o instalarlo. Esta acción no se puede deshacer.':
         ("“%s” takes more than 1 GB and you'd have to download or install it again. This can't be undone.",
          '「%s」は1 GB以上あり、再ダウンロードか再インストールが必要になります。元に戻せません。'),
@@ -3058,4 +2995,52 @@ TR = {
     'No se pudo escribir en la SD. Comprueba el espacio disponible.':
         ('Could not write to the SD card. Check the available space.',
          'SDカードに書き込めませんでした(空き容量不足?)'),
+    'Rotación automática: activada':
+        ('Auto-rotation: on',
+         '自動回転: オン'),
+    'Activar la rotación automática':
+        ('Turn on auto-rotation',
+         '自動回転をオンにする'),
+    'Aquí aparecerán las descargas desde un enlace, un código QR o la Nube. Puedes pausarlas, reanudarlas o cancelarlas.':
+        ('Downloads from a link, a QR code or the Cloud will appear here. You can pause, resume or cancel them.',
+         'リンク、QRコード、クラウドからのダウンロードがここに表示されます。一時停止、再開、キャンセルができます。'),
+    'Pulsa X para gestionar la cola de descargas':
+        ('Press X to manage the download queue',
+         'Xでダウンロードキューを管理'),
+    'Sin lecturas recientes':
+        ('No recent reading',
+         '最近読んだものはありません'),
+    'Aquí aparecerán los documentos que abras, con la página en la que te quedaste. Elige un documento en «Todos» o «Carpetas».':
+        ('Documents you open will appear here, with the page where you left off. Choose a document in “All” or “Folders”.',
+         '開いたものが読んでいるページとともにここに表示されます。「すべて」または「フォルダー」から選んでください。'),
+    'Modo horizontal':
+        ('Horizontal mode',
+         '横向きモード'),
+    'Modo libro (consola en vertical)':
+        ('Book mode (console held vertically)',
+         'ブックモード(本体を縦に)'),
+    'Modo libro, orientación inversa':
+        ('Book mode, reversed orientation',
+         'ブックモード(逆向き)'),
+    'Invertir la orientación':
+        ('Reverse the orientation',
+         '向きを反転'),
+    'Continuar la lectura':
+        ('Continue reading',
+         '続きを読む'),
+    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Lectura en modo horizontal o en modo libro, con la consola en vertical.':
+        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT from the SD card, with a library. Read in horizontal mode or in book mode, with the console held vertically.',
+         'SDカードのPDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXTをライブラリで。横向きでも、本のように縦向きでも読めます。'),
+    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Lectura en modo horizontal o en modo libro, con la consola en vertical, y manga de derecha a izquierda.':
+        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT. Read in horizontal mode or in book mode, with the console held vertically, and manga right to left.',
+         'PDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXT。横向きでも、本のように縦向きでも読めます。マンガは右から左へ。'),
+    'Los archivos TXT solo se buscan en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Los demás se pueden abrir desde Archivos.':
+        ('TXT files are only searched in reading folders (/Books, /Manga, /Documents, /Downloads…). Others can be opened from Files.',
+         'TXTは読書用フォルダー(/Books、/Manga、/Documents、/Downloadsなど)だけで検索します。その他はファイルから開けます。'),
+    'Los archivos CIA se instalan durante la descarga. Los archivos descargados se guardan en /Downloads.':
+        ('CIA files are installed while downloading. Downloaded files are saved to /Downloads.',
+         'CIAはダウンロード中にインストールされます。ダウンロードしたものはすべて /Downloads に保存されます。'),
+    'Descarga archivos desde un enlace o un código QR y consulta los archivos descargados (carpeta /Downloads). Los CIA se instalan durante la descarga.':
+        ('Download files from a link or a QR code and browse downloaded files (/Downloads folder). CIA files are installed while downloading.',
+         'リンクやQRコードからダウンロードし、ダウンロードしたものを開けます(/Downloadsフォルダ)。CIAはダウンロード中にインストールされます。'),
 }

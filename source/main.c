@@ -2060,7 +2060,7 @@ static void dl_recent_top(void)
 {
 	ds_refresh();
 	if (!DS.n) {
-		app_idle_top(IC_DOWNLOAD, _("Sin descargas recientes"), _("Los archivos CIA se instalan durante la descarga. Todo lo descargado se guarda en /Downloads."));
+		app_idle_top(IC_DOWNLOAD, _("Sin descargas recientes"), _("Los archivos CIA se instalan durante la descarga. Los archivos descargados se guardan en /Downloads."));
 		return;
 	}
 	// las descargas (las más recientes primero): cómo van o por qué fallaron
@@ -2091,7 +2091,7 @@ static void dl_recent_top(void)
 		}
 		y += 42;
 	}
-	text_draw_right(_("Gestiónalas en Conectar > Actividad"), X + W, y0 + h - 8 - text_lineh(TS_SUB), TS_SUB, T.text3);
+	text_draw_right(_("Pulsa X para gestionar la cola de descargas"), X + W, y0 + h - 8 - text_lineh(TS_SUB), TS_SUB, T.text3);
 }
 
 // ------------------------------------------------------------ nube (OneDrive)
@@ -9947,13 +9947,13 @@ static const char *ap_desc(int i)
 	case AP_FILES: return _("La tarjeta SD: carpetas, capturas, fotos, CIA, homebrew, partidas y papelera.");
 	case AP_TITLES: return _("Juegos y aplicaciones instalados: cuánto ocupan, actualizaciones, DLC, datos extra, copias de la partida y desinstalación.");
 	case AP_CONNECT: return _("Transfiere archivos con el móvil o el ordenador desde el navegador, con un código QR. Incluye la actividad y los dispositivos vinculados.");
-	case AP_DL: return _("Descarga desde un enlace o un código QR, y abre lo descargado (carpeta /Downloads). Los CIA se instalan durante la descarga.");
+	case AP_DL: return _("Descarga archivos desde un enlace o un código QR y consulta los archivos descargados (carpeta /Downloads). Los CIA se instalan durante la descarga.");
 	case AP_CLOUD:
 		return cl_connected() ? _("Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben automáticamente.")
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
 	case AP_MUSIC: return _("Toda la música de la SD, por canciones, artistas y álbumes. Sigue sonando en segundo plano.");
-	case AP_READER: return _("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee en horizontal o con la consola de lado, como un libro.");
+	case AP_READER: return _("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Lectura en modo horizontal o en modo libro, con la consola en vertical.");
 	case AP_SHARE: return _("Comparte apps homebrew instaladas con otra consola de la misma red Wi-Fi: vincúlalas una vez, consulta sus apps y solicítalas.");
 	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
 	}
@@ -10651,10 +10651,10 @@ static void rl_top(void)
 	y = y0 + 84;
 	draw_rect(X, y, W, 1, T.divider);
 	y += 10;
-	y += text_wrap_lines(_("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Se puede leer en horizontal o con la consola de lado, como un libro; el manga, de derecha a izquierda."),
+	y += text_wrap_lines(_("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Lectura en modo horizontal o en modo libro, con la consola en vertical, y manga de derecha a izquierda."),
 	                     W, TS_SUB, 3, X, y, T.text2, true) *
 	         text_lineh(TS_SUB) + 6;
-	text_wrap_lines(_("Los TXT se buscan solo en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Cualquier otro se abre desde Archivos."), W, TS_SUB, 3, X, y,
+	text_wrap_lines(_("Los archivos TXT solo se buscan en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Los demás se pueden abrir desde Archivos."), W, TS_SUB, 3, X, y,
 	                T.text3, true);
 }
 
@@ -10715,7 +10715,7 @@ static void rl_bottom(void)
 		int found;
 		bool sc = rlib_scanning(&found);
 		if (RL.tab == RLT_RECENT && RL.nlib)
-			empty_state(IC_CLOCK, _("Aún no has leído nada"), _("Lo que abras aparecerá aquí, con la página por la que vas. Elige un documento en «Todos» o «Carpetas»."));
+			empty_state(IC_CLOCK, _("Sin lecturas recientes"), _("Aquí aparecerán los documentos que abras, con la página en la que te quedaste. Elige un documento en «Todos» o «Carpetas»."));
 		else
 			empty_state(IC_BOOK, sc ? _("Buscando documentos…") : _("No hay documentos"),
 			            sc ? _("Se analiza la tarjeta SD. La primera vez puede tardar unos minutos.")
@@ -10790,7 +10790,7 @@ static void rl_bottom(void)
 		if (b) {
 			char tb[128];
 			util_strlcpy(title, rb_title(b, tb, sizeof tb), sizeof title);
-			ic[n] = IC_BOOK, lab[n] = b->last ? _("Seguir leyendo") : _("Leer"), col[n] = T.accent, act[n++] = 0;
+			ic[n] = IC_BOOK, lab[n] = b->last ? _("Continuar la lectura") : _("Leer"), col[n] = T.accent, act[n++] = 0;
 			if (b->last)
 				ic[n] = IC_UNDO, lab[n] = _("Leer desde el principio"), col[n] = T.text, act[n++] = 1;
 			ic[n] = IC_FOLDER, lab[n] = _("Ir a la carpeta"), col[n] = T.text, act[n++] = 2;
@@ -11168,7 +11168,7 @@ static void rv_bottom(void)
 		RV.cx = -1;
 		rv_drop_tex();
 		rv_relayout(RV.page);
-		toast_icon(RV.orient == 0 ? _("Lectura en horizontal") : RV.orient == 1 ? _("Lectura como un libro (consola de lado)") : _("Lectura como un libro, al otro lado"),
+		toast_icon(RV.orient == 0 ? _("Modo horizontal") : RV.orient == 1 ? _("Modo libro (consola en vertical)") : _("Modo libro, orientación inversa"),
 		           IC_FLIP, T.accent);
 		return;
 	}
@@ -11241,12 +11241,12 @@ static void rv_menu(void)
 	int act[8], n = 0;
 	static char pg[64];
 	ic[n] = IC_FLIP, col[n] = T.text, act[n++] = 0;
-	lab[n - 1] = RV.orient == 0 ? _("Leer como un libro (consola de lado)") : _("Girar al otro lado");
+	lab[n - 1] = RV.orient == 0 ? _("Modo libro (consola en vertical)") : _("Invertir la orientación");
 	if (RV.orient) // (y volver a horizontal, siempre a mano)
-		ic[n] = IC_BOOK, lab[n] = _("Leer en horizontal"), col[n] = T.text, act[n++] = 9;
+		ic[n] = IC_BOOK, lab[n] = _("Modo horizontal"), col[n] = T.text, act[n++] = 9;
 	if (rv_book()) {
 		ic[n] = IC_UNDO, lab[n] = RV.rtl ? _("Leer de izquierda a derecha") : _("Leer de derecha a izquierda (manga)"), col[n] = T.text, act[n++] = 1;
-		ic[n] = RV.autorot ? IC_CHECK : IC_FLIP, lab[n] = RV.autorot ? _("Girar solo: activado") : _("Girar solo al girar la consola"), col[n] = T.text, act[n++] = 8;
+		ic[n] = RV.autorot ? IC_CHECK : IC_FLIP, lab[n] = RV.autorot ? _("Rotación automática: activada") : _("Activar la rotación automática"), col[n] = T.text, act[n++] = 8;
 	}
 	if (!RV.reflow && !rv_book()) {
 		if (RV.zoom < 3)
@@ -11339,7 +11339,7 @@ static void dl_bottom(void)
 	C[n++] = (typeof(C[0])){IC_CAMERA, T.ok, _("Escanear un código QR"), _("Con la cámara, como en FBI"), 1};
 	if (clu)
 		C[n++] = (typeof(C[0])){IC_DUP, T.accent2, _("Enlace del portapapeles"), cl, 2};
-	C[n++] = (typeof(C[0])){IC_FOLDER, T.accent, _("Ver lo descargado"), cnt, 3};
+	C[n++] = (typeof(C[0])){IC_FOLDER, T.accent, _("Archivos descargados"), cnt, 3};
 	if (g_krepeat & KEY_DOWN)
 		sel = (sel + 1) % n, U.buttons = true;
 	if (g_krepeat & KEY_UP)
@@ -11409,7 +11409,7 @@ static void dlq_bottom(void)
 	const float RH = 40;
 	list_update(&l, nd, RH);
 	if (!nd) {
-		empty_state(IC_DOWNLOAD, _("La cola está vacía"), _("Lo que descargues desde un enlace, un QR o la Nube aparecerá aquí. Puedes pausarlo, reanudarlo o cancelarlo."));
+		empty_state(IC_DOWNLOAD, _("La cola está vacía"), _("Aquí aparecerán las descargas desde un enlace, un código QR o la Nube. Puedes pausarlas, reanudarlas o cancelarlas."));
 		return;
 	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
