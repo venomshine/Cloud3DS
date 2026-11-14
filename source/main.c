@@ -20,6 +20,7 @@
 #include "dl.h"
 #include "hash.h"
 #include "music.h"
+#include "reader.h"
 #include "mlib.h"
 #include "share.h"
 #include "live.h"
@@ -89,7 +90,7 @@ static struct {
 
 enum { QA_CLOUD, QA_CONNECT, QA_SCAN, QA_LINK, QA_WEB, QA_N };
 /* las aplicaciones del inicio (ver hm_*) */
-enum { AP_FILES, AP_TITLES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_SHARE, AP_SETTINGS, AP_N };
+enum { AP_FILES, AP_TITLES, AP_CONNECT, AP_DL, AP_CLOUD, AP_WEB, AP_MUSIC, AP_READER, AP_SHARE, AP_SETTINGS, AP_N };
 
 
 // actualizar desde un archivo: los CIA de Cloud3DS que hay en la SD, para elegir uno
@@ -1682,15 +1683,15 @@ static void tab_header(const char *title, bool back);
 static void qrs_open(void);
 static const char *dl_dest_dir(const char *url);
 // Descargas: desde un enlace o escaneando un QR; arriba, lo que se está descargando
-static void dl_top(void)
 static void dl_recent_top(void);
+static void dl_top(void)
 {
 	const Xfer *xs[MAX_XFERS];
 	int n = visible_xfers(xs, MAX_XFERS), f = 0;
 	for (int i = 0; i < n; i++)
 		f += xs[i]->kind == XF_FETCH;
-	if (DLV) {
 	(void)f;
+	if (DLV) {
 		files_top(1);
 		sd_bar(1);
 		return;
@@ -1701,6 +1702,9 @@ static void titles_space_bar(void);
 static bool f_is_titles(void);
 static void ml_top(void);
 static void sh_top(void);
+static void rl_top(void);
+static void rv_top(void);
+static bool rv_is_open(void);
 static u32 ap_col(int i);
 
 static void draw_top(void)
@@ -1717,6 +1721,10 @@ static void draw_top(void)
 	if (br_is_open()) { // navegador: las dos pantallas
 		br_top();
 		toast_draw_float();
+		return;
+	}
+	if (rv_is_open()) { // leyendo: las dos pantallas
+		rv_top();
 		return;
 	}
 	if (CLU.open) { // la nube (y lo que se abre desde ella: el visor o el reproductor)
@@ -1775,6 +1783,8 @@ static void draw_top(void)
 		ml_top();
 	else if (U.app == AP_SHARE)
 		sh_top();
+	else if (U.app == AP_READER)
+		rl_top();
 	else if (MU.open)
 		music_top(1);
 	else if (U.tab == TAB_FILES) {
@@ -1821,6 +1831,9 @@ static List *cur_list(void)
 
 static bool hdr_enter(void);
 static void ml_top(void);    // la app Música: su biblioteca
+static void rv_open(const char *path, int ret_app); // Lector: abrir un documento (al cerrarlo, vuelve a ret_app)
+static void rv_cfg_load(void);
+static const char *rb_title(const RBook *b, char *buf, size_t n);
 static void ml_bottom(void);
 static void sh_bottom(void);
 static void sh_prompts(void);
@@ -2041,19 +2054,6 @@ static void dl_status(const DlItem *d, char *out, size_t n, u32 *col)
 	}
 }
 
-// ------------------------------------------------------------ nube (OneDrive)
-static void explain_top(float a, IconId ic, u32 col, const char *title, const char *desc, const char *foot, u32 fc);
-static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char *title, const IconId *ic, const char *const *lab,
-                      const u32 *col, int n);
-static float info_row(float x, float y, float w, const char *k, const char *v, u32 vc, float a);
-static int segmented(float x, float y, float w, float h, const char *const *opts, int n, int cur, bool focus);
-
-static void cl_open(void)
-{
-	CLU.open = true;
-	if (!CLU.it)
-		CLU.it = malloc(sizeof(CloudItem) * 400);
-	cloud_get(&CLU.info);
 // Descargas, arriba: las más recientes primero (cómo van o por qué fallaron)
 static void dl_recent_top(void)
 {
@@ -2093,6 +2093,19 @@ static void dl_recent_top(void)
 	text_draw_right(_("Gestiónalas en Conectar > Actividad"), X + W, y0 + h - 8 - text_lineh(TS_SUB), TS_SUB, T.text3);
 }
 
+// ------------------------------------------------------------ nube (OneDrive)
+static void explain_top(float a, IconId ic, u32 col, const char *title, const char *desc, const char *foot, u32 fc);
+static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char *title, const IconId *ic, const char *const *lab,
+                      const u32 *col, int n);
+static float info_row(float x, float y, float w, const char *k, const char *v, u32 vc, float a);
+static int segmented(float x, float y, float w, float h, const char *const *opts, int n, int cur, bool focus);
+
+static void cl_open(void)
+{
+	CLU.open = true;
+	if (!CLU.it)
+		CLU.it = malloc(sizeof(CloudItem) * 400);
+	cloud_get(&CLU.info);
 	if (CLU.info.st == CLS_ON && !cloud_depth())
 		cloud_list("", "OneDrive");
 	CLU.rev = (u32)-1;
@@ -2947,6 +2960,9 @@ static struct {
 	int iw, ih;        // su tamaño original
 	char app_title[64], app_pub[64]; // de un .3dsx (su SMDH)
 	int dir_count;     // elementos de la carpeta elegida
+	bool dir_more;     // (se dejó de contar: hay más)
+	int mt_next;       // fechas: se leen poco a poco tras abrir la carpeta (pedirlas todas a la vez la trababa)
+	bool mt_pending;
 	char preview[600]; // principio de un texto, para verlo arriba
 } F = {.path = "/", .sys_open = true, .info_for = -1, .sel = 1};
 
@@ -3000,9 +3016,6 @@ static void titles_space_bar(void)
 			break;
 		sc -= 0.01f, gap = fmaxf(8, gap - 3);
 	}
-	bool dir_more;     // (se dejó de contar: hay más)
-	int mt_next;       // fechas: se leen poco a poco tras abrir la carpeta (pedirlas todas a la vez la trababa)
-	bool mt_pending;
 	float lx = bx, ly = by + 14;
 	for (int k = 0; k < 4; k++) {
 		draw_circle(lx + 3, ly + 6, 3, c[k]);
@@ -3073,7 +3086,7 @@ static struct {
 static int sr_nkinds(void);
 
 // acciones sobre archivos (menú de un elemento y selección múltiple)
-enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT, FA_HASH, FA_ZIP, FA_CLOUD };
+enum { FA_INSTALL, FA_RENAME, FA_MOVE, FA_COPY, FA_DELETE, FA_COLORS, FA_ASTEXT, FA_TYPE, FA_SELECT, FA_HASH, FA_ZIP, FA_CLOUD, FA_READ };
 
 static const char *chip_name(int i)
 {
@@ -3743,6 +3756,43 @@ static void f_load(const char *path)
 	F.info_for = -1;
 }
 
+// las fechas de la carpeta abierta, unas pocas en cada vuelta (con tope de tiempo); al tenerlas todas, si se ordena o se
+// agrupa por fecha, se vuelve a ordenar sin perder lo elegido
+static void f_mtime_step(void)
+{
+	if (!F.mt_pending)
+		return;
+	if (F.trash || F.search || F.titles || F.path[0] != '/') {
+		F.mt_pending = false;
+		return;
+	}
+	WHERE("leer las fechas de la carpeta");
+	u64 t0 = util_ms();
+	while (F.mt_next < F.n && util_ms() - t0 < 6) {
+		char full[700];
+		f_full(F.mt_next, full, sizeof full);
+		F.e[F.mt_next].mtime = fsx_mtime(full);
+		F.mt_next++;
+	}
+	if (F.mt_next < F.n)
+		return;
+	F.mt_pending = false;
+	F.info_for = -1; // (la información de arriba, con su fecha)
+	if (V.f_sort != 1 && V.f_group != 2)
+		return;
+	char keep[128] = "";
+	const FView *v = F.sel >= 0 && F.sel < F.nv ? &F.v[F.sel] : NULL;
+	if (v && v->kind == FV_ITEM)
+		util_strlcpy(keep, F.e[v->idx].name, sizeof keep);
+	for (int i = 0; i < F.n; i++)
+		F.e[i].grp = (u8)f_grp(&F.e[i]);
+	qsort(F.e, F.n, sizeof *F.e, f_cmp);
+	f_build_view();
+	for (int i = 0; keep[0] && i < F.nv; i++)
+		if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, keep))
+			F.sel = i;
+}
+
 static void f_reload_keep(void)
 {
 	char keep[128] = "", p[512];
@@ -3796,43 +3846,6 @@ static bool f_back_to_origin(void)
 	if (!F.ret_from[0] || strcasecmp(F.path, F.ret_from) || !strcmp(F.ret_to, F.path))
 		return false;
 	char to[512], from[512];
-// las fechas de la carpeta abierta, unas pocas en cada vuelta (con tope de tiempo); al tenerlas todas, si se ordena o se
-// agrupa por fecha, se vuelve a ordenar sin perder lo elegido
-static void f_mtime_step(void)
-{
-	if (!F.mt_pending)
-		return;
-	if (F.trash || F.search || F.titles || F.path[0] != '/') {
-		F.mt_pending = false;
-		return;
-	}
-	WHERE("leer las fechas de la carpeta");
-	u64 t0 = util_ms();
-	while (F.mt_next < F.n && util_ms() - t0 < 6) {
-		char full[700];
-		f_full(F.mt_next, full, sizeof full);
-		F.e[F.mt_next].mtime = fsx_mtime(full);
-		F.mt_next++;
-	}
-	if (F.mt_next < F.n)
-		return;
-	F.mt_pending = false;
-	F.info_for = -1; // (la información de arriba, con su fecha)
-	if (V.f_sort != 1 && V.f_group != 2)
-		return;
-	char keep[128] = "";
-	const FView *v = F.sel >= 0 && F.sel < F.nv ? &F.v[F.sel] : NULL;
-	if (v && v->kind == FV_ITEM)
-		util_strlcpy(keep, F.e[v->idx].name, sizeof keep);
-	for (int i = 0; i < F.n; i++)
-		F.e[i].grp = (u8)f_grp(&F.e[i]);
-	qsort(F.e, F.n, sizeof *F.e, f_cmp);
-	f_build_view();
-	for (int i = 0; keep[0] && i < F.nv; i++)
-		if (F.v[i].kind == FV_ITEM && !strcmp(F.e[F.v[i].idx].name, keep))
-			F.sel = i;
-}
-
 	util_strlcpy(to, F.ret_to, sizeof to);
 	util_strlcpy(from, F.ret_from, sizeof from);
 	F.ret_from[0] = 0;
@@ -3905,6 +3918,10 @@ static bool read_3dsx(const char *path, char *title, size_t tn, char *pub, size_
 	return true;
 }
 
+typedef struct {
+	int n;
+	u64 t0;
+} CountT;
 static bool count_cb(const FsxEntry *e, void *u)
 {
 	(void)e;
@@ -3959,10 +3976,6 @@ static void f_info_refresh(void)
 			F.preview[n] = 0;
 			char *p = F.preview;
 			if (!strncmp(p, "\xEF\xBB\xBF", 3))
-typedef struct {
-	int n;
-	u64 t0;
-} CountT;
 				memmove(p, p + 3, strlen(p + 3) + 1);
 			size_t l = strlen(p);
 			if (n == sizeof F.preview - 1) { // se cortó: sin un carácter partido al final
@@ -4689,6 +4702,8 @@ static bool f_open_item(int vi)
 			f_load(full);
 	} else if (!strcasecmp(f_ext(e->name), "html") || !strcasecmp(f_ext(e->name), "htm")) { // en el navegador
 		br_open_file(full);
+	} else if (rd_kind(full) >= 0 && rd_kind(full) != RK_TXT) { // PDF, CBZ, EPUB y DOCX: en el Lector
+		rv_open(full, U.app);
 	} else if (f_is_img(e) || f_is_txt(e)) {
 		vw_load(F.v[vi].idx);
 	} else if (!strcasecmp(f_ext(e->name), "zip")) {
@@ -7124,6 +7139,7 @@ static void tab_files(void)
 		f_load("/");
 	if (F.need_reload)
 		f_reload_keep();
+	f_mtime_step();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
 	bool root = f_app_root() && U.app != AP_DL; // (en lo descargado, la flecha vuelve a las tarjetas)
 	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : f_app_root() && U.app == AP_DL ? _("Archivos descargados") : root && U.app == AP_MUSIC ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
@@ -7179,7 +7195,6 @@ static void tab_files(void)
 	} else if (F.titles) { // instalados: atrás a la raíz y, a la derecha, cuántos y cuánto ocupan
 		tab_header_w(nm, !root, 130);
 		u64 tot = 0;
-	f_mtime_step();
 		for (int i = 0; i < TI_n; i++)
 			tot += TI[i].size + TI[i].upd_size + TI[i].dlc_size;
 		char c[64], sz[24];
@@ -7727,6 +7742,8 @@ static void f_menu_open(void)
 	bool locked = e->sys && V.protect_sys;
 	if (!e->dir && !strcasecmp(f_ext(e->name), "cia"))
 		FM.acts[FM.n++] = FA_INSTALL;
+	if (!e->dir && !strcasecmp(f_ext(e->name), "txt") && !vw_is_open()) // un texto, también para leerlo como un libro
+		FM.acts[FM.n++] = FA_READ;
 	bool html = !strcasecmp(f_ext(e->name), "html") || !strcasecmp(f_ext(e->name), "htm");
 	if (!e->dir && !f_is_img(e) && (!f_is_txt(e) || html) && !vw_is_open()) // cualquier archivo se puede mirar como texto (y un .html, editar)
 		FM.acts[FM.n++] = FA_ASTEXT;
@@ -7767,13 +7784,14 @@ static const char *fa_name(int a)
 	case FA_HASH: return _("MD5 y SHA-256");
 	case FA_ZIP: return _("Comprimir en ZIP");
 	case FA_CLOUD: return _("Subir a OneDrive");
+	case FA_READ: return _("Abrir en el Lector");
 	default: return _("Destacar");
 	}
 }
 
 static IconId fa_icon(int a)
 {
-	static const IconId IC[12] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_DUP, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD, IC_ARCHIVE, IC_CLOUD};
+	static const IconId IC[13] = {IC_DOWNLOAD, IC_PEN, IC_FOLDER, IC_DUP, IC_TRASH, IC_STAR, IC_NOTE, IC_CODE, IC_CHECK, IC_SHIELD, IC_ARCHIVE, IC_CLOUD, IC_BOOK};
 	return IC[a];
 }
 
@@ -7906,6 +7924,10 @@ static void fa_run(int a)
 	FM.open = false;
 	if (a == FA_ASTEXT) {
 		vw_load(FM.idx);
+		return;
+	}
+	if (a == FA_READ) {
+		rv_open(full, U.app);
 		return;
 	}
 	if (a == FA_SELECT) {
@@ -9897,10 +9919,10 @@ static struct {
 	float drag_dx;
 } HM = {.open = true};
 
-static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_SEND, IC_GEAR};
+static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_BOOK, IC_SEND, IC_GEAR};
 static u32 ap_col(int i)
 {
-	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0x21C7A8, 0x9AA6BA};
+	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0xC27BF0, 0x21C7A8, 0x9AA6BA};
 	return col_hex(hex[i]);
 }
 static const char *ap_name(int i)
@@ -9913,6 +9935,7 @@ static const char *ap_name(int i)
 	case AP_CLOUD: return _("Nube");
 	case AP_WEB: return _("Navegador");
 	case AP_MUSIC: return _("Música");
+	case AP_READER: return _("Lector");
 	case AP_SHARE: return _("Compartir");
 	default: return _("Ajustes");
 	}
@@ -9929,6 +9952,7 @@ static const char *ap_desc(int i)
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
 	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
 	case AP_MUSIC: return _("Toda la música de la SD, por canciones, artistas y álbumes. Sigue sonando en segundo plano.");
+	case AP_READER: return _("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee en horizontal o con la consola de lado, como un libro.");
 	case AP_SHARE: return _("Comparte apps homebrew instaladas con otra consola de la misma red Wi-Fi: vincúlalas una vez, consulta sus apps y solicítalas.");
 	default: return _("Conexión, seguridad, idioma, tema y actualizaciones.");
 	}
@@ -9991,6 +10015,10 @@ static void hm_launch(int i)
 	case AP_SHARE:
 		share_discover();
 		break;
+	case AP_READER:
+		rlib_init(); // (la biblioteca: busca lo nuevo en segundo plano)
+		rv_cfg_load();
+		break;
 	default: break;
 	}
 	HM.open = false;
@@ -10023,7 +10051,7 @@ static void hm_launch(int i)
 		util_strlcpy(U.app_root, "@titles", sizeof U.app_root);
 		return;
 	}
-	if (i == AP_MUSIC || i == AP_SHARE) // su pantalla (ml_bottom, sh_bottom)
+	if (i == AP_MUSIC || i == AP_SHARE || i == AP_READER) // su pantalla (ml_bottom, sh_bottom, rl_bottom)
 		return;
 	// Archivos: en su última carpeta (no en la de otra app: Descargas, Títulos o sus copias)
 	f_load(FILES_LAST[0] ? FILES_LAST : "/");
@@ -10119,6 +10147,19 @@ static void hm_top(void)
 			snprintf(s1, sizeof s1, "%s", ci.email[0] ? ci.email : ci.name), c1 = T.ok;
 		else
 			util_strlcpy(s1, _("Sin conectar"), sizeof s1);
+	} else if (i == AP_READER) { // lo último que se leyó
+		const RBook *b;
+		int n = rlib_lock(&b), best = -1;
+		for (int k = 0; k < n; k++)
+			if (b[k].last && (best < 0 || b[k].last > b[best].last))
+				best = k;
+		if (best >= 0) {
+			char tb[128];
+			snprintf(s1, sizeof s1, _("Continuar: %s"), rb_title(&b[best], tb, sizeof tb)), c1 = T.text2;
+			if (b[best].pages > 0)
+				snprintf(s2, sizeof s2, _("Página %d de %d"), b[best].page + 1, b[best].pages);
+		}
+		rlib_unlock();
 	} else if (i == AP_MUSIC) {
 		if (MU.s.st == MU_PLAY || MU.s.st == MU_PAUSE)
 			snprintf(s1, sizeof s1, "%s %s", MU.s.st == MU_PLAY ? _("Reproduciendo:") : _("En pausa:"), MU.s.title), c1 = T.text2;
@@ -10286,6 +10327,919 @@ static void hm_bottom(void)
 	dialog_draw();
 }
 
+// ================================================================ Lector
+// La biblioteca (rlib: lo que hay en la SD y por dónde se va) y la lectura (rd_*: MuPDF en su hilo). Al leer, el
+// documento ocupa las dos pantallas: en horizontal, una página repartida entre las dos (de arriba abajo); como un
+// libro (la consola de lado), una página en cada pantalla, giradas. B cierra; X, las opciones; Y, girar.
+
+enum { RLT_RECENT, RLT_ALL, RLT_FOLDERS };
+static struct {
+	bool init;
+	int tab, level;          // level 1: dentro de una carpeta (pestaña Carpetas)
+	char folder[256];
+	List l[2];
+	u32 built;
+	int built_tab, built_level;
+	RBook *lib;              // copia de la biblioteca
+	int nlib;
+	int *ix, n;              // los documentos a la vista
+	char (*dirs)[256];       // las carpetas (pestaña Carpetas)
+	int *dcnt, nd;
+	bool om, om_just;        // opciones de un documento
+	float om_anim;
+	int om_sel, om_i;
+	bool hm, hm_just;        // opciones de la cabecera
+	float hm_anim;
+	int hm_sel;
+	char cov_for[256];       // portada de lo elegido
+	Texture cov;
+	u64 sel_t;
+	char sel_path[256];
+} RL;
+
+static struct {
+	bool open;
+	char path[256], name[128];
+	int ret_app;             // a dónde se vuelve al cerrar
+	int st, page, pages;     // st: RD_*
+	bool reflow, first;      // first: aún no se colocó en la página guardada
+	int saved_page, saved_pages;
+	int orient;              // 0 horizontal; 1 libro con la pantalla de arriba a la izquierda; 2 al revés
+	bool rtl;                // libro: de derecha a izquierda (manga)
+	int zoom;                // horizontal: 0 al ancho de la pantalla de abajo; 1 de la de arriba; 2 y 3, más
+	int em;                  // letra de lo que se recoloca (puntos)
+	u32 lgen;
+	bool relaying;
+	float scroll, cx;        // horizontal: desplazamiento (vertical) y centro (horizontal) en la página
+	Texture tex[2];          // [0] arriba (o la página en horizontal), [1] abajo
+	RdReq have[2];
+	bool has[2];
+	u64 hud_t, save_t;
+	bool dirty;
+	bool menu, menu_just;
+	float menu_anim;
+	int menu_sel;
+	bool want_page;          // «Ir a la página»: teclado, fuera del dibujo
+} RV = {.em = 11};
+
+#define RV_CFG APP_DIR "/lector.cfg"
+static void rv_cfg_load(void)
+{
+	static bool done;
+	if (done)
+		return;
+	done = true;
+	FILE *f = fopen(RV_CFG, "r");
+	char ln[64];
+	while (f && fgets(ln, sizeof ln, f)) {
+		if (!strncmp(ln, "orient=", 7))
+			RV.orient = clampf(atoi(ln + 7), 0, 2);
+		else if (!strncmp(ln, "rtl=", 4))
+			RV.rtl = atoi(ln + 4) != 0;
+		else if (!strncmp(ln, "zoom=", 5))
+			RV.zoom = clampf(atoi(ln + 5), 0, 3);
+		else if (!strncmp(ln, "em=", 3))
+			RV.em = clampf(atoi(ln + 3), 8, 20);
+	}
+	if (f)
+		fclose(f);
+}
+static void rv_cfg_save(void)
+{
+	FILE *f = fopen(RV_CFG, "w");
+	if (f)
+		fprintf(f, "orient=%d\nrtl=%d\nzoom=%d\nem=%d\n", RV.orient, RV.rtl ? 1 : 0, RV.zoom, RV.em), fclose(f);
+}
+
+static const char *rd_kind_name(int k)
+{
+	static const char *const N[RK_N] = {"PDF", "CBZ", "EPUB", "DOCX", "TXT"};
+	return k >= 0 && k < RK_N ? N[k] : "";
+}
+static IconId rd_kind_icon(int k) { return k == RK_CBZ ? IC_IMAGE : k == RK_EPUB ? IC_BOOK : k == RK_TXT ? IC_NOTE : IC_FILE; }
+static u32 rd_kind_col(int k)
+{
+	return k == RK_PDF ? 0xFF4444EF : k == RK_CBZ ? 0xFFF755A8 : k == RK_EPUB ? T.accent : k == RK_DOCX ? 0xFFF6823B : T.text2;
+}
+
+// el nombre que se enseña: el título del documento o el del archivo sin extensión
+static const char *rb_title(const RBook *b, char *buf, size_t n)
+{
+	if (b->title[0])
+		return b->title;
+	const char *s = strrchr(b->path, '/');
+	util_strlcpy(buf, s ? s + 1 : b->path, n);
+	char *dot = strrchr(buf, '.');
+	if (dot && dot != buf)
+		*dot = 0;
+	return buf;
+}
+
+// orden natural: «Tomo 2» antes que «Tomo 10»
+static int nat_cmp(const char *a, const char *b)
+{
+	while (*a && *b) {
+		if (isdigit((unsigned char)*a) && isdigit((unsigned char)*b)) {
+			while (*a == '0')
+				a++;
+			while (*b == '0')
+				b++;
+			const char *ea = a, *eb = b;
+			while (isdigit((unsigned char)*ea))
+				ea++;
+			while (isdigit((unsigned char)*eb))
+				eb++;
+			if (ea - a != eb - b)
+				return (int)((ea - a) - (eb - b));
+			int c = strncmp(a, b, ea - a);
+			if (c)
+				return c;
+			a = ea, b = eb;
+			continue;
+		}
+		int ca = tolower((unsigned char)*a), cb = tolower((unsigned char)*b);
+		if (ca != cb)
+			return ca - cb;
+		a++, b++;
+	}
+	return (unsigned char)*a - (unsigned char)*b;
+}
+
+static const RBook *RL_SORT;
+static int rl_cmp_title(const void *x, const void *y)
+{
+	char a[128], b[128];
+	return nat_cmp(rb_title(&RL_SORT[*(const int *)x], a, sizeof a), rb_title(&RL_SORT[*(const int *)y], b, sizeof b));
+}
+static int rl_cmp_last(const void *x, const void *y)
+{
+	const RBook *a = &RL_SORT[*(const int *)x], *b = &RL_SORT[*(const int *)y];
+	return a->last < b->last ? 1 : a->last > b->last ? -1 : 0;
+}
+static int rl_cmp_dir(const void *x, const void *y)
+{
+	return nat_cmp((const char *)x, (const char *)y);
+}
+
+static void rl_parent(const char *path, char *out, size_t n)
+{
+	util_strlcpy(out, path, n);
+	char *sl = strrchr(out, '/');
+	if (sl && sl != out)
+		*sl = 0;
+	else if (sl)
+		sl[1] = 0;
+}
+
+// rehace la vista (de la biblioteca, si cambió, y de la pestaña)
+static void rl_build(void)
+{
+	u32 rev = rlib_rev();
+	if (RL.lib && rev == RL.built && RL.built_tab == RL.tab && RL.built_level == RL.level)
+		return;
+	if (!RL.lib && !(RL.lib = malloc(sizeof(RBook) * RLIB_MAX)))
+		return;
+	if (!RL.ix)
+		RL.ix = malloc(sizeof(int) * RLIB_MAX);
+	if (!RL.dirs)
+		RL.dirs = malloc(sizeof(RL.dirs[0]) * 400), RL.dcnt = malloc(sizeof(int) * 400);
+	if (!RL.ix || !RL.dirs || !RL.dcnt)
+		return;
+	const RBook *b;
+	int n = rlib_lock(&b);
+	if (n)
+		memcpy(RL.lib, b, sizeof(RBook) * n);
+	rlib_unlock();
+	RL.nlib = n;
+	RL.built = rev, RL.built_tab = RL.tab, RL.built_level = RL.level;
+	RL.n = RL.nd = 0;
+	RL_SORT = RL.lib;
+	if (RL.tab == RLT_FOLDERS && RL.level == 0) {
+		for (int i = 0; i < n; i++) {
+			char d[256];
+			rl_parent(RL.lib[i].path, d, sizeof d);
+			int k = 0;
+			while (k < RL.nd && strcmp(RL.dirs[k], d))
+				k++;
+			if (k == RL.nd && RL.nd < 400)
+				util_strlcpy(RL.dirs[RL.nd], d, sizeof RL.dirs[0]), RL.dcnt[RL.nd++] = 0;
+			if (k < RL.nd)
+				RL.dcnt[k]++;
+		}
+		// (por nombre, con su cuenta al lado: se ordenan los pares)
+		for (int i = 1; i < RL.nd; i++)
+			for (int j = i; j > 0 && rl_cmp_dir(RL.dirs[j - 1], RL.dirs[j]) > 0; j--) {
+				char t[256];
+				util_strlcpy(t, RL.dirs[j], sizeof t);
+				util_strlcpy(RL.dirs[j], RL.dirs[j - 1], sizeof t);
+				util_strlcpy(RL.dirs[j - 1], t, sizeof t);
+				int c = RL.dcnt[j];
+				RL.dcnt[j] = RL.dcnt[j - 1], RL.dcnt[j - 1] = c;
+			}
+		return;
+	}
+	for (int i = 0; i < n; i++) {
+		if (RL.tab == RLT_RECENT && !RL.lib[i].last)
+			continue;
+		if (RL.tab == RLT_FOLDERS) {
+			char d[256];
+			rl_parent(RL.lib[i].path, d, sizeof d);
+			if (strcmp(d, RL.folder))
+				continue;
+		}
+		RL.ix[RL.n++] = i;
+	}
+	qsort(RL.ix, RL.n, sizeof(int), RL.tab == RLT_RECENT ? rl_cmp_last : rl_cmp_title);
+}
+
+static const RBook *rl_selected(void)
+{
+	if (RL.tab == RLT_FOLDERS && RL.level == 0)
+		return NULL;
+	List *l = &RL.l[RL.level];
+	return l->sel >= 0 && l->sel < RL.n ? &RL.lib[RL.ix[l->sel]] : NULL;
+}
+
+static void rv_open(const char *path, int ret_app);
+
+// la portada de lo elegido (la pide cuando la selección se queda quieta un momento)
+static void rl_cover(const RBook *b)
+{
+	if (!b) {
+		RL.sel_path[0] = 0;
+		return;
+	}
+	if (strcmp(RL.sel_path, b->path)) {
+		util_strlcpy(RL.sel_path, b->path, sizeof RL.sel_path);
+		RL.sel_t = util_ms();
+	}
+	if (!strcmp(RL.cov_for, b->path) || util_ms() - RL.sel_t < 250)
+		return;
+	u16 *px;
+	int w, h;
+	if (rd_cover(b->path, 112, 158, &px, &w, &h)) {
+		tex_from_rgb565(&RL.cov, px, w, h);
+		free(px);
+		util_strlcpy(RL.cov_for, b->path, sizeof RL.cov_for);
+	}
+}
+
+static void rl_top(void)
+{
+	rl_build();
+	float y0 = BODY_Y, h = SCR_H - 8 - y0;
+	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
+	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
+	const float X = CARD_X + 14, W = CARD_W - 28;
+	const RBook *b = rl_selected();
+	rl_cover(b);
+	if (b) { // el documento elegido: portada, nombre y por dónde va
+		const float CW = 112, CH = 158;
+		float cx = X, cy = y0 + 12;
+		draw_rrect(cx, cy, CW, CH, 8, T.surface2);
+		if (!strcmp(RL.cov_for, b->path) && RL.cov.ok) {
+			float s = fminf(CW / RL.cov.w, CH / RL.cov.h), w = RL.cov.w * s, hh = RL.cov.h * s;
+			draw_texture(&RL.cov, cx + (CW - w) / 2, cy + (CH - hh) / 2, w, hh, 1);
+		} else
+			draw_icon(rd_kind_icon(b->kind), cx + CW / 2, cy + CH / 2, 36, rd_kind_col(b->kind));
+		float tx = cx + CW + 14, tw = X + W - tx, y = cy + 2;
+		char tb[128];
+		y += text_wrap_lines(rb_title(b, tb, sizeof tb), tw, TS_TITLE, 2, tx, y, T.text, true) * text_lineh(TS_TITLE) + 4;
+		char v[200], sz[24];
+		util_fmt_size(sz, sizeof sz, b->size);
+		snprintf(v, sizeof v, "%s · %s", rd_kind_name(b->kind), sz);
+		y = info_row(tx, y, tw, _("Tipo"), v, T.text2, 1);
+		char d[256];
+		rl_parent(b->path, d, sizeof d);
+		y = info_row(tx, y, tw, _("Carpeta"), d, T.text2, 1);
+		if (b->last && b->pages > 0) {
+			snprintf(v, sizeof v, _("Página %d de %d"), b->page + 1, b->pages);
+			y = info_row(tx, y, tw, _("Progreso"), v, T.text2, 1);
+			f_fmt_date(sz, sizeof sz, b->last);
+			y = info_row(tx, y, tw, _("Última lectura"), sz, T.text3, 1);
+			float pw = tw, py = y + 4;
+			draw_rrect(tx, py, pw, 6, 3, T.surface2);
+			draw_rrect(tx, py, fmaxf(6, pw * (b->page + 1) / (float)b->pages), 6, 3, ap_col(AP_READER));
+		} else
+			y = info_row(tx, y, tw, _("Progreso"), _("Sin empezar"), T.text3, 1);
+		char hint[96];
+		snprintf(hint, sizeof hint, _("%s Leer · %s Opciones"), GLYPH_A, GLYPH_Y);
+		text_draw_right(hint, X + W, y0 + h - 10 - text_lineh(TS_SUB), TS_SUB, T.text2);
+		return;
+	}
+	draw_circle(X + 30, y0 + 40, 26, col_alpha(ap_col(AP_READER), 0.16f));
+	draw_icon(IC_BOOK, X + 30, y0 + 40, 24, ap_col(AP_READER));
+	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
+	text_draw_clip(_("Biblioteca de lectura"), tx, y, tw, TS_TITLE, T.text);
+	y += text_lineh(TS_TITLE) + 4;
+	char l1[96];
+	snprintf(l1, sizeof l1, RL.nlib == 1 ? _("1 documento") : _("%d documentos"), RL.nlib);
+	text_draw_clip(l1, tx, y, tw, TS_SUB, T.text2);
+	y += text_lineh(TS_SUB) + 4;
+	int found;
+	if (rlib_scanning(&found)) {
+		char l2[96];
+		snprintf(l2, sizeof l2, _("Buscando documentos en la SD… %d"), found);
+		text_draw_clip(l2, tx, y, tw, TS_SUB, T.accent);
+	}
+	y = y0 + 84;
+	draw_rect(X, y, W, 1, T.divider);
+	y += 10;
+	y += text_wrap_lines(_("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Se puede leer en horizontal o con la consola de lado, como un libro; el manga, de derecha a izquierda."),
+	                     W, TS_SUB, 3, X, y, T.text2, true) *
+	         text_lineh(TS_SUB) + 6;
+	text_wrap_lines(_("Los TXT se buscan solo en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Cualquier otro se abre desde Archivos."), W, TS_SUB, 3, X, y,
+	                T.text3, true);
+}
+
+static void rl_bottom(void)
+{
+	if (!RL.init) {
+		RL.init = true;
+		rlib_init();
+		rv_cfg_load();
+	}
+	rl_build();
+	if (!RL.lib)
+		return;
+	bool sheet = RL.om || RL.hm || g_dialog.open;
+	u32 kd = g_kdown, kr = g_krepeat;
+	Touch tc = g_touch;
+	if (sheet) {
+		g_kdown = g_krepeat = 0;
+		memset(&g_touch, 0, sizeof g_touch);
+	}
+	if (RL.level == 0) {
+		tab_header_w("", false, 0);
+		const char *opts[3] = {_("Recientes"), _("Todos"), _("Carpetas")};
+		float sw = (BOT_W - 40 - 36) / 3;
+		int r = segmented(40, 5, sw * 3, 22, opts, 3, RL.tab, false);
+		for (int k = 0; k < 3; k++)
+			if (hdr_hit(40 + k * sw, 5, sw, 22))
+				r = k;
+		if ((g_kdown & (KEY_L | KEY_ZL)) && RL.tab > 0)
+			r = RL.tab - 1;
+		if ((g_kdown & (KEY_R | KEY_ZR)) && RL.tab < 2)
+			r = RL.tab + 1;
+		if (r >= 0 && r != RL.tab)
+			RL.tab = r, RL.l[0].sel = 0, RL.l[0].off = RL.l[0].target = 0;
+		if ((g_kdown & KEY_B) && !g_dialog.open) {
+			hm_show();
+			return;
+		}
+	} else {
+		const char *nm = strrchr(RL.folder, '/');
+		tab_header_w(nm && nm[1] ? nm + 1 : RL.folder, true, 230);
+		if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
+			RL.level = 0;
+	}
+	float hx = BOT_W - 24, hy = 16;
+	draw_circle(hx, hy, 12, touch_in(hx - 14, hy - 14, 28, 28) ? T.surface2 : T.surface);
+	draw_icon(IC_DOTS, hx, hy, 14, T.text2);
+	if (hdr_hit(hx - 13, hy - 13, 26, 26))
+		RL.hm = RL.hm_just = true, RL.hm_sel = 0;
+	rl_build();
+	List *l = &RL.l[RL.level];
+	bool dirs = RL.tab == RLT_FOLDERS && RL.level == 0;
+	int cnt = dirs ? RL.nd : RL.n;
+	const float RH = 40;
+	list_update(l, cnt, RH);
+	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+	if (!cnt) {
+		int found;
+		bool sc = rlib_scanning(&found);
+		if (RL.tab == RLT_RECENT && RL.nlib)
+			empty_state(IC_CLOCK, _("Aún no has leído nada"), _("Lo que abras aparecerá aquí, con la página por la que vas. Elige un documento en «Todos» o «Carpetas»."));
+		else
+			empty_state(IC_BOOK, sc ? _("Buscando documentos…") : _("No hay documentos"),
+			            sc ? _("Se analiza la tarjeta SD. La primera vez puede tardar unos minutos.")
+			               : _("Copia PDF, CBZ, EPUB, DOCX o TXT a la SD (por ejemplo, a /Books o a /Manga) y aparecerán aquí."));
+	}
+	for (int i = 0; i < cnt; i++) {
+		float y = VIEW_Y + i * RH - l->off;
+		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
+			continue;
+		bool was = l->sel == i;
+		bool t = row(l, i, y, RH);
+		if (!U.buttons && l->sel == i)
+			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
+		char t1[256], t2[200];
+		IconId ic;
+		u32 col;
+		const RBook *b = NULL;
+		if (dirs) {
+			const char *nm = strrchr(RL.dirs[i], '/');
+			util_strlcpy(t1, nm && nm[1] ? nm + 1 : RL.dirs[i], sizeof t1);
+			snprintf(t2, sizeof t2, RL.dcnt[i] == 1 ? _("1 documento · %s") : _("%d documentos · %s"), RL.dcnt[i], RL.dirs[i]);
+			ic = IC_FOLDER, col = T.warn;
+		} else {
+			b = &RL.lib[RL.ix[i]];
+			char tb[128], sz[24];
+			util_strlcpy(t1, rb_title(b, tb, sizeof tb), sizeof t1);
+			util_fmt_size(sz, sizeof sz, b->size);
+			if (b->last && b->pages > 0)
+				snprintf(t2, sizeof t2, _("%s · %s · página %d de %d"), rd_kind_name(b->kind), sz, b->page + 1, b->pages);
+			else
+				snprintf(t2, sizeof t2, "%s · %s", rd_kind_name(b->kind), sz);
+			ic = rd_kind_icon(b->kind), col = rd_kind_col(b->kind);
+		}
+		draw_rrect(14, y + (RH - 26) / 2, 26, 26, 8, col_alpha(col, 0.16f));
+		draw_icon(ic, 27, y + RH / 2, 14, col);
+		g_clip_ell = l->sel != i;
+		text_draw_clip(t1, 50, y + 5, BOT_W - 90, TS_BODY, T.text);
+		text_draw_clip(t2, 50, y + 22, BOT_W - 90, TS_SUB, T.text3);
+		g_clip_ell = false;
+		if (b && b->last && b->pages > 0) { // lo leído, en una línea fina debajo
+			float pw = BOT_W - 90 - 50;
+			draw_rect(50, y + RH - 4, pw, 2, T.surface2);
+			draw_rect(50, y + RH - 4, pw * (b->page + 1) / (float)b->pages, 2, ap_col(AP_READER));
+		}
+		if (!dirs && l->sel == i) {
+			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
+			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
+		}
+		bool open = (t && was) || activate(l, i);
+		if (!dirs && t && was && g_touch.px > BOT_W - 44)
+			RL.om = RL.om_just = true, RL.om_sel = 0, RL.om_i = i;
+		else if (open) {
+			if (dirs) {
+				util_strlcpy(RL.folder, RL.dirs[i], sizeof RL.folder);
+				RL.level = 1, RL.l[1].sel = 0, RL.l[1].off = RL.l[1].target = 0;
+			} else
+				rv_open(b->path, AP_READER);
+		}
+	}
+	gfx_clip_off();
+	if ((g_kdown & KEY_Y) && cnt && !dirs && !RL.om)
+		RL.om = RL.om_just = true, RL.om_sel = 0, RL.om_i = l->sel;
+	if (sheet)
+		g_kdown = kd, g_krepeat = kr, g_touch = tc;
+	{ // opciones de un documento
+		const RBook *b = !dirs && RL.om_i >= 0 && RL.om_i < RL.n ? &RL.lib[RL.ix[RL.om_i]] : NULL;
+		IconId ic[4];
+		const char *lab[4];
+		u32 col[4];
+		int act[4], n = 0;
+		char title[128] = "";
+		if (b) {
+			char tb[128];
+			util_strlcpy(title, rb_title(b, tb, sizeof tb), sizeof title);
+			ic[n] = IC_BOOK, lab[n] = b->last ? _("Seguir leyendo") : _("Leer"), col[n] = T.accent, act[n++] = 0;
+			if (b->last)
+				ic[n] = IC_UNDO, lab[n] = _("Leer desde el principio"), col[n] = T.text, act[n++] = 1;
+			ic[n] = IC_FOLDER, lab[n] = _("Ir a la carpeta"), col[n] = T.text, act[n++] = 2;
+		}
+		if (!n)
+			RL.om = false;
+		int r = sheet_list(&RL.om, &RL.om_just, &RL.om_anim, &RL.om_sel, title, ic, lab, col, n);
+		if (r >= 0 && b) {
+			char path[256];
+			util_strlcpy(path, b->path, sizeof path);
+			if (act[r] == 1)
+				rlib_progress(path, 0, b->pages, NULL);
+			if (act[r] <= 1)
+				rv_open(path, AP_READER);
+			else {
+				char d[256];
+				rl_parent(path, d, sizeof d);
+				hm_launch(AP_FILES);
+				f_load(d);
+			}
+		}
+	}
+	{ // opciones de la cabecera
+		IconId ic[2] = {IC_REFRESH, IC_FOLDER};
+		const char *lab[2] = {_("Volver a buscar documentos"), rlib_where() == RLS_ALL ? _("Buscar solo en las carpetas de lectura") : _("Buscar en toda la SD")};
+		u32 col[2] = {T.text, T.text};
+		int r = sheet_list(&RL.hm, &RL.hm_just, &RL.hm_anim, &RL.hm_sel, _("Lector"), ic, lab, col, 2);
+		if (r == 0) {
+			rlib_scan();
+			toast_icon(_("Buscando documentos en la SD…"), IC_REFRESH, T.accent);
+		} else if (r == 1) {
+			rlib_set_where(rlib_where() == RLS_ALL ? RLS_BOOKS : RLS_ALL);
+			toast_icon(rlib_where() == RLS_ALL ? _("Buscando en toda la SD…") : _("Buscando solo en las carpetas de lectura…"), IC_REFRESH, T.accent);
+		}
+	}
+}
+
+// ---------------------------------------------------------------- lectura
+
+static void rv_drop_tex(void)
+{
+	for (int s = 0; s < 2; s++)
+		tex_free(&RV.tex[s]), RV.has[s] = false;
+}
+
+static void rv_save(void)
+{
+	if (RV.pages > 0 && !RV.first) {
+		char t[96];
+		rd_title(t, sizeof t);
+		rlib_progress(RV.path, RV.page, RV.pages, t);
+	}
+	RV.dirty = false, RV.save_t = util_ms();
+}
+
+static void rv_open(const char *path, int ret_app)
+{
+	rv_cfg_load();
+	if (RV.open)
+		rv_save();
+	rv_drop_tex();
+	util_strlcpy(RV.path, path, sizeof RV.path);
+	const char *s = strrchr(path, '/');
+	util_strlcpy(RV.name, s ? s + 1 : path, sizeof RV.name);
+	RV.ret_app = ret_app;
+	RV.saved_pages = 0;
+	RV.saved_page = rlib_last_page(path, &RV.saved_pages);
+	RV.page = 0, RV.pages = 0, RV.first = true, RV.relaying = false;
+	RV.scroll = 0, RV.cx = -1, RV.menu = false, RV.hud_t = util_ms();
+	RV.st = RD_OPENING;
+	RV.open = rd_open(path);
+	if (!RV.open)
+		toast_icon(_("No se pudo abrir el documento"), IC_CLOSE, T.danger);
+}
+
+static void rv_close(void)
+{
+	rv_save();
+	rv_cfg_save();
+	rd_close();
+	rv_drop_tex();
+	RV.open = false, RV.menu = false;
+	if (RV.ret_app == AP_READER)
+		RL.built = 0xFFFFFFFF; // (el progreso cambió)
+}
+
+static bool rv_book(void) { return RV.orient != 0; }
+static int rv_rot(void) { return RV.orient == 1 ? 90 : RV.orient == 2 ? 270 : 0; }
+static int rv_zoom_w(void)
+{
+	static const int Z[4] = {320, 400, 560, 720};
+	return RV.reflow ? 320 : Z[RV.zoom];
+}
+
+// lo que se recoloca (TXT, DOCX, EPUB): el tamaño de su página depende de cómo se lea
+static void rv_relayout(int keep)
+{
+	if (!RV.reflow)
+		return;
+	float w = rv_book() ? 240 : 320, h = rv_book() ? 380 : 480;
+	RV.lgen = rd_layout(w, h, (float)RV.em, keep);
+	RV.relaying = true;
+	rv_drop_tex();
+}
+
+// qué página va en cada pantalla (en el libro: la izquierda y la derecha según el giro y el sentido)
+static int rv_screen_page(int s)
+{
+	if (!rv_book())
+		return s == 0 ? RV.page : -1;
+	int first = RV.page, second = RV.page + 1;
+	int left = RV.rtl ? second : first, right = RV.rtl ? first : second;
+	bool top_left = RV.orient == 1;
+	int p = s == 0 ? (top_left ? left : right) : (top_left ? right : left);
+	return p < RV.pages ? p : -1;
+}
+
+static void rv_req(int s, int page, RdReq *r)
+{
+	r->page = page, r->rot = rv_rot();
+	if (rv_book())
+		r->tw = s == 0 ? TOP_W : BOT_W, r->th = SCR_H, r->fit = 0;
+	else
+		r->tw = rv_zoom_w(), r->th = 1024, r->fit = 1;
+}
+
+static bool rv_req_eq(const RdReq *a, const RdReq *b)
+{
+	return a->page == b->page && a->tw == b->tw && a->th == b->th && a->rot == b->rot && a->fit == b->fit;
+}
+
+// cada vuelta: el estado del documento y lo que hay que tener dibujado
+static void rv_poll(void)
+{
+	int pages;
+	bool reflow;
+	char err[32];
+	int st = rd_state(&pages, &reflow, err, sizeof err);
+	RV.st = st;
+	if (st != RD_OPEN)
+		return;
+	if (RV.first && !RV.relaying) { // recién abierto: a la página guardada
+		RV.reflow = reflow, RV.pages = pages;
+		if (reflow) {
+			rv_relayout(0);
+			return;
+		}
+		RV.page = RV.saved_page >= 0 && RV.saved_page < pages ? RV.saved_page : 0;
+		RV.first = false;
+	}
+	if (RV.relaying) {
+		int pg, np;
+		if (!rd_relaid(RV.lgen, &pg, &np))
+			return;
+		RV.relaying = false, RV.pages = np;
+		if (RV.first && RV.saved_page >= 0 && RV.saved_pages > 0) // (de la última vez: la misma parte del texto)
+			pg = (int)((float)RV.saved_page / RV.saved_pages * np + 0.5f);
+		RV.page = pg < 0 ? 0 : pg >= np ? np - 1 : pg;
+		RV.first = false;
+	}
+	RV.pages = pages > 0 ? pages : RV.pages;
+	// las pantallas
+	int ns = rv_book() ? 2 : 1;
+	for (int s = 0; s < ns; s++) {
+		int p = rv_screen_page(s);
+		if (p < 0) {
+			if (RV.has[s])
+				tex_free(&RV.tex[s]), RV.has[s] = false;
+			continue;
+		}
+		RdReq r;
+		rv_req(s, p, &r);
+		if (RV.has[s] && rv_req_eq(&RV.have[s], &r))
+			continue;
+		u16 *px;
+		int w, h;
+		if (rd_get(&r, &px, &w, &h)) {
+			tex_from_rgb565(&RV.tex[s], px, w, h);
+			free(px);
+			RV.have[s] = r, RV.has[s] = true;
+			if (!rv_book() && s == 0) { // página nueva en horizontal: centrada
+				if (RV.cx < 0 || RV.tex[0].w <= BOT_W)
+					RV.cx = RV.tex[0].w / 2.0f;
+			}
+		}
+	}
+	// por adelantado: las siguientes (y la anterior)
+	int step = rv_book() ? 2 : 1;
+	int pre[3] = {RV.page + step, RV.page + 2 * step, RV.page - step};
+	for (int k = 0; k < 3; k++) {
+		for (int s = 0; s < (rv_book() ? 2 : 1); s++) {
+			int save = RV.page;
+			RV.page = pre[k];
+			int p = RV.page >= 0 && RV.page < RV.pages ? rv_screen_page(s) : -1;
+			RV.page = save;
+			if (p < 0)
+				continue;
+			RdReq r;
+			rv_req(s, p, &r);
+			rd_prefetch(&r);
+		}
+	}
+	if (RV.dirty && util_ms() - RV.save_t > 60000)
+		rv_save();
+}
+
+static void rv_go(int page)
+{
+	if (RV.pages <= 0)
+		return;
+	if (page < 0)
+		page = 0;
+	if (page >= RV.pages)
+		page = RV.pages - 1;
+	if (page == RV.page)
+		return;
+	bool fwd = page > RV.page;
+	RV.page = page, RV.dirty = true, RV.hud_t = util_ms();
+	RV.scroll = fwd ? -1e9f : 1e9f; // (al principio de la siguiente o al final de la anterior)
+}
+
+// horizontal: una franja de la página, de alto SCR_H, desde «top» (en píxeles de la página), centrada en cx
+static void rv_strip(const Texture *t, float sw, float top)
+{
+	if (!t->ok)
+		return;
+	float th = t->h, tw = t->w;
+	float y0 = fmaxf(0, top), y1 = fminf(th, top + SCR_H);
+	if (y1 <= y0)
+		return;
+	float x0 = tw <= sw ? 0 : fmaxf(0, fminf(tw - sw, RV.cx - sw / 2)), x1 = fminf(tw, x0 + sw);
+	float dx = tw <= sw ? (sw - tw) / 2 : 0;
+	draw_texture_part((Texture *)t, dx, y0 - top, x1 - x0, y1 - y0, x0 / tw, y0 / th, x1 / tw, y1 / th);
+}
+
+static void rv_spinner(float cx, float cy)
+{
+	float t = osGetTime() / 120.0f;
+	for (int i = 0; i < 8; i++) {
+		float a = t + i * (float)M_PI / 4;
+		draw_circle(cx + 10 * cosf(a), cy + 10 * sinf(a), 1.2f + i * 0.25f, col_alpha(T.text2, 0.2f + i * 0.1f));
+	}
+}
+
+static void rv_top(void)
+{
+	rv_poll();
+	draw_rect(0, 0, TOP_W, SCR_H, 0xFF202020);
+	if (RV.st == RD_ERROR) {
+		char e[32];
+		rd_state(NULL, NULL, e, sizeof e);
+		draw_icon(IC_CLOSE, TOP_W / 2, 90, 30, T.danger);
+		text_draw_center(!strcmp(e, "password") ? _("El documento está protegido con contraseña") : _("No se pudo abrir el documento"), TOP_W / 2, 120, TS_TITLE, 0xFFFFFFFF);
+		text_draw_center(RV.name, TOP_W / 2, 146, TS_SUB, 0xFFB0B0B0);
+		return;
+	}
+	if (rv_book()) {
+		if (RV.has[0]) {
+			const Texture *t = &RV.tex[0];
+			draw_texture((Texture *)t, (TOP_W - t->w) / 2.0f, (SCR_H - t->h) / 2.0f, t->w, t->h, 1);
+		}
+	} else if (RV.has[0]) {
+		const Texture *t = &RV.tex[0];
+		float th = t->h, total = SCR_H * 2;
+		float mn = th <= total ? (th - total) / 2 : 0, mx = th <= total ? mn : th - total;
+		RV.scroll = fminf(mx, fmaxf(mn, RV.scroll));
+		rv_strip(t, TOP_W, RV.scroll);
+	}
+	// cargando (la primera vez o la página nueva aún no está)
+	int p0 = rv_screen_page(0);
+	RdReq want;
+	rv_req(0, p0, &want);
+	bool loading = RV.st == RD_OPENING || RV.relaying || (p0 >= 0 && !(RV.has[0] && rv_req_eq(&RV.have[0], &want)));
+	if (loading) {
+		if (!RV.has[0]) {
+			text_draw_center(RV.st == RD_OPENING ? _("Abriendo…") : RV.relaying ? _("Preparando las páginas…") : _("Cargando la página…"), TOP_W / 2, SCR_H / 2 + 22,
+			                 TS_SUB, 0xFFB0B0B0);
+			rv_spinner(TOP_W / 2, SCR_H / 2);
+		} else {
+			draw_rrect(TOP_W - 40, 8, 32, 32, 16, 0xA0000000);
+			rv_spinner(TOP_W - 24, 24);
+		}
+	}
+	toast_draw_float();
+}
+
+static void rv_menu(void);
+
+static void rv_bottom(void)
+{
+	draw_rect(0, 0, BOT_W, SCR_H, 0xFF202020);
+	if (rv_book()) {
+		if (RV.has[1]) {
+			const Texture *t = &RV.tex[1];
+			draw_texture((Texture *)t, (BOT_W - t->w) / 2.0f, (SCR_H - t->h) / 2.0f, t->w, t->h, 1);
+		} else if (rv_screen_page(1) >= 0 && RV.st == RD_OPEN)
+			rv_spinner(BOT_W / 2, SCR_H / 2);
+	} else if (RV.has[0])
+		rv_strip(&RV.tex[0], BOT_W, RV.scroll + SCR_H);
+	// número de página, un momento al cambiar
+	u64 since = util_ms() - RV.hud_t;
+	if (RV.pages > 0 && since < 1800 && !RV.menu) {
+		char t[48];
+		if (rv_book() && RV.page + 1 < RV.pages)
+			snprintf(t, sizeof t, "%d-%d / %d", RV.page + 1, RV.page + 2, RV.pages);
+		else
+			snprintf(t, sizeof t, "%d / %d", RV.page + 1, RV.pages);
+		float a = since < 1400 ? 1 : 1 - (since - 1400) / 400.0f;
+		float w = text_width(t, TS_SUB) + 20;
+		draw_rrect((BOT_W - w) / 2, SCR_H - 30, w, 22, 11, col_alpha(0xD0000000, a));
+		text_draw_center(t, BOT_W / 2, SCR_H - 30 + (22 - text_lineh(TS_SUB)) / 2, TS_SUB, col_alpha(0xFFFFFFFF, a));
+	}
+	if (RV.menu || g_dialog.open) {
+		rv_menu();
+		return;
+	}
+	if (RV.st == RD_ERROR) {
+		text_draw_center(_("B Volver"), BOT_W / 2, SCR_H / 2, TS_BODY, 0xFFB0B0B0);
+		if ((g_kdown & KEY_B) || g_touch.up)
+			rv_close();
+		return;
+	}
+	// botones
+	if (g_kdown & KEY_B) {
+		int ret = RV.ret_app;
+		rv_close();
+		if (ret != AP_READER && ret != U.app)
+			hm_launch(ret);
+		return;
+	}
+	if (g_kdown & KEY_SELECT) {
+		rv_close();
+		hm_show();
+		return;
+	}
+	if (g_kdown & (KEY_X | KEY_START)) {
+		RV.menu = RV.menu_just = true, RV.menu_sel = 0;
+		return;
+	}
+	if (g_kdown & KEY_Y) { // girar: horizontal → libro → libro al otro lado
+		RV.orient = (RV.orient + 1) % 3;
+		RV.cx = -1;
+		rv_drop_tex();
+		rv_relayout(RV.page);
+		toast_icon(RV.orient == 0 ? _("Lectura en horizontal") : RV.orient == 1 ? _("Lectura como un libro (consola de lado)") : _("Lectura como un libro, al otro lado"),
+		           IC_FLIP, T.accent);
+		return;
+	}
+	if (RV.pages <= 0)
+		return;
+	int step = rv_book() ? 2 : 1;
+	u32 next = KEY_R | KEY_ZR | KEY_A | KEY_DRIGHT, prev = KEY_L | KEY_ZL | KEY_DLEFT;
+	if (rv_book())
+		next |= KEY_DDOWN, prev |= KEY_DUP;
+	if (g_krepeat & next)
+		rv_go(RV.page + step);
+	else if (g_krepeat & prev)
+		rv_go(RV.page - step);
+	if (!rv_book()) { // desplazarse por la página: cruceta, Circle Pad o el dedo; al final, a la siguiente
+		float th = RV.has[0] ? RV.tex[0].h : 0, total = SCR_H * 2;
+		float mx = th > total ? th - total : 0;
+		if (g_krepeat & KEY_DDOWN) {
+			if (RV.scroll >= mx - 1 && (g_kdown & KEY_DDOWN))
+				rv_go(RV.page + 1);
+			else
+				RV.scroll += 60;
+		}
+		if (g_krepeat & KEY_DUP) {
+			if (RV.scroll <= 1 && (g_kdown & KEY_DUP))
+				rv_go(RV.page - 1);
+			else
+				RV.scroll -= 60;
+		}
+		circlePosition cp;
+		hidCircleRead(&cp);
+		if (abs(cp.dy) > 20)
+			RV.scroll -= cp.dy / 12.0f;
+		if (abs(cp.dx) > 20 && RV.has[0] && RV.tex[0].w > BOT_W)
+			RV.cx = fmaxf(BOT_W / 2.0f, fminf(RV.tex[0].w - BOT_W / 2.0f, RV.cx + cp.dx / 12.0f));
+		if (g_touch.held && g_touch.drag) {
+			RV.scroll -= g_touch.y - g_touch.py;
+			if (RV.has[0] && RV.tex[0].w > BOT_W)
+				RV.cx = fmaxf(BOT_W / 2.0f, fminf(RV.tex[0].w - BOT_W / 2.0f, RV.cx - (g_touch.x - g_touch.px)));
+		}
+	}
+	// tocar: a los lados, página anterior o siguiente; en medio, las opciones
+	if (g_touch.up && !g_touch.drag) {
+		if (g_touch.x < BOT_W / 4)
+			rv_go(RV.page - step);
+		else if (g_touch.x > BOT_W * 3 / 4)
+			rv_go(RV.page + step);
+		else
+			RV.menu = RV.menu_just = true, RV.menu_sel = 0;
+	}
+}
+
+static void rv_menu(void)
+{
+	IconId ic[8];
+	const char *lab[8];
+	u32 col[8];
+	int act[8], n = 0;
+	static char pg[64];
+	ic[n] = IC_FLIP, col[n] = T.text, act[n++] = 0;
+	lab[n - 1] = RV.orient == 0 ? _("Leer como un libro (consola de lado)") : RV.orient == 1 ? _("Girar al otro lado") : _("Leer en horizontal");
+	if (rv_book())
+		ic[n] = IC_UNDO, lab[n] = RV.rtl ? _("Leer de izquierda a derecha") : _("Leer de derecha a izquierda (manga)"), col[n] = T.text, act[n++] = 1;
+	if (!RV.reflow && !rv_book()) {
+		if (RV.zoom < 3)
+			ic[n] = IC_SEARCH, lab[n] = _("Ampliar"), col[n] = T.text, act[n++] = 2;
+		if (RV.zoom > 0)
+			ic[n] = IC_GRID, lab[n] = _("Ajustar a la pantalla"), col[n] = T.text, act[n++] = 3;
+	}
+	if (RV.reflow) {
+		ic[n] = IC_TEXTSIZE, lab[n] = _("Letra más grande"), col[n] = T.text, act[n++] = 4;
+		ic[n] = IC_FONT, lab[n] = _("Letra más pequeña"), col[n] = T.text, act[n++] = 5;
+	}
+	if (RV.pages > 1) {
+		snprintf(pg, sizeof pg, _("Ir a la página… (%d de %d)"), RV.page + 1, RV.pages);
+		ic[n] = IC_BOOK, lab[n] = pg, col[n] = T.text, act[n++] = 6;
+	}
+	ic[n] = IC_CLOSE, lab[n] = _("Cerrar el documento"), col[n] = T.danger, act[n++] = 7;
+	int r = sheet_list(&RV.menu, &RV.menu_just, &RV.menu_anim, &RV.menu_sel, RV.name, ic, lab, col, n);
+	if (r < 0)
+		return;
+	switch (act[r]) {
+	case 0:
+		RV.orient = (RV.orient + 1) % 3;
+		RV.cx = -1;
+		rv_drop_tex();
+		rv_relayout(RV.page);
+		break;
+	case 1: RV.rtl = !RV.rtl; break;
+	case 2:
+	case 3:
+		RV.zoom = act[r] == 2 ? RV.zoom + 1 : 0;
+		RV.cx = -1;
+		break;
+	case 4:
+	case 5:
+		RV.em = clampf(RV.em + (act[r] == 4 ? 1 : -1), 8, 20);
+		rv_relayout(RV.page);
+		break;
+	case 6: RV.want_page = true; break;
+	default: {
+		int ret = RV.ret_app;
+		rv_close();
+		if (ret != AP_READER && ret != U.app)
+			hm_launch(ret);
+	}
+	}
+}
+
+static bool rv_is_open(void) { return RV.open; }
+
 static bool dl_count_cb(const FsxEntry *e, void *u)
 {
 	(void)e;
@@ -10388,6 +11342,11 @@ static void draw_bottom(void)
 		dialog_draw();
 		return;
 	}
+	if (rv_is_open()) {
+		rv_bottom();
+		dialog_draw();
+		return;
+	}
 	if (CLU.open) {
 		cl_open_poll();
 		// encima de la nube: abriendo un archivo, la hoja del ZIP o el reproductor; lo de debajo no recibe nada
@@ -10443,6 +11402,8 @@ static void draw_bottom(void)
 		ml_bottom();
 	else if (U.app == AP_SHARE)
 		sh_bottom();
+	else if (U.app == AP_READER)
+		rl_bottom();
 	else if (U.app == AP_DL && !DLV)
 		dl_bottom();
 	else if (U.tab == TAB_FILES) {
@@ -10966,6 +11927,13 @@ static void update(void)
 		U.want_web = false;
 		br_open_home();
 	}
+	if (RV.want_page) { // Lector: ir a una página
+		RV.want_page = false;
+		char t[16], ini[16];
+		snprintf(ini, sizeof ini, "%d", RV.page + 1);
+		if (kb_input(_("Número de página"), ini, t, sizeof t, false, false) && t[0])
+			rv_go(atoi(t) - 1);
+	}
 	if (U.want_dlurl) {
 		U.want_dlurl = false;
 		char url[1024];
@@ -11224,7 +12192,7 @@ static void update(void)
 		hm_show();
 		return;
 	}
-	if (br_is_open() || CLU.open) // el navegador y la nube usan todos los botones (L/R, START…)
+	if (br_is_open() || CLU.open || rv_is_open()) // el navegador, la nube y el Lector usan todos los botones (L/R, START…)
 		return;
 	if (!hm_is_open() && U.app == AP_CONNECT && (U.tab == TAB_ACTIVITY || U.tab == TAB_DEVICES) && (g_kdown & (KEY_L | KEY_R | KEY_ZL | KEY_ZR)))
 		U.tab = U.tab == TAB_ACTIVITY ? TAB_DEVICES : TAB_ACTIVITY;

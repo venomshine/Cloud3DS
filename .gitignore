@@ -13,3 +13,7 @@ nsweb/build/
 nsweb/lib/
 qjs/build/
 qjs/lib/
+mupdf/src/
+mupdf/lib/
+mupdf/include/
+mupdf/zinc/

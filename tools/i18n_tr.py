@@ -1,6 +1,180 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Sin descargas recientes':
+        ('No recent downloads',
+         '最近のダウンロードはありません'),
+    'Descargas recientes':
+        ('Recent downloads',
+         '最近のダウンロード'),
+    'Gestiónalas en Conectar > Actividad':
+        ('Manage them in Connect > Activity',
+         '接続 > アクティビティで管理できます'),
+    'Abrir en el Lector':
+        ('Open in Reader',
+         'リーダーで開く'),
+    'Más de %d elementos':
+        ('More than %d items',
+         '%d件以上'),
+    'Lector':
+        ('Reader',
+         'リーダー'),
+    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee en horizontal o con la consola de lado, como un libro.':
+        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT from the SD card, with a library. Read horizontally or with the console on its side, like a book.',
+         'SDカードのPDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXTをライブラリで。横向きでも、本のように縦向きでも読めます。'),
+    'Continuar: %s':
+        ('Continue: %s',
+         '続き: %s'),
+    'Página %d de %d':
+        ('Page %d of %d',
+         '%d / %d ページ'),
+    'Progreso':
+        ('Progress',
+         '進み具合'),
+    'Última lectura':
+        ('Last read',
+         '最後に読んだ日'),
+    'Sin empezar':
+        ('Not started',
+         '未読'),
+    '%s Leer · %s Opciones':
+        ('%s Read · %s Options',
+         '%s 読む · %s オプション'),
+    'Biblioteca de lectura':
+        ('Reading library',
+         '読書ライブラリ'),
+    '1 documento':
+        ('1 document',
+         '1件のドキュメント'),
+    '%d documentos':
+        ('%d documents',
+         '%d件のドキュメント'),
+    'Buscando documentos en la SD… %d':
+        ('Searching the SD card for documents… %d',
+         'SDカードのドキュメントを検索中… %d'),
+    'PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Se puede leer en horizontal o con la consola de lado, como un libro; el manga, de derecha a izquierda.':
+        ('PDF, manga and comics (CBZ), EPUB, DOCX and TXT. Read horizontally or with the console on its side, like a book; manga, right to left.',
+         'PDF、マンガ・コミック(CBZ)、EPUB、DOCX、TXT。横向きでも、本のように縦向きでも読めます。マンガは右から左へ。'),
+    'Los TXT se buscan solo en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Cualquier otro se abre desde Archivos.':
+        ('TXT files are only searched in reading folders (/Books, /Manga, /Documents, /Downloads…). Any other can be opened from Files.',
+         'TXTは読書用フォルダー(/Books、/Manga、/Documents、/Downloadsなど)だけで検索します。その他はファイルから開けます。'),
+    'Recientes':
+        ('Recent',
+         '最近'),
+    'Todos':
+        ('All',
+         'すべて'),
+    'Aún no has leído nada':
+        ("You haven't read anything yet",
+         'まだ何も読んでいません'),
+    'Lo que abras aparecerá aquí, con la página por la que vas. Elige un documento en «Todos» o «Carpetas».':
+        ("What you open will appear here, with the page you're on. Choose a document in “All” or “Folders”.",
+         '開いたものが読んでいるページとともにここに表示されます。「すべて」または「フォルダー」から選んでください。'),
+    'Buscando documentos…':
+        ('Searching for documents…',
+         'ドキュメントを検索中…'),
+    'No hay documentos':
+        ('No documents',
+         'ドキュメントがありません'),
+    'Se analiza la tarjeta SD. La primera vez puede tardar unos minutos.':
+        ('The SD card is being scanned. The first time may take a few minutes.',
+         'SDカードを調べています。初回は数分かかることがあります。'),
+    'Copia PDF, CBZ, EPUB, DOCX o TXT a la SD (por ejemplo, a /Books o a /Manga) y aparecerán aquí.':
+        ('Copy PDF, CBZ, EPUB, DOCX or TXT files to the SD card (for example, to /Books or /Manga) and they will appear here.',
+         'PDF、CBZ、EPUB、DOCX、TXTをSDカード(例: /Books、/Manga)にコピーすると、ここに表示されます。'),
+    '1 documento · %s':
+        ('1 document · %s',
+         '1件 · %s'),
+    '%d documentos · %s':
+        ('%d documents · %s',
+         '%d件 · %s'),
+    '%s · %s · página %d de %d':
+        ('%s · %s · page %d of %d',
+         '%s · %s · %d / %d ページ'),
+    'Seguir leyendo':
+        ('Continue reading',
+         '続きを読む'),
+    'Leer':
+        ('Read',
+         '読む'),
+    'Leer desde el principio':
+        ('Read from the beginning',
+         '最初から読む'),
+    'Volver a buscar documentos':
+        ('Search for documents again',
+         'ドキュメントを再検索'),
+    'Buscar solo en las carpetas de lectura':
+        ('Search only in reading folders',
+         '読書用フォルダーだけを検索'),
+    'Buscando documentos en la SD…':
+        ('Searching the SD card for documents…',
+         'SDカードのドキュメントを検索中…'),
+    'Buscando solo en las carpetas de lectura…':
+        ('Searching only in reading folders…',
+         '読書用フォルダーだけを検索中…'),
+    'No se pudo abrir el documento':
+        ('The document could not be opened',
+         'ドキュメントを開けませんでした'),
+    'El documento está protegido con contraseña':
+        ('The document is password-protected',
+         'ドキュメントはパスワードで保護されています'),
+    'Abriendo…':
+        ('Opening…',
+         '開いています…'),
+    'Preparando las páginas…':
+        ('Preparing the pages…',
+         'ページを準備中…'),
+    'Cargando la página…':
+        ('Loading the page…',
+         'ページを読み込み中…'),
+    'B Volver':
+        ('B Back',
+         'B 戻る'),
+    'Lectura en horizontal':
+        ('Horizontal reading',
+         '横向きで読む'),
+    'Lectura como un libro (consola de lado)':
+        ('Book reading (console on its side)',
+         '本のように読む(本体を横に)'),
+    'Lectura como un libro, al otro lado':
+        ('Book reading, other side',
+         '本のように読む(反対向き)'),
+    'Leer como un libro (consola de lado)':
+        ('Read like a book (console on its side)',
+         '本のように読む(本体を横に)'),
+    'Girar al otro lado':
+        ('Rotate to the other side',
+         '反対向きにする'),
+    'Leer en horizontal':
+        ('Read horizontally',
+         '横向きで読む'),
+    'Leer de izquierda a derecha':
+        ('Read left to right',
+         '左から右へ読む'),
+    'Leer de derecha a izquierda (manga)':
+        ('Read right to left (manga)',
+         '右から左へ読む(マンガ)'),
+    'Ampliar':
+        ('Zoom in',
+         '拡大'),
+    'Ajustar a la pantalla':
+        ('Fit to screen',
+         '画面に合わせる'),
+    'Letra más grande':
+        ('Larger text',
+         '文字を大きく'),
+    'Letra más pequeña':
+        ('Smaller text',
+         '文字を小さく'),
+    'Ir a la página… (%d de %d)':
+        ('Go to page… (%d of %d)',
+         'ページへ移動…(%d / %d)'),
+    'Cerrar el documento':
+        ('Close the document',
+         'ドキュメントを閉じる'),
+    'Número de página':
+        ('Page number',
+         'ページ番号'),
     'Solicitud enviada. Pendiente de aceptación.':
         ('Request sent. Awaiting acceptance.',
          'リクエストを送信しました。承認待ちです。'),

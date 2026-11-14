@@ -14,7 +14,7 @@ TARGET		:=	Cloud3DS
 BUILD		:=	build
 SOURCES		:=	source lib lib/webp/src/dec lib/webp/src/dsp lib/webp/src/utils
 DATA		:=	data
-INCLUDES	:=	source lib lib/webp nsweb/libdom/src
+INCLUDES	:=	source lib lib/webp nsweb/libdom/src mupdf/include
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 ROMFS		:=	romfs
@@ -41,9 +41,9 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -Wl,--gc-sections -Wl,--wrap=fontGlyphIndexFromCodePoint
 
-LIBS	:= -lnsweb -lqjs -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lmpg123 -lvorbisidec -logg -lz -lctru -lm
+LIBS	:= -lnsweb -lqjs -lmupdf -lmupdf-third -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lmpg123 -lvorbisidec -logg -lz -lctru -lm -lstdc++
 
-LIBDIRS	:= $(CTRULIB) $(PORTLIBS) $(CURDIR)/nsweb $(CURDIR)/qjs
+LIBDIRS	:= $(CTRULIB) $(PORTLIBS) $(CURDIR)/nsweb $(CURDIR)/qjs $(CURDIR)/mupdf
 
 # pruebas: make UPDATE_URL=http://… apunta las actualizaciones a otro servidor
 ifneq ($(strip $(UPDATE_URL)),)
@@ -84,11 +84,11 @@ export APP_ICON := $(TOPDIR)/$(ICON)
 export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 
-.PHONY: all clean web cia nsweb qjs
+.PHONY: all clean web cia nsweb qjs mupdf
 
 #---------------------------------------------------------------------------------
 # La página web se sirve comprimida desde romfs
-all: nsweb qjs web $(BUILD) $(DEPSDIR)
+all: nsweb qjs mupdf web $(BUILD) $(DEPSDIR)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 web: $(ROMFS)/web/index.html.gz $(ROMFS)/gfx/sprites.t3x
@@ -97,6 +97,11 @@ web: $(ROMFS)/web/index.html.gz $(ROMFS)/gfx/sprites.t3x
 nsweb:
 	@$(MAKE) --no-print-directory -C nsweb
 	@[ ! -f $(TARGET).elf ] || [ ! nsweb/lib/libnsweb.a -nt $(TARGET).elf ] || rm -f $(TARGET).elf # que se vuelva a enlazar
+
+# MuPDF (AGPL-3.0), el motor del Lector (PDF, CBZ, EPUB, DOCX y TXT): mupdf/lib/libmupdf*.a
+mupdf:
+	@$(MAKE) --no-print-directory -C mupdf
+	@[ ! -f $(TARGET).elf ] || [ ! mupdf/lib/libmupdf.a -nt $(TARGET).elf ] || rm -f $(TARGET).elf # que se vuelva a enlazar
 
 # QuickJS-ng (MIT), el JavaScript del navegador: qjs/lib/libqjs.a
 qjs:
