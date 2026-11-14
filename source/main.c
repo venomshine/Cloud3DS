@@ -766,9 +766,17 @@ static int ins_buttons(InsBtn *b)
 }
 
 // la tarjeta mide lo que sus botones (sin hueco vacío debajo) y va centrada
+#define INS_DEL_H 28 // (la casilla «borrar el .cia después», con lo recibido)
+static bool ins_up(void)
+{
+	for (int i = 0; i < U.ins_n; i++)
+		if (U.ins[i].st == INS_PENDING && U.ins[i].uploaded && !U.ins[i].self)
+			return true;
+	return false;
+}
 static float ins_card_h(int n)
 {
-	return 80 + n * 44;
+	return 80 + n * 44 + (ins_up() ? INS_DEL_H : 0);
 }
 
 static float ins_card_y(int n)
@@ -804,8 +812,20 @@ static void install_card(void)
 			text_draw_center_clip(U.ins[i].title, BOT_W / 2, y + 36 + shown * 16, BOT_W - 60, TS_SUB, T.text3);
 			shown++;
 		}
+	float by = y + 76;
+	if (ins_up()) { // lo recibido: ¿se borra el .cia al instalarlo? (lo decide quien instala; se recuerda)
+		bool on = V.ins_del;
+		float cx = INS_BX + 10, cy = by + 4;
+		draw_rrect(cx, cy, 16, 16, 4, on ? T.ok : T.surface2);
+		if (on)
+			draw_icon(IC_CHECK, cx + 8, cy + 8, 11, 0xFFFFFFFF);
+		char t[96];
+		snprintf(t, sizeof t, "%s %s", GLYPH_Y, _("Borrar el .cia después de instalarlo"));
+		text_draw_clip(t, cx + 24, cy + (16 - text_lineh(TS_SUB)) / 2, INS_BW - 40, TS_SUB, on ? T.text : T.text2);
+		by += INS_DEL_H;
+	}
 	for (int k = 0; k < n; k++)
-		ins_button(y + 76 + k * 44, b[k].glyph, b[k].label, b[k].fg, b[k].bg, b[k].on);
+		ins_button(by + k * 44, b[k].glyph, b[k].label, b[k].fg, b[k].bg, b[k].on);
 }
 
 // botones de la tarjeta; devuelve true si se ha decidido algo
@@ -815,11 +835,24 @@ static bool install_input(void)
 		return false;
 	InsBtn b[3];
 	int n = ins_buttons(b), what = -1;
+	float by = ins_card_y(n) + 76;
+	if (ins_up()) { // Y o tocarla: borrar (o no) el .cia al instalarlo
+		if ((g_kdown & KEY_Y) || tap(INS_BX, by, INS_BW, INS_DEL_H)) {
+			state_lock();
+			G.ins_del = !G.ins_del, G.dirty_cfg = true;
+			V.ins_del = G.ins_del;
+			state_unlock();
+			g_kdown &= ~KEY_Y;
+			return true;
+		}
+		by += INS_DEL_H;
+	}
 	for (int k = 0; k < n && what < 0; k++)
-		if (b[k].on && ((g_kdown & b[k].key) || tap(INS_BX, ins_card_y(n) + 76 + k * 44, INS_BW, 36)))
+		if (b[k].on && ((g_kdown & b[k].key) || tap(INS_BX, by + k * 44, INS_BW, 36)))
 			what = b[k].what;
 	if (what < 0)
 		return true; // la tarjeta tapa lo de debajo: no pasa nada más
+	bool del = what == INS_ACCEPT && ins_up() && V.ins_del;
 	bool up = false;
 	for (int i = 0; i < U.ins_n; i++)
 		up |= U.ins[i].st == INS_PENDING && U.ins[i].uploaded;
@@ -831,7 +864,7 @@ static bool install_input(void)
 			ins_decide(U.ins[i].id, INS_KEEP);
 			self_upd = true;
 		}
-	ins_decide(-1, what);
+	ins_decide(-1, del ? INS_ACCEPT_DEL : what);
 	ins_refresh();
 	// el toque que decidió no sigue a lo de debajo (el botón del QR está justo bajo el último)
 	g_kdown &= ~(KEY_A | KEY_B | KEY_X);
@@ -839,7 +872,7 @@ static bool install_input(void)
 	if (self_upd)
 		toast_icon(_("Actualizando Cloud3DS…"), IC_DOWNLOAD, T.ok);
 	else if (what == INS_ACCEPT)
-		toast_icon(_("Instalando…"), IC_DOWNLOAD, T.ok);
+		toast_icon(del ? _("Instalando… el .cia se borrará al terminar") : _("Instalando…"), IC_DOWNLOAD, T.ok);
 	else if (what == INS_KEEP)
 		toast_icon(_("Guardado en la SD sin instalar"), IC_FOLDER, T.accent);
 	else if (up)

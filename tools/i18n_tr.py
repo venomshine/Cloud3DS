@@ -1,6 +1,12 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Borrar el .cia después de instalarlo':
+        ('Delete the .cia after installing it',
+         'インストール後に .cia を削除'),
+    'Instalando… el .cia se borrará al terminar':
+        ('Installing… the .cia will be deleted when done',
+         'インストール中… 完了後に .cia を削除します'),
     'Esta consola no deja leer la cabecera de la app (fs:REG: %08lX)':
         ("This console won't let the app's header be read (fs:REG: %08lX)",
          'このコンソールではアプリのヘッダーを読み取れません (fs:REG: %08lX)'),

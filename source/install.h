@@ -16,7 +16,7 @@
 #define MAX_INS 8
 
 enum { INS_FREE, INS_PENDING, INS_QUEUED, INS_RUNNING, INS_DONE, INS_FAILED, INS_KEPT, INS_REJECTED };
-enum { INS_ACCEPT, INS_KEEP, INS_REJECT };
+enum { INS_ACCEPT, INS_KEEP, INS_REJECT, INS_ACCEPT_DEL }; /* ACCEPT_DEL: instalar y, si sale bien, borrar el .cia recibido */
 
 typedef struct {
 	int  st;
@@ -31,7 +31,8 @@ typedef struct {
 	int  inst_ver;      /* versión instalada, -1 si no está */
 	bool self;          /* es Cloud3DS: se actualiza desde Ajustes */
 	bool uploaded;      /* recién subido para instalarlo: rechazar cancela la copia (se borra) */
-	bool deleted;       /* se rechazó y se borró de la SD */
+	bool deleted;       /* se rechazó y se borró de la SD (o se borró tras instalarlo) */
+	bool del_after;     /* borrar el .cia al terminar de instalarlo bien */
 	bool n3ds_only;     /* solo para New 3DS */
 	u64  need;          /* espacio que pide AM para instalarlo */
 	bool has_icon;

@@ -339,6 +339,7 @@ void config_load(void)
 	G.f_desc = jbool(r, "f_desc", false);
 	G.f_group = (u8)jnum(r, "f_group", 0) % 5;
 	G.f_sysapart = jbool(r, "f_sysapart", true);
+	G.ins_del = jbool(r, "ins_del", false);
 	G.f_pin = jbool(r, "f_pin", true);
 	G.f_grid = jbool(r, "f_grid", false);
 	const char *pin = jstr(r, "pin"), *key = jstr(r, "qr_key");
@@ -409,6 +410,7 @@ void config_save(void)
 	cJSON_AddBoolToObject(r, "f_desc", G.f_desc);
 	cJSON_AddNumberToObject(r, "f_group", G.f_group);
 	cJSON_AddBoolToObject(r, "f_sysapart", G.f_sysapart);
+	cJSON_AddBoolToObject(r, "ins_del", G.ins_del);
 	cJSON_AddBoolToObject(r, "f_pin", G.f_pin);
 	cJSON_AddBoolToObject(r, "f_grid", G.f_grid);
 	cJSON_AddStringToObject(r, "pin", G.pin);

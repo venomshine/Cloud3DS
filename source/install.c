@@ -283,8 +283,8 @@ void ins_decide(int id, int what)
 		if (r->st != INS_PENDING || (id >= 0 && r->id != id))
 			continue;
 		/* ni Cloud3DS (se actualiza desde Ajustes) ni bajar de versión: se quedan guardados */
-		if (what == INS_ACCEPT && !r->self && !(r->inst_ver >= 0 && r->inst_ver > r->ver))
-			r->st = INS_QUEUED;
+		if ((what == INS_ACCEPT || what == INS_ACCEPT_DEL) && !r->self && !(r->inst_ver >= 0 && r->inst_ver > r->ver))
+			r->st = INS_QUEUED, r->del_after = what == INS_ACCEPT_DEL && r->uploaded;
 		else
 			r->st = what == INS_REJECT ? INS_REJECTED : INS_KEPT, r->t_end = util_ms();
 		/* rechazar lo que se acaba de subir para instalar es cancelar la copia: se borra */
@@ -667,6 +667,18 @@ static void ins_thread(void *arg)
 					q->inst_ver = q->ver;
 			}
 			LightLock_Unlock(&I.lock);
+			// instalado bien y con «borrar el .cia después»: fuera de la SD (solo lo recibido o subido)
+			if (!e && r.del_after && fsx_rmrf(r.path) == 0) {
+				state_lock();
+				mark_deleted(r.path);
+				G.fsrev++;
+				state_unlock();
+				LightLock_Lock(&I.lock);
+				if ((q = find(r.id)))
+					q->deleted = true;
+				LightLock_Unlock(&I.lock);
+				util_log("instalar %s: .cia borrado tras instalarlo", r.path);
+			}
 		}
 	}
 }
