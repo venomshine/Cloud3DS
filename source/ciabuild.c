@@ -234,9 +234,9 @@ static Result luma_steal_session(Handle *out, const char *name)
 	return luma_control_service(0, out, name); // SERVICEOP_STEAL_CLIENT_SESSION
 }
 
-// la cabecera del programa (ExHeader_Info, 0x400), como la pide loader: el programa se registra en pxi:pm (Process9, que
+// la cabecera del programa (ExHeader_Info, 0x400), como la pide loader: el programa se registra en PxiPM (Process9, que
 // descifra el NCCH) y se le pide su cabecera. (fs:REG solo sirve para lo que se carga desde el PC: con un título de la
-// SD respondía C8804465, «no encontrado».) La sesión de pxi:pm la tiene loader: si no hay otra libre, se usa la suya a
+// SD respondía C8804465, «no encontrado».) La sesión de PxiPM la tiene loader: si no hay otra libre, se usa la suya a
 // través de Luma3DS
 static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 {
@@ -246,8 +246,8 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 	bool own = R_SUCCEEDED(r), stolen = false;
 	if (!own && is_luma()) {
 		Handle h = 0;
-		Result r2 = luma_steal_session(&h, "pxi:pm");
-		util_log("compartir: pxi:pm ocupado (%08lX); sesión compartida por Luma3DS: %08lX, handle %08lX", (unsigned long)r, (unsigned long)r2,
+		Result r2 = luma_steal_session(&h, "PxiPM") /* (el nombre del servicio; «pxi:pm» no existe) */;
+		util_log("compartir: PxiPM ocupado (%08lX); sesión compartida por Luma3DS: %08lX, handle %08lX", (unsigned long)r, (unsigned long)r2,
 		         (unsigned long)h);
 		if (R_SUCCEEDED(r2) && h) {
 			*pxiPmGetSessionHandle() = h;
@@ -271,11 +271,11 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 			*pxiPmGetSessionHandle() = 0;
 		}
 	}
-	util_log("compartir: cabecera de %016llX por pxi:pm: %08lX", (unsigned long long)tid, (unsigned long)r);
+	util_log("compartir: cabecera de %016llX por PxiPM: %08lX", (unsigned long long)tid, (unsigned long)r);
 	if (R_SUCCEEDED(r))
 		return true;
 #ifdef TEST_CA_SD
-	{ // (solo en las pruebas con el emulador, que no tiene pxi:pm: la cabecera, de un archivo)
+	{ // (solo en las pruebas con el emulador, que no tiene PxiPM: la cabecera, de un archivo)
 		char p[96];
 		snprintf(p, sizeof p, APP_DIR "/prueba_exh_%016llX.bin", (unsigned long long)tid);
 		FILE *f = fopen(p, "rb");
@@ -286,7 +286,7 @@ static bool get_exheader(u64 tid, u8 *exh, char *err, size_t en)
 			return true;
 	}
 #endif
-	snprintf(err, en, _("No se pudo leer la cabecera de la app (pxi:pm: %08lX)."), (unsigned long)r);
+	snprintf(err, en, _("No se pudo leer la cabecera de la app (PxiPM: %08lX)."), (unsigned long)r);
 	return false;
 }
 
