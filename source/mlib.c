@@ -302,6 +302,11 @@ static void walk(Walk *w, const char *dir)
 			}
 			continue;
 		}
+		bool dup = false; // (la misma canción con otra forma de la ruta: la SD no distingue mayúsculas)
+		for (int k = 0; k < w->n && !dup; k++)
+			dup = !strcasecmp(w->out[k].path, p);
+		if (dup)
+			continue;
 		MSong *m = &w->out[w->n];
 		const MSong *o = find_old(w, p);
 		if (o && o->size == l.sizes[i] && o->mtime == l.mtimes[i])
@@ -427,7 +432,9 @@ static void scan_thread(void *arg)
 		LightLock_Unlock(&L.lock);
 		Walk w = {out, 0, old, on, 0, ""};
 		if (L.where == MLS_MUSIC) {
-			static const char *const DIRS[] = {"/Music", "/music", "/Música", "/música", "/MP3", "/mp3", "/Musica", "/musica"};
+			// (en la SD, /Music y /music son la misma carpeta: cada nombre, una vez; las acentuadas, por si acaso, se
+			// descartan abajo si ya se recorrieron con otra forma)
+			static const char *const DIRS[] = {"/Music", "/Música", "/MP3", "/Musica"};
 			for (size_t i = 0; i < sizeof DIRS / sizeof DIRS[0]; i++)
 				walk(&w, DIRS[i]);
 		} else
