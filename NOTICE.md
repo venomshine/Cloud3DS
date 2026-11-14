@@ -46,6 +46,7 @@ Las siguientes partes conservan sus propias licencias:
 - `qjs/` — [QuickJS-ng](https://github.com/quickjs-ng/quickjs) de Fabrice Bellard, Charlie Gordon y colaboradores (JavaScript del navegador), licencia MIT (`qjs/LICENSE`).
 - `nsweb/` — librerías de [NetSurf](https://www.netsurf-browser.org/) (libhubbub, libdom, libcss, libparserutils, libwapcaplet) para el navegador, licencia MIT (ver `nsweb/README.md` y el COPYING de cada una).
 - `mupdf/` — [MuPDF](https://mupdf.com) 1.26.9 de Artifex Software (motor del Lector: PDF, CBZ, EPUB, DOCX y TXT), licencia AGPL-3.0. No se incluye en el repositorio: `make` descarga esa versión, comprueba su SHA-256 y la compila (ver `mupdf/README.md`).
+- `faad2/` — [FAAD2](https://github.com/knik0/faad2) 2.11.4 (decodificador AAC de la música en streaming de SoundCloud), licencia GPL-2.0 o posterior. No se incluye en el repositorio: `make` clona esa versión, comprueba su commit y la compila (ver `faad2/README.md`).
 - [libctru, citro2d y citro3d](https://github.com/devkitPro) (enlazadas al compilar), licencia zlib.
 - [libcurl](https://curl.se/) (enlazada al compilar), licencia curl (tipo MIT).
 - [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) (enlazada al compilar), licencia Apache-2.0.

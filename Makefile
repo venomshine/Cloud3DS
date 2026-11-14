@@ -14,7 +14,7 @@ TARGET		:=	Cloud3DS
 BUILD		:=	build
 SOURCES		:=	source lib lib/webp/src/dec lib/webp/src/dsp lib/webp/src/utils
 DATA		:=	data
-INCLUDES	:=	source lib lib/webp nsweb/libdom/src mupdf/include
+INCLUDES	:=	source lib lib/webp nsweb/libdom/src mupdf/include faad2/include
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 ROMFS		:=	romfs
@@ -41,9 +41,9 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) -Wl,--gc-sections -Wl,--wrap=fontGlyphIndexFromCodePoint
 
-LIBS	:= -lnsweb -lqjs -lmupdf -lmupdf-third -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lmpg123 -lvorbisidec -logg -lz -lctru -lm -lstdc++
+LIBS	:= -lnsweb -lqjs -lmupdf -lmupdf-third -lfaad -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lmpg123 -lvorbisidec -logg -lz -lctru -lm -lstdc++
 
-LIBDIRS	:= $(CTRULIB) $(PORTLIBS) $(CURDIR)/nsweb $(CURDIR)/qjs $(CURDIR)/mupdf
+LIBDIRS	:= $(CTRULIB) $(PORTLIBS) $(CURDIR)/nsweb $(CURDIR)/qjs $(CURDIR)/mupdf $(CURDIR)/faad2
 
 # pruebas: make UPDATE_URL=http://… apunta las actualizaciones a otro servidor
 ifneq ($(strip $(UPDATE_URL)),)
@@ -84,11 +84,11 @@ export APP_ICON := $(TOPDIR)/$(ICON)
 export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
 export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 
-.PHONY: all clean web cia nsweb qjs mupdf
+.PHONY: all clean web cia nsweb qjs mupdf faad2
 
 #---------------------------------------------------------------------------------
 # La página web se sirve comprimida desde romfs
-all: nsweb qjs mupdf web $(BUILD) $(DEPSDIR)
+all: nsweb qjs mupdf faad2 web $(BUILD) $(DEPSDIR)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 web: $(ROMFS)/web/index.html.gz $(ROMFS)/gfx/sprites.t3x
@@ -102,6 +102,11 @@ nsweb:
 mupdf:
 	@$(MAKE) --no-print-directory -C mupdf
 	@[ ! -f $(TARGET).elf ] || [ ! mupdf/lib/libmupdf.a -nt $(TARGET).elf ] || rm -f $(TARGET).elf # que se vuelva a enlazar
+
+# FAAD2 (GPL-2.0-or-later), el AAC de SoundCloud: faad2/lib/libfaad.a
+faad2:
+	@$(MAKE) --no-print-directory -C faad2
+	@[ ! -f $(TARGET).elf ] || [ ! faad2/lib/libfaad.a -nt $(TARGET).elf ] || rm -f $(TARGET).elf # que se vuelva a enlazar
 
 # QuickJS-ng (MIT), el JavaScript del navegador: qjs/lib/libqjs.a
 qjs:

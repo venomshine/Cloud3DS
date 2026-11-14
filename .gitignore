@@ -17,3 +17,7 @@ mupdf/src/
 mupdf/lib/
 mupdf/include/
 mupdf/zinc/
+faad2/src/
+faad2/lib/
+faad2/include/
+faad2/build/
