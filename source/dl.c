@@ -357,6 +357,7 @@ static size_t mem_cb(char *d, size_t s, size_t m, void *u)
  * se baja si el usuario lo pide para esa descarga. */
 static u32 hc_chain;
 static bool hc_ready;
+static bool hc_chain_bad; // esta consola no acepta la cadena propia: solo las raíces del sistema
 
 static void hc_init(void)
 {
@@ -395,6 +396,7 @@ enum { HC_OK, HC_NOCONN, HC_HTTP, HC_NET, HC_ABORT, HC_WRITE };
 /* abre la petición (siguiendo redirecciones) y la deja lista para leer el cuerpo */
 static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 range_from, const char *accept, u32 *code)
 {
+	bool own = true; // con la cadena de raíces propia (si falla, otra vez con las del sistema)
 	for (int redir = 0; redir < 10; redir++) {
 		Result r = httpcOpenContext(ctx, HTTPC_METHOD_GET, url, 0);
 		if (R_FAILED(r)) {
@@ -402,7 +404,8 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 			return HC_NOCONN;
 		}
 		httpcSetSSLOpt(ctx, verify ? SSLCOPT_Default : SSLCOPT_DisableVerify);
-		if (verify && hc_chain)
+		bool chain = verify && hc_chain && own && !hc_chain_bad;
+		if (chain)
 			httpcSelectRootCertChain(ctx, hc_chain);
 		httpcSetKeepAlive(ctx, HTTPC_KEEPALIVE_ENABLED);
 		httpcAddRequestHeaderField(ctx, "User-Agent", t_ua ? t_ua : UA);
@@ -427,9 +430,17 @@ static int hc_open(httpcContext *ctx, char *url, size_t un, bool verify, u64 ran
 		if (R_SUCCEEDED(r))
 			r = hc_status(ctx, code, 30);
 		if (R_FAILED(r)) {
-			util_log("dl: httpc %s -> 0x%08lX", url, (unsigned long)r);
+			util_log("dl: httpc %s -> 0x%08lX%s", url, (unsigned long)r, chain ? " (con la cadena propia)" : "");
 			httpcCloseContext(ctx);
+			if (chain) { // en algunas consolas la cadena propia hace fallar todo: con las raíces del sistema
+				own = false, redir--;
+				continue;
+			}
 			return HC_NOCONN;
+		}
+		if (verify && hc_chain && !own && !hc_chain_bad) {
+			hc_chain_bad = true;
+			util_log("dl: httpc no acepta la cadena de raíces propia en esta consola: se usan las del sistema");
 		}
 		if (t_ck_set) { // httpc da la primera Set-Cookie (la de sesión, casi siempre)
 			char sc[1024] = "";
@@ -641,7 +652,7 @@ static int dl_request_hc(int method, const char *url0, const char *const *header
 		if (R_FAILED(httpcOpenContext(&ctx, (HTTPC_RequestMethod)method, url, 0)))
 			return DLF_NOCONN;
 		httpcSetSSLOpt(&ctx, SSLCOPT_Default);
-		if (hc_chain)
+		if (hc_chain && !hc_chain_bad)
 			httpcSelectRootCertChain(&ctx, hc_chain);
 		httpcSetKeepAlive(&ctx, HTTPC_KEEPALIVE_ENABLED);
 		httpcAddRequestHeaderField(&ctx, "User-Agent", t_ua ? t_ua : UA);
@@ -804,7 +815,7 @@ static void common_opts(CURL *c, char *eb)
 	curl_easy_setopt(c, CURLOPT_CAINFO, CA_BUNDLE); /* raíces de Mozilla, siempre verificado */
 	curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 1L);
 	curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 2L);
-	curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 20L);
+	curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 60L); // (en Old 3DS, el TLS de algunos servidores tarda)
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 64L);
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
 	curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
