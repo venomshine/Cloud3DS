@@ -1581,6 +1581,8 @@ static void un_poll(void)
 
 static bool hm_is_open(void);
 static void dl_top(void);
+static bool DLV;      // Descargas: viendo lo descargado (si no, sus tarjetas)
+static int DLV_n = -1; // cuántos hay en la carpeta (-1: contarlos)
 static void hm_top(void);
 static void hm_bottom(void);
 static void hm_show(void);
@@ -1653,12 +1655,13 @@ static void dl_top(void)
 	int n = visible_xfers(xs, MAX_XFERS), f = 0;
 	for (int i = 0; i < n; i++)
 		f += xs[i]->kind == XF_FETCH;
-	if (f)
-		mini_body(1);
-	else {
+	if (DLV) {
 		files_top(1);
 		sd_bar(1);
-	}
+	} else if (f)
+		mini_body(1);
+	else
+		app_idle_top(IC_DOWNLOAD, _("Sin descargas en curso"), _("Los CIA se instalan mientras se descargan; todo lo descargado queda en /Downloads."));
 }
 static void titles_space_bar(void);
 static bool f_is_titles(void);
@@ -3506,6 +3509,7 @@ static void sr_close(void)
 	f_load(SR.scope);
 }
 
+static char FILES_LAST[512] = "/"; // la última carpeta de Archivos
 static bool TI_by_size; // Títulos: ordenados por tamaño (si no, por nombre)
 
 // la lista de títulos se lee en su hilo (leer el nombre de cada uno lleva su tiempo): mientras, se ve la anterior
@@ -3720,8 +3724,13 @@ static bool f_back_to_origin(void)
 	return true;
 }
 
+static void dl_view_close(void);
 static void f_up(void)
 {
+	if (U.app == AP_DL && !strcmp(F.path, DL_DIR)) {
+		dl_view_close();
+		return;
+	}
 	if (f_back_to_origin())
 		return;
 	if (!strcmp(F.path, "/"))
@@ -6993,8 +7002,8 @@ static void tab_files(void)
 	if (F.need_reload)
 		f_reload_keep();
 	// cabecera: atrás, la carpeta actual y, a la derecha, «nueva carpeta»
-	bool root = f_app_root();
-	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : root && (U.app == AP_MUSIC || U.app == AP_DL) ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
+	bool root = f_app_root() && U.app != AP_DL; // (en lo descargado, la flecha vuelve a las tarjetas)
+	const char *nm = F.trash ? _("Papelera") : F.titles ? _("Títulos") : F.nosaves ? _("Partidas") : f_app_root() && U.app == AP_DL ? _("Lo descargado") : root && U.app == AP_MUSIC ? ap_name(U.app) : !strcmp(F.path, "/") ? "SD" : strrchr(F.path, '/') + 1;
 	char sq[160];
 	if (F.search) {
 		snprintf(sq, sizeof sq, "«%s»", SR.q);
@@ -7100,46 +7109,7 @@ static void tab_files(void)
 	bool np = touch_in(nx - 14, ny - 14, 28, 28);
 	// a la derecha: buscar, ordenar y agrupar, lista o iconos, y «+»
 	float gx = nx - 32, sx = nx - 64, lx = nx - 96;
-	if (U.app == AP_DL && root && !MS.on) { // Descargas: desde un enlace, escanear un QR, el enlace copiado y el orden
-		const char *cl = clip_text();
-		bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
-		float bx[4] = {sx - 32, sx, gx, nx};
-		static const IconId bi[4] = {IC_LINK, IC_CAMERA, IC_DUP, IC_SORT};
-		int nb = 0, act[4];
-		for (int k = 0; k < 4; k++)
-			if (k != 2 || clu) // (sin enlace copiado, su botón no sale)
-				act[nb++] = k;
-		bool hit[4] = {0};
-		for (int k = 0; k < nb; k++) {
-			float cx = bx[4 - nb + k];
-			bool main = act[k] == 0;
-			draw_circle(cx, ny, 12, main ? (touch_in(cx - 14, ny - 14, 28, 28) ? col_lerp(T.accent, T.text, 0.15f) : T.accent) : touch_in(cx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
-			draw_icon(bi[act[k]], cx, ny, 14, main ? 0xFFFFFFFF : T.text2);
-			hit[act[k]] = hdr_hit(cx - 13, ny - 13, 26, 26);
-		}
-		if (!g_dialog.open && (hit[0] || (U.buttons && !FP.mode && !CC.mode && (g_kdown & KEY_X)))) {
-			U.want_dlurl = true;
-			return;
-		}
-		if (!g_dialog.open && hit[1]) {
-			qrs_open();
-			return;
-		}
-		if (!g_dialog.open && hit[2]) {
-			char url[1024];
-			util_strlcpy(url, cl, sizeof url);
-			if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
-				toast_icon(_("Descargando el enlace del portapapeles"), IC_DOWNLOAD, T.accent);
-			else
-				toast_icon(_("No se pudo descargar ese enlace"), IC_CLOSE, T.danger);
-			return;
-		}
-		if (!g_dialog.open && hit[3]) {
-			VS.open = VS.just = true;
-			VS.sel = 0;
-			return;
-		}
-	} else if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search && !F.titles) {
+	if (!F.missing && !F.nosaves && !MS.on && !F.trash && !F.search && !F.titles) {
 		draw_circle(lx, ny, 12, touch_in(lx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(IC_SEARCH, lx, ny, 14, T.text2);
 		draw_circle(gx, ny, 12, touch_in(gx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
@@ -7498,7 +7468,7 @@ static void tab_files(void)
 		text_draw_center(t, BOT_W / 2, my + 62, TS_SUB, T.text3);
 	} else if (!F.err && F.n == 0 && U.app == AP_DL && f_app_root()) {
 		text_draw_center(_("Aún no hay descargas"), BOT_W / 2, my + 30, TS_BODY, T.text3);
-		wrap_center(_("Aquí queda lo que descargues desde un enlace o un QR (botones de arriba, o X para un enlace), desde la Nube o desde el Navegador."),
+		wrap_center(_("Aquí queda lo que descargues desde un enlace o un QR, desde la Nube o desde el Navegador."),
 		            BOT_W / 2, my + 52, BOT_W - 40, TS_SUB, 4, T.text3);
 	} else if (F.err || F.n == 0) {
 		text_draw_center(F.err ? _("No se pudo abrir esta carpeta") : _("Carpeta vacía"), BOT_W / 2, my + 40, TS_BODY, T.text3);
@@ -7597,6 +7567,8 @@ static void tab_files(void)
 	if (!MS.on && U.buttons && !g_dialog.open && (g_kdown & KEY_B)) {
 		if (F.nosaves)
 			f_reload_keep();
+		else if (f_app_root() && !F.search && U.app == AP_DL) // lo descargado: a las tarjetas de Descargas
+			dl_view_close();
 		else if (f_app_root() && !F.search) // en la carpeta de la aplicación: al inicio
 			hm_show();
 		else if (!f_back_to_results())
@@ -9832,6 +9804,8 @@ static void hm_show(void)
 static void hm_launch(int i)
 {
 	hm_save();
+	if (U.app == AP_FILES && U.tab == TAB_FILES && (F.path[0] == '/' || F.trash))
+		util_strlcpy(FILES_LAST, F.path, sizeof FILES_LAST);
 	switch (i) {
 	case AP_CLOUD: cl_open(); return;
 	case AP_WEB: U.want_web = true; return;
@@ -9860,9 +9834,11 @@ static void hm_launch(int i)
 		return;
 	}
 	U.tab = TAB_FILES;
-	if (i == AP_DL) { // la carpeta de descargas, con lo de Archivos; arriba, enlace y QR
+	F.ret_from[0] = F.ret_to[0] = 0; // (cada app con su propio «atrás»)
+	if (i == AP_DL) { // sus tarjetas; la última abre la carpeta de descargas con lo de Archivos
+		DLV = false;
+		DLV_n = -1;
 		fsx_mkdirs(DL_DIR);
-		f_load(DL_DIR);
 		util_strlcpy(U.app_root, DL_DIR, sizeof U.app_root);
 		return;
 	}
@@ -9873,8 +9849,8 @@ static void hm_launch(int i)
 	}
 	if (i == AP_MUSIC || i == AP_SHARE) // su pantalla (ml_bottom, sh_bottom)
 		return;
-	if (F.path[0] == '@' && !F.trash) // (Archivos: donde se estaba, salvo en Títulos)
-		f_load("/");
+	// Archivos: en su última carpeta (no en la de otra app: Descargas, Títulos o sus copias)
+	f_load(FILES_LAST[0] ? FILES_LAST : "/");
 }
 
 // un icono de aplicación: cuadrado redondeado con el color de la app; elegido, con su borde y su brillo
@@ -10134,6 +10110,91 @@ static void hm_bottom(void)
 	dialog_draw();
 }
 
+static bool dl_count_cb(const FsxEntry *e, void *u)
+{
+	(void)e;
+	(*(int *)u)++;
+	return true;
+}
+
+// Descargas: desde un enlace, un QR o el enlace copiado; y, la última, lo ya descargado (la carpeta, como en Archivos)
+static void dl_bottom(void)
+{
+	tab_header(_("Descargas"), false);
+	if ((g_kdown & KEY_B) && !g_dialog.open) {
+		hm_show();
+		return;
+	}
+	static int sel;
+	if (DLV_n < 0) {
+		DLV_n = 0;
+		fsx_list(DL_DIR, false, dl_count_cb, &DLV_n);
+	}
+	const char *cl = clip_text();
+	bool clu = !strncasecmp(cl, "http://", 7) || !strncasecmp(cl, "https://", 8);
+	char cnt[64];
+	if (DLV_n == 0)
+		util_strlcpy(cnt, _("Aún no hay nada · /Downloads"), sizeof cnt);
+	else
+		snprintf(cnt, sizeof cnt, DLV_n == 1 ? _("1 elemento · /Downloads") : _("%d elementos · /Downloads"), DLV_n);
+	struct { IconId ic; u32 col; const char *t, *s; int act; } C[4];
+	int n = 0;
+	C[n++] = (typeof(C[0])){IC_LINK, T.warn, _("Desde un enlace"), _("Escribe la dirección de un archivo o de un proyecto de GitHub"), 0};
+	C[n++] = (typeof(C[0])){IC_CAMERA, T.ok, _("Escanear un código QR"), _("Con la cámara, como en FBI"), 1};
+	if (clu)
+		C[n++] = (typeof(C[0])){IC_DUP, T.accent2, _("Enlace del portapapeles"), cl, 2};
+	C[n++] = (typeof(C[0])){IC_FOLDER, T.accent, _("Ver lo descargado"), cnt, 3};
+	if (g_krepeat & KEY_DOWN)
+		sel = (sel + 1) % n, U.buttons = true;
+	if (g_krepeat & KEY_UP)
+		sel = (sel + n - 1) % n, U.buttons = true;
+	if (sel >= n)
+		sel = 0;
+	int run = -1;
+	float y = VIEW_Y + 8;
+	for (int i = 0; i < n; i++, y += 50) {
+		bool hl = touch_in(10, y, BOT_W - 20, 44) || (U.buttons && sel == i);
+		draw_rrect(10, y, BOT_W - 20, 44, 14, hl ? T.surface2 : T.surface);
+		if (U.buttons && sel == i)
+			draw_rrect_outline(10, y, BOT_W - 20, 44, 14, 1.5f, T.accent);
+		draw_circle(34, y + 22, 14, col_alpha(C[i].col, 0.18f));
+		draw_icon(C[i].ic, 34, y + 22, 15, C[i].col);
+		text_draw_clip(C[i].t, 58, y + 5, BOT_W - 80, TS_BODY, T.text);
+		text_draw_clip(C[i].s, 58, y + 24, BOT_W - 80, TS_SUB, T.text3);
+		if (!g_dialog.open && tap(10, y, BOT_W - 20, 44))
+			run = C[i].act, sel = i;
+	}
+	if (!g_dialog.open && (g_kdown & KEY_A))
+		run = C[sel].act;
+	text_draw_center(_("El progreso se ve arriba y en Conectar, en «Actividad»."), BOT_W / 2, SCR_H - 18, TS_SUB, T.text3);
+	if (run == 0)
+		U.want_dlurl = true;
+	else if (run == 1)
+		qrs_open();
+	else if (run == 2) {
+		char url[1024];
+		util_strlcpy(url, cl, sizeof url);
+		if (dl_add(url, dl_dest_dir(url), "", DLA_INSTALL | DLA_STREAM, G.console, NULL) == 0)
+			toast_icon(_("Descargando el enlace del portapapeles"), IC_DOWNLOAD, T.accent);
+		else
+			toast_icon(_("No se pudo descargar ese enlace"), IC_CLOSE, T.danger);
+	} else if (run == 3) {
+		g_kdown &= ~(KEY_A | KEY_B);
+		fsx_mkdirs(DL_DIR);
+		F.ret_from[0] = F.ret_to[0] = 0;
+		f_load(DL_DIR);
+		DLV = true;
+	}
+}
+
+// de lo descargado, atrás: a las tarjetas de Descargas
+static void dl_view_close(void)
+{
+	DLV = false;
+	DLV_n = -1;
+	ms_end();
+}
+
 static void draw_bottom(void)
 {
 	gfx_target(g_bot, T.bg);
@@ -10206,6 +10267,8 @@ static void draw_bottom(void)
 		ml_bottom();
 	else if (U.app == AP_SHARE)
 		sh_bottom();
+	else if (U.app == AP_DL && !DLV)
+		dl_bottom();
 	else if (U.tab == TAB_FILES) {
 		tab_files();
 		f_pick_bar();

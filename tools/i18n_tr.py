@@ -1,6 +1,27 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Los CIA se instalan mientras se descargan; todo lo descargado queda en /Downloads.':
+        ('CIAs are installed while they download; everything downloaded stays in /Downloads.',
+         'CIAはダウンロード中にインストールされます。ダウンロードしたものはすべて /Downloads に保存されます。'),
+    'Lo descargado':
+        ('Downloaded',
+         'ダウンロード済み'),
+    'Aquí queda lo que descargues desde un enlace o un QR, desde la Nube o desde el Navegador.':
+        ('Whatever you download from a link or a QR code, from the Cloud or from the Browser ends up here.',
+         'リンクやQRコード、クラウド、ブラウザからダウンロードしたものはここに保存されます。'),
+    'Aún no hay nada · /Downloads':
+        ('Nothing yet · /Downloads',
+         'まだありません · /Downloads'),
+    '1 elemento · /Downloads':
+        ('1 item · /Downloads',
+         '1件 · /Downloads'),
+    '%d elementos · /Downloads':
+        ('%d items · /Downloads',
+         '%d件 · /Downloads'),
+    'Ver lo descargado':
+        ('View downloads',
+         'ダウンロードしたものを見る'),
     'Intentos de PIN fallidos':
         ('Failed PIN attempts',
          'PINの入力ミス'),
