@@ -11,8 +11,9 @@
 - Navegador web (experimental), con favoritos e historial.
 - Papelera (con recuperación durante 7 días), búsqueda en toda la SD, selección múltiple, MD5 y SHA-256, crear y extraer ZIP y descargar carpetas como ZIP.
 - Música: biblioteca de toda la SD por canciones, artistas y álbumes (etiquetas ID3 y Vorbis), con «Sin datos» para lo que no las tiene (ocultar o eliminar, opcional). El reproductor (MP3, OGG y WAV) sigue sonando con la tapa cerrada.
-- Compartir: pasar homebrew (.3dsx y CIA sin cifrar) entre consolas en la misma Wi-Fi, vinculándolas una vez con un código; cada pedido lo acepta quien da, salvo las consolas «de confianza».
-- Descargas: todo lo descargado queda en /Downloads, que la app Descargas enseña y deja abrir.
+- Compartir: pasar apps homebrew instaladas entre consolas en la misma Wi-Fi, vinculándolas una vez con un código; cada pedido lo acepta quien da, salvo las consolas «de confianza». Al aceptar, se arma el CIA a partir de lo instalado y la otra consola lo instala.
+- Descargas: todo lo descargado queda en /Downloads; la app Descargas lo abre desde su tarjeta «Ver lo descargado».
+- Registro de congelaciones: si la interfaz deja de responder más de medio segundo, net.log apunta dónde y cuánto duró.
 - Todos los botones de las cabeceras también con la cruceta (↑ desde lo primero de la lista).
 - Al pegar algo que ya existe: reemplazar (o combinar carpetas), conservar ambos u omitir.
 - Capturas de pantalla que aparecen al instante en la web.
