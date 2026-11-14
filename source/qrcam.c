@@ -31,6 +31,7 @@ static struct {
 	char text[1024];   /* lo leído */
 	bool have;
 	struct quirc *q;
+	s32 prio_cap, prio_scan; /* recibir imágenes, por delante de la interfaz; buscar el QR, por detrás */
 } C;
 
 /* busca un QR en la imagen (gris a partir de RGB565) */
@@ -98,8 +99,11 @@ static void cam_thread(void *arg)
 					LightLock_Unlock(&C.lock);
 					if (R_FAILED(r = CAMU_SetReceiving(&ev[1], C.cap, PORT_CAM1, FRAME_BYTES, (s16)unit)))
 						break;
-					if (look)
+					if (look) { // buscar el QR cuesta CPU: por detrás de la interfaz, para que no se trabe mientras se escanea
+						svcSetThreadPriority(CUR_THREAD_HANDLE, C.prio_scan);
 						scan(C.front);
+						svcSetThreadPriority(CUR_THREAD_HANDLE, C.prio_cap);
+					}
 				} else if (idx == 2) { // se perdió una imagen: se empieza otra vez
 					if (ev[1]) {
 						svcCloseHandle(ev[1]);
@@ -160,6 +164,7 @@ bool qrcam_start(bool inner)
 	C.st = QRC_STARTING;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	C.prio_cap = prio - 1, C.prio_scan = prio + 1;
 	C.thr = threadCreate(cam_thread, NULL, 32 * 1024, prio - 1, -2, false);
 	if (!C.thr) {
 		svcCloseHandle(C.cancel);
