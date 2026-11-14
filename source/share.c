@@ -9,6 +9,7 @@
 #include "ciabuild.h"
 #include "cJSON.h"
 #include "dl.h"
+#include "install.h"
 #include "fsx.h"
 #include "state.h"
 #include "titles.h"
@@ -652,9 +653,66 @@ static void do_req(int peer, int item)
 	u32 did = 0;
 	if (dl_add(url, dir, "", cia ? DLA_INSTALL : DLA_NONE, p.name, &did) == 0) {
 		dl_set_name(did, fname);
+		lock();
+		if (S.cat_peer == peer)
+			for (int k = 0; k < S.ncat; k++)
+				if (S.cat[k].id == item)
+					S.cat[k].did = did;
+		unlock();
 		set_item_st(peer, item, SHR_DOWNLOADING);
 	} else
 		set_item_st(peer, item, SHR_FAIL);
+}
+
+// lo pedido que se está bajando: se sigue su descarga y, al llegar, su instalación (para decir cómo acabó)
+static void track_received(void)
+{
+	u32 ids[SHARE_ITEMS];
+	int st[SHARE_ITEMS], n = 0;
+	lock();
+	for (int k = 0; k < S.ncat && n < SHARE_ITEMS; k++)
+		if (S.cat[k].did && (S.cat[k].st == SHR_DOWNLOADING || S.cat[k].st == SHR_ASK || S.cat[k].st == SHR_INSTALLING))
+			ids[n] = S.cat[k].did, st[n++] = S.cat[k].st;
+	unlock();
+	if (!n)
+		return;
+	DlItem *dl = malloc(sizeof(DlItem) * 16);
+	InsReq *iq = malloc(sizeof(InsReq) * MAX_INS);
+	if (!dl || !iq) {
+		free(dl), free(iq);
+		return;
+	}
+	int nd = dl_list(dl, 16), ni = ins_snapshot(iq, MAX_INS);
+	for (int i = 0; i < n; i++) {
+		int ns = st[i];
+		for (int d = 0; d < nd; d++) {
+			if (dl[d].id != ids[i])
+				continue;
+			if (dl[d].st == DL_FAIL)
+				ns = SHR_FAIL;
+			else if (dl[d].st == DL_CANCELED)
+				ns = SHR_CANCELED;
+			else if (dl[d].st == DL_DONE && dl[d].installed)
+				ns = SHR_DONE;
+			else if (dl[d].st == DL_DONE && dl[d].path[0])
+				for (int q = ni - 1; q >= 0; q--) { // (la más reciente con ese archivo)
+					if (strcmp(iq[q].path, dl[d].path))
+						continue;
+					ns = iq[q].st == INS_PENDING ? SHR_ASK : iq[q].st == INS_QUEUED || iq[q].st == INS_RUNNING ? SHR_INSTALLING
+					   : iq[q].st == INS_DONE ? SHR_DONE : iq[q].st == INS_FAILED ? SHR_INSTFAIL : iq[q].st == INS_KEPT ? SHR_KEPT : SHR_CANCELED;
+					break;
+				}
+		}
+		if (ns != st[i]) {
+			lock();
+			for (int k = 0; k < S.ncat; k++)
+				if (S.cat[k].did == ids[i])
+					S.cat[k].st = ns;
+			S.rev++;
+			unlock();
+		}
+	}
+	free(dl), free(iq);
 }
 
 static void push(int type, int peer, int item)
@@ -705,6 +763,9 @@ static void thread_main(void *arg)
 		}
 		if (last_disc && now - last_disc > 20000) // mientras se usa, se vuelve a preguntar de vez en cuando
 			do_discover(), last_disc = now;
+		static u64 last_track;
+		if (now - last_track > 1000)
+			track_received(), last_track = now;
 		LightEvent_WaitTimeout(&S.ev, 150 * 1000000ll);
 	}
 }

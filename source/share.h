@@ -23,7 +23,8 @@
 #define SHARE_ITEMS 96
 
 enum { SK_3DSX, SK_CIA, SK_TITLE }; /* SK_TITLE: una app instalada (se envía su CIA, armado al aceptarla) */
-enum { SHR_NONE, SHR_WAIT, SHR_DOWNLOADING, SHR_DONE, SHR_REFUSED, SHR_FAIL, SHR_PREP }; /* lo pedido a otra consola (PREP: la otra arma el instalador) */
+/* lo pedido a otra consola: PREP, la otra arma el instalador; luego se baja y, al llegar, lo que pase con su instalación */
+enum { SHR_NONE, SHR_WAIT, SHR_DOWNLOADING, SHR_DONE, SHR_REFUSED, SHR_FAIL, SHR_PREP, SHR_ASK, SHR_INSTALLING, SHR_INSTFAIL, SHR_KEPT, SHR_CANCELED };
 
 typedef struct {
 	char id[17], name[48];
@@ -43,7 +44,8 @@ typedef struct {
 	u16  icon[48 * 48];
 	char path[256];   /* (solo en las propias) */
 	bool hidden;      /* (propias) no se comparte */
-	int  st;          /* (de otra consola) SR_*: lo pedido */
+	int  st;          /* (de otra consola) SHR_*: lo pedido */
+	u32  did;         /* (de otra consola) su descarga, para seguirla hasta instalarse */
 } ShareItem;
 
 /* algo que esta consola tiene que contestar */

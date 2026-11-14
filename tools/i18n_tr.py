@@ -1,6 +1,42 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Solicitud enviada. Pendiente de aceptación.':
+        ('Request sent. Awaiting acceptance.',
+         'リクエストを送信しました。承認待ちです。'),
+    'Solicitud aceptada. La otra consola está preparando el instalador.':
+        ('Request accepted. The other console is preparing the installer.',
+         'リクエストが承認されました。相手のコンソールがインストーラーを準備しています。'),
+    'Recibiendo. Se guardará en /3ds.':
+        ('Receiving. It will be saved to /3ds.',
+         '受信中。/3ds に保存されます。'),
+    'Recibiendo. Al terminar, podrás instalarla.':
+        ('Receiving. You can install it when it finishes.',
+         '受信中。完了後にインストールできます。'),
+    'Recibida. Elige si instalarla.':
+        ('Received. Choose whether to install it.',
+         '受信しました。インストールするか選んでください。'),
+    'Recibida y guardada en /3ds.':
+        ('Received and saved to /3ds.',
+         '受信して /3ds に保存しました。'),
+    'Instalada correctamente.':
+        ('Installed successfully.',
+         'インストールしました。'),
+    'Recibida, pero no se pudo instalar. El archivo está en /Downloads.':
+        ('Received, but it could not be installed. The file is in /Downloads.',
+         '受信しましたが、インストールできませんでした。ファイルは /Downloads にあります。'),
+    'Recibida y guardada en /Downloads sin instalar.':
+        ('Received and saved to /Downloads without installing.',
+         '受信して、インストールせずに /Downloads に保存しました。'),
+    'Recepción cancelada.':
+        ('Transfer canceled.',
+         '受信をキャンセルしました。'),
+    'La otra consola rechazó la solicitud.':
+        ('The other console declined the request.',
+         '相手のコンソールがリクエストを拒否しました。'),
+    'No se pudo completar la solicitud.':
+        ('The request could not be completed.',
+         'リクエストを完了できませんでした。'),
     'Borrar el .cia después de instalarlo':
         ('Delete the .cia after installing it',
          'インストール後に .cia を削除'),

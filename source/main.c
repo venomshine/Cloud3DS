@@ -9495,9 +9495,20 @@ static void sh_kind_text(const ShareItem *it, char *out, size_t n)
 {
 	char sz[24];
 	util_fmt_size(sz, sizeof sz, it->size);
-	const char *st = it->st == SHR_WAIT ? _("Esperando a que acepte…") : it->st == SHR_PREP ? _("Aceptado: la otra consola está preparando el instalador…")
-	                 : it->st == SHR_DOWNLOADING ? (it->kind == SK_3DSX ? _("Recibiendo: queda en /3ds") : _("Recibiendo: al terminar, se instala"))
-	                 : it->st == SHR_REFUSED ? _("No lo aceptó") : it->st == SHR_FAIL ? _("No se pudo pedir") : NULL;
+	const char *st = NULL;
+	switch (it->st) {
+	case SHR_WAIT: st = _("Solicitud enviada. Pendiente de aceptación."); break;
+	case SHR_PREP: st = _("Solicitud aceptada. La otra consola está preparando el instalador."); break;
+	case SHR_DOWNLOADING: st = it->kind == SK_3DSX ? _("Recibiendo. Se guardará en /3ds.") : _("Recibiendo. Al terminar, podrás instalarla."); break;
+	case SHR_ASK: st = _("Recibida. Elige si instalarla."); break;
+	case SHR_INSTALLING: st = _("Instalando…"); break;
+	case SHR_DONE: st = it->kind == SK_3DSX ? _("Recibida y guardada en /3ds.") : _("Instalada correctamente."); break;
+	case SHR_INSTFAIL: st = _("Recibida, pero no se pudo instalar. El archivo está en /Downloads."); break;
+	case SHR_KEPT: st = _("Recibida y guardada en /Downloads sin instalar."); break;
+	case SHR_CANCELED: st = _("Recepción cancelada."); break;
+	case SHR_REFUSED: st = _("La otra consola rechazó la solicitud."); break;
+	case SHR_FAIL: st = _("No se pudo completar la solicitud."); break;
+	}
 	if (st)
 		snprintf(out, n, "%s", st);
 	else
