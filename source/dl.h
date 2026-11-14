@@ -61,6 +61,8 @@ enum { DLF_OK, DLF_NOCONN, DLF_FAIL };
 #define DL_METHOD_PATCH 0x100 /* PATCH (el servicio HTTP del sistema no lo tiene: siempre con libcurl) */
 /* para el hilo que llama: User-Agent propio (NULL, el de Cloud3DS) y la dirección final de su último dl_fetch */
 void dl_set_thread_ua(const char *ua);
+/* para el hilo que llama: sin comprobar el certificado (contenido público, como las descargas) */
+void dl_set_thread_noverify(bool on);
 /* las peticiones de este hilo se cortan (en ~1 s) en cuanto *a o *b sea true (NULL: no se mira) */
 void dl_set_thread_stop(volatile bool *a, volatile bool *b);
 /* para el hilo que llama: de dónde sacar las cookies que mandar y dónde guardar las que lleguen (NULL, ninguna) */

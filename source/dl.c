@@ -74,6 +74,8 @@ static Result hc_recv(httpcContext *ctx, u8 *buf, u32 n, int secs)
 }
 
 static __thread bool t_noresolve; /* la última petición con libcurl: el nombre del servidor no existe (DNS) */
+static __thread bool t_noverify;  /* las peticiones de este hilo, sin comprobar el certificado (contenido público) */
+void dl_set_thread_noverify(bool on) { t_noverify = on; }
 bool dl_last_noresolve(void)
 {
 	return t_noresolve;
@@ -477,7 +479,7 @@ int dl_fetch(const char *url0, const char *accept, size_t (*wr)(char *, size_t, 
 	util_strlcpy(url, url0, sizeof url);
 	httpcContext ctx;
 	u32 code = 0;
-	int e = hc_open(&ctx, url, sizeof url, true, 0, accept, &code);
+	int e = hc_open(&ctx, url, sizeof url, !t_noverify, 0, accept, &code);
 	if (e != HC_OK)
 		return e == HC_NOCONN ? DLF_NOCONN : DLF_FAIL;
 	util_strlcpy(t_final, url, sizeof t_final);
@@ -815,6 +817,8 @@ static void common_opts(CURL *c, char *eb)
 	curl_easy_setopt(c, CURLOPT_CAINFO, CA_BUNDLE); /* raíces de Mozilla, siempre verificado */
 	curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 1L);
 	curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 2L);
+	if (t_noverify) // (lo pidió este hilo: contenido público)
+		curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L), curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
 	curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 60L); // (en Old 3DS, el TLS de algunos servidores tarda)
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 64L);
 	curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
