@@ -1616,6 +1616,7 @@ static void un_poll(void)
 static bool hm_is_open(void);
 static void dl_top(void);
 static bool DLV;      // Descargas: viendo lo descargado (si no, sus tarjetas)
+static bool DLQ;      // Descargas: la cola (pausar, reanudar, cancelar…)
 static int DLV_n = -1; // cuántos hay en la carpeta (-1: contarlos)
 static void hm_top(void);
 static void hm_bottom(void);
@@ -10040,7 +10041,7 @@ static void hm_launch(int i)
 	U.tab = TAB_FILES;
 	F.ret_from[0] = F.ret_to[0] = 0; // (cada app con su propio «atrás»)
 	if (i == AP_DL) { // sus tarjetas; la última abre la carpeta de descargas con lo de Archivos
-		DLV = false;
+		DLV = DLQ = false;
 		DLV_n = -1;
 		fsx_mkdirs(DL_DIR);
 		util_strlcpy(U.app_root, DL_DIR, sizeof U.app_root);
@@ -10366,10 +10367,10 @@ static struct {
 	int saved_page, saved_pages;
 	int orient;              // 0 horizontal; 1 libro con la pantalla de arriba a la izquierda; 2 al revés
 	bool rtl;                // libro: de derecha a izquierda (manga)
-	int zoom;                // horizontal: 0 al ancho de la pantalla de abajo; 1 de la de arriba; 2 y 3, más
 	bool autorot;            // libro: girar solo hacia el lado al que se gire la consola (acelerómetro)
 	float ax;                // (el acelerómetro, suavizado)
 	u64 ax_t;                // desde cuándo apunta al otro lado
+	int zoom;                // horizontal: 0 al ancho de la pantalla de abajo; 1 de la de arriba; 2 y 3, más
 	int em;                  // letra de lo que se recoloca (puntos)
 	u32 lgen;
 	bool relaying;
@@ -10403,9 +10404,9 @@ static void rv_cfg_load(void)
 			RV.zoom = clampf(atoi(ln + 5), 0, 3);
 		else if (!strncmp(ln, "em=", 3))
 			RV.em = clampf(atoi(ln + 3), 8, 20);
-	}
 		else if (!strncmp(ln, "auto=", 5))
 			RV.autorot = atoi(ln + 5) != 0;
+	}
 	if (f)
 		fclose(f);
 }
@@ -10922,7 +10923,6 @@ static bool rv_req_eq(const RdReq *a, const RdReq *b)
 }
 
 // cada vuelta: el estado del documento y lo que hay que tener dibujado
-static void rv_poll(void)
 // libro: con el acelerómetro, hacia el lado al que se gira la consola (la gravedad, a lo largo del eje X de la
 // consola: negativa con la pantalla de arriba a la izquierda). Medio segundo apuntando al otro lado para cambiar
 static void rv_autorot(void)
@@ -10955,9 +10955,10 @@ static void rv_autorot(void)
 	}
 }
 
+static void rv_poll(void)
 {
-	int pages;
 	rv_autorot();
+	int pages;
 	bool reflow;
 	char err[32];
 	int st = rd_state(&pages, &reflow, err, sizeof err);
@@ -11245,9 +11246,9 @@ static void rv_menu(void)
 		ic[n] = IC_BOOK, lab[n] = _("Leer en horizontal"), col[n] = T.text, act[n++] = 9;
 	if (rv_book()) {
 		ic[n] = IC_UNDO, lab[n] = RV.rtl ? _("Leer de izquierda a derecha") : _("Leer de derecha a izquierda (manga)"), col[n] = T.text, act[n++] = 1;
-	if (!RV.reflow && !rv_book()) {
 		ic[n] = RV.autorot ? IC_CHECK : IC_FLIP, lab[n] = RV.autorot ? _("Girar solo: activado") : _("Girar solo al girar la consola"), col[n] = T.text, act[n++] = 8;
 	}
+	if (!RV.reflow && !rv_book()) {
 		if (RV.zoom < 3)
 			ic[n] = IC_SEARCH, lab[n] = _("Ampliar"), col[n] = T.text, act[n++] = 2;
 		if (RV.zoom > 0)
@@ -11266,13 +11267,13 @@ static void rv_menu(void)
 	if (r < 0)
 		return;
 	switch (act[r]) {
-	case 0:
 	case 9:
 		RV.orient = 0;
 		RV.cx = -1;
 		rv_drop_tex();
 		rv_relayout(RV.page);
 		break;
+	case 0:
 		if (RV.orient == 0)
 			RV.orient = 1; // a libro (con el giro automático, el lado lo pone la consola)
 		else
@@ -11282,8 +11283,8 @@ static void rv_menu(void)
 		rv_relayout(RV.page);
 		break;
 	case 1: RV.rtl = !RV.rtl; break;
-	case 2:
 	case 8: RV.autorot = !RV.autorot; break;
+	case 2:
 	case 3:
 		RV.zoom = act[r] == 2 ? RV.zoom + 1 : 0;
 		RV.cx = -1;
@@ -11347,21 +11348,33 @@ static void dl_bottom(void)
 		sel = 0;
 	int run = -1;
 	float y = VIEW_Y + 8;
-	for (int i = 0; i < n; i++, y += 50) {
-		bool hl = touch_in(10, y, BOT_W - 20, 44) || (U.buttons && sel == i);
-		draw_rrect(10, y, BOT_W - 20, 44, 14, hl ? T.surface2 : T.surface);
+	for (int i = 0; i < n; i++, y += 45) {
+		bool hl = touch_in(10, y, BOT_W - 20, 40) || (U.buttons && sel == i);
+		draw_rrect(10, y, BOT_W - 20, 40, 13, hl ? T.surface2 : T.surface);
 		if (U.buttons && sel == i)
-			draw_rrect_outline(10, y, BOT_W - 20, 44, 14, 1.5f, T.accent);
-		draw_circle(34, y + 22, 14, col_alpha(C[i].col, 0.18f));
-		draw_icon(C[i].ic, 34, y + 22, 15, C[i].col);
-		text_draw_clip(C[i].t, 58, y + 5, BOT_W - 80, TS_BODY, T.text);
-		text_draw_clip(C[i].s, 58, y + 24, BOT_W - 80, TS_SUB, T.text3);
-		if (!g_dialog.open && tap(10, y, BOT_W - 20, 44))
+			draw_rrect_outline(10, y, BOT_W - 20, 40, 13, 1.5f, T.accent);
+		draw_circle(34, y + 20, 13, col_alpha(C[i].col, 0.18f));
+		draw_icon(C[i].ic, 34, y + 20, 14, C[i].col);
+		text_draw_clip(C[i].t, 58, y + 3, BOT_W - 80, TS_BODY, T.text);
+		text_draw_clip(C[i].s, 58, y + 21, BOT_W - 80, TS_SUB, T.text3);
+		if (!g_dialog.open && tap(10, y, BOT_W - 20, 40))
 			run = C[i].act, sel = i;
 	}
 	if (!g_dialog.open && (g_kdown & KEY_A))
 		run = C[sel].act;
-	text_draw_center(_("El progreso se muestra arriba y en Conectar > Actividad."), BOT_W / 2, SCR_H - 18, TS_SUB, T.text3);
+	ds_refresh();
+	{ // la cola: X o tocando aquí
+		char q[80];
+		snprintf(q, sizeof q, _("%s Cola de descargas (%d)"), GLYPH_X, DS.n);
+		float qw = text_width(q, TS_SUB) + 24, qx = (BOT_W - qw) / 2, qy = SCR_H - 26;
+		draw_rrect(qx, qy, qw, 22, 11, touch_in(qx, qy - 2, qw, 26) ? T.surface2 : T.surface);
+		text_draw_center(q, BOT_W / 2, qy + (22 - text_lineh(TS_SUB)) / 2, TS_SUB, T.accent);
+		if (!g_dialog.open && (tap(qx, qy - 2, qw, 26) || (g_kdown & KEY_X))) {
+			DLQ = true;
+			g_kdown &= ~KEY_X;
+			return;
+		}
+	}
 	if (run == 0)
 		U.want_dlurl = true;
 	else if (run == 1)
@@ -11380,6 +11393,54 @@ static void dl_bottom(void)
 		f_load(DL_DIR);
 		DLV = true;
 	}
+}
+
+// la cola de descargas: cada una con cómo va; A, sus opciones (pausar, reanudar, cancelar, reintentar, su carpeta…)
+static void dlq_bottom(void)
+{
+	tab_header(_("Cola de descargas"), true);
+	if (!g_dialog.open && !DS.open && (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))) {
+		DLQ = false;
+		return;
+	}
+	ds_refresh();
+	static List l;
+	int nd = DS.n;
+	const float RH = 40;
+	list_update(&l, nd, RH);
+	if (!nd) {
+		empty_state(IC_DOWNLOAD, _("La cola está vacía"), _("Lo que descargues desde un enlace, un QR o la Nube aparecerá aquí. Puedes pausarlo, reanudarlo o cancelarlo."));
+		return;
+	}
+	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+	for (int r = 0; r < nd; r++) {
+		float y = VIEW_Y + r * RH - l.off;
+		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
+			continue;
+		const DlItem *d = &DS.it[nd - 1 - r]; // (la más reciente arriba)
+		bool t = row(&l, r, y, RH);
+		if (!U.buttons && l.sel == r)
+			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
+		if (!DS.open && (t || activate(&l, r))) {
+			DS.id = d->id;
+			DS.open = DS.just = true, DS.sel = 0;
+		}
+		u32 sc;
+		char st[160];
+		dl_status(d, st, sizeof st, &sc);
+		u32 ic = d->st == DL_FAIL ? T.danger : d->st == DL_DONE ? T.ok : T.accent;
+		draw_rrect(14, y + (RH - 26) / 2, 26, 26, 8, col_alpha(ic, 0.16f));
+		draw_icon(d->st == DL_FAIL ? IC_CLOSE : d->st == DL_DONE ? IC_CHECK : d->st == DL_PAUSED ? IC_CLOCK : IC_DOWNLOAD, 27, y + RH / 2, 14, ic);
+		g_clip_ell = l.sel != r;
+		text_draw_clip(d->name[0] ? d->name : d->host, 50, y + 5, BOT_W - 64, TS_BODY, T.text);
+		text_draw_clip(st, 50, y + 22, BOT_W - 64, TS_SUB, sc);
+		g_clip_ell = false;
+		if ((d->st == DL_RUN || d->st == DL_PAUSED) && d->total) {
+			draw_rect(50, y + RH - 4, BOT_W - 64, 2, T.surface2);
+			draw_rect(50, y + RH - 4, (BOT_W - 64) * (float)((double)d->done / d->total), 2, d->st == DL_PAUSED ? T.text3 : T.accent);
+		}
+	}
+	gfx_clip_off();
 }
 
 // de lo descargado, atrás: a las tarjetas de Descargas
@@ -11469,6 +11530,8 @@ static void draw_bottom(void)
 		sh_bottom();
 	else if (U.app == AP_READER)
 		rl_bottom();
+	else if (U.app == AP_DL && !DLV && DLQ)
+		dlq_bottom();
 	else if (U.app == AP_DL && !DLV)
 		dl_bottom();
 	else if (U.tab == TAB_FILES) {

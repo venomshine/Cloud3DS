@@ -1,6 +1,24 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Girar solo: activado':
+        ('Auto-rotate: on',
+         '自動回転: オン'),
+    'Girar solo al girar la consola':
+        ('Rotate automatically with the console',
+         '本体の向きに合わせて自動回転'),
+    '%s Cola de descargas (%d)':
+        ('%s Download queue (%d)',
+         '%s ダウンロードキュー(%d)'),
+    'Cola de descargas':
+        ('Download queue',
+         'ダウンロードキュー'),
+    'La cola está vacía':
+        ('The queue is empty',
+         'キューは空です'),
+    'Lo que descargues desde un enlace, un QR o la Nube aparecerá aquí. Puedes pausarlo, reanudarlo o cancelarlo.':
+        ('What you download from a link, a QR code or the Cloud will appear here. You can pause, resume or cancel it.',
+         'リンク、QRコード、クラウドからのダウンロードがここに表示されます。一時停止、再開、キャンセルができます。'),
     'Sin descargas recientes':
         ('No recent downloads',
          '最近のダウンロードはありません'),
