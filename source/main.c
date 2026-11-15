@@ -12131,6 +12131,61 @@ static void hm_tile(int i, float x, float y, float s, bool sel, bool label, floa
 }
 
 // arriba: la aplicación elegida, en grande, con lo más útil de ella
+// abajo de la pantalla de arriba del inicio: lo que suena y lo último que se leía, con su carátula y su portada (si
+// hay alguna de las dos). Se abren desde su aplicación
+static void rc_pump(void);
+static void rc_draw(const RBook *b, float x, float y, float w, float h, float r);
+static void hm_widgets(float a, float ymin)
+{
+	bool mus = mu_on();
+	rlib_peek();
+	const RBook *lb;
+	int n = rlib_lock(&lb), best = -1;
+	for (int k = 0; k < n; k++)
+		if (lb[k].last && (best < 0 || lb[k].last > lb[best].last))
+			best = k;
+	static RBook bk;
+	if (best >= 0)
+		bk = lb[best];
+	rlib_unlock();
+	int nw = mus + (best >= 0);
+	if (!nw || a < 0.05f)
+		return;
+	const float h = 40, gap = 10, x0 = 24, W = TOP_W - 48, y = fmaxf(170, ymin + 6);
+	if (y + h > SCR_H - 26) // (no cabe debajo de lo de la aplicación)
+		return;
+	float w = nw == 2 ? (W - gap) / 2 : W, x = x0;
+	if (mus) {
+		mu_sync_cover();
+		draw_rrect(x, y, w, h, 10, col_alpha(T.surface, a));
+		if (MU.cover.ok)
+			draw_texture_round(&MU.cover, x + 5, y + 5, h - 10, h - 10, 5, a);
+		else {
+			draw_rrect(x + 5, y + 5, h - 10, h - 10, 5, col_alpha(ap_col(AP_MUSIC), 0.2f * a));
+			draw_icon(IC_SPEAKER, x + h / 2, y + h / 2, 13, col_alpha(ap_col(AP_MUSIC), a));
+		}
+		float tx = x + h + 4, tw = w - h - 12;
+		text_draw_clip(MU.s.st == MU_PLAY ? _("Ahora suena") : _("En pausa"), tx, y + 5, tw, 0.36f, col_alpha(ap_col(AP_MUSIC), a));
+		char t[300];
+		snprintf(t, sizeof t, MU.s.artist[0] ? "%s · %s" : "%s", MU.s.title, MU.s.artist);
+		text_draw_clip(t, tx, y + 20, tw, TS_SUB, col_alpha(T.text, a));
+		x += w + gap;
+	}
+	if (best >= 0) {
+		rc_pump();
+		draw_rrect(x, y, w, h, 10, col_alpha(T.surface, a));
+		rc_draw(&bk, x + 7, y + 4, 23, h - 8, 2);
+		float tx = x + 38, tw = w - 46;
+		char l[64], tb[128];
+		if (bk.pages > 0)
+			snprintf(l, sizeof l, _("Seguir leyendo · %d %%"), (bk.page + 1) * 100 / bk.pages);
+		else
+			util_strlcpy(l, _("Seguir leyendo"), sizeof l);
+		text_draw_clip(l, tx, y + 5, tw, 0.36f, col_alpha(ap_col(AP_READER), a));
+		text_draw_clip(rb_title(&bk, tb, sizeof tb), tx, y + 20, tw, TS_SUB, col_alpha(T.text, a));
+	}
+}
+
 static void hm_top(void)
 {
 	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
@@ -12186,22 +12241,6 @@ static void hm_top(void)
 			snprintf(s1, sizeof s1, "%s", ci.email[0] ? ci.email : ci.name), c1 = T.ok;
 		else
 			util_strlcpy(s1, _("Sin conectar"), sizeof s1);
-	} else if (i == AP_READER) { // lo último que se leyó
-		const RBook *b;
-		int n = rlib_lock(&b), best = -1;
-		for (int k = 0; k < n; k++)
-			if (b[k].last && (best < 0 || b[k].last > b[best].last))
-				best = k;
-		if (best >= 0) {
-			char tb[128];
-			snprintf(s1, sizeof s1, _("Continuar: %s"), rb_title(&b[best], tb, sizeof tb)), c1 = T.text2;
-			if (b[best].pages > 0)
-				snprintf(s2, sizeof s2, _("Página %d de %d"), b[best].page + 1, b[best].pages);
-		}
-		rlib_unlock();
-	} else if (i == AP_MUSIC) {
-		if (MU.s.st == MU_PLAY || MU.s.st == MU_PAUSE)
-			snprintf(s1, sizeof s1, "%s %s", MU.s.st == MU_PLAY ? _("Reproduciendo:") : _("En pausa:"), MU.s.title), c1 = T.text2;
 	} else if (i == AP_CONNECT) {
 		int on = online_count(), run = 0;
 		for (int k = 0; k < MAX_XFERS; k++)
@@ -12230,7 +12269,8 @@ static void hm_top(void)
 	if (s1[0])
 		text_draw_clip(s1, tx, y, tw, TS_SUB, col_alpha(c1, a)), y += text_lineh(TS_SUB) + 2;
 	if (s2[0])
-		text_draw_clip(s2, tx, y, tw, TS_SUB, col_alpha(T.accent, a));
+		text_draw_clip(s2, tx, y, tw, TS_SUB, col_alpha(T.accent, a)), y += text_lineh(TS_SUB);
+	hm_widgets(a, y);
 	char hint[120];
 	if (hm_pages() > 1)
 		snprintf(hint, sizeof hint, _("%s Abrir · %s Cambiar de página · %s Tamaño de los iconos"), GLYPH_A, "L R", GLYPH_Y);

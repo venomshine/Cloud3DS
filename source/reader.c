@@ -848,7 +848,8 @@ static void scan_start(void)
 		L.busy = false;
 }
 
-void rlib_init(void)
+// solo lo guardado (sin buscar en la SD): para enseñar lo último leído fuera del Lector
+void rlib_peek(void)
 {
 	if (L.init)
 		return;
@@ -858,6 +859,15 @@ void rlib_init(void)
 		return;
 	L.init = true;
 	load();
+}
+
+void rlib_init(void)
+{
+	static bool scanned;
+	rlib_peek();
+	if (!L.init || scanned)
+		return;
+	scanned = true;
 	scan_start();
 }
 

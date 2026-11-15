@@ -34,6 +34,7 @@ typedef struct {
 enum { RLS_ALL, RLS_BOOKS }; /* dónde buscar: toda la SD o solo las carpetas de lectura (/Books, /Manga…) */
 
 void rlib_init(void);
+void rlib_peek(void); /* solo lo guardado, sin buscar (lo último leído, fuera del Lector) */
 void rlib_exit(void);
 void rlib_scan(void);
 bool rlib_scanning(int *found);
