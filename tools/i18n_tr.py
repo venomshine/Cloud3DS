@@ -1,6 +1,24 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Normal':
+        ('Normal',
+         'ノーマル'),
+    'Más graves':
+        ('Bass boost',
+         '低音強調'),
+    'Voces':
+        ('Vocals',
+         'ボーカル'),
+    'Acústica':
+        ('Acoustic',
+         'アコースティック'),
+    'Ecualizador':
+        ('Equalizer',
+         'イコライザー'),
+    'Ecualizador: %s':
+        ('Equalizer: %s',
+         'イコライザー: %s'),
     'Cargando':
         ('Loading',
          '読み込み中'),

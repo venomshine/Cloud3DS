@@ -6567,6 +6567,13 @@ static void ds_draw(void)
 }
 
 // la hoja del reproductor: aleatorio, anterior, play/pausa, siguiente, repetir; parar e ir a la carpeta
+static const char *const EQ_NAMES[MU_EQ_N] = {N_("Normal"), N_("Más graves"), "Rock", "Pop", N_("Electrónica"), "Hip hop", N_("Voces"), N_("Acústica")};
+static struct {
+	bool open, just;
+	float anim;
+	int sel;
+} EQS;
+
 static void music_sheet(void)
 {
 	if (CO.mu_wait > 0 && (--CO.mu_wait, mu_on())) // recién pedida: el reproductor sale en cuanto suena
@@ -6580,13 +6587,26 @@ static void music_sheet(void)
 	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
 	if (!MU.open)
 		return;
-	bool fresh = MU.just;
+	bool fresh = MU.just || EQS.open; // (con el ecualizador abierto, la hoja no atiende)
 	MU.just = false;
 	if (MU.s.st == MU_OFF) { // (con un archivo que falla, sigue abierta: pasa a la siguiente)
 		MU.open = false;
 		return;
 	}
-	text_draw_center_clip(MU.s.title, BOT_W / 2, y + 10, BOT_W - 50, TS_BODY, T.text);
+	{ // el ecualizador: arriba a la derecha (o L)
+		int eq = music_eq();
+		const char *el = eq ? _(EQ_NAMES[eq]) : "EQ";
+		float ew = text_width(el, TS_SUB) + 30, ex = BOT_W - 20 - ew, ey = y + 8;
+		draw_rrect(ex, ey, ew, 20, 10, touch_in(ex, ey, ew, 20) ? T.surface2 : eq ? col_alpha(T.accent, 0.2f) : T.bg);
+		for (int k = 0; k < 3; k++) // (tres barritas)
+			draw_rect(ex + 9 + k * 4, ey + 14 - (k == 1 ? 8 : 5), 2.5f, k == 1 ? 8 : 5, eq ? T.accent : T.text2);
+		text_draw(el, ex + 24, ey + 10 - text_lineh(TS_SUB) / 2, TS_SUB, eq ? T.accent : T.text2);
+		if (!fresh && (tap(ex, ey, ew, 20) || (g_kdown & KEY_L))) {
+			EQS.open = EQS.just = true, EQS.sel = eq, fresh = true;
+			g_kdown &= ~KEY_L;
+		}
+	}
+	text_draw_center_clip(MU.s.title, BOT_W / 2 - 30, y + 10, BOT_W - 130, TS_BODY, T.text);
 	char sub[200], t1[16], t2[16];
 	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
@@ -6685,6 +6705,21 @@ static void music_sheet(void)
 		music_next();
 	else if (run == 4)
 		music_repeat();
+	{ // los presets del ecualizador (el actual, marcado)
+		IconId ic[MU_EQ_N];
+		const char *lab[MU_EQ_N];
+		u32 col[MU_EQ_N];
+		int cur = music_eq();
+		for (int k = 0; k < MU_EQ_N; k++)
+			ic[k] = k == cur ? IC_CHECK : IC_SPEAKER, lab[k] = _(EQ_NAMES[k]), col[k] = k == cur ? T.accent : T.text;
+		int r = sheet_list(&EQS.open, &EQS.just, &EQS.anim, &EQS.sel, _("Ecualizador"), ic, lab, col, MU_EQ_N);
+		if (r >= 0) {
+			music_set_eq(r);
+			char m[80];
+			snprintf(m, sizeof m, _("Ecualizador: %s"), _(EQ_NAMES[r]));
+			toast_icon(m, IC_CHECK, T.accent);
+		}
+	}
 	if (!fresh && ((g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y)))
 		MU.open = false;
 	g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y);
@@ -7229,7 +7264,9 @@ static void music_stage(void)
 		draw_icon(IC_HEART, x + w - 8, y + text_lineh(0.85f) / 2, 14, 0xFF5050FF);
 	y += nl * text_lineh(0.85f) + 2;
 	char sub[200];
-	snprintf(sub, sizeof sub, "%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : _("En la consola"));
+	int eq = music_eq();
+	snprintf(sub, sizeof sub, "%s%s%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : _("En la consola"), eq ? "  ·  EQ " : "",
+	         eq ? _(EQ_NAMES[eq]) : "");
 	text_draw_clip(sub, x, y, w, TS_BODY, 0xA8FFFFFF);
 	// la onda (también el progreso): lo escuchado, del color; lo que falta, apagado
 	const int NB = sizeof ST.wave / sizeof ST.wave[0];

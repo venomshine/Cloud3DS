@@ -13,6 +13,7 @@
 #include "util.h"
 
 #include <mpg123.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,121 @@ bool music_is_audio(const char *name)
 		if (!strcasecmp(d + 1, EXTS[i]))
 			return true;
 	return false;
+}
+
+/* ---------------------------------------------------------------- ecualizador
+ * Cinco bandas (60 Hz, 230 Hz, 910 Hz, 3,6 kHz y 14 kHz): un filtro de graves (shelf), tres de pico y uno de agudos
+ * (shelf), en cascada sobre el audio ya decodificado (el DSP solo tiene un filtro por canal). Coeficientes de los
+ * filtros de audio de R. Bristow-Johnson. Lo que se sube se compensa bajando el volumen de entrada (y se recorta lo
+ * que pase de 16 bits), para que no sature. El preset se guarda en APP_DIR/musica_eq.txt */
+static const s8 EQ_DB[MU_EQ_N][5] = {
+	{0, 0, 0, 0, 0},   // Normal
+	{7, 4, 0, 0, 0},   // Más graves
+	{5, 2, -2, 2, 5},  // Rock
+	{-1, 2, 4, 2, -1}, // Pop
+	{5, 3, 0, 2, 4},   // Electrónica
+	{6, 4, -1, 1, 2},  // Hip hop
+	{-2, -1, 3, 4, 1}, // Voces
+	{3, 1, 1, 2, 3},   // Acústica
+};
+static const float EQ_F[5] = {60, 230, 910, 3600, 14000};
+#define EQ_FILE APP_DIR "/musica_eq.txt"
+
+typedef struct {
+	float b0, b1, b2, a1, a2;
+} Bq;
+static struct {
+	int preset, rate;   // (el preset y la frecuencia para los que están calculados)
+	volatile int want;  // el elegido
+	bool loaded;
+	Bq c[5];
+	float z[5][2][2];   // estado de cada filtro y canal
+	float pre;
+} EQ = {.rate = -1};
+
+static void eq_load(void)
+{
+	if (EQ.loaded)
+		return;
+	EQ.loaded = true;
+	FILE *f = fopen(EQ_FILE, "r");
+	int p = 0;
+	if (f) {
+		if (fscanf(f, "%d", &p) != 1)
+			p = 0;
+		fclose(f);
+	}
+	EQ.want = p >= 0 && p < MU_EQ_N ? p : 0;
+}
+
+int music_eq(void)
+{
+	eq_load();
+	return EQ.want;
+}
+
+void music_set_eq(int p)
+{
+	eq_load();
+	if (p < 0 || p >= MU_EQ_N)
+		return;
+	EQ.want = p;
+	FILE *f = fopen(EQ_FILE, "w");
+	if (f)
+		fprintf(f, "%d\n", p), fclose(f);
+}
+
+// el filtro de una banda: 0 shelf de graves, 4 shelf de agudos, el resto de pico (Q 1)
+static Bq eq_band(int k, float f0, float db, int rate)
+{
+	float A = powf(10, db / 40), w = 2 * (float)M_PI * f0 / rate, cw = cosf(w), sw = sinf(w);
+	float b0, b1, b2, a0, a1, a2;
+	if (k == 0 || k == 4) {
+		float al = sw / 2 * sqrtf(2), sa = 2 * sqrtf(A) * al; // (pendiente 1)
+		if (k == 0) {
+			b0 = A * ((A + 1) - (A - 1) * cw + sa), b1 = 2 * A * ((A - 1) - (A + 1) * cw), b2 = A * ((A + 1) - (A - 1) * cw - sa);
+			a0 = (A + 1) + (A - 1) * cw + sa, a1 = -2 * ((A - 1) + (A + 1) * cw), a2 = (A + 1) + (A - 1) * cw - sa;
+		} else {
+			b0 = A * ((A + 1) + (A - 1) * cw + sa), b1 = -2 * A * ((A - 1) + (A + 1) * cw), b2 = A * ((A + 1) + (A - 1) * cw - sa);
+			a0 = (A + 1) - (A - 1) * cw + sa, a1 = 2 * ((A - 1) - (A + 1) * cw), a2 = (A + 1) - (A - 1) * cw - sa;
+		}
+	} else {
+		float al = sw / 2; // (Q 1)
+		b0 = 1 + al * A, b1 = -2 * cw, b2 = 1 - al * A, a0 = 1 + al / A, a1 = -2 * cw, a2 = 1 - al / A;
+	}
+	return (Bq){b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0};
+}
+
+// el audio (estéreo de 16 bits), por el ecualizador; reset: canción nueva (sin arrastrar el estado de la anterior)
+static void eq_apply(s16 *buf, int frames, int rate, bool reset)
+{
+	int p = EQ.want;
+	if (p != EQ.preset || rate != EQ.rate) {
+		EQ.preset = p, EQ.rate = rate, reset = true;
+		float mx = 0;
+		for (int k = 0; k < 5; k++) {
+			float f0 = fminf(EQ_F[k], rate * 0.42f); // (por debajo de la mitad de la frecuencia de muestreo)
+			EQ.c[k] = eq_band(k, f0, EQ_DB[p][k], rate);
+			mx = fmaxf(mx, EQ_DB[p][k]);
+		}
+		EQ.pre = powf(10, -mx * 0.5f / 20);
+	}
+	if (reset)
+		memset(EQ.z, 0, sizeof EQ.z);
+	if (!p)
+		return;
+	for (int i = 0; i < frames; i++)
+		for (int ch = 0; ch < 2; ch++) {
+			float x = buf[i * 2 + ch] * EQ.pre;
+			for (int k = 0; k < 5; k++) { // (forma directa II traspuesta)
+				const Bq *c = &EQ.c[k];
+				float *z = EQ.z[k][ch], y = c->b0 * x + z[0];
+				z[0] = c->b1 * x - c->a1 * y + z[1];
+				z[1] = c->b2 * x - c->a2 * y;
+				x = y;
+			}
+			buf[i * 2 + ch] = (s16)(x > 32767 ? 32767 : x < -32768 ? -32768 : x);
+		}
 }
 
 /* ---------------------------------------------------------------- con la tapa cerrada
@@ -635,7 +751,7 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 	ndspChnSetMix(CH, mix);
 	u64 played = 0; // muestras ya sonadas (búferes terminados)
 	int queued_samples[NBUF] = {0};
-	bool eof = false, paused = false;
+	bool eof = false, paused = false, queued_any = false;
 	int cmd = C_NONE;
 	for (int i = 0; i < NBUF; i++)
 		wb[i].status = NDSP_WBUF_DONE;
@@ -675,6 +791,8 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 			}
 			if (d.kind == 3 && M.s.loading)
 				set_loading(false);
+			eq_apply(buf[i], got, d.rate, !played && !queued_any); // (el ecualizador; al empezar, sin el estado de la anterior)
+			queued_any = true;
 			// lo fuerte que suena (para la onda de arriba)
 			u64 acc = 0;
 			for (int k = 0; k < got * 2; k += 8)
