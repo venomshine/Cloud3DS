@@ -1,6 +1,114 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Te gusta':
+        ('Liked',
+         'お気に入り済み'),
+    'Me gusta':
+        ('Likes',
+         'お気に入り'),
+    '«Me gusta» está lleno: quita alguna canción primero':
+        ('“Likes” is full: remove a song first',
+         '「お気に入り」がいっぱいです。先に曲を削除してください'),
+    'Añadida a «Me gusta»':
+        ('Added to “Likes”',
+         '「お気に入り」に追加しました'),
+    'Quitada de «Me gusta»':
+        ('Removed from “Likes”',
+         '「お気に入り」から削除しました'),
+    'Artista':
+        ('Artist',
+         'アーティスト'),
+    'Playlist de SoundCloud':
+        ('SoundCloud playlist',
+         'SoundCloudのプレイリスト'),
+    'Tu biblioteca':
+        ('Your library',
+         'ライブラリ'),
+    'Tu lista':
+        ('Your list',
+         'マイリスト'),
+    '%d canciones · %d artistas · %d playlists':
+        ('%d songs · %d artists · %d playlists',
+         '%d曲 · アーティスト%d人 · プレイリスト%d件'),
+    'Mi biblioteca':
+        ('My library',
+         'マイライブラリ'),
+    'Nueva lista':
+        ('New list',
+         '新しいリスト'),
+    'Aún no hay canciones':
+        ('No songs yet',
+         'まだ曲がありません'),
+    'Con Y en una canción puedes darle «Me gusta» o añadirla a una lista.':
+        ('Press Y on a song to like it or add it to a list.',
+         '曲の上でYを押すと、お気に入りやリストに追加できます。'),
+    'Artista · 1 canción':
+        ('Artist · 1 song',
+         'アーティスト · 1曲'),
+    'Artista · %d canciones':
+        ('Artist · %d songs',
+         'アーティスト · %d曲'),
+    'Cargando la lista… un momento':
+        ('Loading the list… one moment',
+         'リストを読み込み中です。少々お待ちください'),
+    'Quitar de «Me gusta»':
+        ('Remove from “Likes”',
+         '「お気に入り」から削除'),
+    'Añadir a una lista…':
+        ('Add to a list…',
+         'リストに追加…'),
+    'Quitar de esta lista':
+        ('Remove from this list',
+         'このリストから削除'),
+    'Ir al artista':
+        ('Go to artist',
+         'アーティストへ'),
+    'Quitada de la lista':
+        ('Removed from the list',
+         'リストから削除しました'),
+    'Nueva lista…':
+        ('New list…',
+         '新しいリスト…'),
+    'Añadir a una lista':
+        ('Add to a list',
+         'リストに追加'),
+    'Añadida a «%s»':
+        ('Added to “%s”',
+         '「%s」に追加しました'),
+    'Ya estaba en «%s»':
+        ('Already in “%s”',
+         'すでに「%s」にあります'),
+    '«%s» está llena':
+        ('“%s” is full',
+         '「%s」がいっぱいです'),
+    'Reproducir todo':
+        ('Play all',
+         'すべて再生'),
+    'Eliminar la lista':
+        ('Delete list',
+         'リストを削除'),
+    'Se eliminará la lista «%s». Las canciones siguen en SoundCloud.':
+        ('The list “%s” will be deleted. The songs remain on SoundCloud.',
+         'リスト「%s」を削除します。曲はSoundCloudに残ります。'),
+    '¿Eliminar la lista?':
+        ('Delete the list?',
+         'リストを削除しますか?'),
+    'Lista eliminada':
+        ('List deleted',
+         'リストを削除しました'),
+    'Nombre de la lista':
+        ('List name',
+         'リスト名'),
+    'Nombre de la lista nueva':
+        ('New list name',
+         '新しいリストの名前'),
+    'No se pueden crear más listas':
+        ('No more lists can be created',
+         'これ以上リストを作成できません'),
+    'Lista «%s» creada':
+        ('List “%s” created',
+         'リスト「%s」を作成しました'),
     'Últimas descargas':
         ('Latest downloads',
          '最近のダウンロード'),
@@ -115,12 +223,6 @@ TR = {
     'SoundCloud no respondió. Inténtalo de nuevo.':
         ('SoundCloud did not respond. Try again.',
          'SoundCloudから応答がありません。もう一度お試しください。'),
-    'Cargando la playlist…':
-        ('Loading playlist…',
-         'プレイリストを読み込み中…'),
-    '«%s» · %d canciones · %d playlists':
-        ('“%s” · %d songs · %d playlists',
-         '「%s」 · %d曲 · プレイリスト%d件'),
     'Escucha música en streaming desde Internet.':
         ('Stream music from the Internet.',
          'インターネットから音楽をストリーミング再生します。'),
@@ -145,9 +247,6 @@ TR = {
     'Prueba con otras palabras.':
         ('Try different words.',
          '別のキーワードでお試しください。'),
-    'Toca la lupa o pulsa X para buscar canciones, artistas o playlists.':
-        ('Tap the magnifier or press X to search for songs, artists or playlists.',
-         '虫眼鏡をタップするかXを押して、曲、アーティスト、プレイリストを検索します。'),
     ' · Fragmento de 30 s':
         (' · 30 s preview',
          ' · 30秒プレビュー'),
