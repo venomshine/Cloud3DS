@@ -177,8 +177,11 @@ static bool homebrew_am(u64 tid, const u64 *pers, int npers, u8 *smdh_out, bool 
 int cb_list(CbTitle **out)
 {
 	*out = NULL;
-	if (R_FAILED(amInit()))
+	Result ar = amInit();
+	if (R_FAILED(ar)) {
+		util_log("compartir: amInit %08lX", (unsigned long)ar);
 		return 0;
+	}
 	u32 n = 0;
 	u64 *ids = NULL, *pers = NULL;
 	AM_TitleEntry *info = NULL;
@@ -213,6 +216,7 @@ int cb_list(CbTitle **out)
 		if (!t)
 			cnt = 0;
 	}
+	util_log("compartir: %lu títulos en la SD, %d homebrew", (unsigned long)n, cnt);
 	free(smdh), free(ids), free(info), free(pers);
 	amExit();
 	return cnt;

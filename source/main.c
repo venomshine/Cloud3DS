@@ -11780,7 +11780,7 @@ static void sh_bottom(void)
 		if (g_kdown & (KEY_L | KEY_R | KEY_ZL | KEY_ZR))
 			r = !SH.view;
 		if (r >= 0 && r != SH.view)
-			SH.view = r, SH.rev = 0;
+			SH.view = r, SH.rev = ~0u;
 		if (SH.view == 0) { // buscar otra vez y añadir por la IP
 			float bx[2] = {BOT_W - 56, BOT_W - 24};
 			static const IconId bi[2] = {IC_REFRESH, IC_PLUS};
@@ -11811,7 +11811,7 @@ static void sh_bottom(void)
 		if (hdr_hit(bx - 13, 3, 26, 26))
 			share_open_catalog(SH.cat_peer);
 		if (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))
-			SH.level = 0, SH.rev = 0;
+			SH.level = 0, SH.rev = ~0u;
 	}
 	sh_refresh();
 	bool apps = SH.level == 1 || SH.view == 1;
