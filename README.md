@@ -9,24 +9,7 @@
 <p align="center">
   <img src="docs/inicio.png" width="260" alt="El inicio: cada función es una aplicación, con lo que suena, lo último leído y lo que está en marcha abajo">
   <img src="docs/conectar.png" width="260" alt="Conectar: el QR, la dirección, el PIN y la actividad">
-  <img src="docs/titulos.png" width="260" alt="Títulos: juegos y aplicaciones instalados y lo que ocupan">
-</p>
-<p align="center">
-  <img src="docs/descargas.png" width="260" alt="Descargas desde un enlace o un código QR">
-  <img src="docs/espera.png" width="260" alt="Pantalla de espera mientras se desinstala">
-  <img src="docs/ajustes.png" width="260" alt="Ajustes">
-</p>
-<p align="center">
   <img src="docs/musica.png" width="260" alt="Música: SoundCloud con tus listas y lo que recomienda">
-  <img src="docs/sonando.png" width="260" alt="Ahora suena: la carátula, la onda de la canción y sus datos">
-  <img src="docs/artista.png" width="260" alt="El perfil de un artista: cabecera, foto, biografía y sus secciones">
-</p>
-<p align="center">
-  <img src="docs/lector.png" width="260" alt="Lector: portadas, por dónde vas y lo leído">
-</p>
-<p align="center">
-  <img src="docs/web-movil.png" width="200" alt="La SD en el móvil, con carpetas destacadas y las del sistema aparte">
-  <img src="docs/web-subidas.png" width="200" alt="Qué hacer si un archivo ya existe">
 </p>
 
 ## Descargar e instalar
