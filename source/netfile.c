@@ -27,7 +27,9 @@ typedef struct {
 	u8 *buf;
 	u64 size;
 	u8 *ok;                    /* un byte por trozo: ya está (pedido aparte) */
-	volatile u64 seq;          /* lo que llegó seguido desde el principio */
+	volatile u64 seq;          /* lo que llegó seguido desde el principio (el primer trozo) */
+	int np;                    /* en cuántas partes llega a la vez (1 a NP) */
+	volatile u64 pat[4], pend[4]; /* de cada parte: por dónde va y dónde acaba */
 	volatile bool done, fail, stop;
 	int refs;
 	u32 gen;
@@ -45,36 +47,131 @@ typedef struct {
 	u64 pos;
 } Fd;
 
-/* ---------------------------------------------------------------- bajar */
+/* ---------------------------------------------------------------- bajar
+ * Como las descargas (y 3dsDL): desde 1 MB llega en NP partes a la vez, cada una con su conexión; la primera es «seq»
+ * y de las demás se marcan los trozos de 64 KB que se completan */
+#define NP 4
 
-static size_t seq_cb(char *d, size_t sz, size_t nm, void *u)
+typedef struct {
+	Nf *f;
+	int j;
+	CURL *c;
+	int tries;
+	bool done;
+} Part;
+
+static size_t part_cb(char *d, size_t sz, size_t nm, void *u)
 {
-	Nf *f = u;
+	Part *p = u;
+	Nf *f = p->f;
 	size_t n = sz * nm;
 	if (f->stop)
 		return 0;
-	if (f->seq + n > f->size)
-		n = f->seq > f->size ? 0 : (size_t)(f->size - f->seq);
-	memcpy(f->buf + f->seq, d, n);
-	f->seq += n;
+	u64 at = f->pat[p->j], end = f->pend[p->j];
+	if (at + n > end)
+		n = at >= end ? 0 : (size_t)(end - at);
+	memcpy(f->buf + at, d, n);
+	u64 na = at + n, start = p->j ? f->pend[p->j - 1] : 0;
+	for (u64 k = at / CH;; k++) { // (los trozos de 64 KB que ya están enteros)
+		u64 ce = (k + 1) * CH < f->size ? (k + 1) * CH : f->size;
+		if (ce > na || k * CH >= f->size)
+			break;
+		if (k * CH >= start)
+			f->ok[k] = 1;
+	}
+	f->pat[p->j] = na;
+	if (!p->j)
+		f->seq = na;
 	return sz * nm;
+}
+
+static CURL *part_easy(Part *p)
+{
+	Nf *f = p->f;
+	CURL *c = curl_easy_init();
+	if (!c)
+		return NULL;
+	char rg[48];
+	snprintf(rg, sizeof rg, "%llu-%llu", (unsigned long long)f->pat[p->j], (unsigned long long)(f->pend[p->j] - 1));
+	curl_easy_setopt(c, CURLOPT_URL, f->url);
+	curl_easy_setopt(c, CURLOPT_RANGE, rg);
+	curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+	curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L); // (el enlace de OneDrive ya lleva el permiso)
+	curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+	curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+	curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 30L);
+	curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 64L);
+	curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 20L);
+	curl_easy_setopt(c, CURLOPT_BUFFERSIZE, 128L * 1024);
+	curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, part_cb);
+	curl_easy_setopt(c, CURLOPT_WRITEDATA, p);
+	p->c = c;
+	return c;
 }
 
 static void seq_thread(void *arg)
 {
 	Nf *f = arg;
-	long code = 0;
-	dl_set_thread_noverify(true); // (como los trozos y las descargas: el enlace ya lleva el permiso)
-	int r = dl_fetch_curl(f->url, "*/*", seq_cb, f, &code);
-	if (r == DLF_OK && f->seq >= f->size) {
-		f->done = true;
-		util_log("nube: %s: llegó entero (%llu bytes)", f->name, (unsigned long long)f->size);
+	u64 t0 = util_ms();
+	Part pt[NP];
+	memset(pt, 0, sizeof pt);
+	CURLM *mh = curl_multi_init();
+	int running = mh ? 1 : 0;
+	for (int j = 0; j < f->np && mh; j++) {
+		pt[j].f = f, pt[j].j = j;
+		if (!part_easy(&pt[j]) || curl_multi_add_handle(mh, pt[j].c) != CURLM_OK)
+			running = 0;
 	}
-	else if (!f->stop) {
-		util_log("nube: %s: se cortó en %llu de %llu (%d, HTTP %ld)", f->name, (unsigned long long)f->seq, (unsigned long long)f->size, r, code);
-		f->fail = f->seq < f->size;
-		if (!f->fail)
-			f->done = true;
+	bool bad = !running;
+	while (running && !f->stop) {
+		if (curl_multi_perform(mh, &running) != CURLM_OK)
+			break;
+		CURLMsg *m;
+		int left;
+		while ((m = curl_multi_info_read(mh, &left))) {
+			if (m->msg != CURLMSG_DONE)
+				continue;
+			Part *p = NULL;
+			for (int j = 0; j < f->np; j++)
+				if (pt[j].c == m->easy_handle)
+					p = &pt[j];
+			if (!p)
+				continue;
+			long code = 0;
+			curl_easy_getinfo(p->c, CURLINFO_RESPONSE_CODE, &code);
+			curl_multi_remove_handle(mh, p->c);
+			curl_easy_cleanup(p->c);
+			p->c = NULL;
+			if (f->pat[p->j] >= f->pend[p->j])
+				p->done = true;
+			else if (++p->tries <= 3 && part_easy(p) && curl_multi_add_handle(mh, p->c) == CURLM_OK) // (desde donde iba)
+				running = 1;
+			else {
+				util_log("nube: %s: la parte %d no llegó (%d, HTTP %ld)", f->name, p->j, (int)m->data.result, code);
+				bad = true;
+			}
+		}
+		if (running)
+			curl_multi_poll(mh, NULL, 0, 100, NULL);
+	}
+	for (int j = 0; j < f->np; j++)
+		if (pt[j].c) {
+			curl_multi_remove_handle(mh, pt[j].c);
+			curl_easy_cleanup(pt[j].c);
+		}
+	if (mh)
+		curl_multi_cleanup(mh);
+	bool all = !bad && !f->stop;
+	for (int j = 0; j < f->np && all; j++)
+		all = pt[j].done;
+	if (all) {
+		f->seq = f->size, f->done = true;
+		u64 el = util_ms() - t0;
+		util_log("nube: %s: llegó entero (%llu bytes en %llu ms, %llu KB/s, %d conexiones)", f->name, (unsigned long long)f->size,
+		         (unsigned long long)el, (unsigned long long)(f->size * 1000 / (el ? el : 1) / 1024), f->np);
+	} else if (!f->stop) {
+		util_log("nube: %s: no llegó entero: lo que falte se pedirá por trozos", f->name);
+		f->fail = true;
 	}
 }
 
@@ -171,6 +268,12 @@ bool nf_open_url(const char *url, u64 size, const char *name, char *path, size_t
 		if (*c == '/' || *c == ':')
 			*c = '_';
 	f->size = size, f->seq = 0, f->done = f->fail = f->stop = false, f->refs = 0;
+	f->np = size >= (1u << 20) ? NP : 1; // (pequeño: de una vez)
+	u64 piece = (size / f->np + CH - 1) / CH * CH;
+	for (int j = 0; j < f->np; j++) {
+		f->pat[j] = (u64)j * piece < size ? (u64)j * piece : size;
+		f->pend[j] = j == f->np - 1 || (u64)(j + 1) * piece >= size ? size : (u64)(j + 1) * piece;
+	}
 	f->gen = ++GEN, f->used_at = util_ms(), f->used = true;
 	s32 prio = 0x30;
 	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
@@ -276,7 +379,11 @@ static ssize_t nf_read(struct _reent *r, void *fd, char *ptr, size_t len)
 			}
 			continue;
 		}
-		if (k * CH > f->seq + AHEAD) { // lejos de lo que se baja: ese trozo, aparte
+		bool soon = false; // ¿lo trae enseguida la parte en la que cae?
+		for (int j = 0; j < f->np; j++)
+			if (p >= (j ? f->pend[j - 1] : 0) && p < f->pend[j] && p >= f->pat[j] && p - f->pat[j] < AHEAD)
+				soon = true;
+		if (!soon) { // lejos de lo que se baja: ese trozo, aparte
 			if (!fetch_chunk(f, k)) {
 				r->_errno = EIO;
 				return -1;

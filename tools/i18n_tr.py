@@ -1,6 +1,24 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Próximamente':
+        ('Coming soon',
+         '近日公開'),
+    'Estamos terminando el navegador para que las páginas carguen rápido y se vean bien en la 3DS. Llegará en una próxima actualización.':
+        ("We're finishing the browser so pages load fast and look right on the 3DS. It's coming in a future update.",
+         '3DSでページが速く読み込まれ、きれいに表示されるよう、ブラウザーを仕上げています。今後のアップデートで登場します。'),
+    'Te avisaremos cuando esté listo':
+        ("We'll let you know when it's ready",
+         '準備ができたらお知らせします'),
+    'Cloud3DS busca versiones nuevas al abrirse. Cuando el navegador esté disponible, lo verás en Ajustes → Actualizaciones.':
+        ("Cloud3DS checks for new versions when it opens. When the browser is available, you'll see it in Settings → Updates.",
+         'Cloud3DSは起動時に新しいバージョンを確認します。ブラウザーが使えるようになったら、設定 → アップデートに表示されます。'),
+    'Volver al inicio':
+        ('Back to Home',
+         'ホームに戻る'),
+    'Próximamente: un navegador web para la 3DS. Llegará en una próxima actualización.':
+        ('Coming soon: a web browser for the 3DS, in a future update.',
+         '近日公開: 3DS用のウェブブラウザー。今後のアップデートで登場します。'),
     'Ver artista':
         ('View artist',
          'アーティストを見る'),
@@ -2623,9 +2641,6 @@ TR = {
     'Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.':
         ('Connect your OneDrive account with a QR code, without typing passwords on the console.',
          'QRコードでOneDriveアカウントを接続します。本体でパスワードを入力する必要はありません。'),
-    'Navegador web con JavaScript, favoritos e historial.':
-        ('Web browser with JavaScript, bookmarks and history.',
-         'JavaScript、ブックマーク、履歴に対応したWebブラウザ。'),
     'Conexión, seguridad, idioma, tema y actualizaciones.':
         ('Connection, security, language, theme and updates.',
          '接続、セキュリティ、言語、テーマ、アップデート。'),

@@ -187,7 +187,8 @@ static struct {
 	int app;                     // la aplicación abierta (AP_*, del inicio): de ella depende la pantalla de arriba
 	char app_root[512];          // en las que son una vista de Archivos (Capturas, Títulos…): su carpeta; ahí, B vuelve al inicio
 	bool want_dlurl;             // descargar un enlace escrito en la consola (teclado)
-	bool want_web;               // abrir una página en el navegador (teclado)
+	bool want_web;               // abrir el navegador (de momento, su pantalla de «próximamente»)
+	bool soon;                   // la pantalla de «próximamente» del navegador, a la vista
 	bool want_netname;           // cambiar el nombre en la red (teclado)
 	bool nav_eat;                // se cambió de carpeta en este frame: lo pulsado ya se usó
 	float t_mdns, t_fbi, t_shots; // animación de sus interruptores
@@ -1266,7 +1267,8 @@ static void music_top(float a)
 	if (MU.s.loading)
 		snprintf(head, sizeof head, _("Cargando · %s"), "SoundCloud");
 	else
-		snprintf(head, sizeof head, MU.s.st == MU_PAUSE ? _("En pausa · %s") : _("Reproduciendo · %s"), scs ? "SoundCloud" : d && d[1] ? d + 1 : "SD");
+		snprintf(head, sizeof head, MU.s.st == MU_PAUSE ? _("En pausa · %s") : _("Reproduciendo · %s"),
+		         scs ? "SoundCloud" : nf_is(MU.s.name) ? "OneDrive" : d && d[1] ? d + 1 : "SD");
 	text_draw_clip(head, rx, y, rw, TS_SUB, col_alpha(MU.s.st == MU_PAUSE ? T.text3 : T.accent, a));
 	y += 15;
 	bool liked_now = !strncmp(MU.s.name, "sc:", 3) && scl_liked(MU.s.name + 3);
@@ -1829,6 +1831,8 @@ static void rv_top(void);
 static bool rv_is_open(void);
 static u32 ap_col(int i);
 
+static void soon_top(void);
+static void soon_bottom(void);
 static void draw_top(void)
 {
 	gfx_target(g_top, T.bg);
@@ -1838,6 +1842,11 @@ static void draw_top(void)
 	}
 	if (UN.anim > 0.99f || guard_on()) { // instalando o borrando: solo la pantalla de espera (lo de debajo podría esperar a la SD)
 		un_top();
+		return;
+	}
+	if (U.soon) { // el navegador, próximamente
+		soon_top();
+		toast_draw_top();
 		return;
 	}
 	if (br_is_open()) { // navegador: las dos pantallas
@@ -4878,8 +4887,6 @@ static bool f_open_item(int vi)
 	if (e->dir) {
 		if (strlen(full) < sizeof F.path)
 			f_load(full);
-	} else if (!strcasecmp(f_ext(e->name), "html") || !strcasecmp(f_ext(e->name), "htm")) { // en el navegador
-		br_open_file(full);
 	} else if (rd_kind(full) >= 0 && rd_kind(full) != RK_TXT) { // PDF, CBZ, EPUB y DOCX: en el Lector
 		rv_open(full, U.app);
 	} else if (f_is_img(e) || f_is_txt(e)) {
@@ -4944,8 +4951,7 @@ static void cl_open_item(int i)
 	FEnt fe = {0};
 	util_strlcpy(fe.name, c->name, sizeof fe.name);
 	int rk = rd_kind(c->name);
-	int k = !strcasecmp(ext, "html") || !strcasecmp(ext, "htm")    ? CO_HTML
-	        : f_is_img(&fe) || f_is_txt(&fe)                        ? CO_VIEW
+	int k = f_is_img(&fe) || f_is_txt(&fe) || !strcasecmp(ext, "html") || !strcasecmp(ext, "htm") ? CO_VIEW // (las páginas, como texto)
 	        : !strcasecmp(ext, "zip")                                ? CO_ZIP
 	        : music_is_audio(c->name)                                ? CO_MUSIC
 	        : rk == RK_PDF || rk == RK_CBZ || rk == RK_EPUB || rk == RK_DOCX ? CO_DOC
@@ -7895,7 +7901,7 @@ static void music_stage(void)
 	y += nl * text_lineh(0.85f) + 2;
 	char sub[200];
 	int eq = music_eq();
-	snprintf(sub, sizeof sub, "%s%s%s%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : _("En la consola"), eq ? "  ·  EQ " : "",
+	snprintf(sub, sizeof sub, "%s%s%s%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : nf_is(MU.s.name) ? "OneDrive" : _("En la consola"), eq ? "  ·  EQ " : "",
 	         eq ? _(EQ_NAMES[eq]) : "", sc && SCS.radio && MU.s.left <= 0 && MU.s.repeat == MR_OFF ? _("  ·  Radio") : "");
 	if (have && cur.verified && MU.s.artist[0]) // (con la insignia de verificado detrás del artista)
 		text_badge(sub, (int)strlen(MU.s.artist), x, y, w, TS_BODY, 0xA8FFFFFF);
@@ -12335,6 +12341,53 @@ static struct {
 } HM = {.open = true};
 
 static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_BOOK, IC_SEND, IC_GEAR};
+
+// ---- el navegador, próximamente: en esta versión no está listo. Su icono, qué será y cómo enterarse cuando llegue
+static const char *ap_name(int i);
+static void soon_top(void)
+{
+	draw_rect(0, 0, TOP_W, SCR_H, T.bg);
+	u32 c = ap_col(AP_WEB);
+	draw_halo_col(TOP_W / 2, 110, 150, col_alpha(c, 0.35f));
+	draw_header();
+	const float S = 96, x = TOP_W / 2 - S / 2, y = 40 + 4 * sinf(g_time * 1.5f);
+	draw_rrect(x, y, S, S, S * 0.3f, col_lerp(T.bg, c, 0.22f));
+	draw_rrect_outline(x, y, S, S, S * 0.3f, 1.5f, col_alpha(c, 0.6f));
+	draw_icon(AP_IC[AP_WEB], x + S / 2, y + S / 2, 48, c);
+	const char *pill = _("Próximamente");
+	float pw = text_width(pill, TS_SUB) + 20;
+	draw_rrect(TOP_W / 2 - pw / 2, 146, pw, 18, 9, col_alpha(c, 0.22f));
+	text_draw_center(pill, TOP_W / 2, 155 - text_lineh(TS_SUB) / 2, TS_SUB, c);
+	text_draw_center(ap_name(AP_WEB), TOP_W / 2, 170, TS_TITLE, T.text);
+	wrap_center(_("Estamos terminando el navegador para que las páginas carguen rápido y se vean bien en la 3DS. Llegará en una próxima actualización."),
+	            TOP_W / 2, 196, TOP_W - 60, TS_SUB, 3, T.text2);
+}
+
+static void soon_bottom(void)
+{
+	tab_header_w(ap_name(AP_WEB), true, 200);
+	float x = 16, w = BOT_W - 32, y = VIEW_Y + 14;
+	draw_rrect(x, y + 3, w, 120, 16, T.shadow);
+	draw_rrect(x, y, w, 120, 16, T.surface);
+	draw_circle(x + 30, y + 30, 16, col_alpha(T.accent2, 0.18f));
+	draw_icon(IC_REFRESH, x + 30, y + 30, 16, T.accent2);
+	text_draw_clip(_("Te avisaremos cuando esté listo"), x + 56, y + 14, w - 68, TS_BODY, T.text);
+	text_wrap_lines(_("Cloud3DS busca versiones nuevas al abrirse. Cuando el navegador esté disponible, lo verás en Ajustes → Actualizaciones."),
+	                w - 68, TS_SUB, 4, x + 56, y + 36, T.text2, true);
+	const char *bl = _("Volver al inicio");
+	char b[64];
+	snprintf(b, sizeof b, "%s %s", GLYPH_A, bl);
+	float bw = text_width(b, TS_BODY) + 36, bx = BOT_W / 2 - bw / 2, by = y + 140;
+	draw_rrect(bx, by, bw, 32, 16, touch_in(bx, by, bw, 32) ? T.accent2 : T.accent);
+	text_draw_center(b, BOT_W / 2, by + 16 - text_lineh(TS_BODY) / 2, TS_BODY, 0xFFFFFFFF);
+	bool back = tap(bx, by, bw, 32) || tap(0, 0, 170, VIEW_Y) || (g_kdown & (KEY_A | KEY_B | KEY_SELECT));
+	if (back) {
+		U.soon = false;
+		g_kdown = 0;
+		hm_show();
+	}
+}
+
 static u32 ap_col(int i)
 {
 	static const u32 hex[AP_N] = {0x3B9CFF, 0xFF5E8A, 0x2EC47A, 0xF5B02E, 0x7A5CFF, 0x2BC0D6, 0xFF7A59, 0xC27BF0, 0x21C7A8, 0x9AA6BA};
@@ -12365,7 +12418,7 @@ static const char *ap_desc(int i)
 	case AP_CLOUD:
 		return cl_connected() ? _("Tu OneDrive en la consola: explora, sube, descarga y organiza tus archivos. Las capturas nuevas se suben automáticamente.")
 		                      : _("Conecta tu cuenta de OneDrive con un código QR, sin escribir contraseñas en la consola.");
-	case AP_WEB: return _("Navegador web con JavaScript, favoritos e historial.");
+	case AP_WEB: return _("Próximamente: un navegador web para la 3DS. Llegará en una próxima actualización.");
 	case AP_MUSIC: return _("Escucha SoundCloud en streaming y la música de tu tarjeta SD. Sigue sonando en segundo plano.");
 	case AP_READER: return _("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT de la SD, con biblioteca. Se lee con la consola girada a la izquierda, con zoom.");
 	case AP_SHARE: return _("Comparte apps homebrew instaladas con otra consola de la misma red Wi-Fi: vincúlalas una vez, consulta sus apps y solicítalas.");
@@ -13940,6 +13993,10 @@ static void draw_bottom(void)
 		un_card();
 		return;
 	}
+	if (U.soon) {
+		soon_bottom();
+		return;
+	}
 	if (br_is_open()) {
 		br_bottom();
 		dialog_draw();
@@ -14577,9 +14634,9 @@ static void update(void)
 			}
 		}
 	}
-	if (U.want_web) {
+	if (U.want_web) { // el navegador aún no está listo: su pantalla de «próximamente»
 		U.want_web = false;
-		br_open_home();
+		U.soon = true;
 	}
 	if (RV.want_page) { // Lector: ir a una página
 		RV.want_page = false;

@@ -15,6 +15,7 @@
 #include "util.h"
 
 #include <math.h>
+#include <curl/curl.h>
 #include <neaacdec.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1217,6 +1218,78 @@ static bool hls_open(const ScTrack *t, HlsList *pl, Fmp4Cfg *cfg, char *err, siz
 	return ok;
 }
 
+/* los trozos de una canción, de dos en dos y por las mismas dos conexiones toda la canción: sin un saludo TLS nuevo
+ * por cada trozo de 10 s (lo más lento en la 3DS) y con dos llegando a la vez. n: cuántos (1 o 2); lo que no llegue,
+ * en NULL */
+#define SEG_PAR 2
+typedef struct {
+	CURL *c[SEG_PAR];
+} SegConn;
+
+static void segs_get(SegConn *sc, const char *const *urls, int n, u8 **data, size_t *len, volatile bool *stop)
+{
+	CURLM *mh = curl_multi_init();
+	Buf b[SEG_PAR];
+	memset(b, 0, sizeof b);
+	for (int k = 0; k < n; k++) {
+		data[k] = NULL, len[k] = 0, b[k].max = 8u << 20;
+		if (!sc->c[k]) { // (una vez por canción: luego se reutiliza, y su conexión con ella)
+			CURL *c = sc->c[k] = curl_easy_init();
+			if (!c)
+				continue;
+			curl_easy_setopt(c, CURLOPT_USERAGENT, UA_WEB);
+			curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+			curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L); // (público, como el resto de SoundCloud)
+			curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+			curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+			curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 30L);
+			curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 64L);
+			curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 20L);
+			curl_easy_setopt(c, CURLOPT_TCP_KEEPALIVE, 1L);
+			curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, buf_wr);
+		}
+		curl_easy_setopt(sc->c[k], CURLOPT_URL, urls[k]);
+		curl_easy_setopt(sc->c[k], CURLOPT_WRITEDATA, &b[k]);
+		if (mh)
+			curl_multi_add_handle(mh, sc->c[k]);
+	}
+	int running = mh ? 1 : 0;
+	while (running && !*stop) {
+		if (curl_multi_perform(mh, &running) != CURLM_OK)
+			break;
+		if (running)
+			curl_multi_poll(mh, NULL, 0, 100, NULL);
+	}
+	CURLMsg *m;
+	int left;
+	CURLcode res[SEG_PAR] = {CURLE_FAILED_INIT, CURLE_FAILED_INIT};
+	while (mh && (m = curl_multi_info_read(mh, &left)))
+		for (int k = 0; k < n; k++)
+			if (m->msg == CURLMSG_DONE && m->easy_handle == sc->c[k])
+				res[k] = m->data.result;
+	for (int k = 0; k < n; k++) {
+		long code = 0;
+		if (sc->c[k]) {
+			curl_easy_getinfo(sc->c[k], CURLINFO_RESPONSE_CODE, &code);
+			if (mh)
+				curl_multi_remove_handle(mh, sc->c[k]);
+		}
+		if (res[k] == CURLE_OK && code >= 200 && code < 300 && b[k].p)
+			data[k] = (u8 *)b[k].p, len[k] = b[k].n;
+		else
+			free(b[k].p);
+	}
+	if (mh)
+		curl_multi_cleanup(mh);
+}
+
+static void segs_free(SegConn *sc)
+{
+	for (int k = 0; k < SEG_PAR; k++)
+		if (sc->c[k])
+			curl_easy_cleanup(sc->c[k]), sc->c[k] = NULL;
+}
+
 static void stream_run(void *arg)
 {
 	ScStream *s = arg;
@@ -1224,7 +1297,6 @@ static void stream_run(void *arg)
 	char err[32] = "";
 	HlsList pl;
 	long code;
-	size_t n = 0;
 	if (!hls_open(&s->t, &pl, &s->cfg, err, sizeof err)) {
 		fail(s, err);
 		return;
@@ -1255,6 +1327,7 @@ static void stream_run(void *arg)
 	// qué trozo seguir: lo que se estaba bajando de antes ya no entra)
 	bool cover_done = false;
 	int i = 0;
+	SegConn conns = {{NULL, NULL}};
 	while (!s->stop) {
 		LightLock_Lock(&s->lk);
 		if (s->seek_seg >= 0)
@@ -1268,46 +1341,63 @@ static void stream_run(void *arg)
 		if (i >= 1 && !cover_done)
 			cover_fetch(s), cover_done = true; // (después del primer trozo: que empiece a sonar cuanto antes)
 		bool skip = false;
+		int room = 0;
 		while (!s->stop) { // hueco en la cola
 			LightLock_Lock(&s->lk);
-			bool room = s->qn < QMAX;
+			room = QMAX - s->qn;
 			skip = s->seek_seg >= 0;
 			LightLock_Unlock(&s->lk);
-			if (room || skip)
+			if (room > 0 || skip)
 				break;
 			svcSleepThread(50 * 1000000ll);
 		}
 		if (skip || s->stop)
 			continue;
-		Seg sg = {0};
-		u8 *d = NULL;
-		for (int tries = 0; tries < 3 && !d && !s->stop; tries++)
-			d = (u8 *)get(pl.seg[i].uri, 8u << 20, &code, &n);
-		if (!d) {
-			if (!s->stop)
-				util_log("soundcloud: %s: no llegó el trozo %d", s->t.id, i);
+		// el primero, solo (que empiece a sonar cuanto antes); luego, de dos en dos si caben
+		int nb = !cover_done && i == 0 ? 1 : room >= 2 && i + 1 < pl.n ? 2 : 1;
+		const char *urls[SEG_PAR] = {pl.seg[i].uri, nb > 1 ? pl.seg[i + 1].uri : NULL};
+		u8 *dd[SEG_PAR];
+		size_t dn[SEG_PAR];
+		segs_get(&conns, urls, nb, dd, dn, &s->stop);
+		for (int k = 0; k < nb && !dd[k] && !s->stop; k++) // (lo que no llegó: otra vez, como antes)
+			for (int tries = 0; tries < 2 && !dd[k] && !s->stop; tries++)
+				dd[k] = (u8 *)get(urls[k], 8u << 20, &code, &dn[k]);
+		bool stop_here = false;
+		for (int k = 0; k < nb; k++) {
+			if (stop_here || !dd[k]) {
+				if (!stop_here && !s->stop)
+					util_log("soundcloud: %s: no llegó el trozo %d", s->t.id, i);
+				free(dd[k]);
+				stop_here = true;
+				continue;
+			}
+			Seg sg = {0};
+			sg.data = dd[k], sg.len = dn[k];
+			FrCtx fc = {&sg, 0};
+			if (fmp4_frames(dd[k], dn[k], &s->cfg, fr_cb, &fc) <= 0) {
+				seg_free(&sg);
+				i++;
+				continue;
+			}
+			LightLock_Lock(&s->lk);
+			bool stale = s->seek_seg >= 0; // (se pidió saltar mientras llegaba: ya no vale)
+			if (!stale) {
+				s->q[(s->qh + s->qn) % QMAX] = sg;
+				s->qn++;
+			}
+			LightLock_Unlock(&s->lk);
+			if (stale) {
+				seg_free(&sg);
+				for (int r = k + 1; r < nb; r++)
+					free(dd[r]), dd[r] = NULL;
+				break;
+			}
+			i++;
+		}
+		if (stop_here)
 			i = pl.n; // (se acaba aquí, salvo que se salte a otra parte)
-			continue;
-		}
-		sg.data = d, sg.len = n;
-		FrCtx fc = {&sg, 0};
-		if (fmp4_frames(d, n, &s->cfg, fr_cb, &fc) <= 0) {
-			seg_free(&sg);
-			i++;
-			continue;
-		}
-		LightLock_Lock(&s->lk);
-		bool stale = s->seek_seg >= 0; // (se pidió saltar mientras llegaba: ya no vale)
-		if (!stale) {
-			s->q[(s->qh + s->qn) % QMAX] = sg;
-			s->qn++;
-		}
-		LightLock_Unlock(&s->lk);
-		if (stale)
-			seg_free(&sg);
-		else
-			i++;
 	}
+	segs_free(&conns);
 	hls_free(&pl);
 	s->eof = true;
 }
