@@ -148,7 +148,14 @@ void gfx_rt_begin(GfxRT *r, u32 clear) { gfx_target(r->rt, clear); }
 void gfx_rt_draw(GfxRT *r, float x, float y) { C2D_DrawImageAt(r->img, x, y, Z, NULL, 1, 1); }
 
 // recorte rectangular (coordenadas de pantalla; el framebuffer de la 3DS está girado 90°)
+// el recorte que está puesto (para que un texto que se desplaza recorte dentro de él y luego lo devuelva)
+static struct { bool on; float x, y, w, h; } s_clipr;
+static void scissor(float x, float y, float w, float h);
 void gfx_clip(float x, float y, float w, float h) {
+    s_clipr.on = true, s_clipr.x = x, s_clipr.y = y, s_clipr.w = w, s_clipr.h = h;
+    scissor(x, y, w, h);
+}
+static void scissor(float x, float y, float w, float h) {
     C2D_Flush();
     int sw = s_cur == g_top ? TOP_W : BOT_W;
     int l = 240 - (int)(y + h), t = sw - (int)(x + w), r = 240 - (int)y, b = sw - (int)x;
@@ -162,6 +169,7 @@ void gfx_clip(float x, float y, float w, float h) {
 }
 
 void gfx_clip_off(void) {
+    s_clipr.on = false;
     C2D_Flush();
     C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
 }
@@ -574,51 +582,59 @@ void text_draw_right(const char *s, float rx, float y, float scale, u32 c) {
 bool g_clip_ell;
 
 /* lo que cabe en maxw empezando en s (sin «…»), cortando en un carácter entero */
-static void draw_fit(const char *s, float x, float y, float maxw, float scale, u32 c) {
-    float w = 0;
-    const char *p = s;
-    while (*p) {
-        const char *q = p;
-        u32 cp = utf8_next(&q);
-        if (cp == '\n') break;
-        float gw = glyph_w(cp, scale);
-        if (w + gw > maxw + 0.5f) break;
-        w += gw; p = q;
-    }
-    text_draw_n(s, (int)(p - s), x, y, scale, c);
-}
-
 #define TICK_HOLD 1.4f   /* parado al principio y al final */
-#define TICK_STEP 0.11f  /* por carácter */
 
-/* cuántos caracteres hay que saltar para que se vea el final */
-static int tick_steps(const char *s, float maxw, float scale) {
-    int k = 0;
-    const char *p = s;
-    while (*p && text_width(p, scale) > maxw) {
-        utf8_next(&p);
-        k++;
-    }
-    return k;
-}
+#define TICK_SPEED 32.0f /* píxeles por segundo */
 
 float text_ticker_time(const char *s, float maxw, float scale) {
-    int k = text_width(s, scale) > maxw ? tick_steps(s, maxw, scale) : 0;
-    return k ? 2 * TICK_HOLD + k * TICK_STEP : 0;
+    float over = text_width(s, scale) - maxw;
+    return over > 0 ? 2 * TICK_HOLD + over / TICK_SPEED : 0;
 }
 
-/* un texto que no cabe se desplaza solo para poder leerlo entero: parado, avanza
- * carácter a carácter hasta el final, parado otra vez y vuelve a empezar (t: segundos) */
+/* un texto que no cabe se desplaza solo para poder leerlo entero: parado, se desliza suave (píxel a píxel, recortado
+ * por los bordes de su hueco) hasta el final, parado otra vez y vuelve a empezar (t: segundos) */
 void text_draw_ticker(const char *s, float x, float y, float maxw, float scale, u32 c, float t) {
-    if (text_width(s, scale) <= maxw) { text_draw(s, x, y, scale, c); return; }
-    int k = tick_steps(s, maxw, scale);
-    float cycle = 2 * TICK_HOLD + k * TICK_STEP, ph = fmodf(t, cycle);
-    int at = ph < TICK_HOLD ? 0 : (int)((ph - TICK_HOLD) / TICK_STEP);
-    if (at > k) at = k;
+    float tw = text_width(s, scale);
+    if (tw <= maxw) { text_draw(s, x, y, scale, c); return; }
+    float over = tw - maxw, run = over / TICK_SPEED, cycle = 2 * TICK_HOLD + run, ph = fmodf(t, cycle);
+    float u = ph < TICK_HOLD ? 0 : ph < TICK_HOLD + run ? (ph - TICK_HOLD) / run : 1;
+    u = u * u * (3 - 2 * u); // (arranca y frena suave)
+    float off = over * u;
+    // lo que queda fuera por la izquierda no se dibuja; desde ahí, lo que cabe (más un carácter, que se recorta)
     const char *p = s;
-    for (int i = 0; i < at && *p; i++)
-        utf8_next(&p);
-    draw_fit(p, x, y, maxw, scale, c);
+    float skip = 0;
+    while (*p) {
+        const char *q = p;
+        float gw = glyph_w(utf8_next(&q), scale);
+        if (skip + gw > off)
+            break;
+        skip += gw, p = q;
+    }
+    const char *e = p;
+    float w = 0;
+    while (*e && w < maxw + (off - skip) + 8) {
+        const char *q = e;
+        u32 cp = utf8_next(&q);
+        if (cp == '\n')
+            break;
+        w += glyph_w(cp, scale), e = q;
+    }
+    // el recorte: el hueco del texto, dentro del que ya hubiera
+    float lh = text_lineh(scale), cx0 = x, cy0 = y - 2, cx1 = x + maxw, cy1 = y + lh + 2;
+    if (s_clipr.on) {
+        cx0 = fmaxf(cx0, s_clipr.x), cy0 = fmaxf(cy0, s_clipr.y);
+        cx1 = fminf(cx1, s_clipr.x + s_clipr.w), cy1 = fminf(cy1, s_clipr.y + s_clipr.h);
+    }
+    if (cx1 <= cx0 || cy1 <= cy0)
+        return;
+    scissor(cx0, cy0, cx1 - cx0, cy1 - cy0);
+    text_draw_n(p, (int)(e - p), x - (off - skip), y, scale, c);
+    if (s_clipr.on)
+        scissor(s_clipr.x, s_clipr.y, s_clipr.w, s_clipr.h);
+    else {
+        C2D_Flush();
+        C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+    }
 }
 
 void text_draw_clip(const char *s, float x, float y, float maxw, float scale, u32 c) {
