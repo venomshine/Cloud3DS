@@ -59,7 +59,7 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
   - **Nube:** OneDrive en la consola, como Archivos y al día solo (lo que cambies desde el móvil o el PC aparece en unos segundos). Abre sin guardar en la SD: la música suena al momento, los PDF y mangas van al Lector y las fotos al visor. También abre textos (y guarda los cambios en la nube), páginas, ZIP y CIA; copia, corta, cambia el nombre, elimina, crea carpetas y selecciona varios. Comparte el portapapeles con Archivos: lo copiado en la SD se sube con X y lo copiado en la nube se descarga en cualquier carpeta de la SD. Las capturas nuevas se suben solas.
   - **Música:** **SoundCloud** en streaming, sin cuenta: busca canciones, artistas y playlists (también solo de artistas verificados), con una sección Descubrir, géneros y búsquedas recientes. Biblioteca en la consola: «Me gusta», listas propias y artistas que sigues, con aviso (también en las notificaciones del sistema) cuando suben algo nuevo. Perfil de cada artista con su cabecera, biografía, populares, canciones, álbumes y listas. Mientras suena: la carátula de fondo, la onda real de la canción, sus reproducciones, los comentarios en el segundo en que se escribieron, radio de canciones parecidas al acabar la lista, ecualizador (con presets o a mano) y moverse por la canción con el Circle Pad. Se descargan las que el autor permite. Las canciones protegidas con DRM (muchas de discográficas) se ven con un candado: SoundCloud solo las deja escuchar en su app. **En la consola**, la música de la SD por canciones, artistas y álbumes, con sus carátulas (las de las etiquetas o el `cover.jpg` de la carpeta). Sigue sonando con la tapa cerrada, por los auriculares o por los altavoces, y se controla con L y R.
   - **Lector:** PDF, manga y cómics (CBZ), EPUB, DOCX y TXT con su biblioteca de portadas (recientes y todos, con la página por la que vas). Se lee con la consola de lado, como un libro, con zoom y manga de derecha a izquierda. Usa [MuPDF](https://mupdf.com).
-  - **Compartir:** pasa apps homebrew instaladas a otra consola en la misma Wi-Fi, como Zapya. Se vinculan una vez comprobando un código, cada una ve las apps instaladas de la otra y las pide; quien da acepta cada pedido (o marca a la otra como «de confianza») y Cloud3DS arma su instalador (CIA) a partir de lo instalado, lo envía y la otra lo instala. Solo homebrew: nunca juegos de cartucho, de la eShop ni del sistema.
+  - **Compartir:** pasa apps homebrew instaladas a otra consola en la misma Wi-Fi, como Zapya. Se vinculan una vez comprobando un código, cada una ve las apps instaladas de la otra y las pide; quien da acepta cada pedido (o marca a la otra como «de confianza») y Cloud3DS arma su instalador (CIA) a partir de lo instalado, lo envía y la otra lo instala. Solo homebrew: nunca juegos de cartucho, de la eShop ni del sistema. Todavía en pruebas: ver «Próximas mejoras».
   - **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi. El **Navegador** llegará en una próxima actualización.
 - **Operaciones delicadas protegidas:** al instalar, desinstalar o borrar datos aparece una pantalla de espera que bloquea los botones y HOME hasta que termina, para que no se corte a mitad. Una descarga que se está instalando se puede cancelar sin riesgo.
 - El servidor se puede apagar en Ajustes → Conexión (la nube y las descargas siguen funcionando).
@@ -68,6 +68,21 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 - **En el inicio**, arriba: lo que suena y el último libro, para seguir donde lo dejaste.
 - Fecha, hora, Wi-Fi y batería en la pantalla superior. Tema oscuro y claro.
 - Idiomas: **español, inglés y japonés** (o el de la consola). La web usa el idioma del móvil o del PC.
+
+## Próximas mejoras
+
+En lo que estoy trabajando para las siguientes versiones:
+
+- **Navegador:** que funcione de verdad, con las páginas web completas en la consola.
+- **Compartir:**
+  - que arme bien los CIA, porque todavía no lo hace correctamente;
+  - pasar también otros tipos de archivos entre consolas, no solo apps.
+- **Crear tu propio CIA:** generar el instalador (CIA) de una app homebrew instalada para guardarlo tú mismo, sin tener que compartirlo con otra consola.
+- **Inicio:**
+  - reorganizar los iconos a tu gusto;
+  - agruparlos en carpetas.
+
+¿Echas algo en falta? Cuéntamelo en un [issue](https://github.com/venomshine/Cloud3DS/issues) o en [Discord](https://discord.com/invite/yVKp8JwV4e).
 
 ## Controles
 
@@ -149,6 +164,8 @@ Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python
 **Install:** open **FBI** → *Remote Install* → *Scan QR Code* and scan the QR above, or download `Cloud3DS.cia` / `Cloud3DS.3dsx` from the [latest release](https://github.com/venomshine/Cloud3DS/releases/latest).
 
 **Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, copy and move, view photos and videos, rename and delete. If something already exists, choose to replace (or merge folders), rename, keep both, skip or cancel all. Highlight folders with a color, and system folders are shown in their own group. Devices show their real name when the network provides it, can be renamed and unpaired from the console. On the console, every feature is an app on the home menu: Files, Titles (installed games and apps, their size, updates, DLC, extra data, save backups and uninstalling), Connect (QR, address, PIN, activity and devices), Downloads (from a link or a QR code; CIA files install while they download), Cloud (OneDrive, managed like Files and kept up to date live; music, PDFs, manga and photos open straight from the cloud without saving to the SD card), Music (SoundCloud streaming with likes, your own playlists, followed artists with new-upload alerts, artist profiles, Discover, real waveforms, timed comments, radio, an equalizer and Circle Pad seeking, plus the SD card's music with album art), Reader (PDF, CBZ, EPUB, DOCX and TXT with covers and progress), Share (homebrew apps between consoles) and Settings. SELECT always returns to the home menu. Installing, uninstalling and deleting data show a waiting screen that blocks the buttons and HOME until they finish. The server can be turned off in Settings → Connection. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads and copies never leave half-written files behind.
+
+**Coming next:** a fully working Browser; Share building CIA files correctly (it doesn't yet) and sending other kinds of files between consoles; building a CIA of an installed homebrew app for yourself, without sharing it; and rearranging the home menu icons and grouping them into folders.
 
 **Updates:** Cloud3DS checks GitHub for new versions when it opens. Go to **Settings → Updates** to download, verify (SHA-256) and install the new one without FBI.
 
