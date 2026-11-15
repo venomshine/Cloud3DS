@@ -16,11 +16,14 @@
  * - El audio llega por HLS en trozos fMP4 con AAC (schls.c) y lo decodifica FAAD2: el reproductor de música (music.c)
  *   lo usa como un archivo más, con la ruta «sc:<id>». */
 
-#define SC_MAX 60
+#define SC_MAX 100
+#define SC_ARTISTS 20
+#define SC_IDS_LEN (SC_MAX * 22)
 
 typedef struct {
 	char id[24];
 	char title[128], artist[96];
+	char uid[16];        /* el autor (para «Ir al artista») */
 	u32  dur_ms;
 	char art[256];       /* carátula (o el avatar del autor) */
 	char tc[400];        /* la transcodificación AAC elegida (api-v2) */
@@ -35,6 +38,13 @@ typedef struct {
 	int  count;
 } ScList;
 
+typedef struct {
+	char id[16];
+	char name[96];
+	int  tracks;
+	u32  followers;
+} ScArtist;
+
 enum { SCQ_IDLE, SCQ_BUSY, SCQ_DONE, SCQ_ERR };
 
 void sc_init(void);
@@ -43,8 +53,10 @@ void sc_exit(void);
 /* buscar (canciones y playlists) o abrir una playlist (sus canciones), en su hilo */
 void sc_search(const char *q);
 void sc_open_list(const char *id, const char *title);
+void sc_open_ids(const char *ids);  /* canciones por su número («1,2,3», hasta SC_MAX), en ese orden (las guardadas) */
+void sc_open_artist(const char *id); /* las canciones de un artista */
 /* lo último encontrado (copia); st: SCQ_*, err: por qué falló. Devuelve el número de versión (cambia al llegar) */
-u32  sc_results(ScTrack *t, int *nt, ScList *l, int *nl, int *st, char *err, size_t en);
+u32  sc_results(ScTrack *t, int *nt, ScList *l, int *nl, ScArtist *a, int *na, int *st, char *err, size_t en);
 bool sc_track(const char *id, ScTrack *out); /* una canción ya vista (para el reproductor) */
 /* descargar una canción que el autor deja descargar: su audio (AAC, con título, artista y carátula) a SC_DL_DIR, en su
  * hilo y de una en una. 0 empezó; 1 ya hay otra en curso; 2 no se puede (no la deja o es un fragmento); 3 error */

@@ -233,6 +233,9 @@ static bool parse_track(const cJSON *t, ScTrack *o)
 	const cJSON *user = cJSON_GetObjectItemCaseSensitive(t, "user");
 	util_strlcpy(o->title, js(t, "title") ? js(t, "title") : "?", sizeof o->title);
 	util_strlcpy(o->artist, js(user, "username") ? js(user, "username") : "", sizeof o->artist);
+	const cJSON *uid = cJSON_GetObjectItemCaseSensitive(user, "id");
+	if (cJSON_IsNumber(uid))
+		snprintf(o->uid, sizeof o->uid, "%.0f", uid->valuedouble);
 	const cJSON *d = cJSON_GetObjectItemCaseSensitive(t, "full_duration");
 	if (!cJSON_IsNumber(d))
 		d = cJSON_GetObjectItemCaseSensitive(t, "duration");
@@ -250,8 +253,8 @@ static bool parse_track(const cJSON *t, ScTrack *o)
 	return true;
 }
 
-// las canciones vistas, para el reproductor (las últimas 200)
-#define REG_N 200
+// las canciones vistas, para el reproductor (las últimas 300)
+#define REG_N 300
 static ScTrack *REG;
 static int reg_next;
 
@@ -288,11 +291,12 @@ static struct {
 	Thread thr;
 	LightEvent ev;
 	volatile bool quit;
-	int job; // 1 buscar, 2 abrir una playlist
-	char q[200], list_title[128];
+	int job; // 1 buscar, 2 abrir una playlist, 3 canciones por su número, 4 las de un artista
+	char q[SC_IDS_LEN], list_title[128];
 	ScTrack t[SC_MAX];
 	ScList l[SC_MAX];
-	int nt, nl, st;
+	ScArtist a[SC_ARTISTS];
+	int nt, nl, na, st;
 	char err[32];
 	u32 rev;
 } Q;
@@ -315,7 +319,8 @@ static void do_search(const char *q)
 	pct(q, e, sizeof e);
 	static ScTrack t[SC_MAX];
 	static ScList l[SC_MAX];
-	int nt = 0, nl = 0;
+	static ScArtist ar[SC_ARTISTS];
+	int nt = 0, nl = 0, na = 0;
 	snprintf(path, sizeof path, "/search/tracks?q=%s&limit=40&linked_partitioning=1", e);
 	cJSON *j = api(path, err, sizeof err), *it;
 	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
@@ -342,16 +347,34 @@ static void do_search(const char *q)
 			o->count = cJSON_IsNumber(tc) ? tc->valueint : 0;
 		}
 		cJSON_Delete(j);
+		// los artistas (los que tienen canciones)
+		snprintf(path, sizeof path, "/search/users?q=%s&limit=20", e);
+		j = api(path, err2, sizeof err2);
+		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+		{
+			const cJSON *id = cJSON_GetObjectItemCaseSensitive(it, "id"), *tc = cJSON_GetObjectItemCaseSensitive(it, "track_count"),
+			            *fc = cJSON_GetObjectItemCaseSensitive(it, "followers_count");
+			if (na >= SC_ARTISTS || !cJSON_IsNumber(id) || !cJSON_IsNumber(tc) || tc->valueint <= 0)
+				continue;
+			ScArtist *o = &ar[na++];
+			memset(o, 0, sizeof *o);
+			snprintf(o->id, sizeof o->id, "%.0f", id->valuedouble);
+			util_strlcpy(o->name, js(it, "username") ? js(it, "username") : "?", sizeof o->name);
+			o->tracks = tc->valueint;
+			o->followers = cJSON_IsNumber(fc) ? (u32)fc->valuedouble : 0;
+		}
+		cJSON_Delete(j);
 	}
 	if (!Q.quit) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
 		memcpy(Q.l, l, sizeof l[0] * nl);
-		Q.nt = nt, Q.nl = nl;
+		memcpy(Q.a, ar, sizeof ar[0] * na);
+		Q.nt = nt, Q.nl = nl, Q.na = na;
 		util_strlcpy(Q.err, err, sizeof Q.err);
 		Q.st = nt || nl || !err[0] ? SCQ_DONE : SCQ_ERR;
 		Q.rev++;
 	}
-	util_log("soundcloud: «%s»: %d canciones, %d playlists %s", q, nt, nl, err);
+	util_log("soundcloud: «%s»: %d canciones, %d playlists, %d artistas %s", q, nt, nl, na, err);
 }
 
 static void do_list(const char *id)
@@ -396,11 +419,79 @@ static void do_list(const char *id)
 	}
 	if (!Q.quit) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
-		Q.nt = nt, Q.nl = 0;
+		Q.nt = nt, Q.nl = 0, Q.na = 0;
 		util_strlcpy(Q.err, err, sizeof Q.err);
 		Q.st = nt || !err[0] ? SCQ_DONE : SCQ_ERR;
 		Q.rev++;
 	}
+}
+
+// canciones por su número («1,2,3»: las guardadas en la biblioteca), en ese orden. Las que ya no existen no vienen
+static void do_ids(const char *list)
+{
+	static ScTrack t[SC_MAX], got[SC_MAX];
+	static char ids[SC_MAX][24];
+	int nids = 0, ng = 0, nt = 0;
+	char err[32] = "";
+	for (const char *p = list; *p && nids < SC_MAX;) {
+		const char *e = strchr(p, ',');
+		size_t n = e ? (size_t)(e - p) : strlen(p);
+		if (n && n < sizeof ids[0])
+			snprintf(ids[nids++], sizeof ids[0], "%.*s", (int)n, p);
+		p += n + (e ? 1 : 0);
+	}
+	for (int k = 0; k < nids && !Q.quit; k += 50) {
+		char q[1400] = "/tracks?ids=";
+		for (int i = k; i < nids && i < k + 50; i++) {
+			if (i > k)
+				strcat(q, "%2C");
+			strcat(q, ids[i]);
+		}
+		cJSON *a = api(q, err, sizeof err), *it;
+		cJSON_ArrayForEach(it, a)
+		{
+			if (ng < SC_MAX && parse_track(it, &got[ng]))
+				reg_put(&got[ng]), ng++;
+		}
+		cJSON_Delete(a);
+	}
+	for (int i = 0; i < nids; i++) // (en el orden de la lista)
+		for (int k = 0; k < ng; k++)
+			if (!strcmp(got[k].id, ids[i])) {
+				t[nt++] = got[k];
+				break;
+			}
+	if (!Q.quit) {
+		memcpy(Q.t, t, sizeof t[0] * nt);
+		Q.nt = nt, Q.nl = 0, Q.na = 0;
+		util_strlcpy(Q.err, err, sizeof Q.err);
+		Q.st = nt || !err[0] ? SCQ_DONE : SCQ_ERR;
+		Q.rev++;
+	}
+}
+
+// las canciones de un artista (las más recientes)
+static void do_artist(const char *id)
+{
+	char path[100], err[32] = "";
+	static ScTrack t[SC_MAX];
+	int nt = 0;
+	snprintf(path, sizeof path, "/users/%s/tracks?limit=%d&linked_partitioning=1", id, SC_MAX);
+	cJSON *j = api(path, err, sizeof err), *it;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+	{
+		if (nt < SC_MAX && parse_track(it, &t[nt]))
+			reg_put(&t[nt]), nt++;
+	}
+	cJSON_Delete(j);
+	if (!Q.quit) {
+		memcpy(Q.t, t, sizeof t[0] * nt);
+		Q.nt = nt, Q.nl = 0, Q.na = 0;
+		util_strlcpy(Q.err, err, sizeof Q.err);
+		Q.st = nt || !err[0] ? SCQ_DONE : SCQ_ERR;
+		Q.rev++;
+	}
+	util_log("soundcloud: artista %s: %d canciones %s", id, nt, err);
 }
 
 static void thread_main(void *arg)
@@ -411,7 +502,7 @@ static void thread_main(void *arg)
 		for (;;) {
 			LightLock_Lock(&CL);
 			int job = Q.job;
-			char q[200];
+			static char q[SC_IDS_LEN];
 			util_strlcpy(q, Q.q, sizeof q);
 			Q.job = 0;
 			LightLock_Unlock(&CL);
@@ -421,6 +512,10 @@ static void thread_main(void *arg)
 				do_search(q);
 			else if (job == 2)
 				do_list(q);
+			else if (job == 3)
+				do_ids(q);
+			else if (job == 4)
+				do_artist(q);
 		}
 	}
 }
@@ -473,10 +568,13 @@ void sc_open_list(const char *id, const char *title)
 	push(2, id);
 }
 
-u32 sc_results(ScTrack *t, int *nt, ScList *l, int *nl, int *st, char *err, size_t en)
+void sc_open_ids(const char *ids) { push(3, ids); }
+void sc_open_artist(const char *id) { push(4, id); }
+
+u32 sc_results(ScTrack *t, int *nt, ScList *l, int *nl, ScArtist *a, int *na, int *st, char *err, size_t en)
 {
 	if (!cl_init) {
-		*nt = *nl = 0, *st = SCQ_IDLE;
+		*nt = *nl = *na = 0, *st = SCQ_IDLE;
 		return 0;
 	}
 	LightLock_Lock(&CL);
@@ -484,7 +582,9 @@ u32 sc_results(ScTrack *t, int *nt, ScList *l, int *nl, int *st, char *err, size
 		memcpy(t, Q.t, sizeof *t * Q.nt);
 	if (l)
 		memcpy(l, Q.l, sizeof *l * Q.nl);
-	*nt = Q.nt, *nl = Q.nl, *st = Q.st;
+	if (a)
+		memcpy(a, Q.a, sizeof *a * Q.na);
+	*nt = Q.nt, *nl = Q.nl, *na = Q.na, *st = Q.st;
 	util_strlcpy(err, Q.err, en);
 	u32 r = Q.rev;
 	LightLock_Unlock(&CL);
