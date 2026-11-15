@@ -1,6 +1,63 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Novedades en SoundCloud':
+        ('New on SoundCloud',
+         'SoundCloudの新着'),
+    '%s ha subido «%s». Ábrelo en Cloud3DS > Música.':
+        ('%s uploaded “%s”. Open it in Cloud3DS > Music.',
+         '%sが「%s」をアップロードしました。Cloud3DS > 音楽で開けます。'),
+    '%s ha subido «%s» y hay %d canciones nuevas más. Ábrelas en Cloud3DS > Música.':
+        ('%s uploaded “%s”, and there are %d more new songs. Open them in Cloud3DS > Music.',
+         '%sが「%s」をアップロードしました。ほかに新曲が%d曲あります。Cloud3DS > 音楽で開けます。'),
+    'Ya sigues al máximo de artistas: deja de seguir a alguno primero':
+        ('You already follow the maximum number of artists: unfollow one first',
+         'フォローできるアーティストの上限です。先にフォローを解除してください'),
+    'Sigues a %s: te avisaremos cuando suba algo':
+        ('Following %s: you will be notified of new uploads',
+         '%sをフォローしました。新しいアップロードをお知らせします'),
+    'Ya no sigues a %s':
+        ('You no longer follow %s',
+         '%sのフォローを解除しました'),
+    'Artista que sigues':
+        ('Artist you follow',
+         'フォロー中のアーティスト'),
+    'De los artistas que sigues':
+        ('From artists you follow',
+         'フォロー中のアーティストから'),
+    '1 artista':
+        ('1 artist',
+         'アーティスト1人'),
+    '%d artistas':
+        ('%d artists',
+         'アーティスト%d人'),
+    '1 canción nueva':
+        ('1 new song',
+         '新曲1曲'),
+    '%d canciones nuevas':
+        ('%d new songs',
+         '新曲%d曲'),
+    'Artistas que sigues':
+        ('Artists you follow',
+         'フォロー中のアーティスト'),
+    'No sigues a ningún artista':
+        ("You don't follow any artists",
+         'フォロー中のアーティストはいません'),
+    'En la página de un artista, ⋮ > Seguir. Cuando suba algo nuevo, Cloud3DS te avisará.':
+        ("On an artist's page, ⋮ > Follow. Cloud3DS will notify you of new uploads.",
+         'アーティストのページで ⋮ > フォロー。新しいアップロードがあるとCloud3DSがお知らせします。'),
+    'Artista · lo sigues':
+        ('Artist · following',
+         'アーティスト · フォロー中'),
+    ' · lo sigues':
+        (' · following',
+         ' · フォロー中'),
+    'Dejar de seguir':
+        ('Unfollow',
+         'フォローを解除'),
+    'Seguir (avisar cuando suba algo)':
+        ('Follow (notify me of new uploads)',
+         'フォロー(新着をお知らせ)'),
     'Te gusta':
         ('Liked',
          'お気に入り済み'),

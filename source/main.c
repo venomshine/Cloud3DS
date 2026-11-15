@@ -6705,7 +6705,7 @@ static void music_sheet(void)
 // elegida la lista que se ve, o abre un artista o una lista; Y, las opciones (Me gusta, añadir a una lista, ir al
 // artista, descargar). B vuelve atrás. «En la consola» lleva a la biblioteca de la SD
 enum { SV_HOME, SV_RESULTS, SV_LIST };
-enum { LK_SC, LK_ARTIST, LK_LIKES, LK_MINE };
+enum { LK_SC, LK_ARTIST, LK_LIKES, LK_MINE, LK_NEW, LK_FOLLOWS };
 static struct {
 	bool local;          // en la biblioteca de la SD
 	int view, back;      // SV_*: lo que se ve y a dónde vuelve B desde una lista
@@ -6718,6 +6718,9 @@ static struct {
 	ScList *l;
 	ScArtist *a;
 	int nt, nl, na, npt;
+	char aid[16];        // el artista abierto
+	ScArtist *fa;        // artistas que se siguen (en su vista)
+	int nfa;
 	ScSaved *sv;         // lista guardada: lo guardado (se ve mientras llega de SoundCloud)
 	int nsv;
 	bool sv_fresh;       // (ya llegó: se puede escuchar)
@@ -6829,6 +6832,86 @@ static void sch_add_played(const char *title, const char *artist)
 	sch_save();
 }
 
+// ---- novedades de los artistas que se siguen: al abrir la app y cada 30 minutos (con Wi-Fi) se miran sus últimas
+// canciones; lo subido desde la última vez se avisa (en la app y en las notificaciones del sistema, el sobre de HOME)
+// y queda en «Novedades» hasta cerrar la app
+static struct {
+	ScTrack t[SC_NEW_MAX];
+	int n;
+	bool unseen;
+	u64 next;   // cuándo mirar otra vez
+	u32 rev;
+	bool asked;
+} SCN;
+
+static void sc_news_notify(int n, const ScTrack *first)
+{
+	char title[64], msg[300];
+	snprintf(title, sizeof title, "%s", _("Novedades en SoundCloud"));
+	if (n == 1)
+		snprintf(msg, sizeof msg, _("%s ha subido «%s». Ábrelo en Cloud3DS > Música."), first->artist, first->title);
+	else
+		snprintf(msg, sizeof msg, _("%s ha subido «%s» y hay %d canciones nuevas más. Ábrelas en Cloud3DS > Música."), first->artist, first->title, n - 1);
+	toast_icon(msg, IC_SPARK, 0xFF0055FF);
+	if (R_FAILED(newsInit())) // (y en las notificaciones del sistema)
+		return;
+	u16 t16[33], m16[300];
+	ssize_t tl = utf8_to_utf16(t16, (const u8 *)title, 32), ml = utf8_to_utf16(m16, (const u8 *)msg, 299);
+	if (tl > 0 && ml > 0) {
+		t16[tl] = 0, m16[ml] = 0;
+		Result r = NEWS_AddNotification(t16, (u32)tl, m16, (u32)ml, NULL, 0, false);
+		util_log("soundcloud: notificación del sistema: %08lX", (unsigned long)r);
+	}
+	newsExit();
+}
+
+static void sc_news_tick(void)
+{
+	u64 now = util_ms();
+	if (!SCN.next)
+		SCN.next = now + 20000; // (un rato después de abrir la app: que arranque la red)
+	static ScFollow fl[SCL_ARTISTS_MAX];
+	if (!SCN.asked && now >= SCN.next && util_ip()) {
+		int n = scl_follows(fl, SCL_ARTISTS_MAX);
+		SCN.next = now + 30 * 60 * 1000;
+		if (n) {
+			static char ids[SCL_ARTISTS_MAX][16], since[SCL_ARTISTS_MAX][24];
+			for (int i = 0; i < n; i++)
+				util_strlcpy(ids[i], fl[i].id, sizeof ids[0]), util_strlcpy(since[i], fl[i].seen, sizeof since[0]);
+			sc_check_new((const char (*)[16])ids, (const char (*)[24])since, n);
+			SCN.asked = true;
+		}
+	}
+	if (!SCN.asked)
+		return;
+	static ScTrack nt[SC_NEW_MAX];
+	static char latest[SCL_ARTISTS_MAX][24];
+	int nn, nl;
+	bool busy;
+	u32 r = sc_new_results(nt, &nn, latest, &nl, &busy);
+	if (busy || r == SCN.rev)
+		return;
+	SCN.rev = r, SCN.asked = false;
+	int nf = scl_follows(fl, SCL_ARTISTS_MAX);
+	for (int i = 0; i < nl && i < nf; i++) // (lo visto: no se vuelve a avisar)
+		scl_set_seen(fl[i].id, latest[i]);
+	if (!nn)
+		return;
+	for (int k = 0; k < nn; k++) { // (a «Novedades», sin repetir, lo último arriba)
+		bool dup = false;
+		for (int j = 0; j < SCN.n && !dup; j++)
+			dup = !strcmp(SCN.t[j].id, nt[k].id);
+		if (dup)
+			continue;
+		if (SCN.n == SC_NEW_MAX)
+			SCN.n--;
+		memmove(&SCN.t[1], &SCN.t[0], sizeof SCN.t[0] * SCN.n);
+		SCN.t[0] = nt[k], SCN.n++;
+	}
+	SCN.unseen = true;
+	sc_news_notify(nn, &nt[0]);
+}
+
 // buscar (desde el teclado, un género o una búsqueda reciente)
 static void sc_go(const char *q)
 {
@@ -6854,8 +6937,9 @@ static bool sc_alloc(void)
 		SCV.l = malloc(sizeof *SCV.l * SC_MAX);
 		SCV.a = malloc(sizeof *SCV.a * SC_ARTISTS);
 		SCV.sv = malloc(sizeof *SCV.sv * SCL_TRACKS);
+		SCV.fa = malloc(sizeof *SCV.fa * SCL_ARTISTS_MAX);
 	}
-	return SCV.t && SCV.pt && SCV.l && SCV.a && SCV.sv;
+	return SCV.t && SCV.pt && SCV.l && SCV.a && SCV.sv && SCV.fa;
 }
 
 // abrir una lista: de SoundCloud, un artista, «Me gusta» o una propia (las guardadas se ven al momento y se piden de
@@ -6870,9 +6954,22 @@ static void sc_open(int lk, const char *id, const char *title, int mine)
 	util_strlcpy(SCV.list_title, title, sizeof SCV.list_title);
 	if (lk == LK_SC)
 		sc_open_list(id, title);
-	else if (lk == LK_ARTIST)
+	else if (lk == LK_ARTIST) {
+		util_strlcpy(SCV.aid, id, sizeof SCV.aid);
 		sc_open_artist(id);
-	else {
+	} else if (lk == LK_NEW) { // (ya están: llegaron con la comprobación)
+		memcpy(SCV.pt, SCN.t, sizeof SCN.t[0] * SCN.n), SCV.npt = SCN.n;
+		SCV.want = 0, SCV.sv_fresh = true, SCN.unseen = false;
+	} else if (lk == LK_FOLLOWS) {
+		static ScFollow fl[SCL_ARTISTS_MAX];
+		SCV.nfa = scl_follows(fl, SCL_ARTISTS_MAX);
+		for (int i = 0; i < SCV.nfa; i++) {
+			memset(&SCV.fa[i], 0, sizeof SCV.fa[i]);
+			util_strlcpy(SCV.fa[i].id, fl[i].id, sizeof SCV.fa[i].id);
+			util_strlcpy(SCV.fa[i].name, fl[i].name, sizeof SCV.fa[i].name);
+		}
+		SCV.want = 0, SCV.sv_fresh = true;
+	} else {
 		int list = lk == LK_LIKES ? SCL_LIKES : mine;
 		SCV.nsv = scl_tracks(list, SCV.sv, SCL_TRACKS);
 		static char ids[SC_IDS_LEN];
@@ -6915,6 +7012,7 @@ static const char *sc_err_text(const char *e)
 // la descarga de SoundCloud: al terminar, un aviso (se mira en cada vuelta, esté donde esté la aplicación)
 static void sc_dl_tick(void)
 {
+	sc_news_tick();
 	if (mu_on() && !MU.s.loading && !strncmp(MU.s.name, "sc:", 3) && MU.s.track != SCH.track && MU.s.title[0]) { // (lo que suena, apuntado)
 		SCH.track = MU.s.track;
 		sch_add_played(MU.s.title, MU.s.artist);
@@ -6990,6 +7088,22 @@ static void sc_toggle_like(const ScTrack *t)
 	sc_refresh_saved();
 }
 
+static void sc_toggle_follow(const char *id, const char *name)
+{
+	bool on = !scl_following(id);
+	int r = scl_follow(id, name, on);
+	char m[160];
+	if (r < 0)
+		snprintf(m, sizeof m, "%s", _("Ya sigues al máximo de artistas: deja de seguir a alguno primero"));
+	else
+		snprintf(m, sizeof m, on ? _("Sigues a %s: te avisaremos cuando suba algo") : _("Ya no sigues a %s"), name);
+	toast_icon(m, r < 0 ? IC_CLOSE : IC_USER, r < 0 ? T.danger : on ? 0xFF0055FF : T.text2);
+	if (on && r > 0)
+		SCN.next = util_ms() + 3000; // (mirar pronto: así queda apuntado lo último que tiene)
+	if (SCV.view == SV_LIST && SCV.lk == LK_FOLLOWS)
+		sc_open(LK_FOLLOWS, NULL, SCV.list_title, 0), SCV.back = SV_HOME;
+}
+
 static void sc_top(void)
 {
 	if (mu_on()) {
@@ -7002,7 +7116,7 @@ static void sc_top(void)
 	const float X = CARD_X + 16, W = CARD_W - 32;
 	bool likes = SCV.view == SV_LIST && SCV.lk == LK_LIKES;
 	u32 brand = likes ? 0xFF5050FF : 0xFF0055FF; // (naranja de SoundCloud o el rojo de «Me gusta», en ABGR)
-	IconId bic = likes ? IC_HEART : SCV.view == SV_LIST && SCV.lk == LK_ARTIST ? IC_USER : SCV.view == SV_LIST ? IC_LIST : IC_SPEAKER;
+	IconId bic = likes ? IC_HEART : SCV.view == SV_LIST && (SCV.lk == LK_ARTIST || SCV.lk == LK_FOLLOWS) ? IC_USER : SCV.view == SV_LIST && SCV.lk == LK_NEW ? IC_SPARK : SCV.view == SV_LIST ? IC_LIST : IC_SPEAKER;
 	draw_circle(X + 30, y0 + 40, 26, col_alpha(brand, 0.16f));
 	draw_icon(bic, X + 30, y0 + 40, 24, brand);
 	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
@@ -7012,9 +7126,16 @@ static void sc_top(void)
 	if (SCV.st == SCQ_BUSY && SCV.want)
 		snprintf(l1, sizeof l1, "%s", SCV.view == SV_LIST ? _("Cargando…") : _("Buscando…"));
 	else if (SCV.view == SV_LIST) {
-		int n = SCV.lk >= LK_LIKES ? SCV.nsv : SCV.npt;
-		const char *k = SCV.lk == LK_ARTIST ? _("Artista") : SCV.lk == LK_SC ? _("Playlist de SoundCloud") : SCV.lk == LK_LIKES ? _("Tu biblioteca") : _("Tu lista");
-		snprintf(l1, sizeof l1, n == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), k, n);
+		int n = SCV.lk == LK_LIKES || SCV.lk == LK_MINE ? SCV.nsv : SCV.npt;
+		const char *k = SCV.lk == LK_ARTIST ? (scl_following(SCV.aid) ? _("Artista que sigues") : _("Artista"))
+		              : SCV.lk == LK_SC   ? _("Playlist de SoundCloud")
+		              : SCV.lk == LK_LIKES ? _("Tu biblioteca")
+		              : SCV.lk == LK_NEW  ? _("De los artistas que sigues")
+		                                  : _("Tu lista");
+		if (SCV.lk == LK_FOLLOWS)
+			snprintf(l1, sizeof l1, SCV.nfa == 1 ? _("1 artista") : _("%d artistas"), SCV.nfa);
+		else
+			snprintf(l1, sizeof l1, n == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), k, n);
 	} else if (SCV.view == SV_RESULTS)
 		snprintf(l1, sizeof l1, _("%d canciones · %d artistas · %d playlists"), SCV.nt, SCV.na, SCV.nl);
 	else
@@ -7065,7 +7186,7 @@ static void sc_top(void)
 // elemento se apunta con su rectángulo; la cruceta va al más cercano en esa dirección
 typedef struct {
 	float x, y, w, h;
-	int kind, i; // kind: 0 Me gusta, 1 una lista, 2 nueva lista, 3 género, 4 búsqueda reciente
+	int kind, i; // kind: 0 Me gusta, 1 una lista, 2 nueva lista, 3 género, 4 búsqueda reciente, 5 novedades, 6 artistas seguidos
 } ScItem;
 
 static void sc_home(bool sheet)
@@ -7074,7 +7195,9 @@ static void sc_home(bool sheet)
 	                                   {"Pop", "pop"},     {"Rock", "rock"},         {"Hip hop", "hip hop"},                {N_("Reguetón"), "reggaeton"},
 	                                   {"Jazz", "jazz"},   {N_("Clásica"), "classical"}};
 	enum { NG = sizeof G / sizeof G[0] };
-	static ScItem it[NG + SCL_LISTS + SCH_N + 4];
+	static ScItem it[NG + SCL_LISTS + SCH_N + 6];
+	static ScFollow fl_[SCL_ARTISTS_MAX];
+	int nfol = scl_follows(fl_, SCL_ARTISTS_MAX);
 	sch_load();
 	int n = 0, nl = scl_nlists();
 	const float RH = 36, gap = 6, ch = 26;
@@ -7082,7 +7205,11 @@ static void sc_home(bool sheet)
 	// la estructura de esta vuelta
 	float lab_y[3];
 	lab_y[0] = y, y += text_lineh(TS_SUB) + 4;
+	if (SCN.n)
+		it[n++] = (ScItem){8, y, BOT_W - 16, RH, 5, 0}, y += RH;
 	it[n++] = (ScItem){8, y, BOT_W - 16, RH, 0, 0}, y += RH;
+	if (nfol)
+		it[n++] = (ScItem){8, y, BOT_W - 16, RH, 6, 0}, y += RH;
 	for (int i = 0; i < nl; i++)
 		it[n++] = (ScItem){8, y, BOT_W - 16, RH, 1, i}, y += RH;
 	if (nl < SCL_LISTS)
@@ -7175,13 +7302,23 @@ static void sc_home(bool sheet)
 				util_strlcpy(t1, scl_list_name(e->i), sizeof t1);
 				int c = scl_count(e->i);
 				snprintf(t2, sizeof t2, c == 1 ? _("1 canción") : _("%d canciones"), c);
+			} else if (e->kind == 5) {
+				util_strlcpy(t1, _("Novedades"), sizeof t1);
+				snprintf(t2, sizeof t2, SCN.n == 1 ? _("1 canción nueva") : _("%d canciones nuevas"), SCN.n);
+				ic = IC_SPARK, col = 0xFF0055FF;
+			} else if (e->kind == 6) {
+				util_strlcpy(t1, _("Artistas que sigues"), sizeof t1);
+				snprintf(t2, sizeof t2, nfol == 1 ? _("1 artista") : _("%d artistas"), nfol);
+				ic = IC_USER, col = T.accent2;
 			} else if (e->kind == 2)
 				util_strlcpy(t1, _("Nueva lista"), sizeof t1), ic = IC_PLUS, col = T.text2;
 			else
 				util_strlcpy(t1, SCH.q[e->i], sizeof t1), ic = IC_CLOCK, col = T.text3;
-			if (e->kind <= 2) {
+			if (e->kind <= 2 || e->kind >= 5) {
 				draw_rrect(x + 6, yy + (e->h - 24) / 2, 24, 24, 7, col_alpha(col, 0.16f));
 				draw_icon(ic, x + 18, yy + e->h / 2, 13, col);
+				if (e->kind == 5 && SCN.unseen) // (sin mirar aún)
+					draw_circle(x + 28, yy + (e->h - 24) / 2 + 2, 4, 0xFF0055FF);
 			} else
 				draw_icon(ic, x + 18, yy + e->h / 2, 12, col);
 			float tw = text_width(t2, TS_SUB);
@@ -7197,7 +7334,11 @@ static void sc_home(bool sheet)
 	if (run < 0)
 		return;
 	const ScItem *e = &it[run];
-	if (e->kind == 0)
+	if (e->kind == 5)
+		sc_open(LK_NEW, NULL, _("Novedades"), 0);
+	else if (e->kind == 6)
+		sc_open(LK_FOLLOWS, NULL, _("Artistas que sigues"), 0);
+	else if (e->kind == 0)
 		sc_open(LK_LIKES, NULL, _("Me gusta"), 0);
 	else if (e->kind == 1)
 		sc_open(LK_MINE, NULL, scl_list_name(e->i), e->i);
@@ -7273,7 +7414,10 @@ static void sc_bottom(void)
 	List *l = res ? &SCV.lr : &SCV.lp;
 	const ScTrack *trk = res ? SCV.t : SCV.pt;
 	bool placeholder = !res && mine && !SCV.sv_fresh; // (guardada, aún sin llegar: se ve lo guardado)
-	int ntr = placeholder ? SCV.nsv : res ? SCV.nt : SCV.npt, nar = res ? SCV.na : 0, npl = res ? SCV.nl : 0, cnt = ntr + nar + npl;
+	bool fol = !res && SCV.lk == LK_FOLLOWS;
+	const ScArtist *arts = fol ? SCV.fa : SCV.a; // (artistas: de la búsqueda o los que se siguen)
+	int ntr = fol ? 0 : placeholder ? SCV.nsv : res ? SCV.nt : SCV.npt, nar = res ? SCV.na : fol ? SCV.nfa : 0, npl = res ? SCV.nl : 0,
+	    cnt = ntr + nar + npl;
 	const float RH = 40;
 	list_update(l, cnt, RH);
 	if (!cnt) {
@@ -7281,6 +7425,8 @@ static void sc_bottom(void)
 			empty_state(IC_SEARCH, res ? _("Buscando…") : _("Cargando…"), _("Conectando con SoundCloud."));
 		else if (SCV.st == SCQ_ERR && !mine)
 			empty_state(IC_CLOSE, res ? _("No se pudo buscar") : _("No se pudo cargar"), sc_err_text(SCV.err));
+		else if (fol)
+			empty_state(IC_USER, _("No sigues a ningún artista"), _("En la página de un artista, ⋮ > Seguir. Cuando suba algo nuevo, Cloud3DS te avisará."));
 		else if (mine)
 			empty_state(SCV.lk == LK_LIKES ? IC_HEART : IC_LIST, _("Aún no hay canciones"),
 			            _("Con Y en una canción puedes darle «Me gusta» o añadirla a una lista."));
@@ -7318,9 +7464,14 @@ static void sc_bottom(void)
 				col = T.text3;
 			liked = scl_liked(id);
 		} else if (i < ntr + nar) {
-			const ScArtist *a = &SCV.a[i - ntr];
+			const ScArtist *a = &arts[i - ntr];
 			util_strlcpy(t1, a->name, sizeof t1);
-			snprintf(t2, sizeof t2, a->tracks == 1 ? _("Artista · 1 canción") : _("Artista · %d canciones"), a->tracks);
+			if (fol)
+				util_strlcpy(t2, _("Artista · lo sigues"), sizeof t2);
+			else
+				snprintf(t2, sizeof t2, a->tracks == 1 ? _("Artista · 1 canción") : _("Artista · %d canciones"), a->tracks);
+			if (!fol && scl_following(a->id))
+				strncat(t2, _(" · lo sigues"), sizeof t2 - strlen(t2) - 1);
 			ic = IC_USER, col = T.accent2;
 		} else {
 			const ScList *p = &SCV.l[i - ntr - nar];
@@ -7350,7 +7501,7 @@ static void sc_bottom(void)
 				else
 					sc_play(trk, ntr, i, false);
 			} else if (i < ntr + nar)
-				sc_open(LK_ARTIST, SCV.a[i - ntr].id, SCV.a[i - ntr].name, 0);
+				sc_open(LK_ARTIST, arts[i - ntr].id, arts[i - ntr].name, 0);
 			else
 				sc_open(LK_SC, SCV.l[i - ntr - nar].id, SCV.l[i - ntr - nar].title, 0);
 		}
@@ -7362,7 +7513,7 @@ static void sc_bottom(void)
 		g_kdown = kd, g_krepeat = kr, g_touch = tc;
 	// opciones de una fila
 	{
-		enum { A_PLAY, A_SHUF, A_LIKE, A_ADD, A_REMOVE, A_ARTIST, A_DL, A_OPEN };
+		enum { A_PLAY, A_SHUF, A_LIKE, A_ADD, A_REMOVE, A_ARTIST, A_DL, A_OPEN, A_FOLLOW };
 		IconId ic[8];
 		const char *lab[8];
 		u32 col[8];
@@ -7384,8 +7535,12 @@ static void sc_bottom(void)
 			if (st_->downloadable)
 				ic[n] = IC_DOWNLOAD, lab[n] = _("Descargar a la SD"), col[n] = T.text, act[n++] = A_DL;
 		} else if (i >= ntr && i < cnt) {
-			util_strlcpy(title, i < ntr + nar ? SCV.a[i - ntr].name : SCV.l[i - ntr - nar].title, sizeof title);
+			util_strlcpy(title, i < ntr + nar ? arts[i - ntr].name : SCV.l[i - ntr - nar].title, sizeof title);
 			ic[n] = i < ntr + nar ? IC_USER : IC_LIST, lab[n] = _("Abrir"), col[n] = T.accent, act[n++] = A_OPEN;
+			if (i < ntr + nar) {
+				bool f = scl_following(arts[i - ntr].id);
+				ic[n] = f ? IC_CLOSE : IC_SPARK, lab[n] = f ? _("Dejar de seguir") : _("Seguir (avisar cuando suba algo)"), col[n] = T.text, act[n++] = A_FOLLOW;
+			}
 		}
 		if (!n)
 			SCV.om = false;
@@ -7410,9 +7565,11 @@ static void sc_bottom(void)
 					toast_icon(_("Descargando en /Music/SoundCloud…"), IC_DOWNLOAD, T.accent);
 				else
 					toast_icon(e == 1 ? _("Espera a que termine la descarga en curso") : _("No se pudo descargar"), IC_CLOSE, T.danger);
-			} else if (a == A_OPEN) {
+			} else if (a == A_FOLLOW)
+				sc_toggle_follow(arts[i - ntr].id, arts[i - ntr].name);
+			else if (a == A_OPEN) {
 				if (i < ntr + nar)
-					sc_open(LK_ARTIST, SCV.a[i - ntr].id, SCV.a[i - ntr].name, 0);
+					sc_open(LK_ARTIST, arts[i - ntr].id, arts[i - ntr].name, 0);
 				else
 					sc_open(LK_SC, SCV.l[i - ntr - nar].id, SCV.l[i - ntr - nar].title, 0);
 			}
@@ -7440,11 +7597,15 @@ static void sc_bottom(void)
 	}
 	// opciones de la lista abierta
 	{
-		enum { L_PLAY, L_SHUF, L_REN, L_DEL };
-		IconId ic[4];
-		const char *lab[4];
-		u32 col[4];
-		int act[4], n = 0;
+		enum { L_PLAY, L_SHUF, L_REN, L_DEL, L_FOLLOW };
+		IconId ic[5];
+		const char *lab[5];
+		u32 col[5];
+		int act[5], n = 0;
+		if (SCV.view == SV_LIST && SCV.lk == LK_ARTIST) {
+			bool f = scl_following(SCV.aid);
+			ic[n] = f ? IC_CLOSE : IC_SPARK, lab[n] = f ? _("Dejar de seguir") : _("Seguir (avisar cuando suba algo)"), col[n] = f ? T.text : 0xFF0055FF, act[n++] = L_FOLLOW;
+		}
 		if (SCV.view == SV_LIST && SCV.npt) {
 			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir todo"), col[n] = T.accent, act[n++] = L_PLAY;
 			ic[n] = IC_SPARK, lab[n] = _("Reproducir en aleatorio"), col[n] = T.text, act[n++] = L_SHUF;
@@ -7462,6 +7623,8 @@ static void sc_bottom(void)
 				sc_play(SCV.pt, SCV.npt, 0, a == L_SHUF);
 			else if (a == L_REN)
 				U.want_sclist = 2;
+			else if (a == L_FOLLOW)
+				sc_toggle_follow(SCV.aid, SCV.list_title);
 			else if (a == L_DEL) {
 				char msg[200];
 				snprintf(msg, sizeof msg, _("Se eliminará la lista «%s». Las canciones siguen en SoundCloud."), SCV.list_title);
