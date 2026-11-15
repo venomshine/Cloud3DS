@@ -18,6 +18,7 @@
 - Descargas: todo lo descargado queda en /Downloads; la app Descargas lo abre desde su tarjeta «Ver lo descargado».
 - Lector: PDF, manga (CBZ), EPUB, DOCX y TXT con biblioteca de portadas y progreso; se lee con la consola de lado, como un libro, con zoom, Circle Pad para moverse y manga de derecha a izquierda.
 - Inicio: arriba, lo que suena y el último libro («Seguir leyendo»).
+- Inicio, abajo: una franja con lo que está pasando (instalaciones, transferencias, descargas y la música, con pausa y siguiente). Si hay varias cosas, un punto por cada una a la derecha y se cambia deslizando, tocando los puntos o con la cruceta; si no pasa nada, el espacio de la SD y un consejo.
 - Web: el mando de la música enseña la carátula, el progreso y, con SoundCloud, «Me gusta».
 - Descargas: la app enseña arriba las descargas recientes, su progreso y sus errores; si el servicio HTTP del sistema no acepta la cadena de certificados propia, usa la del sistema.
 - Registro de congelaciones: si la interfaz deja de responder más de medio segundo, net.log apunta dónde y cuánto duró.

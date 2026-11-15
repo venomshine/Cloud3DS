@@ -1,6 +1,42 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Recibiendo «%s»':
+        ('Receiving «%s»',
+         '「%s」を受信中'),
+    'Enviando «%s»':
+        ('Sending «%s»',
+         '「%s」を送信中'),
+    'Copiando «%s»':
+        ('Copying «%s»',
+         '「%s」をコピー中'),
+    'Comprimiendo «%s»':
+        ('Compressing «%s»',
+         '「%s」を圧縮中'),
+    'Descomprimiendo «%s»':
+        ('Extracting «%s»',
+         '「%s」を展開中'),
+    'Descargando «%s»':
+        ('Downloading «%s»',
+         '「%s」をダウンロード中'),
+    'Consejo: con la tapa cerrada, L y R pausan o cambian la música':
+        ('Tip: with the lid closed, L and R pause or skip the music',
+         'ヒント: ふたを閉じたまま、LとRで音楽を一時停止・曲送り'),
+    'Consejo: en Música, el Circle Pad de lado recorre la canción':
+        ('Tip: in Music, move the Circle Pad sideways to seek',
+         'ヒント: ミュージックでスライドパッドを左右に倒すと曲内を移動'),
+    'Consejo: escanea el QR de Conectar con el móvil para ver tu SD':
+        ('Tip: scan the QR in Connect with your phone to see your SD card',
+         'ヒント: 「接続」のQRをスマホで読み取るとSDを表示'),
+    'Consejo: SELECT vuelve al inicio desde cualquier aplicación':
+        ('Tip: SELECT goes back to Home from any app',
+         'ヒント: SELECTでどのアプリからもホームに戻る'),
+    'Consejo: Y cambia el tamaño de los iconos del inicio':
+        ('Tip: Y changes the size of the Home icons',
+         'ヒント: Yでホームのアイコンサイズを変更'),
+    'Tarjeta SD · %s libres de %s':
+        ('SD card · %s free of %s',
+         'SDカード · %s 空き / %s'),
     'Próximamente':
         ('Coming soon',
          '近日公開'),

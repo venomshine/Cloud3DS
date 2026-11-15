@@ -12338,7 +12338,151 @@ static struct {
 	float fade;      // entrada al abrir el inicio
 	bool dragging;
 	float drag_dx;
+	bool strip;      // la franja de abajo, elegida con la cruceta
+	int scur;        // su tarjeta a la vista
+	float sdrag;     // deslizando sobre ella
 } HM = {.open = true};
+
+#define HM_STRIP_Y (SCR_H - 25)
+#define HM_STRIP_H 20
+
+/* ---- la franja de abajo del inicio (una línea): lo que está pasando. Si hay varias cosas, una tarjeta por cada una
+ * (lo más urgente primero: instalaciones, luego transferencias y descargas, y la música) y un punto por tarjeta a la
+ * derecha; se cambia deslizando, tocando los puntos o con ← → (bajando a ella con la cruceta). Si no pasa nada, el
+ * espacio de la SD y, cada pocos segundos, un consejo. Tocarla abre lo suyo */
+static void hm_launch(int i);
+static void hm_strip(bool modal)
+{
+	enum { K_IDLE, K_MUSIC, K_XFER };
+	int kind[MAX_XFERS + 2], xi[MAX_XFERS + 2], n = 0;
+	for (int pass = 0; pass < 2; pass++) // (las instalaciones, las primeras)
+		for (int k = 0; k < MAX_XFERS; k++)
+			if (V.xfers[k].st == XS_RUNNING && (V.xfers[k].kind == XF_INSTALL) == !pass)
+				kind[n] = K_XFER, xi[n++] = k;
+	if (mu_on())
+		kind[n] = K_MUSIC, xi[n++] = 0;
+	if (!n)
+		kind[n] = K_IDLE, xi[n++] = 0;
+	if (HM.scur >= n)
+		HM.scur = n - 1;
+	const float x = 8, w = BOT_W - 16, y = HM_STRIP_Y, h = HM_STRIP_H;
+	float rx = x + w - (n > 1 ? 14 : 4); // (lo de la derecha acaba aquí; luego, los puntos)
+	bool foc = U.buttons && HM.strip && !modal, pr = touch_in(x, y, w, h) && !modal && fabsf(HM.sdrag) < 8;
+	draw_rrect(x, y + 1.5f, w, h, h / 2, T.shadow);
+	draw_rrect(x, y, w, h, h / 2, pr ? T.surface2 : T.surface);
+	if (foc)
+		draw_rrect_outline(x - 2, y - 2, w + 4, h + 4, h / 2 + 2, 1.5f, T.accent);
+	int c = HM.scur;
+	float ty = y + h / 2 - text_lineh(TS_SUB) / 2, tx = x + 10;
+	char line[300];
+	float f = -1;
+	u32 fc = T.accent2;
+	int open_app = AP_FILES;
+	if (kind[c] == K_MUSIC) {
+		mu_sync_cover();
+		if (MU.cover.ok)
+			draw_texture_round(&MU.cover, x + 3, y + 3, h - 6, h - 6, 3, 1);
+		else
+			draw_icon(IC_SPEAKER, x + 3 + (h - 6) / 2, y + h / 2, 10, T.accent2);
+		tx = x + h + 4;
+		snprintf(line, sizeof line, MU.s.artist[0] ? "%s · %s" : "%s", MU.s.title, MU.s.artist);
+		f = MU.s.dur_ms ? fminf(1, (float)mu_pos() / MU.s.dur_ms) : 0;
+		// pausa y siguiente, pequeños
+		float px = rx - 30, nx = rx - 10;
+		mu_icon(px, y + h / 2, 10, MU.s.st == MU_PLAY, T.text);
+		draw_tri(nx - 5, y + h / 2 - 4, nx - 5, y + h / 2 + 4, nx, y + h / 2, T.text);
+		draw_tri(nx, y + h / 2 - 4, nx, y + h / 2 + 4, nx + 5, y + h / 2, T.text);
+		if (!modal && tap(px - 10, y, 20, h)) {
+			music_toggle(), g_touch.up = false;
+		} else if (!modal && tap(nx - 10, y, 20, h))
+			music_next(), g_touch.up = false;
+		rx = px - 14;
+		open_app = -1;
+	} else if (kind[c] == K_XFER) {
+		const Xfer *t = &V.xfers[xi[c]];
+		static const char *const L[] = {N_("Recibiendo «%s»"), N_("Enviando «%s»"), N_("Copiando «%s»"), N_("Instalando «%s»"), N_("Comprimiendo «%s»"),
+		                                N_("Descomprimiendo «%s»"), N_("Descargando «%s»")};
+		static const IconId IC[] = {IC_DOWNLOAD, IC_UPLOAD, IC_DUP, IC_DOWNLOAD, IC_ARCHIVE, IC_ARCHIVE, IC_DOWNLOAD};
+		int kd = t->kind;
+		fc = kd == XF_INSTALL ? T.ok : T.accent;
+		draw_icon(IC[kd], x + 12, y + h / 2, 10, fc);
+		tx = x + 22;
+		char nm[200], pc[24] = "", sp[24] = "";
+		snprintf(nm, sizeof nm, _(L[kd]), t->name);
+		f = t->total ? fminf(1, (float)((double)t->done / t->total)) : 0;
+		if (t->total)
+			snprintf(pc, sizeof pc, " · %d %%", (int)(f * 100));
+		if (t->speed && kd != XF_INSTALL) {
+			char sz[16];
+			util_fmt_size(sz, sizeof sz, t->speed);
+			snprintf(sp, sizeof sp, " · %s/s", sz);
+		}
+		snprintf(line, sizeof line, "%s%s%s", nm, pc, sp);
+		open_app = kd == XF_FETCH ? AP_DL : kd == XF_UPLOAD || kd == XF_DOWNLOAD ? AP_CONNECT : kd == XF_INSTALL ? -2 : AP_FILES;
+	} else { // nada en marcha: la SD y, cada 6 s, un consejo
+		static const char *const TIPS[] = {N_("Consejo: con la tapa cerrada, L y R pausan o cambian la música"), N_("Consejo: en Música, el Circle Pad de lado recorre la canción"),
+		                                   N_("Consejo: escanea el QR de Conectar con el móvil para ver tu SD"), N_("Consejo: SELECT vuelve al inicio desde cualquier aplicación"),
+		                                   N_("Consejo: Y cambia el tamaño de los iconos del inicio")};
+		int slot = (int)(util_ms() / 6000);
+		u64 fr = 0, tot = 0;
+		bool sp = sd_space(&fr, &tot) && tot;
+		if (slot % 2 == 0 && sp) {
+			char a[24], b[24];
+			util_fmt_size(a, sizeof a, fr), util_fmt_size(b, sizeof b, tot);
+			snprintf(line, sizeof line, _("Tarjeta SD · %s libres de %s"), a, b);
+			f = 1 - (float)((double)fr / tot);
+			draw_icon(IC_FOLDER, x + 12, y + h / 2, 10, T.accent2);
+			tx = x + 22;
+		} else {
+			util_strlcpy(line, _(TIPS[(slot / 2) % (sizeof TIPS / sizeof TIPS[0])]), sizeof line);
+			draw_icon(IC_BULB, x + 12, y + h / 2, 10, T.warn);
+			tx = x + 22;
+		}
+	}
+	g_clip_ell = !foc;
+	text_draw_clip(line, tx, ty, rx - tx - 4, TS_SUB, T.text);
+	g_clip_ell = false;
+	if (f >= 0) { // el progreso: una línea fina al pie
+		float pw = rx - tx - 4;
+		draw_rect(tx, y + h - 3, pw, 1.5f, col_alpha(T.text3, 0.25f));
+		draw_rect(tx, y + h - 3, pw * f, 1.5f, fc);
+	}
+	if (n > 1) { // un punto por tarjeta; el de la que se ve, más grande y de color
+		float dx = x + w - 8, gap = 5, top = y + h / 2 - (n - 1) * gap / 2;
+		for (int k = 0; k < n; k++)
+			draw_circle(dx, top + k * gap, k == c ? 2.2f : 1.5f, k == c ? T.accent2 : col_alpha(T.text3, 0.6f));
+		if (!modal && tap(x + w - 16, y, 16, h))
+			HM.scur = (c + 1) % n, g_touch.up = false;
+	}
+	if (modal)
+		return;
+	// deslizar sobre ella: la siguiente o la anterior
+	if (g_touch.held && g_touch.drag && touch_in(x, y - 6, w, h + 12) && g_touch.sy >= y - 6)
+		HM.sdrag += g_touch.x - g_touch.px;
+	if (!g_touch.held && HM.sdrag) {
+		if (HM.sdrag < -24 && n > 1)
+			HM.scur = (c + 1) % n;
+		else if (HM.sdrag > 24 && n > 1)
+			HM.scur = (c + n - 1) % n;
+		HM.sdrag = 0;
+		g_touch.up = false;
+	}
+	if (HM.strip && U.buttons) {
+		if ((g_krepeat & KEY_RIGHT) && n > 1)
+			HM.scur = (c + 1) % n;
+		if ((g_krepeat & KEY_LEFT) && n > 1)
+			HM.scur = (c + n - 1) % n;
+		g_krepeat &= ~(KEY_LEFT | KEY_RIGHT);
+	}
+	bool go = tap(x, y, rx - x, h) || (HM.strip && U.buttons && (g_kdown & KEY_A));
+	if (go) {
+		g_kdown &= ~KEY_A, g_touch.up = false;
+		if (open_app == -1)
+			MU.open = MU.just = true, MU.sel = 2;
+		else if (open_app >= 0)
+			hm_launch(open_app);
+	}
+}
 
 static const IconId AP_IC[AP_N] = {IC_FOLDER, IC_GAMEPAD, IC_LAPTOP, IC_DOWNLOAD, IC_CLOUD, IC_GLOBE, IC_SPEAKER, IC_BOOK, IC_SEND, IC_GEAR};
 
@@ -12773,7 +12917,15 @@ static void hm_bottom(void)
 	// la cuadrícula
 	int cols = hm_cols(), rows = hm_rows(), per = hm_per_page(), pages = hm_pages();
 	float s = HM.small ? 38 : 50, cw = (BOT_W - 12) / (float)cols, gy = HM.small ? HM_BAR + 14 : HM_BAR + 16, rh = HM.small ? 54 : 80;
-	if (!modal) {
+	if (!modal && !HM.small && HM.strip) { // en la franja: ← → sus tarjetas (en hm_strip), ↑ de vuelta a los iconos
+		if (g_krepeat & KEY_UP)
+			HM.strip = false;
+		g_krepeat &= ~(KEY_UP | KEY_DOWN);
+	} else if (!modal && !HM.small && (g_krepeat & KEY_DOWN) && ((HM.sel % per) / cols == rows - 1 || HM.sel + cols >= AP_N)) {
+		HM.strip = true, U.buttons = true; // (de la última fila, abajo: a la franja)
+		g_krepeat &= ~KEY_DOWN;
+	}
+	if (!modal && !HM.strip) {
 		int sel = HM.sel;
 		if (g_krepeat & KEY_RIGHT) sel = sel % cols == cols - 1 || sel + 1 >= AP_N ? (sel / per + 1 < pages ? (sel / per + 1) * per + (sel % per) / cols * cols : sel) : sel + 1;
 		if (g_krepeat & KEY_LEFT) sel = sel % cols == 0 ? (sel / per > 0 ? (sel / per - 1) * per + (sel % per) / cols * cols + cols - 1 : sel) : sel - 1;
@@ -12789,7 +12941,7 @@ static void hm_bottom(void)
 			hm_save();
 		}
 		// deslizar para cambiar de página
-		if (g_touch.held && g_touch.drag && g_touch.sy > HM_BAR)
+		if (g_touch.held && g_touch.drag && g_touch.sy > HM_BAR && (HM.small || g_touch.sy < HM_STRIP_Y - 4))
 			HM.dragging = true, HM.drag_dx += g_touch.x - g_touch.px;
 		if (HM.dragging && !g_touch.held) {
 			int pg = HM.sel / per;
@@ -12808,7 +12960,7 @@ static void hm_bottom(void)
 		float tx = 6 + p * BOT_W + (k % cols) * cw + (cw - s) / 2 + shift, ty = gy + (k / cols) * rh;
 		if (tx + s < -10 || tx > BOT_W + 10)
 			continue;
-		hm_tile(i, tx, ty, s, i == HM.sel, !HM.small, 1);
+		hm_tile(i, tx, ty, s, i == HM.sel && !HM.strip, !HM.small, 1);
 		if (!modal && !g_touch.drag && tap(tx - 4, ty - 4, s + 8, s + (HM.small ? 8 : 22))) {
 			if (HM.sel == i || HM.small) // (como en el menú de la consola: tocar la elegida la abre)
 				hm_launch(i);
@@ -12826,7 +12978,11 @@ static void hm_bottom(void)
 			dx += on ? 22 : 12;
 		}
 	}
-	if (!modal && (g_kdown & KEY_A))
+	if (!HM.small)
+		hm_strip(modal);
+	else
+		HM.strip = false;
+	if (!modal && !HM.strip && (g_kdown & KEY_A))
 		hm_launch(HM.sel);
 	music_sheet();
 	qrs_draw();
