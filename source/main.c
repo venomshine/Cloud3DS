@@ -1117,6 +1117,7 @@ static struct {
 	float bars[24];   // la onda de arriba
 } MU = {.cover_track = 0xFFFFFFFF};
 
+static int g_sheets_now; // hojas de opciones a la vista en esta vuelta (la barra de la música no se pone encima)
 #define ST_SC (T.accent2) // el acento de Música: el azul violeta del resto de Cloud3DS, el único color
 #define MU_ACC ST_SC
 
@@ -1256,7 +1257,7 @@ static void music_top(float a)
 static bool vw_is_open(void);
 static bool mu_bar_shown(void)
 {
-	return mu_on() && !MU.open && !(U.tab == TAB_FILES && vw_is_open()) && !U.ins_pend;
+	return mu_on() && !MU.open && !g_sheets_now && !(U.tab == TAB_FILES && vw_is_open()) && !U.ins_pend;
 }
 
 static void music_bar(void)
@@ -1909,6 +1910,10 @@ static List *cur_list(void)
 static bool hdr_enter(void);
 static void sc_show(void);   // la app Música, en SoundCloud
 static void sc_toggle_like(const ScTrack *t);
+static void sc_open_art(int lk, const char *id, const char *title, int mine, const char *art);
+enum { SV_HOME, SV_RESULTS, SV_LIST };
+enum { LK_SC, LK_ARTIST, LK_LIKES, LK_MINE, LK_NEW, LK_FOLLOWS };
+
 static void ml_top(void);    // la app Música: su biblioteca
 static void rv_open(const char *path, int ret_app); // Lector: abrir un documento (al cerrarlo, vuelve a ret_app)
 static void rv_cfg_load(void);
@@ -5797,6 +5802,7 @@ static int sheet_list(bool *open, bool *just, float *anim, int *sel, const char 
 	*anim = approach(*anim, *open ? 1 : 0, 16);
 	if (*anim < 0.01f)
 		return -1;
+	g_sheets_now++;
 	float a = ease_out_cubic(*anim);
 	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
 	// como el menú de un archivo: el título y «Cerrar» arriba, y una fila por acción con su icono
@@ -6859,7 +6865,7 @@ static void music_sheet(void)
 	// parar y su carpeta
 	char b1[48], b2[48];
 	snprintf(b1, sizeof b1, "%s %s", GLYPH_X, _("Detener"));
-	snprintf(b2, sizeof b2, "%s %s", GLYPH_Y, scs ? _("Ir a SoundCloud") : _("Ir a la carpeta"));
+	snprintf(b2, sizeof b2, "%s %s", GLYPH_Y, scs ? _("Ver artista") : _("Ir a la carpeta"));
 	draw_rrect(18, ly, lw, 26, 13, touch_in(18, ly, lw, 26) ? T.surface2 : T.bg);
 	float gox = scs ? 34 + lw * 2 : 26 + lw; // («Ir a…», a la derecha)
 	draw_rrect(gox, ly, lw, 26, 13, touch_in(gox, ly, lw, 26) ? T.surface2 : T.bg);
@@ -6871,6 +6877,9 @@ static void music_sheet(void)
 	} else if (!fresh && (tap(gox, ly, lw, 26) || (g_kdown & KEY_Y)) && scs) {
 		MU.open = false;
 		sc_show();
+		ScTrack cur; // (su perfil: el del autor de lo que suena)
+		if (sc_track(MU.s.name + 3, &cur) && cur.uid[0])
+			sc_open_art(LK_ARTIST, cur.uid, cur.artist, 0, NULL);
 	} else if (!fresh && (tap(gox, ly, lw, 26) || (g_kdown & KEY_Y)) && strstr(MU.s.dir, CLOUD_CACHE)) {
 		MU.open = false; // (de la nube: su carpeta es la de la nube, no la copia que se bajó)
 		if (!CLU.open)
@@ -6935,8 +6944,6 @@ static void music_sheet(void)
 // géneros y las búsquedas recientes. Buscar (X o la lupa) da canciones, artistas y playlists. A reproduce desde la canción
 // elegida la lista que se ve, o abre un artista o una lista; Y, las opciones (Me gusta, añadir a una lista, ir al
 // artista, descargar). B vuelve atrás. «En la consola» lleva a la biblioteca de la SD
-enum { SV_HOME, SV_RESULTS, SV_LIST };
-enum { LK_SC, LK_ARTIST, LK_LIKES, LK_MINE, LK_NEW, LK_FOLLOWS };
 static struct {
 	bool local;          // en la biblioteca de la SD
 	int view, back;      // SV_*: lo que se ve y a dónde vuelve B desde una lista
@@ -6969,7 +6976,7 @@ static struct {
 	float lm_anim;
 	int lm_sel;
 	bool scerr_shown;
-	ScArtist artist;     // la página del artista abierto (sus datos) y cuántas de sus canciones son las populares
+	ScProfile artist;    // la página del artista abierto (sus datos) y cuántas de sus canciones son las populares
 	int ntop;
 	float cx[SC_SECTIONS + 1], cxt[SC_SECTIONS + 1]; // inicio: desplazamiento de cada carrusel (0: tus listas)
 	int dax, dcar;       // el arrastre en curso: 0 sin decidir, 1 de lado (el carrusel dcar), 2 vertical
@@ -6977,7 +6984,48 @@ static struct {
 	ScList *apl;         // las listas y álbumes del artista abierto
 	int napl;
 	char (*fa_art)[128]; // la foto de cada artista que se sigue
+	int atab;            // la sección del perfil a la vista (0 populares, 1 canciones, 2 álbumes, 3 listas)
 } SCV;
+
+// el perfil del que se abrió un álbum o una lista: para volver a él con B sin pedirlo otra vez
+static struct {
+	bool valid;
+	ScTrack *pt;
+	ScList *apl;
+	int npt, napl, ntop, atab, back;
+	ScProfile prof;
+	char aid[16], title[128], art[256];
+	List lp;
+} SCA;
+
+static void sc_artist_save(void)
+{
+	if (!SCA.pt && (!(SCA.pt = malloc(sizeof *SCA.pt * SC_MAX)) || !(SCA.apl = malloc(sizeof *SCA.apl * SC_MAX))))
+		return;
+	memcpy(SCA.pt, SCV.pt, sizeof *SCA.pt * SCV.npt), SCA.npt = SCV.npt;
+	memcpy(SCA.apl, SCV.apl, sizeof *SCA.apl * SCV.napl), SCA.napl = SCV.napl;
+	SCA.ntop = SCV.ntop, SCA.atab = SCV.atab, SCA.back = SCV.back, SCA.prof = SCV.artist, SCA.lp = SCV.lp;
+	util_strlcpy(SCA.aid, SCV.aid, sizeof SCA.aid);
+	util_strlcpy(SCA.title, SCV.list_title, sizeof SCA.title);
+	util_strlcpy(SCA.art, SCV.list_art, sizeof SCA.art);
+	SCA.valid = true;
+}
+
+// B en lo que se abrió desde un perfil: el perfil, tal como estaba
+static bool sc_artist_restore(void)
+{
+	if (!SCA.valid || SCV.lk == LK_ARTIST)
+		return SCA.valid = false;
+	SCA.valid = false;
+	memcpy(SCV.pt, SCA.pt, sizeof *SCA.pt * SCA.npt), SCV.npt = SCA.npt;
+	memcpy(SCV.apl, SCA.apl, sizeof *SCA.apl * SCA.napl), SCV.napl = SCA.napl;
+	SCV.ntop = SCA.ntop, SCV.atab = SCA.atab, SCV.back = SCA.back, SCV.artist = SCA.prof, SCV.lp = SCA.lp;
+	util_strlcpy(SCV.aid, SCA.aid, sizeof SCV.aid);
+	util_strlcpy(SCV.list_title, SCA.title, sizeof SCV.list_title);
+	util_strlcpy(SCV.list_art, SCA.art, sizeof SCV.list_art);
+	SCV.view = SV_LIST, SCV.lk = LK_ARTIST, SCV.want = 0, SCV.sv_fresh = true;
+	return true;
+}
 
 // ---- carátulas pequeñas (las de las filas y las tarjetas): se piden al dibujarlas y llegan solas (sc_thumb_*). Se
 // guardan las 40 últimas usadas; la grande de arriba, aparte
@@ -6993,6 +7041,10 @@ static struct {
 	Texture tex;
 	u32 tint; // su color (para el fondo)
 } HERO;
+static struct {
+	char url[256];
+	Texture tex;
+} BANNER; // la imagen de cabecera del perfil abierto
 static u32 st_tint_of(const u8 *rgba, int w, int h);
 static u32 tc_frame;
 
@@ -7015,7 +7067,11 @@ static void tc_pump(void)
 	u8 *rgba;
 	int w, h;
 	for (int k = 0; k < 3 && sc_thumb_take(url, sizeof url, &rgba, &w, &h); k++) {
-		if (!strcmp(url, HERO.url)) {
+		if (!strcmp(url, BANNER.url)) {
+			tex_free(&BANNER.tex);
+			if (rgba)
+				tex_from_rgba(&BANNER.tex, rgba, w, h);
+		} else if (!strcmp(url, HERO.url)) {
 			tex_free(&HERO.tex);
 			if (rgba && tex_from_rgba(&HERO.tex, rgba, w, h))
 				HERO.tint = st_tint_of(rgba, w, h);
@@ -7071,6 +7127,18 @@ static Texture *hero_get(const char *url)
 		sc_thumb_want(big);
 	}
 	return HERO.tex.ok ? &HERO.tex : NULL;
+}
+
+static Texture *banner_get(const char *url)
+{
+	if (!url || !url[0] || strlen(url) >= sizeof BANNER.url)
+		return NULL;
+	if (strcmp(BANNER.url, url)) {
+		tex_free(&BANNER.tex);
+		util_strlcpy(BANNER.url, url, sizeof BANNER.url);
+		sc_thumb_want(url);
+	}
+	return BANNER.tex.ok ? &BANNER.tex : NULL;
 }
 
 // una carátula de s × s con esquinas r (r ≥ s/2: redonda, como las de los artistas). Sin ella (aún): un cuadro del
@@ -7378,6 +7446,7 @@ static void sc_news_tick(void)
 static void sc_go(const char *q)
 {
 	util_strlcpy(SCV.q, q, sizeof SCV.q);
+	SCA.valid = false;
 	SCV.view = SV_RESULTS, SCV.want = 1, SCV.nt = SCV.nl = SCV.na = 0;
 	SCV.lr.sel = 0, SCV.lr.off = SCV.lr.target = 0;
 	if (SCS.verified)
@@ -7416,8 +7485,10 @@ static void sc_open_art(int lk, const char *id, const char *title, int mine, con
 	if (!sc_alloc())
 		return;
 	util_strlcpy(SCV.list_art, art ? art : lk == LK_LIKES ? scl_list_art(SCL_LIKES) : lk == LK_MINE ? scl_list_art(mine) : "", sizeof SCV.list_art);
-	if (lk == LK_ARTIST && (!id || strcmp(SCV.artist.id, id)))
+	if (lk == LK_ARTIST && (!id || strcmp(SCV.artist.a.id, id)))
 		memset(&SCV.artist, 0, sizeof SCV.artist), SCV.ntop = 0;
+	if (lk == LK_ARTIST) // (otro perfil: desde su primera sección, y ya no se vuelve al anterior)
+		SCA.valid = false, SCV.atab = 0;
 	SCV.back = SCV.view == SV_LIST ? SCV.back : SCV.view;
 	SCV.view = SV_LIST, SCV.lk = lk, SCV.mine = mine, SCV.want = 2, SCV.npt = 0, SCV.nsv = 0, SCV.sv_fresh = false, SCV.napl = 0;
 	SCV.lp.sel = 0, SCV.lp.off = SCV.lp.target = 0;
@@ -7478,6 +7549,8 @@ static const char *sc_err_text(const char *e)
 		return _("Sin conexión a Internet. Comprueba el Wi-Fi e inténtalo de nuevo.");
 	if (!strcmp(e, "noid"))
 		return _("No se pudo conectar con SoundCloud. Inténtalo de nuevo más tarde.");
+	if (!strcmp(e, "drm"))
+		return _("Esta canción está protegida (DRM): SoundCloud solo deja escucharla en su app oficial.");
 	return _("SoundCloud no respondió. Inténtalo de nuevo.");
 }
 
@@ -7532,10 +7605,10 @@ static void sc_poll(void)
 			scl_touch(t, nt);
 		if (SCV.lk == LK_ARTIST) {
 			memcpy(SCV.apl, l, sizeof *l * nl), SCV.napl = nl;
-			if (!sc_artist_page(&SCV.artist, &SCV.ntop) || strcmp(SCV.artist.id, SCV.aid))
+			if (!sc_artist_page(&SCV.artist, &SCV.ntop) || strcmp(SCV.artist.a.id, SCV.aid))
 				memset(&SCV.artist, 0, sizeof SCV.artist), SCV.ntop = 0;
-			if (SCV.artist.art[0] && scl_following(SCV.aid)) // (su foto, a los seguidos)
-				scl_follow(SCV.aid, SCV.artist.name, SCV.artist.art, true);
+			if (SCV.artist.a.art[0] && scl_following(SCV.aid)) // (su foto, a los seguidos)
+				scl_follow(SCV.aid, SCV.artist.a.name, SCV.artist.a.art, true);
 		}
 		if (!SCV.list_art[0] && nt && SCV.lk != LK_ARTIST)
 			util_strlcpy(SCV.list_art, t[0].art, sizeof SCV.list_art);
@@ -7548,8 +7621,23 @@ static void sc_play(const ScTrack *trk, int n, int start, bool shuffle)
 	static char (*names)[256];
 	if (!n || (!names && !(names = malloc(sizeof *names * SC_MAX))))
 		return;
-	for (int k = 0; k < n; k++)
-		snprintf(names[k], sizeof names[0], "sc:%s", trk[k].id);
+	if (start >= 0 && start < n && trk[start].locked) {
+		toast_icon(_("Esta canción está protegida (DRM): SoundCloud solo deja escucharla en su app oficial."), IC_LOCK, T.text2);
+		return;
+	}
+	int m = 0, st = 0; // (las protegidas, fuera de la lista)
+	for (int k = 0; k < n; k++) {
+		if (trk[k].locked)
+			continue;
+		if (k == start)
+			st = m;
+		snprintf(names[m++], sizeof names[0], "sc:%s", trk[k].id);
+	}
+	if (!m) {
+		toast_icon(_("Ninguna de estas canciones se puede escuchar aquí: están protegidas (DRM)."), IC_LOCK, T.text2);
+		return;
+	}
+	n = m, start = st;
 	music_set_shuffle(shuffle);
 	if (!music_play("", names, n, start)) {
 		MusicState ms;
@@ -7878,8 +7966,85 @@ static void sc_hero_top(const char *kind, const char *title, const char *sub, co
 		text_wrap_lines(msg, TOP_W - 48, TS_SUB, 2, 24, y + S + 14, mc, true);
 }
 
+// arriba, el perfil de un artista: su imagen de cabecera (o una luz), la foto en redondo, el nombre con su insignia,
+// seguidores, canciones y de dónde es, y su biografía (o, sin ella, su canción más escuchada)
+static void sc_profile_top(const char *msg, u32 mc)
+{
+	const ScProfile *pf = &SCV.artist;
+	Texture *bn = banner_get(pf->banner);
+	draw_rect(0, 0, TOP_W, SCR_H, ST_BG);
+	if (bn) { // (a lo ancho, recortada por los lados para que llene 400 × 112)
+		float bh = 112, sw = bn->w * bh / bn->h, u = sw > TOP_W ? (1 - TOP_W / sw) / 2 : 0;
+		draw_texture_part(bn, 0, 0, TOP_W, bh, u, 0, 1 - u, 1);
+		draw_grad_v(0, 0, TOP_W, 34, 0x90000000, 0x00000000);
+		draw_grad_v(0, 50, TOP_W, 62, ST_BG & 0x00FFFFFF, ST_BG);
+	} else {
+		st_aurora(0, ST_SC);
+		draw_rect(0, 112, TOP_W, SCR_H - 112, ST_BG);
+		draw_grad_v(0, 80, TOP_W, 32, ST_BG & 0x00FFFFFF, ST_BG);
+	}
+	draw_header();
+	const float AV = 88, ax = 22, ay = 64;
+	const char *av = pf->a.art[0] ? pf->a.art : SCV.list_art;
+	Texture *h = hero_get(av);
+	draw_circle(ax + AV / 2, ay + AV / 2, AV / 2 + 3, ST_BG);
+	if (h)
+		draw_texture_round(h, ax, ay, AV, AV, AV / 2, 1);
+	else {
+		draw_circle(ax + AV / 2, ay + AV / 2, AV / 2, st_shift(ST_SC, 0, 0.35f, 1));
+		draw_icon(IC_USER, ax + AV / 2, ay + AV / 2, 34, 0xE0FFFFFF);
+	}
+	float tx = ax + AV + 16, tw = TOP_W - tx - 18, ty = 112;
+	const char *name = pf->a.name[0] ? pf->a.name : SCV.list_title;
+	if (pf->a.verified)
+		text_badge(name, (int)strlen(name), tx, ty, tw, 0.82f, 0xFFFFFFFF);
+	else
+		text_draw_clip(name, tx, ty, tw, 0.82f, 0xFFFFFFFF);
+	ty += text_lineh(0.82f) + 2;
+	char l[200] = "";
+	if (pf->a.id[0]) {
+		char fc[16];
+		fmt_count(pf->a.followers, fc, sizeof fc);
+		snprintf(l, sizeof l, pf->a.tracks == 1 ? _("%s seguidores · 1 canción") : _("%s seguidores · %d canciones"), fc, pf->a.tracks);
+		if (pf->city[0] || pf->country[0]) {
+			char w[80];
+			snprintf(w, sizeof w, " · %s%s%s", pf->city, pf->city[0] && pf->country[0] ? ", " : "", pf->country);
+			strncat(l, w, sizeof l - strlen(l) - 1);
+		}
+	} else
+		util_strlcpy(l, _("Cargando…"), sizeof l);
+	text_draw_clip(l, tx, ty, tw, TS_SUB, 0xB0FFFFFF);
+	ty += text_lineh(TS_SUB) + 4;
+	if (scl_following(SCV.aid)) { // (lo sigues: una etiqueta)
+		const char *fl = _("Lo sigues");
+		float fw = text_width(fl, TS_SUB) + 16;
+		draw_rrect(tx, ty, fw, 16, 8, col_alpha(ST_SC, 0.3f));
+		text_draw(fl, tx + 8, ty + 8 - text_lineh(TS_SUB) / 2, TS_SUB, 0xFFFFFFFF);
+	}
+	float by = ay + AV + 14;
+	if (msg)
+		text_wrap_lines(msg, TOP_W - 44, TS_SUB, 3, 22, by, mc, true);
+	else if (pf->bio[0])
+		text_wrap_lines(pf->bio, TOP_W - 44, TS_SUB, 4, 22, by, 0xC0FFFFFF, true);
+	else if (SCV.ntop && SCV.npt) {
+		char pc[16], b[220];
+		fmt_count(SCV.pt[0].plays, pc, sizeof pc);
+		snprintf(b, sizeof b, _("Su canción más escuchada: «%s» (%s reproducciones)."), SCV.pt[0].title, pc);
+		text_wrap_lines(b, TOP_W - 44, TS_SUB, 3, 22, by, 0xA0FFFFFF, true);
+	}
+	char hint[160];
+	snprintf(hint, sizeof hint, _("L R Secciones · %s Reproducir · %s Opciones"), GLYPH_A, GLYPH_Y);
+	text_draw_right(hint, TOP_W - 16, SCR_H - 18, TS_SUB, 0x80FFFFFF);
+}
+
 static void sc_top(void)
 {
+	if (SCV.view == SV_LIST && SCV.lk == LK_ARTIST && !SCV.local) { // (el perfil de un artista, aunque suene algo: lo que suena sigue en la barra de abajo)
+		MusicState ms0;
+		music_get(&ms0);
+		sc_profile_top(ms0.st == MU_ERROR && !strncmp(ms0.err, "sc_", 3) ? sc_err_text(ms0.err + 3) : SCV.st == SCQ_ERR ? sc_err_text(SCV.err) : NULL, 0xFF7070FF);
+		return;
+	}
 	if (mu_on()) {
 		music_stage();
 		return;
@@ -7918,10 +8083,10 @@ static void sc_top(void)
 			         SCV.na, SCV.nl);
 		else if (SCV.lk == LK_FOLLOWS)
 			snprintf(sub, sizeof sub, SCV.nfa == 1 ? _("1 artista") : _("%d artistas"), SCV.nfa);
-		else if (SCV.lk == LK_ARTIST && SCV.artist.id[0]) {
+		else if (SCV.lk == LK_ARTIST && SCV.artist.a.id[0]) {
 			char fc[16];
-			fmt_count(SCV.artist.followers, fc, sizeof fc);
-			snprintf(sub, sizeof sub, SCV.artist.tracks == 1 ? _("%s seguidores · 1 canción") : _("%s seguidores · %d canciones"), fc, SCV.artist.tracks);
+			fmt_count(SCV.artist.a.followers, fc, sizeof fc);
+			snprintf(sub, sizeof sub, SCV.artist.a.tracks == 1 ? _("%s seguidores · 1 canción") : _("%s seguidores · %d canciones"), fc, SCV.artist.a.tracks);
 		} else {
 			snprintf(sub, sizeof sub, n == 1 ? _("1 canción") : _("%d canciones"), n);
 			strncat(sub, dur, sizeof sub - strlen(sub) - 1);
@@ -7930,7 +8095,7 @@ static void sc_top(void)
 			ic = IC_SEARCH;
 		else if (SCV.lk == LK_ARTIST) {
 			round = true, ic = IC_USER, icol = MU_ACC;
-			art = SCV.artist.art[0] ? SCV.artist.art : SCV.list_art;
+			art = SCV.artist.a.art[0] ? SCV.artist.a.art : SCV.list_art;
 		} else if (SCV.lk == LK_LIKES)
 			ic = IC_HEART, icol = MU_ACC;
 		else if (SCV.lk == LK_NEW)
@@ -7938,7 +8103,7 @@ static void sc_top(void)
 		else if (SCV.lk == LK_FOLLOWS)
 			ic = IC_USER, icol = MU_ACC, art = "";
 		const char *k = SCV.view == SV_RESULTS ? _("Búsqueda")
-		              : SCV.lk == LK_ARTIST   ? (scl_following(SCV.aid) ? _("Artista que sigues") : SCV.artist.verified ? _("Artista verificado") : _("Artista"))
+		              : SCV.lk == LK_ARTIST   ? (scl_following(SCV.aid) ? _("Artista que sigues") : SCV.artist.a.verified ? _("Artista verificado") : _("Artista"))
 		              : SCV.lk == LK_SC       ? _("Playlist de SoundCloud")
 		              : SCV.lk == LK_LIKES    ? _("Tu biblioteca")
 		              : SCV.lk == LK_NEW      ? _("De los artistas que sigues")
@@ -8225,17 +8390,68 @@ static void sc_bottom(void)
 		g_kdown = g_krepeat = 0;
 		memset(&g_touch, 0, sizeof g_touch);
 	}
-	// cabecera: al inicio (o atrás), las opciones de la lista, la búsqueda y «En la consola»
+	// cabecera: al inicio (o atrás), las opciones de la lista, la búsqueda y «En la consola». En el perfil de un
+	// artista, en lugar del nombre (que va arriba), sus secciones: populares, canciones, álbumes y listas
+	bool art_pg = SCV.view == SV_LIST && SCV.lk == LK_ARTIST;
+	static ScList *alb, *apls;
+	if (!alb && (!(alb = malloc(sizeof *alb * SC_MAX)) || !(apls = malloc(sizeof *apls * SC_MAX))))
+		return;
+	int nalb = 0, napls = 0, tabs[4], ntab = 0;
+	if (art_pg) {
+		for (int k = 0; k < SCV.napl; k++)
+			if (SCV.apl[k].album)
+				alb[nalb++] = SCV.apl[k];
+			else
+				apls[napls++] = SCV.apl[k];
+		if (SCV.ntop)
+			tabs[ntab++] = 0;
+		if (SCV.npt > SCV.ntop)
+			tabs[ntab++] = 1;
+		if (nalb)
+			tabs[ntab++] = 2;
+		if (napls)
+			tabs[ntab++] = 3;
+		int k = 0;
+		while (k < ntab && tabs[k] != SCV.atab)
+			k++;
+		if (k == ntab && ntab)
+			SCV.atab = tabs[0];
+	}
 	const char *cl = _("En la consola");
-	float cw = text_width(cl, TS_SUB) + 34, cx = BOT_W - 8 - cw;
+	float cw = text_width(cl, TS_SUB) + 34, cx = art_pg ? BOT_W + 4 : BOT_W - 8 - cw; // (en el perfil, sin «En la consola»)
 	float sx = cx - 34;
 	bool mine = SCV.view == SV_LIST && (SCV.lk == LK_LIKES || SCV.lk == LK_MINE);
 	float dx = sx - 30; // (⋮ de la lista)
 	if (SCV.view != SV_HOME) {
-		tab_header_w(SCV.view == SV_LIST ? SCV.list_title : SCV.q, true, dx - 40);
-		if (!sheet && (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))) {
-			SCV.view = SCV.view == SV_LIST ? SCV.back : SV_HOME;
+		bool tabbed = art_pg && ntab > 1;
+		float bw = tabbed ? 30 : fminf(170, dx - 6); // (lo que vuelve atrás: sin pisar los botones de la derecha)
+		tab_header_w(tabbed ? "" : SCV.view == SV_LIST ? SCV.list_title : SCV.q, true, dx - 40);
+		if (tabbed) {
+			static const char *const TL[4] = {N_("Populares"), N_("Canciones"), N_("Álbumes"), N_("Listas")};
+			const char *opts[4];
+			int cur = 0;
+			for (int k = 0; k < ntab; k++) {
+				opts[k] = _(TL[tabs[k]]);
+				if (tabs[k] == SCV.atab)
+					cur = k;
+			}
+			float sw = (dx - 4 - 34) / ntab;
+			int r = segmented(34, 5, sw * ntab, 22, opts, ntab, cur, false);
+			for (int k = 0; k < ntab; k++)
+				if (!sheet && hdr_hit(34 + k * sw, 5, sw, 22))
+					r = k;
+			if (!sheet && (g_kdown & (KEY_L | KEY_ZL)) && cur > 0)
+				r = cur - 1;
+			if (!sheet && (g_kdown & (KEY_R | KEY_ZR)) && cur < ntab - 1)
+				r = cur + 1;
+			if (r >= 0 && r != cur)
+				SCV.atab = tabs[r], SCV.lp.sel = 0, SCV.lp.off = SCV.lp.target = 0;
+		}
+		if (!sheet && (tap(0, 0, bw, VIEW_Y) || (g_kdown & KEY_B))) {
 			g_kdown &= ~KEY_B;
+			if (SCV.view == SV_LIST && sc_artist_restore()) // (de un álbum abierto desde un perfil: al perfil)
+				return;
+			SCV.view = SCV.view == SV_LIST ? SCV.back : SV_HOME;
 			return;
 		}
 	} else {
@@ -8271,12 +8487,14 @@ static void sc_bottom(void)
 	draw_icon(IC_SEARCH, sx + 13, 16, 14, T.text2);
 	if (!sheet && (hdr_hit(sx + 1, 4, 24, 24) || (g_kdown & KEY_X)))
 		U.want_scq = true;
-	draw_rrect(cx, 5, cw, 22, 11, touch_in(cx, 3, cw, 26) ? T.surface2 : T.surface);
-	draw_icon(IC_FOLDER, cx + 14, 16, 12, MU_ACC);
-	text_draw(cl, cx + 26, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text);
-	if (!sheet && hdr_hit(cx, 5, cw, 22)) {
-		SCV.local = true;
-		return;
+	if (!art_pg) {
+		draw_rrect(cx, 5, cw, 22, 11, touch_in(cx, 3, cw, 26) ? T.surface2 : T.surface);
+		draw_icon(IC_FOLDER, cx + 14, 16, 12, MU_ACC);
+		text_draw(cl, cx + 26, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text);
+		if (!sheet && hdr_hit(cx, 5, cw, 22)) {
+			SCV.local = true;
+			return;
+		}
 	}
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
 	if (SCV.view == SV_HOME) {
@@ -8292,13 +8510,93 @@ static void sc_bottom(void)
 	List *l = res ? &SCV.lr : &SCV.lp;
 	const ScTrack *trk = res ? SCV.t : SCV.pt;
 	bool placeholder = !res && mine && !SCV.sv_fresh; // (guardada, aún sin llegar: se ve lo guardado)
-	bool fol = !res && SCV.lk == LK_FOLLOWS, art_pg = !res && SCV.lk == LK_ARTIST;
+	bool fol = !res && SCV.lk == LK_FOLLOWS;
 	const ScArtist *arts = fol ? SCV.fa : SCV.a; // (artistas: de la búsqueda o los que se siguen)
 	const ScList *pls = res ? SCV.l : SCV.apl;
 	int ntr = fol ? 0 : placeholder ? SCV.nsv : res ? SCV.nt : SCV.npt, nar = res ? SCV.na : fol ? SCV.nfa : 0,
 	    npl = res ? SCV.nl : art_pg ? SCV.napl : 0, cnt = ntr + nar + npl;
+	bool agrid = false; // (en el perfil: álbumes y listas en cuadrícula)
+	if (art_pg && ntab) {
+		if (SCV.atab == 0)
+			ntr = SCV.ntop, npl = 0;
+		else if (SCV.atab == 1)
+			trk = SCV.pt + SCV.ntop, ntr = SCV.npt - SCV.ntop, npl = 0;
+		else
+			ntr = 0, pls = SCV.atab == 2 ? alb : apls, npl = SCV.atab == 2 ? nalb : napls, agrid = true;
+		cnt = ntr + npl;
+	}
 	const float RH = 44, AS = 34;
-	list_update(l, cnt, RH);
+	if (!agrid)
+		list_update(l, cnt, RH);
+	else if (cnt) { // álbumes o listas del artista: tres por fila, con su carátula, año y canciones
+		const int C = 3;
+		const float M = 12, G = 10, CW = (BOT_W - 2 * M - (C - 1) * G) / C, CH = CW + 32;
+		int rows = (cnt + C - 1) / C;
+		float total = rows * (CH + 8) + 8 + (mu_bar_shown() ? MU_BAR_H + 6 : 0);
+		if (U.buttons && !sheet) {
+			u32 k = g_krepeat;
+			if ((k & KEY_RIGHT) && l->sel + 1 < cnt)
+				l->sel++;
+			if ((k & KEY_LEFT) && l->sel > 0)
+				l->sel--;
+			if ((k & KEY_DOWN) && l->sel + C < cnt)
+				l->sel += C;
+			else if ((k & KEY_DOWN) && l->sel / C < rows - 1)
+				l->sel = cnt - 1;
+			if (k & KEY_UP) {
+				if (l->sel >= C)
+					l->sel -= C;
+				else
+					hdr_enter();
+			}
+			if (k & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
+				float cy = 8 + (l->sel / C) * (CH + 8);
+				if (cy - 8 < l->target)
+					l->target = cy - 8;
+				if (cy + CH + 8 > l->target + VIEW_H)
+					l->target = cy + CH + 8 - VIEW_H;
+			}
+		}
+		if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && !sheet)
+			l->target -= g_touch.y - g_touch.py, l->off = l->target;
+		l->target = clampf(l->target, 0, fmaxf(0, total - VIEW_H));
+		l->off = approach(l->off, l->target, 18);
+		int open_i = -1;
+		for (int i = 0; i < cnt; i++) {
+			float x = M + (i % C) * (CW + G), y = VIEW_Y + 8 + (i / C) * (CH + 8) - l->off;
+			if (y + CH < VIEW_Y || y > VIEW_Y + VIEW_H)
+				continue;
+			const ScList *p = &pls[i];
+			bool foc = U.buttons && l->sel == i, pr = touch_in(x, y, CW, CH) && g_touch.sy >= VIEW_Y && !sheet;
+			draw_rrect(x + 2, y + 3, CW - 4, CW, 8, T.shadow);
+			draw_art(p->art, x, y, CW, 8, T.text3, IC_LIST);
+			if (pr)
+				draw_rrect(x, y, CW, CW, 8, 0x30000000);
+			if (foc)
+				draw_rrect_outline(x - 3, y - 3, CW + 6, CW + 6, 10, 2, MU_ACC);
+			g_clip_ell = !foc;
+			text_draw_clip(p->title, x, y + CW + 4, CW, TS_SUB, T.text);
+			char sub[48];
+			snprintf(sub, sizeof sub, p->count == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), p->year[0] ? p->year : (p->album ? _("Álbum") : _("Playlist")), p->count);
+			text_draw_clip(sub, x, y + CW + 4 + text_lineh(TS_SUB), CW, 0.36f, T.text3);
+			g_clip_ell = false;
+			if (!sheet && g_touch.sy >= VIEW_Y && tap(x, y, CW, CH))
+				open_i = i, l->sel = i;
+		}
+		if (!sheet && U.buttons && (g_kdown & KEY_A) && l->sel < cnt)
+			open_i = l->sel;
+		if ((g_kdown & KEY_Y) && !sheet && l->sel < cnt) // (Y: abrir también, no hay más opciones)
+			open_i = l->sel;
+		if (open_i >= 0) {
+			sc_artist_save();
+			ScList p = pls[open_i];
+			sc_open_art(LK_SC, p.id, p.title, 0, p.art);
+			gfx_clip_off();
+			if (sheet)
+				g_kdown = kd, g_krepeat = kr, g_touch = tc;
+			return;
+		}
+	}
 	if (!cnt) {
 		if (SCV.st == SCQ_BUSY && SCV.want)
 			empty_state(IC_SEARCH, res ? _("Buscando…") : _("Cargando…"), _("Conectando con SoundCloud."));
@@ -8318,7 +8616,7 @@ static void sc_bottom(void)
 	}
 	MusicState ms;
 	music_get(&ms);
-	for (int i = 0; i < cnt; i++) {
+	for (int i = 0; i < (agrid ? 0 : cnt); i++) {
 		float y = VIEW_Y + i * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
@@ -8331,6 +8629,7 @@ static void sc_bottom(void)
 		u32 col;
 		bool liked = false, now = false;
 		int s1 = -1, s2 = -1; // (verificado: dónde va la insignia, en el título o en la línea de debajo)
+		bool lock_ = false;
 		if (i < ntr) {
 			const char *id, *title, *artist;
 			u32 dur;
@@ -8344,8 +8643,8 @@ static void sc_bottom(void)
 			mu_fmt(dur, d, sizeof d);
 			if (art_pg && !placeholder) { // (en su página: populares, con sus reproducciones; las demás, con el año)
 				fmt_count(trk[i].plays, pc, sizeof pc);
-				if (i < SCV.ntop)
-					snprintf(t2, sizeof t2, _("Popular · %s reproducciones · %s"), pc, d);
+				if (SCV.atab == 0 && ntab)
+					snprintf(t2, sizeof t2, _("%d · %s reproducciones · %s"), i + 1, pc, d);
 				else
 					snprintf(t2, sizeof t2, "%.4s · %s", trk[i].created, d);
 			} else {
@@ -8355,6 +8654,8 @@ static void sc_bottom(void)
 			}
 			if (prev)
 				strncat(t2, _(" · Fragmento de 30 s"), sizeof t2 - strlen(t2) - 1);
+			if (!placeholder && trk[i].locked) // (con DRM: se ve, pero no se puede escuchar)
+				snprintf(t2, sizeof t2, "%s", _("Protegida: solo en la app oficial de SoundCloud")), s2 = -1, lock_ = true;
 			now = mu_on() && !strncmp(ms.name, "sc:", 3) && !strcmp(ms.name + 3, id);
 			liked = scl_liked(id);
 			col = art_tone(artist);
@@ -8398,10 +8699,12 @@ static void sc_bottom(void)
 		}
 		float tx = ax + AS + 10, tw = BOT_W - tx - (liked ? 50 : 36);
 		g_clip_ell = l->sel != i;
+		if (lock_)
+			draw_rrect(ax, ay, AS, AS, ar, 0x80000000), draw_icon(IC_LOCK, ax + AS / 2, ay + AS / 2, 13, 0xD0FFFFFF);
 		if (s1 >= 0)
 			text_badge(t1, s1, tx, y + 7, tw, TS_BODY, now ? ST_SC : T.text);
 		else
-			text_draw_clip(t1, tx, y + 7, tw, TS_BODY, now ? ST_SC : T.text);
+			text_draw_clip(t1, tx, y + 7, tw, TS_BODY, now ? ST_SC : lock_ ? T.text3 : T.text);
 		if (s2 >= 0)
 			text_badge(t2, s2, tx, y + 25, tw, TS_SUB, T.text3);
 		else
@@ -8431,7 +8734,7 @@ static void sc_bottom(void)
 		}
 	}
 	gfx_clip_off();
-	if ((g_kdown & KEY_Y) && cnt && !SCV.om)
+	if ((g_kdown & KEY_Y) && cnt && !SCV.om && !agrid)
 		SCV.om = SCV.om_just = true, SCV.om_sel = 0, SCV.om_i = l->sel;
 	if (sheet)
 		g_kdown = kd, g_krepeat = kr, g_touch = tc;
@@ -8548,7 +8851,7 @@ static void sc_bottom(void)
 			else if (a == L_REN)
 				U.want_sclist = 2;
 			else if (a == L_FOLLOW)
-				sc_toggle_follow(SCV.aid, SCV.list_title, SCV.artist.art);
+				sc_toggle_follow(SCV.aid, SCV.list_title, SCV.artist.a.art);
 			else if (a == L_DEL) {
 				char msg[200];
 				snprintf(msg, sizeof msg, _("Se eliminará la lista «%s». Las canciones siguen en SoundCloud."), SCV.list_title);
@@ -13558,6 +13861,7 @@ static void draw_bottom(void)
 {
 	gfx_target(g_bot, T.bg);
 	g_clip_ell = false;
+	g_sheets_now = 0;
 	if (U.splash >= 0) {
 		splash_bot(1);
 		return;

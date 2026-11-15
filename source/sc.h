@@ -35,6 +35,7 @@ typedef struct {
 	char genre[32];
 	char wave[96];       /* la onda (wave.sndcdn.com/…json) */
 	bool verified;       /* el autor es un artista verificado por SoundCloud */
+	bool locked;         /* solo con DRM (la mayoría de las discográficas): no se puede escuchar fuera de su app */
 } ScTrack;
 
 typedef struct {
@@ -44,6 +45,7 @@ typedef struct {
 	char art[256];       /* su carátula */
 	bool album;
 	bool verified;       /* de un artista verificado */
+	char year[6];        /* el año en que salió */
 } ScList;
 
 typedef struct {
@@ -82,7 +84,13 @@ u32  sc_results(ScTrack *t, int *nt, ScList *l, int *nl, ScArtist *a, int *na, i
 bool sc_track(const char *id, ScTrack *out); /* una canción ya vista (para el reproductor) */
 /* la página del artista abierto (sc_open_artist): sus datos y cuántas de las canciones son las populares (van primero);
  * sus listas y álbumes llegan como playlists */
-bool sc_artist_page(ScArtist *a, int *ntop);
+typedef struct {
+	ScArtist a;
+	char bio[600];
+	char city[48], country[8];
+	char banner[160];    /* la imagen de cabecera (1240×260), si tiene */
+} ScProfile;
+bool sc_artist_page(ScProfile *p, int *ntop);
 
 /* ---- aparte de las búsquedas (en el mismo hilo, cuando no hay otra cosa) */
 /* Descubrir: las selecciones de SoundCloud (tendencias por género, recomendadas…) */

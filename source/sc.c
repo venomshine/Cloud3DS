@@ -216,10 +216,13 @@ static bool parse_track(const cJSON *t, ScTrack *o)
 	snprintf(o->id, sizeof o->id, "%.0f", id->valuedouble);
 	const cJSON *tcs = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(t, "media"), "transcodings"), *tc;
 	int best = 0;
+	bool drm = false;
 	cJSON_ArrayForEach(tc, tcs)
 	{
 		const cJSON *fmt = cJSON_GetObjectItemCaseSensitive(tc, "format");
 		const char *proto = js(fmt, "protocol"), *mime = js(fmt, "mime_type"), *url = js(tc, "url"), *preset = js(tc, "preset");
+		if (proto && strstr(proto, "encrypted")) // (cbc/ctr-encrypted-hls: con DRM)
+			drm = true;
 		if (!proto || !mime || !url || strcmp(proto, "hls") || strncmp(mime, "audio/mp4", 9))
 			continue;
 		bool snip = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(tc, "snipped"));
@@ -230,8 +233,9 @@ static bool parse_track(const cJSON *t, ScTrack *o)
 			o->preview = snip;
 		}
 	}
-	if (!best)
+	if (!best && !drm)
 		return false;
+	o->locked = !best; // (solo con DRM: se enseña, pero no se puede escuchar)
 	const cJSON *user = cJSON_GetObjectItemCaseSensitive(t, "user");
 	util_strlcpy(o->title, js(t, "title") ? js(t, "title") : "?", sizeof o->title);
 	util_strlcpy(o->artist, js(user, "username") ? js(user, "username") : "", sizeof o->artist);
@@ -289,6 +293,13 @@ static bool parse_list(const cJSON *it, ScList *o)
 	if (art)
 		util_strlcpy(o->art, art, sizeof o->art);
 	o->album = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(it, "is_album"));
+	const char *dt = js(it, "release_date");
+	if (!dt)
+		dt = js(it, "display_date");
+	if (!dt)
+		dt = js(it, "created_at");
+	if (dt && strlen(dt) >= 4)
+		snprintf(o->year, sizeof o->year, "%.4s", dt);
 	o->verified = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(it, "user"), "verified"));
 	return true;
 }
@@ -364,7 +375,7 @@ static struct {
 	char latest[SCL_ARTISTS_MAX][24];
 	u32 new_rev;
 	// el artista abierto
-	ScArtist artist;
+	ScProfile artist;
 	int ntop;
 	// Descubrir, lo que suena (onda y comentarios) y la radio
 	bool disc_pending, disc_busy, info_pending, radio_pending;
@@ -543,19 +554,38 @@ static void do_ids(const char *list)
 	}
 }
 
+static void plain_text(char *s);
 // la página de un artista: sus datos, sus populares (primero), las demás canciones (de la más reciente) y sus listas
 static void do_artist(const char *id)
 {
 	char path[100], err[32] = "", e2[32];
 	static ScTrack t[SC_MAX];
 	static ScList l[SC_MAX];
-	ScArtist ar;
+	static ScProfile ar;
 	memset(&ar, 0, sizeof ar);
 	int nt = 0, nl = 0, ntop = 0;
 	snprintf(path, sizeof path, "/users/%s", id);
 	cJSON *j = api(path, e2, sizeof e2), *it;
-	if (j)
-		parse_user(j, &ar);
+	if (j) { // su perfil: datos, biografía, de dónde es y su imagen de cabecera
+		parse_user(j, &ar.a);
+		if (js(j, "description"))
+			util_strlcpy(ar.bio, js(j, "description"), sizeof ar.bio), plain_text(ar.bio);
+		if (js(j, "city"))
+			util_strlcpy(ar.city, js(j, "city"), sizeof ar.city);
+		if (js(j, "country_code"))
+			util_strlcpy(ar.country, js(j, "country_code"), sizeof ar.country);
+		const cJSON *vs = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(j, "visuals"), "visuals");
+		const char *vu = js(cJSON_GetArrayItem(vs, 0), "visual_url");
+		if (vu && strlen(vu) + 12 < sizeof ar.banner) {
+			util_strlcpy(ar.banner, vu, sizeof ar.banner);
+			char *o = strstr(ar.banner, "-original.");
+			if (o) {
+				char tail[40];
+				util_strlcpy(tail, o + 9, sizeof tail);
+				snprintf(o, sizeof ar.banner - (size_t)(o - ar.banner), "-t1240x260%s", tail);
+			}
+		}
+	}
 	cJSON_Delete(j);
 	snprintf(path, sizeof path, "/users/%s/toptracks?limit=10", id);
 	j = api(path, e2, sizeof e2);
@@ -600,14 +630,14 @@ static void do_artist(const char *id)
 	util_log("soundcloud: artista %s: %d canciones (%d populares), %d listas %s", id, nt, ntop, nl, err);
 }
 
-bool sc_artist_page(ScArtist *a, int *ntop)
+bool sc_artist_page(ScProfile *a, int *ntop)
 {
 	if (!cl_init)
 		return false;
 	LightLock_Lock(&CL);
 	*a = Q.artist, *ntop = Q.ntop;
 	LightLock_Unlock(&CL);
-	return a->id[0];
+	return a->a.id[0];
 }
 
 // Descubrir: las selecciones de la portada de SoundCloud (las que traen playlists)
@@ -804,7 +834,7 @@ static void do_radio(const char *id)
 	cJSON *j = api(path, err, sizeof err), *it;
 	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
 	{
-		if (n < SC_RADIO && parse_track(it, &t[n]) && !t[n].preview)
+		if (n < SC_RADIO && parse_track(it, &t[n]) && !t[n].preview && !t[n].locked)
 			reg_put(&t[n]), n++;
 	}
 	cJSON_Delete(j);
@@ -860,7 +890,7 @@ static void do_check(void)
 		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
 		{
 			ScTrack t;
-			if (!parse_track(it, &t) || !t.created[0])
+			if (!parse_track(it, &t) || !t.created[0] || t.locked)
 				continue;
 			if (strcmp(t.created, latest[i]) > 0)
 				util_strlcpy(latest[i], t.created, sizeof latest[0]);
@@ -1138,6 +1168,10 @@ static void fail(ScStream *s, const char *e)
 // la lista HLS de una canción (la de medios) y la configuración de su AAC. err: por qué no
 static bool hls_open(const ScTrack *t, HlsList *pl, Fmp4Cfg *cfg, char *err, size_t en)
 {
+	if (t->locked || !t->tc[0]) { // (con DRM: no hay audio que se pueda leer)
+		snprintf(err, en, "drm");
+		return false;
+	}
 	char path[1300];
 	snprintf(path, sizeof path, "%s%s%s", t->tc, t->auth[0] ? "?track_authorization=" : "", t->auth);
 	cJSON *j = api(path, err, en);
@@ -1501,7 +1535,7 @@ int sc_download(const char *id)
 		threadFree(D.thr);
 		D.thr = NULL;
 	}
-	if (!sc_track(id, &D.t) || !D.t.downloadable || D.t.preview)
+	if (!sc_track(id, &D.t) || !D.t.downloadable || D.t.preview || D.t.locked)
 		return 2;
 	char nm[200];
 	snprintf(nm, sizeof nm, "%s%s%s", D.t.artist, D.t.artist[0] ? " - " : "", D.t.title);
@@ -1583,6 +1617,7 @@ static void thumb_thread(void *arg)
 			u8 *b, *rgba = NULL;
 			int w = 0, h = 0;
 			int fit = strstr(url, "-t300x300") || strstr(url, "#big") ? 160 : 64; // (las grandes: la cabecera de arriba)
+			int fitw = strstr(url, "-t1240x260") ? 400 : fit; // (la cabecera de un perfil: a lo ancho)
 			if (!strncmp(url, "file:", 5)) { // (de la SD: la de la canción o la de su carpeta)
 				char path[256];
 				util_strlcpy(path, url + 5, sizeof path);
@@ -1592,7 +1627,7 @@ static void thumb_thread(void *arg)
 				b = mlib_cover_data(path, &n);
 			} else
 				b = (u8 *)get(url, 512 * 1024, &code, &n);
-			if (!b || img_mem_fit(b, n, fit, fit, &rgba, &w, &h) != IMG_OK)
+			if (!b || img_mem_fit(b, n, fitw, fit, &rgba, &w, &h) != IMG_OK)
 				rgba = NULL, w = h = 0;
 			free(b);
 			LightLock_Lock(&TH.lk);
