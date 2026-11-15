@@ -73,6 +73,7 @@ u32  brand_grad(float t);         // degradado de la marca: azul cielo -> violet
 void draw_cloud(float cx, float cy, float r, float alpha);       // logo (imagen suavizada), centrado en (cx, cy)
 void draw_cloud_glow(float cx, float cy, float r, float alpha);  // resplandor con la forma del logo
 void draw_halo(float cx, float cy, float radius, float alpha);   // halo radial suave
+void draw_halo_col(float cx, float cy, float radius, u32 col); // halo del color col
 
 // texto (fuente del sistema)
 float text_lineh(float scale);

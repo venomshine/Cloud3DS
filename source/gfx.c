@@ -330,6 +330,15 @@ void draw_cloud(float cx, float cy, float r, float alpha) {
 
 void draw_cloud_glow(float cx, float cy, float r, float alpha) { sprite_at(SPR_GLOW, cx, cy, 3.2f * r, alpha); }
 void draw_halo(float cx, float cy, float radius, float alpha) { sprite_at(SPR_HALO, cx, cy, 2 * radius, alpha); }
+// el mismo halo, del color col (con su alfa): luces de color suaves (la aurora de Música)
+void draw_halo_col(float cx, float cy, float radius, u32 col) {
+    if (!s_sprites || radius <= 0.5f || !(col >> 24)) return;
+    C2D_Image im = C2D_SpriteSheetGetImage(s_sprites, SPR_HALO);
+    float size = 2 * radius, sc = size / im.subtex->width;
+    C2D_ImageTint tint;
+    C2D_PlainImageTint(&tint, col, 1.0f);
+    C2D_DrawImageAt(im, cx - size / 2, cy - size / 2, Z, &tint, sc, sc);
+}
 void draw_sparkle_mono(float cx, float cy, float r, float rot, u32 c) { sparkle_impl(cx, cy, r, rot, 1, false, c); }
 
 // barra «cargando» con un brillo que se desplaza

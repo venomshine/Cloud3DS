@@ -1,6 +1,27 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Cargando':
+        ('Loading',
+         '読み込み中'),
+    'Ahora suena':
+        ('Now playing',
+         '再生中'),
+    'Buenas noches':
+        ('Good evening',
+         'こんばんは'),
+    'Buenos días':
+        ('Good morning',
+         'おはようございます'),
+    'Buenas tardes':
+        ('Good afternoon',
+         'こんにちは'),
+    '¿Qué te apetece escuchar?':
+        ('What would you like to listen to?',
+         '何を聴きますか?'),
+    'Búsqueda':
+        ('Search',
+         '検索'),
     'Novedades en SoundCloud':
         ('New on SoundCloud',
          'SoundCloudの新着'),
@@ -280,12 +301,6 @@ TR = {
     'SoundCloud no respondió. Inténtalo de nuevo.':
         ('SoundCloud did not respond. Try again.',
          'SoundCloudから応答がありません。もう一度お試しください。'),
-    'Escucha música en streaming desde Internet.':
-        ('Stream music from the Internet.',
-         'インターネットから音楽をストリーミング再生します。'),
-    'Busca canciones, artistas o playlists. Algunas canciones solo permiten escuchar un fragmento de 30 segundos. Tu música de la tarjeta SD está en «En la consola».':
-        ('Search for songs, artists or playlists. Some songs only allow a 30-second preview. Your SD card music is in “On this console”.',
-         '曲、アーティスト、プレイリストを検索できます。一部の曲は30秒のプレビューのみ再生できます。SDカードの音楽は「本体」にあります。'),
     '%s Buscar · %s Reproducir · %s Opciones':
         ('%s Search · %s Play · %s Options',
          '%s 検索 · %s 再生 · %s オプション'),
