@@ -1117,7 +1117,7 @@ static struct {
 	float bars[24];   // la onda de arriba
 } MU = {.cover_track = 0xFFFFFFFF};
 
-#define ST_SC 0xFF2E6AE8 // el acento de Música: un naranja SoundCloud algo apagado (ABGR), el único color
+#define ST_SC (T.accent2) // el acento de Música: el azul violeta del resto de Cloud3DS, el único color
 #define MU_ACC ST_SC
 
 // ---- ajustes de SoundCloud (APP_DIR/soundcloud_ajustes.txt): la radio al acabar la lista y los comentarios
