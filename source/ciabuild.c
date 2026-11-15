@@ -140,19 +140,36 @@ static bool in_list(const u64 *l, int n, u64 v)
 	return false;
 }
 
-// ¿homebrew? (con AM ya abierto)
-static bool homebrew_am(u64 tid, const u64 *pers, int npers, u8 *smdh_out)
+// ¿homebrew? (con AM ya abierto). why: por qué no (para el registro). Sin icono (SMDH) también vale: todo lo comercial
+// lo trae (con su clasificación por edades), así que una app sin él es homebrew; se enseña con su número
+static bool homebrew_am(u64 tid, const u64 *pers, int npers, u8 *smdh_out, bool *has_smdh, const char **why)
 {
-	if ((u32)(tid >> 32) != HI_APP || in_list(pers, npers, tid) || content_encrypted(tid))
+	const char *w = NULL;
+	if ((u32)(tid >> 32) != HI_APP)
+		w = "no es una aplicación";
+	else if (in_list(pers, npers, tid))
+		w = "comprada en la eShop (ticket personal)";
+	else if (content_encrypted(tid))
+		w = "contenido cifrado (eShop o cartucho)";
+	if (why)
+		*why = w;
+	if (has_smdh)
+		*has_smdh = false;
+	if (w)
 		return false;
 	u8 *smdh = NULL;
 	u32 n = 0;
-	if (!exefs_file(tid, "icon", &smdh, &n) || n < 0x36C0 || memcmp(smdh, "SMDH", 4) || smdh_rated(smdh)) {
+	bool got = exefs_file(tid, "icon", &smdh, &n) && n >= 0x36C0 && !memcmp(smdh, "SMDH", 4);
+	if (got && smdh_rated(smdh)) {
 		free(smdh);
+		if (why)
+			*why = "clasificación por edades (comercial)";
 		return false;
 	}
-	if (smdh_out)
+	if (got && smdh_out)
 		memcpy(smdh_out, smdh, 0x36C0);
+	if (has_smdh)
+		*has_smdh = got;
 	free(smdh);
 	return true;
 }
@@ -172,16 +189,23 @@ int cb_list(CbTitle **out)
 		CbTitle *t = calloc(n, sizeof *t);
 		int lang = g_lang == LANG_JA ? 0 : g_lang == LANG_ES ? 5 : 1;
 		for (u32 i = 0; t && i < n; i++) {
-			if (!homebrew_am(ids[i], pers, np, smdh))
+			bool has;
+			const char *why;
+			if (!homebrew_am(ids[i], pers, np, smdh, &has, &why)) {
+				if ((u32)(ids[i] >> 32) == HI_APP) // (las que no salen y por qué: para saber si alguna se queda fuera sin motivo)
+					util_log("compartir: %016llX no se ofrece: %s", (unsigned long long)ids[i], why ? why : "?");
 				continue;
+			}
 			CbTitle *x = &t[cnt++];
 			x->tid = ids[i], x->version = info[i].version, x->size = info[i].size;
-			smdh_text(smdh, lang, 0x80, 0x80, x->name, sizeof x->name);
-			if (!x->name[0])
-				smdh_text(smdh, lang, 0, 0x40, x->name, sizeof x->name);
-			smdh_text(smdh, lang, 0x180, 0x40, x->author, sizeof x->author);
-			smdh_icon(smdh, x->icon);
-			x->has_icon = true;
+			if (has) {
+				smdh_text(smdh, lang, 0x80, 0x80, x->name, sizeof x->name);
+				if (!x->name[0])
+					smdh_text(smdh, lang, 0, 0x40, x->name, sizeof x->name);
+				smdh_text(smdh, lang, 0x180, 0x40, x->author, sizeof x->author);
+				smdh_icon(smdh, x->icon);
+			}
+			x->has_icon = has;
 			if (!x->name[0])
 				snprintf(x->name, sizeof x->name, "%016llX", (unsigned long long)x->tid);
 		}
@@ -200,7 +224,7 @@ bool cb_is_homebrew(u64 tid)
 		return false;
 	u64 *pers = NULL;
 	int np = personalized(&pers);
-	bool ok = homebrew_am(tid, pers, np, NULL);
+	bool ok = homebrew_am(tid, pers, np, NULL, NULL, NULL);
 	free(pers);
 	amExit();
 	return ok;
@@ -337,7 +361,10 @@ int cb_build(u64 tid, const char *path, volatile u64 *done, volatile u64 *total,
 	{
 		u64 *pers = NULL;
 		int np = personalized(&pers);
-		bool hb = homebrew_am(tid, pers, np, smdh);
+		bool has = false;
+		bool hb = homebrew_am(tid, pers, np, smdh, &has, NULL);
+		if (!has) // (sin icono: el meta del CIA, sin él)
+			memset(smdh, 0, 0x36C0);
 		free(pers);
 		AM_TitleEntry te;
 		u64 id = tid;
