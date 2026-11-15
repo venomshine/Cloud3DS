@@ -766,7 +766,7 @@ static void cover_fetch(ScStream *s)
 	u8 *b = art_get(&s->t, &n);
 	u8 *rgba = NULL;
 	int w, h;
-	if (b && img_mem_fit(b, n, 160, 160, &rgba, &w, &h) == IMG_OK) {
+	if (b && img_mem_fit(b, n, 256, 256, &rgba, &w, &h) == IMG_OK) {
 		LightLock_Lock(&s->lk);
 		s->cover = rgba, s->cw = w, s->ch = h, s->cover_ready = true;
 		LightLock_Unlock(&s->lk);

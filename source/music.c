@@ -286,7 +286,7 @@ static long aac_id3(FILE *f, MusicState *st)
 					const u8 *e = memchr(q, 0, (size_t)(fb + fs - q));
 					u8 *rgba;
 					int w, hh;
-					if (e && ++e < fb + fs && img_mem_fit(e, (size_t)(fb + fs - e), 160, 160, &rgba, &w, &hh) == IMG_OK) {
+					if (e && ++e < fb + fs && img_mem_fit(e, (size_t)(fb + fs - e), 256, 256, &rgba, &w, &hh) == IMG_OK) {
 						LightLock_Lock(&M.lock);
 						free(M.cover);
 						M.cover = rgba, M.cw = w, M.ch = hh, M.cover_ok = true;
@@ -363,7 +363,7 @@ static bool dec_open(Dec *d, const char *path, MusicState *st)
 					if (p->data && p->size && (p->type == 3 || v2->pictures == 1)) {
 						u8 *rgba;
 						int w, h;
-						if (img_mem_fit(p->data, p->size, 160, 160, &rgba, &w, &h) == IMG_OK) {
+						if (img_mem_fit(p->data, p->size, 256, 256, &rgba, &w, &h) == IMG_OK) {
 							LightLock_Lock(&M.lock);
 							free(M.cover);
 							M.cover = rgba, M.cw = w, M.ch = h, M.cover_ok = true;

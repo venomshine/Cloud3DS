@@ -7079,12 +7079,11 @@ static void sc_toggle_like(const ScTrack *t)
 	sc_refresh_saved();
 }
 
-// ---- Música, pantalla de arriba: «vinilo nocturno». Un fondo casi negro con una aurora del color de la carátula, la
-// carátula como funda y el vinilo asomando (gira al sonar y vuelve a la funda en pausa), el título grande y abajo una
-// onda de lado a lado que es también el progreso. Sin música: un saludo según la hora y lo último que sonó
+// ---- Música, pantalla de arriba. Sonando: la carátula de fondo, a todo lo ancho, que se funde hacia abajo con el negro;
+// encima, el título grande y una onda de lado a lado que es también el progreso. Sin carátula (o sin música): una aurora
+// de color sobre el negro y, sin música, un saludo según la hora y lo último que sonó
 static struct {
 	u32 tint;        // el color de la carátula (ABGR), o el de la fuente si no tiene
-	float vin, rot;  // el vinilo: cuánto ha salido de la funda (0-1) y su giro
 	float wave[56];  // la onda
 } ST;
 
@@ -7201,73 +7200,54 @@ static void st_label(const char *s, float x, float y, float sp, float sc, u32 c)
 	}
 }
 
-// el vinilo: negro con surcos, un brillo que gira y la etiqueta del color
-static void st_vinyl(float cx, float cy, float r, float rot, u32 c)
-{
-	draw_circle(cx, cy, r, 0xFF0A0A0C);
-	for (float k = r - 6; k > r * 0.36f; k -= 4.5f)
-		draw_ring(cx, cy, k, 1, 0x22FFFFFF);
-	draw_arc(cx, cy, r * 0.72f, r * 0.5f, rot, rot + 0.5f, 0x16FFFFFF); // (el reflejo)
-	draw_arc(cx, cy, r * 0.72f, r * 0.5f, rot + (float)M_PI, rot + (float)M_PI + 0.5f, 0x10FFFFFF);
-	draw_circle(cx, cy, r * 0.32f, c);
-	draw_circle(cx + r * 0.2f * cosf(rot), cy + r * 0.2f * sinf(rot), 2.5f, 0x55000000); // (una marca: se ve girar)
-	draw_circle(cx, cy, 3, ST_BG);
-}
-
 static void music_stage(void)
 {
 	mu_sync_cover();
-	const float y0 = 24;
 	u32 c = ST.tint ? ST.tint : ST_SC;
-	st_aurora(y0, c);
 	bool play = MU.s.st == MU_PLAY && !MU.s.loading;
-	ST.vin = approach(ST.vin, play ? 1 : 0.15f, 3);
-	if (play)
-		ST.rot += g_dt * 2.2f;
-	// la funda (la carátula) y el vinilo saliendo de ella
-	const float S = 132, cx = 24, cy = y0 + 22;
-	st_vinyl(cx + S / 2 + 18 + 44 * ST.vin, cy + S / 2, S / 2 - 4, ST.rot, c);
-	draw_rrect(cx + 4, cy + 6, S, S, 6, 0x60000000); // (sombra)
+	// el fondo: la carátula a todo lo ancho (un poco subida) y, de arriba abajo, cada vez más negro
+	draw_rect(0, 0, TOP_W, SCR_H, ST_BG);
 	if (MU.cover.ok) {
-		draw_rect(cx, cy, S, S, 0xFF000000);
-		draw_texture(&MU.cover, cx, cy, S, S, 1);
-	} else {
-		draw_grad4(cx, cy, S, S, st_shift(c, 0, 0.75f, 1), st_shift(c, 0.12f, 0.6f, 1), st_shift(c, -0.08f, 0.45f, 1), st_shift(c, 0.05f, 0.3f, 1));
-		draw_icon(IC_SPEAKER, cx + S / 2, cy + S / 2, 40, 0xCCFFFFFF);
-	}
-	if (MU.s.loading) // (cargando: un arco que gira alrededor de la funda)
-		draw_arc(cx + S / 2, cy + S / 2, S * 0.62f, 2, g_time * 5, g_time * 5 + 1.6f, c);
-	// el texto: rótulo, título grande, artista y de dónde viene
-	float tx = 238, tw = TOP_W - tx - 14, y = y0 + 26;
-	bool sc = !strncmp(MU.s.name, "sc:", 3);
-	st_label(MU.s.loading ? _("Cargando") : MU.s.st == MU_PAUSE ? _("En pausa") : _("Ahora suena"), tx, y, 2.2f, 0.42f, st_shift(c, 0, 1, 1));
+		draw_texture(&MU.cover, 0, -70, TOP_W, TOP_W, 1);
+		draw_rect(0, 0, TOP_W, 180, 0x38000000); // (un poco más oscura: el texto, encima, se lee siempre)
+		draw_grad_v(0, 0, TOP_W, 40, 0x90000000, 0x00000000); // (la cabecera, legible)
+		draw_grad_v(0, 40, TOP_W, 140, ST_BG & 0x00FFFFFF, ST_BG);
+		draw_rect(0, 180, TOP_W, SCR_H - 180, ST_BG);
+		draw_halo_col(TOP_W / 2, SCR_H + 30, 220, st_shift(c, 0, 0.8f, 0.35f)); // (abajo, un reflejo de su color)
+	} else
+		st_aurora(0, c);
+	draw_header();
+	// lo que suena, abajo a la izquierda
+	bool sc = !strncmp(MU.s.name, "sc:", 3), liked = sc && scl_liked(MU.s.name + 3);
+	float x = 22, w = TOP_W - 44, y = 118;
+	st_label(MU.s.loading ? _("Cargando") : MU.s.st == MU_PAUSE ? _("En pausa") : _("Ahora suena"), x, y, 2.2f, 0.42f, st_shift(c, 0, 1, 1));
+	if (MU.s.loading)
+		draw_arc(x + text_width(_("Cargando"), 0.42f) + 34, y + 7, 5, 1.6f, g_time * 6, g_time * 6 + 4.2f, st_shift(c, 0, 1, 1));
 	y += 18;
-	y += text_wrap_lines(MU.s.title, tw, 0.74f, 3, tx, y, 0xFFFFFFFF, true) * text_lineh(0.74f) + 4;
-	if (MU.s.artist[0])
-		text_draw_clip(MU.s.artist, tx, y, tw, TS_BODY, 0xB0FFFFFF), y += text_lineh(TS_BODY) + 8;
-	const char *src = sc ? "SoundCloud" : _("En la consola");
-	float sw = text_width(src, TS_SUB) + 18;
-	draw_rrect_outline(tx, y, sw, 18, 9, 1, 0x50FFFFFF);
-	text_draw(src, tx + 9, y + 9 - text_lineh(TS_SUB) / 2, TS_SUB, 0xB0FFFFFF);
-	if (sc && scl_liked(MU.s.name + 3))
-		draw_icon(IC_HEART, tx + sw + 14, y + 9, 12, 0xFF5050FF);
+	int nl = text_wrap_lines(MU.s.title, w - (liked ? 24 : 0), 0.85f, 2, x, y, 0xFFFFFFFF, true);
+	if (liked)
+		draw_icon(IC_HEART, x + w - 8, y + text_lineh(0.85f) / 2, 14, 0xFF5050FF);
+	y += nl * text_lineh(0.85f) + 2;
+	char sub[200];
+	snprintf(sub, sizeof sub, "%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : _("En la consola"));
+	text_draw_clip(sub, x, y, w, TS_BODY, 0xA8FFFFFF);
 	// la onda (también el progreso): lo escuchado, del color; lo que falta, apagado
 	const int NB = sizeof ST.wave / sizeof ST.wave[0];
-	float wx = 18, ww = TOP_W - 36, wy = SCR_H - 36, bw = ww / NB, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	float wx = 22, ww = TOP_W - 44, wy = SCR_H - 34, bw = ww / NB, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
 	for (int i = 0; i < NB; i++) {
 		float tgt = play ? 0.12f + MU.s.level * (0.4f + 0.6f * fabsf(sinf(g_time * (1.7f + i * 0.21f) + i * 0.9f))) : 0.06f + 0.04f * sinf(i * 0.7f);
 		ST.wave[i] = approach(ST.wave[i], fminf(1, tgt), 9);
-		float hh = fmaxf(2, ST.wave[i] * 30), x = wx + i * bw;
+		float hh = fmaxf(2, ST.wave[i] * 26), bx = wx + i * bw;
 		bool done = (i + 0.5f) / NB <= f;
-		draw_rrect(x + 1, wy - hh / 2, bw - 2.5f, hh, 1.2f, done ? st_shift(c, (float)i / NB * 0.12f, 1, 1) : 0x30FFFFFF);
+		draw_rrect(bx + 1, wy - hh / 2, bw - 2.5f, hh, 1.2f, done ? st_shift(c, (float)i / NB * 0.1f, 1, 1) : 0x30FFFFFF);
 	}
 	draw_circle(wx + ww * f, wy, 3.5f, 0xFFFFFFFF);
 	char t1[16], t2[16];
 	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
-	text_draw(t1, wx, SCR_H - 17, TS_SUB, 0x90FFFFFF);
+	text_draw(t1, wx, SCR_H - 16, TS_SUB, 0x90FFFFFF);
 	if (MU.s.dur_ms)
-		text_draw_right(t2, wx + ww, SCR_H - 17, TS_SUB, 0x90FFFFFF);
+		text_draw_right(t2, wx + ww, SCR_H - 16, TS_SUB, 0x90FFFFFF);
 }
 
 // sin música: el saludo según la hora, sobre la aurora; debajo, lo último que sonó (o lo que pase)
