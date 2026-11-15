@@ -1,6 +1,21 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Personalizado':
+        ('Custom',
+         'カスタム'),
+    'Personalizado…':
+        ('Custom…',
+         'カスタム…'),
+    'Restablecer':
+        ('Reset',
+         'リセット'),
+    'Listo':
+        ('Done',
+         '完了'),
+    'Arrastra las barras · %s Banda y dB · %s Restablecer':
+        ('Drag the bars · %s Band and dB · %s Reset',
+         'バーをドラッグ · %s バンドとdB · %s リセット'),
     'Normal':
         ('Normal',
          'ノーマル'),

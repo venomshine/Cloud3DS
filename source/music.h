@@ -48,9 +48,14 @@ bool music_playing(void);  /* sonando (no en pausa) */
 /* la carátula de la canción actual, si la trae (RGBA, malloc); *track dice de cuál */
 bool music_cover(u8 **rgba, int *w, int *h, u32 *track);
 /* ecualizador: el preset (MU_EQ_*), guardado en la SD; se aplica desde el siguiente búfer */
-enum { MU_EQ_NORMAL, MU_EQ_BASS, MU_EQ_ROCK, MU_EQ_POP, MU_EQ_ELECTRONIC, MU_EQ_HIPHOP, MU_EQ_VOCAL, MU_EQ_ACOUSTIC, MU_EQ_N };
+enum { MU_EQ_NORMAL, MU_EQ_BASS, MU_EQ_ROCK, MU_EQ_POP, MU_EQ_ELECTRONIC, MU_EQ_HIPHOP, MU_EQ_VOCAL, MU_EQ_ACOUSTIC, MU_EQ_CUSTOM, MU_EQ_N };
 int  music_eq(void);
 void music_set_eq(int preset);
+/* el personalizado: cinco bandas de -12 a +12 dB (se oye al momento; music_eq_save lo guarda) */
+void music_eq_custom(s8 out[5]);
+void music_set_eq_custom(const s8 g[5]);
+void music_eq_save(void);
+void music_eq_gains(int preset, s8 out[5]); /* las de cualquier preset (para dibujarlas) */
 /* cada vuelta: con la tapa cerrada y música, el DSP despierto y, sin auriculares, la salida por los altavoces */
 void music_lid(bool closed);
 void music_exit(void);

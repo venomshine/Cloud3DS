@@ -71,6 +71,7 @@ static const s8 EQ_DB[MU_EQ_N][5] = {
 	{6, 4, -1, 1, 2},  // Hip hop
 	{-2, -1, 3, 4, 1}, // Voces
 	{3, 1, 1, 2, 3},   // Acústica
+	{0, 0, 0, 0, 0},   // Personalizado (EQ.custom)
 };
 static const float EQ_F[5] = {60, 230, 910, 3600, 14000};
 #define EQ_FILE APP_DIR "/musica_eq.txt"
@@ -81,6 +82,9 @@ typedef struct {
 static struct {
 	int preset, rate;   // (el preset y la frecuencia para los que están calculados)
 	volatile int want;  // el elegido
+	volatile u32 cver;  // cambia con cada ajuste a mano
+	u32 cver_done;
+	s8 custom[5];       // el personalizado (dB)
 	bool loaded;
 	Bq c[5];
 	float z[5][2][2];   // estado de cada filtro y canal
@@ -93,10 +97,13 @@ static void eq_load(void)
 		return;
 	EQ.loaded = true;
 	FILE *f = fopen(EQ_FILE, "r");
-	int p = 0;
+	int p = 0, g[5];
 	if (f) {
 		if (fscanf(f, "%d", &p) != 1)
 			p = 0;
+		if (fscanf(f, "%d %d %d %d %d", &g[0], &g[1], &g[2], &g[3], &g[4]) == 5) // (el personalizado, en la segunda línea)
+			for (int k = 0; k < 5; k++)
+				EQ.custom[k] = (s8)(g[k] < -12 ? -12 : g[k] > 12 ? 12 : g[k]);
 		fclose(f);
 	}
 	EQ.want = p >= 0 && p < MU_EQ_N ? p : 0;
@@ -114,9 +121,33 @@ void music_set_eq(int p)
 	if (p < 0 || p >= MU_EQ_N)
 		return;
 	EQ.want = p;
+	music_eq_save();
+}
+
+void music_eq_save(void)
+{
 	FILE *f = fopen(EQ_FILE, "w");
 	if (f)
-		fprintf(f, "%d\n", p), fclose(f);
+		fprintf(f, "%d\n%d %d %d %d %d\n", EQ.want, EQ.custom[0], EQ.custom[1], EQ.custom[2], EQ.custom[3], EQ.custom[4]), fclose(f);
+}
+
+void music_eq_custom(s8 out[5])
+{
+	eq_load();
+	memcpy(out, EQ.custom, 5);
+}
+
+void music_set_eq_custom(const s8 g[5])
+{
+	eq_load();
+	memcpy(EQ.custom, g, 5);
+	EQ.cver++;
+}
+
+void music_eq_gains(int p, s8 out[5])
+{
+	eq_load();
+	memcpy(out, p == MU_EQ_CUSTOM ? EQ.custom : EQ_DB[p >= 0 && p < MU_EQ_N ? p : 0], 5);
 }
 
 // el filtro de una banda: 0 shelf de graves, 4 shelf de agudos, el resto de pico (Q 1)
@@ -144,19 +175,22 @@ static Bq eq_band(int k, float f0, float db, int rate)
 static void eq_apply(s16 *buf, int frames, int rate, bool reset)
 {
 	int p = EQ.want;
-	if (p != EQ.preset || rate != EQ.rate) {
-		EQ.preset = p, EQ.rate = rate, reset = true;
+	bool cust = p == MU_EQ_CUSTOM;
+	if (p != EQ.preset || rate != EQ.rate || (cust && EQ.cver != EQ.cver_done)) {
+		reset = reset || p != EQ.preset || rate != EQ.rate; // (al mover las barras, sin cortar: se sigue con el estado)
+		EQ.preset = p, EQ.rate = rate, EQ.cver_done = EQ.cver;
+		const s8 *g = cust ? EQ.custom : EQ_DB[p];
 		float mx = 0;
 		for (int k = 0; k < 5; k++) {
 			float f0 = fminf(EQ_F[k], rate * 0.42f); // (por debajo de la mitad de la frecuencia de muestreo)
-			EQ.c[k] = eq_band(k, f0, EQ_DB[p][k], rate);
-			mx = fmaxf(mx, EQ_DB[p][k]);
+			EQ.c[k] = eq_band(k, f0, g[k], rate);
+			mx = fmaxf(mx, g[k]);
 		}
 		EQ.pre = powf(10, -mx * 0.5f / 20);
 	}
 	if (reset)
 		memset(EQ.z, 0, sizeof EQ.z);
-	if (!p)
+	if (!p || (cust && !EQ.custom[0] && !EQ.custom[1] && !EQ.custom[2] && !EQ.custom[3] && !EQ.custom[4]))
 		return;
 	for (int i = 0; i < frames; i++)
 		for (int ch = 0; ch < 2; ch++) {

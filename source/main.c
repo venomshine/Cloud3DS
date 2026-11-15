@@ -6567,12 +6567,114 @@ static void ds_draw(void)
 }
 
 // la hoja del reproductor: aleatorio, anterior, play/pausa, siguiente, repetir; parar e ir a la carpeta
-static const char *const EQ_NAMES[MU_EQ_N] = {N_("Normal"), N_("Más graves"), "Rock", "Pop", N_("Electrónica"), "Hip hop", N_("Voces"), N_("Acústica")};
+static const char *const EQ_NAMES[MU_EQ_N] = {N_("Normal"), N_("Más graves"), "Rock", "Pop", N_("Electrónica"), "Hip hop", N_("Voces"), N_("Acústica"),
+                                               N_("Personalizado")};
 static struct {
 	bool open, just;
 	float anim;
 	int sel;
 } EQS;
+
+// ---- el ecualizador a mano: cinco barras de -12 a +12 dB (se oye al momento). Con el dedo se arrastran; con la cruceta,
+// ← → eligen la banda y ↑ ↓ suben o bajan 1 dB. Una línea une las barras: la curva que suena
+static struct {
+	bool open, just;
+	int sel, drag; // drag: la barra que se arrastra (-1 ninguna)
+	float anim;
+	s8 g[5];
+} EQB = {.drag = -1};
+
+static void eq_bars(void)
+{
+	if (!EQB.open)
+		return;
+	if (EQB.just) {
+		EQB.just = false, EQB.drag = -1, EQB.anim = 0;
+		music_eq_custom(EQB.g);
+	}
+	EQB.anim = approach(EQB.anim, 1, 14);
+	static const char *const FL[5] = {"60", "230", "910", "3,6k", "14k"};
+	float a = ease_out_cubic(EQB.anim);
+	draw_rect(0, 0, BOT_W, SCR_H, col_alpha(T.dim, a));
+	float cy0 = 8 + (1 - a) * 30;
+	draw_rrect(8, cy0, BOT_W - 16, SCR_H - 16, 16, T.surface);
+	text_draw(_("Personalizado"), 22, cy0 + 12, TS_TITLE, T.text);
+	// botones: restablecer y listo
+	const char *rl = _("Restablecer"), *ok = _("Listo");
+	float okw = text_width(ok, TS_SUB) + 24, okx = BOT_W - 22 - okw, rw = text_width(rl, TS_SUB) + 24, rx = okx - 8 - rw, by = cy0 + 10;
+	draw_rrect(rx, by, rw, 22, 11, touch_in(rx, by, rw, 22) ? T.surface2 : T.bg);
+	text_draw_center(rl, rx + rw / 2, by + 11 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
+	draw_rrect(okx, by, okw, 22, 11, T.accent);
+	text_draw_center(ok, okx + okw / 2, by + 11 - text_lineh(TS_SUB) / 2, TS_SUB, 0xFFFFFFFF);
+	bool changed = false;
+	if (tap(rx, by, rw, 22) || (g_kdown & KEY_X)) {
+		memset(EQB.g, 0, sizeof EQB.g);
+		changed = true;
+	}
+	// las barras
+	const float top = cy0 + 62, bot = cy0 + 178, mid = (top + bot) / 2, span = (bot - top) / 2;
+	float cx[5], ky[5];
+	for (int i = 0; i < 5; i++)
+		cx[i] = 46 + i * ((BOT_W - 92) / 4.0f), ky[i] = mid - EQB.g[i] / 12.0f * span;
+	if (U.buttons || !g_touch.held) {
+		if (g_krepeat & KEY_LEFT)
+			EQB.sel = (EQB.sel + 4) % 5;
+		if (g_krepeat & KEY_RIGHT)
+			EQB.sel = (EQB.sel + 1) % 5;
+		if ((g_krepeat & KEY_UP) && EQB.g[EQB.sel] < 12)
+			EQB.g[EQB.sel]++, changed = true;
+		if ((g_krepeat & KEY_DOWN) && EQB.g[EQB.sel] > -12)
+			EQB.g[EQB.sel]--, changed = true;
+	}
+	if (g_touch.down && g_touch.y >= top - 20 && g_touch.y <= bot + 20) { // (la más cercana al dedo)
+		int best = 0;
+		for (int i = 1; i < 5; i++)
+			if (fabsf(g_touch.x - cx[i]) < fabsf(g_touch.x - cx[best]))
+				best = i;
+		if (fabsf(g_touch.x - cx[best]) < 30)
+			EQB.drag = best, EQB.sel = best;
+	}
+	if (g_touch.held && EQB.drag >= 0) {
+		int v = (int)lroundf((mid - g_touch.y) / span * 12);
+		v = v < -12 ? -12 : v > 12 ? 12 : v;
+		if (v != EQB.g[EQB.drag])
+			EQB.g[EQB.drag] = (s8)v, changed = true;
+	}
+	if (!g_touch.held)
+		EQB.drag = -1;
+	if (changed) {
+		music_set_eq_custom(EQB.g);
+		for (int i = 0; i < 5; i++)
+			ky[i] = mid - EQB.g[i] / 12.0f * span;
+	}
+	draw_rect(30, mid, BOT_W - 60, 1, T.divider); // (0 dB)
+	for (int i = 0; i < 4; i++) // (la curva)
+		draw_line(cx[i], ky[i], cx[i + 1], ky[i + 1], 2, col_alpha(T.accent, 0.45f));
+	for (int i = 0; i < 5; i++) {
+		bool on = i == EQB.sel;
+		draw_rrect(cx[i] - 3, top, 6, bot - top, 3, T.surface2);
+		float y0 = fminf(mid, ky[i]), y1 = fmaxf(mid, ky[i]);
+		if (y1 - y0 > 1)
+			draw_rrect(cx[i] - 3, y0, 6, y1 - y0, 3, T.accent);
+		draw_circle(cx[i], ky[i], on ? 10 : 8, 0xFFFFFFFF);
+		if (on && U.buttons)
+			draw_ring(cx[i], ky[i], 12, 1.5f, T.accent);
+		char db[8];
+		snprintf(db, sizeof db, "%+d", EQB.g[i]);
+		text_draw_center(EQB.g[i] ? db : "0", cx[i], top - 20, TS_SUB, on ? T.accent : T.text2);
+		text_draw_center(FL[i], cx[i], bot + 8, TS_SUB, T.text3);
+	}
+	char hint[120];
+	snprintf(hint, sizeof hint, _("Arrastra las barras · %s Banda y dB · %s Restablecer"), GLYPH_DPAD, GLYPH_X);
+	text_draw_center_clip(hint, BOT_W / 2, SCR_H - 30, BOT_W - 40, TS_SUB, T.text3);
+	if (tap(okx, by, okw, 22) || (g_kdown & (KEY_A | KEY_B))) {
+		EQB.open = false;
+		music_eq_save();
+	}
+	g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y | KEY_L | KEY_R);
+	g_krepeat = 0;
+	g_touch.up = false;
+}
 
 static void music_sheet(void)
 {
@@ -6587,7 +6689,7 @@ static void music_sheet(void)
 	draw_rrect(10, y, BOT_W - 20, h, 16, T.surface);
 	if (!MU.open)
 		return;
-	bool fresh = MU.just || EQS.open; // (con el ecualizador abierto, la hoja no atiende)
+	bool fresh = MU.just || EQS.open || EQB.open; // (con el ecualizador abierto, la hoja no atiende)
 	MU.just = false;
 	if (MU.s.st == MU_OFF) { // (con un archivo que falla, sigue abierta: pasa a la siguiente)
 		MU.open = false;
@@ -6712,14 +6814,19 @@ static void music_sheet(void)
 		int cur = music_eq();
 		for (int k = 0; k < MU_EQ_N; k++)
 			ic[k] = k == cur ? IC_CHECK : IC_SPEAKER, lab[k] = _(EQ_NAMES[k]), col[k] = k == cur ? T.accent : T.text;
+		lab[MU_EQ_CUSTOM] = _("Personalizado…"), ic[MU_EQ_CUSTOM] = cur == MU_EQ_CUSTOM ? IC_CHECK : IC_EDIT;
 		int r = sheet_list(&EQS.open, &EQS.just, &EQS.anim, &EQS.sel, _("Ecualizador"), ic, lab, col, MU_EQ_N);
-		if (r >= 0) {
+		if (r == MU_EQ_CUSTOM) { // (a mano: las barras)
+			music_set_eq(r);
+			EQB.open = EQB.just = true;
+		} else if (r >= 0) {
 			music_set_eq(r);
 			char m[80];
 			snprintf(m, sizeof m, _("Ecualizador: %s"), _(EQ_NAMES[r]));
 			toast_icon(m, IC_CHECK, T.accent);
 		}
 	}
+	eq_bars();
 	if (!fresh && ((g_kdown & KEY_B) || (g_touch.up && !g_touch.drag && g_touch.sy < y)))
 		MU.open = false;
 	g_kdown &= ~(KEY_A | KEY_B | KEY_X | KEY_Y);
