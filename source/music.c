@@ -478,7 +478,7 @@ static bool dec_open(Dec *d, const char *path, MusicState *st)
 	if (!strncmp(path, "sc:", 3))
 		return dec_open_sc(d, path + 3, st);
 	char sp[720];
-	snprintf(sp, sizeof sp, "sdmc:%s", path);
+	util_sdpath(sp, sizeof sp, path);
 	const char *x = strrchr(path, '.');
 	x = x ? x + 1 : "";
 	if (!strcasecmp(x, "mp3")) {

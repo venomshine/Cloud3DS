@@ -10,6 +10,7 @@
 #include "fsx.h"
 #include "browser.h"
 #include "cloud.h"
+#include "netfile.h"
 #include "i18n.h"
 #include "ops.h"
 #include "update.h"
@@ -4916,7 +4917,7 @@ static bool f_open_item(int vi)
 // ---- abrir lo de la nube como en Archivos: fotos y textos en el visor, música en el reproductor, páginas en el
 // navegador, ZIP en su hoja y CIA instalándose. Se baja primero (a CLOUD_CACHE; un ZIP, a /Descargas, para
 // extraerlo ahí) y se abre al terminar; mientras, una tarjeta con el progreso que se puede cancelar
-enum { CO_NONE, CO_VIEW, CO_MUSIC, CO_HTML, CO_ZIP };
+enum { CO_NONE, CO_VIEW, CO_MUSIC, CO_HTML, CO_ZIP, CO_DOC };
 static struct {
 	int kind;          // qué se hace al terminar de bajarlo
 	CloudItem it;
@@ -4942,11 +4943,13 @@ static void cl_open_item(int i)
 	}
 	FEnt fe = {0};
 	util_strlcpy(fe.name, c->name, sizeof fe.name);
-	int k = !strcasecmp(ext, "html") || !strcasecmp(ext, "htm") ? CO_HTML
-	        : f_is_img(&fe) || f_is_txt(&fe)                     ? CO_VIEW
-	        : !strcasecmp(ext, "zip")                             ? CO_ZIP
-	        : music_is_audio(c->name)                             ? CO_MUSIC
-	                                                              : CO_NONE;
+	int rk = rd_kind(c->name);
+	int k = !strcasecmp(ext, "html") || !strcasecmp(ext, "htm")    ? CO_HTML
+	        : f_is_img(&fe) || f_is_txt(&fe)                        ? CO_VIEW
+	        : !strcasecmp(ext, "zip")                                ? CO_ZIP
+	        : music_is_audio(c->name)                                ? CO_MUSIC
+	        : rk == RK_PDF || rk == RK_CBZ || rk == RK_EPUB || rk == RK_DOCX ? CO_DOC
+	                                                                 : CO_NONE;
 	if (k == CO_NONE) { // como en Archivos: lo que no se abre, sus opciones
 		CLU.om = CLU.om_just = true, CLU.om_sel = 0, CLU.om_item = i;
 		return;
@@ -4954,7 +4957,10 @@ static void cl_open_item(int i)
 	CO.kind = k;
 	CO.it = *c;
 	util_strlcpy(CO.parent, cl_parent(), sizeof CO.parent);
-	if (!cloud_open(c, k == CO_ZIP ? DL_DIR : CLOUD_CACHE)) {
+	// sin bajarlo a la SD (en memoria): la música suena y los documentos se abren en cuanto llega lo primero; las
+	// fotos, en cuanto llegan enteras. Los textos (se editan y se guardan), las páginas y los ZIP, como antes
+	bool mem = k == CO_MUSIC || k == CO_DOC || (k == CO_VIEW && f_is_img(&fe));
+	if (!(mem ? cloud_open_stream(c, k == CO_VIEW) : cloud_open(c, k == CO_ZIP ? DL_DIR : CLOUD_CACHE))) {
 		CO.kind = CO_NONE;
 		toast_icon(_("Espera a que termine de abrirse el archivo anterior"), IC_CLOCK, T.text2);
 	}
@@ -4987,7 +4993,16 @@ static void cl_open_poll(void)
 		br_open_file(p);
 	else if (k == CO_ZIP)
 		zs_open(p);
-	else {
+	else if (k == CO_DOC) // (en el Lector; al cerrarlo, de vuelta a la Nube)
+		rv_open(p, U.app);
+	else if (nf_is(p)) { // la música, mientras llega
+		static char one[1][256];
+		util_strlcpy(one[0], p, sizeof one[0]);
+		if (music_play("", one, 1, 0))
+			CO.mu_wait = 300;
+		else
+			toast_icon(_("No se pudo reproducir"), IC_CLOSE, T.danger);
+	} else {
 		static char one[1][256];
 		char dir[700];
 		util_strlcpy(dir, p, sizeof dir);
@@ -6923,7 +6938,7 @@ static void music_sheet(void)
 		ScTrack cur; // (su perfil: el del autor de lo que suena)
 		if (sc_track(MU.s.name + 3, &cur) && cur.uid[0])
 			sc_open_art(LK_ARTIST, cur.uid, cur.artist, 0, NULL);
-	} else if (!fresh && (tap(gox, ly, lw, 26) || (g_kdown & KEY_Y)) && strstr(MU.s.dir, CLOUD_CACHE)) {
+	} else if (!fresh && (tap(gox, ly, lw, 26) || (g_kdown & KEY_Y)) && (strstr(MU.s.dir, CLOUD_CACHE) || nf_is(MU.s.name))) {
 		MU.open = false; // (de la nube: su carpeta es la de la nube, no la copia que se bajó)
 		if (!CLU.open)
 			cl_open();
@@ -14683,6 +14698,7 @@ static void update(void)
 	}
 	cq_tick();
 	sc_dl_tick();
+	cloud_watch(CLU.open && !vw_cloud_open()); // (la Nube a la vista: lo que cambie en OneDrive, al momento)
 	static u64 trash_next;
 	if (osGetTime() >= trash_next) { // lo de más de unos días se va solo; basta mirarlo cada hora
 		trash_next = osGetTime() + 3600 * 1000ull;

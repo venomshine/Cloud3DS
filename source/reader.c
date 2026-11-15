@@ -193,7 +193,7 @@ static void do_open(const char *path)
 {
 	do_close();
 	char sd[300];
-	snprintf(sd, sizeof sd, "sdmc:%s", path);
+	util_sdpath(sd, sizeof sd, path);
 	int pages = 0;
 	bool reflow = false;
 	char title[96] = "", err[96] = "";
@@ -295,7 +295,7 @@ static void do_render(const RdReq *r)
 static void do_cover(const char *path, int tw, int th)
 {
 	char sd[300];
-	snprintf(sd, sizeof sd, "sdmc:%s", path);
+	util_sdpath(sd, sizeof sd, path);
 	fz_document *d = NULL;
 	u16 *px = NULL;
 	int w = 0, h = 0;
@@ -929,6 +929,8 @@ void rlib_set_where(int w)
 
 void rlib_progress(const char *path, int page, int pages, const char *title)
 {
+	if (!strncmp(path, "nube:", 5)) // (abierto desde la Nube, sin bajarlo: no entra en la biblioteca de la SD)
+		return;
 	if (!L.init)
 		rlib_init();
 	if (!L.init || rd_kind(path) < 0)

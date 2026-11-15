@@ -6,6 +6,7 @@
  * de atribución (sección 7). Consulta LICENSE y NOTICE.md.
  */
 #include "img.h"
+#include "util.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,7 +38,7 @@ static ImgResult fit(u8 *src, int iw, int ih, int maxw, int maxh, u8 **rgba, int
 ImgResult img_load_fit(const char *path, int maxw, int maxh, u8 **rgba, int *w, int *h, int *ow, int *oh)
 {
 	char full[700];
-	snprintf(full, sizeof full, "sdmc:%s", path);
+	util_sdpath(full, sizeof full, path);
 	int iw, ih, c;
 	*rgba = NULL;
 	if (!stbi_info(full, &iw, &ih, &c))

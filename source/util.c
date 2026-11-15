@@ -452,3 +452,12 @@ void wd_stop(void)
 	threadFree(wd_thr);
 	wd_thr = NULL;
 }
+
+void util_sdpath(char *out, size_t n, const char *path)
+{
+	const char *c = strchr(path, ':'), *sl = strchr(path, '/');
+	if (c && (!sl || c < sl))
+		snprintf(out, n, "%s", path);
+	else
+		snprintf(out, n, "sdmc:%s", path);
+}

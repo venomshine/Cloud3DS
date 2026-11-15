@@ -39,6 +39,8 @@ void util_utf16_to_utf8(char *out, size_t n, const u16 *in, size_t max_in);
 bool util_utf8_valid(const char *s);
 
 /* Registro de diagnóstico en la SD */
+/* la ruta para abrirla: las de la SD («/…») con «sdmc:» delante; las que ya traen su disco («nube:/…»), tal cual */
+void util_sdpath(char *out, size_t n, const char *path);
 void util_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /* vigilante de la interfaz: si deja de dibujar más de medio segundo, lo apunta en el registro con dónde estaba

@@ -79,6 +79,10 @@ void cloud_download_to(const CloudItem *it, const char *sd_dir); /* a esa carpet
 void cloud_upload_replace(const char *sd_path, const char *parent_id); /* sustituye el que se llame igual (guardar) */
 bool cloud_open(const CloudItem *it, const char *sd_dir); /* bajarlo a sd_dir para abrirlo; false si ya hay uno */
 void cloud_open_cancel(void);
+/* abrir sin bajarlo a la SD (en memoria, «nube:/…»): con wait_full, cuando haya llegado entero (fotos); si no, ya */
+bool cloud_open_stream(const CloudItem *it, bool wait_full);
+/* la Nube a la vista: su carpeta se vuelve a mirar cada pocos segundos */
+void cloud_watch(bool on);
 const char *cloud_app_folder_id(void);              /* la carpeta Cloud3DS ("" si aún no se sabe) */
 
 /* capturas en la nube: las nuevas de Luma se suben solas a /Cloud3DS/Capturas */

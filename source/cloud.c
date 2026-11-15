@@ -12,6 +12,7 @@
  *  - El refresh token se guarda en APP_DIR/onedrive.json (solo en la SD) y se renueva solo.
  *  - Listar, descargar (por la cola de descargas), subir (a trozos si es grande) y borrar. */
 #include "cloud.h"
+#include "netfile.h"
 #include "cJSON.h"
 #include "dl.h"
 #include "fsx.h"
@@ -41,7 +42,7 @@
 #define CHUNK     (640 * 1024) /* múltiplo de 320 KiB, como pide OneDrive */
 #define DEPTH     16
 
-enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME, J_CAPS, J_MKDIR, J_RENAME, J_MOVE, J_COPY, J_DLTO, J_OPEN };
+enum { J_NONE, J_CONNECT, J_LIST, J_DOWNLOAD, J_UPLOAD, J_DELETE, J_ME, J_CAPS, J_MKDIR, J_RENAME, J_MOVE, J_COPY, J_DLTO, J_OPEN, J_STREAM };
 #define SHOTS "/luma/screenshots"
 typedef struct {
 	int type;
@@ -62,6 +63,8 @@ static struct {
 	char device_code[4096]; /* el de Microsoft mide ~1050 caracteres */
 	int interval;
 	u64 next_poll;
+	volatile bool watch;   // la Nube a la vista: su carpeta se vuelve a mirar cada poco (lo que cambie en OneDrive, al momento)
+	u64 next_watch;
 	Job q[64];
 	int nq;
 	/* carpeta que se ve */
@@ -454,14 +457,21 @@ static void do_list(const char *id)
 	lock();
 	// solo si sigue siendo la carpeta que se ve
 	if (!strcmp(C.depth ? C.path[C.depth - 1].id : "", id)) {
-		free(C.items);
-		C.items = it, C.nitems = n, it = NULL;
+		bool same = !C.loading && C.items && C.nitems == n && (!code || code >= 400 || !memcmp(C.items, it, sizeof *it * n));
+		if (code && code < 400 && !same) {
+			free(C.items);
+			C.items = it, C.nitems = n, it = NULL;
+		} else if (C.loading) { // (la primera vez, aunque falle: que se vea por qué)
+			free(C.items);
+			C.items = it, C.nitems = n, it = NULL;
+		}
 		C.loading = false;
 		if (!code || code >= 400)
 			util_strlcpy(C.info.err, code ? "server" : "offline", sizeof C.info.err);
 		else
 			C.info.err[0] = 0;
-		bump();
+		if (!same)
+			bump();
 	}
 	unlock();
 	free(it);
@@ -1144,6 +1154,47 @@ static void do_open(const char *id, const char *name, const char *dir)
 	unlock();
 }
 
+/* abrir sin bajarlo a la SD: su enlace de descarga y, en memoria, el disco «nube:» (netfile). Con wait (fotos), se
+ * espera a que llegue entero; si no (música y documentos), se abre ya y lo que falta va llegando. Si no cabe en
+ * memoria, se baja a la caché como antes */
+static void do_stream(const char *id, const char *name, bool wait)
+{
+	char path[300];
+	snprintf(path, sizeof path, "/me/drive/items/%s", id);
+	long code = 0;
+	cJSON *j = graph_json(path, &code);
+	const cJSON *u = item_dl_url(j, id), *sz = cJSON_GetObjectItemCaseSensitive(j, "size");
+	char np[300] = "";
+	bool ok = cJSON_IsString(u) && cJSON_IsNumber(sz) && nf_open_url(u->valuestring, (u64)sz->valuedouble, name, np, sizeof np);
+	cJSON_Delete(j);
+	if (!ok && cJSON_IsString(u)) { // (no cabe en memoria: a la caché, como antes)
+		do_open(id, name, CLOUD_CACHE);
+		return;
+	}
+	if (ok) {
+		C.info.open_size = (u64)(cJSON_IsNumber(sz) ? sz->valuedouble : 0);
+		for (u64 got, tot; wait;) { // (las fotos: enteras, desde la memoria)
+			bool done, failed;
+			if (C.open_cancel || C.quit || !nf_progress(np, &got, &tot, &done, &failed) || failed) {
+				ok = false;
+				break;
+			}
+			C.info.open_got = got;
+			if (done)
+				break;
+			svcSleepThread(100000000ll);
+		}
+	}
+	util_log("nube: abrir sin bajar %s -> %s (%s)", name, ok ? "bien" : "mal", np);
+	lock();
+	C.info.opening = false;
+	C.info.open_ok = ok && !C.open_cancel;
+	util_strlcpy(C.info.open_path, ok ? np : "", sizeof C.info.open_path);
+	C.info.open_rev++;
+	bump();
+	unlock();
+}
+
 static bool push_full(int type, const char *a, const char *b, const char *c, bool dir)
 {
 	lock();
@@ -1187,6 +1238,14 @@ static void thread_main(void *arg)
 			if (!queued && C.info.caps)
 				push(J_CAPS, NULL, NULL);
 		}
+		if (C.info.st == CLS_ON && C.watch && !C.nq && !C.info.opening && util_ms() > C.next_watch) {
+			C.next_watch = util_ms() + 4000; // (lo subido o borrado desde el móvil o el PC aparece en unos segundos)
+			lock();
+			bool loading = C.loading;
+			unlock();
+			if (!loading)
+				refresh_current();
+		}
 		Job j;
 		lock();
 		bool have = C.nq > 0;
@@ -1212,6 +1271,7 @@ static void thread_main(void *arg)
 		case J_COPY: do_copy(j.a, j.b); break;
 		case J_DLTO: do_download_to(j.a, j.b, j.c, j.dir); break;
 		case J_OPEN: do_open(j.a, j.b, j.c); break;
+		case J_STREAM: do_stream(j.a, j.b, j.dir); break;
 		}
 		lock();
 		C.info.busy = C.nq > 0;
@@ -1223,6 +1283,7 @@ static void thread_main(void *arg)
 /* ------------------------------------------------------------ uso */
 void cloud_init(void)
 {
+	nf_init();
 	fsx_rmrf(CLOUD_CACHE); // lo abierto la vez anterior
 	LightLock_Init(&C.lock);
 	LightEvent_Init(&C.ev, RESET_ONESHOT);
@@ -1441,6 +1502,31 @@ void cloud_download_to(const CloudItem *it, const char *sd_dir)
 void cloud_upload_replace(const char *sd_path, const char *parent_id)
 {
 	push_full(J_UPLOAD, sd_path, parent_id, NULL, true);
+}
+
+void cloud_watch(bool on)
+{
+	if (on && !C.watch)
+		C.next_watch = util_ms() + 4000;
+	C.watch = on;
+	if (on)
+		LightEvent_Signal(&C.ev);
+}
+
+bool cloud_open_stream(const CloudItem *it, bool wait_full)
+{
+	lock();
+	bool busy = C.info.opening;
+	if (!busy) {
+		C.info.opening = true;
+		C.open_cancel = false;
+		C.info.open_got = 0;
+		C.info.open_size = it->size;
+		util_strlcpy(C.info.open_name, it->name, sizeof C.info.open_name);
+		bump();
+	}
+	unlock();
+	return !busy && push_full(J_STREAM, it->id, it->name, NULL, wait_full);
 }
 
 bool cloud_open(const CloudItem *it, const char *sd_dir)
