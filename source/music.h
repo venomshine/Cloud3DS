@@ -43,6 +43,7 @@ void music_toggle(void);
 void music_next(void);
 void music_prev(void);
 void music_stop(void);
+void music_seek(u32 ms); /* ir a esa parte de la canción */
 void music_shuffle(void);
 void music_set_shuffle(bool on); /* para la próxima lista (music_play): sin reordenar la que suena */
 void music_repeat(void);

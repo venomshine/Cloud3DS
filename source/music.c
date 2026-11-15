@@ -39,6 +39,7 @@ static struct {
 	char (*list)[256];
 	int n, *order; /* order: el orden en que suenan (aleatorio o no) */
 	int pos;       /* posición en order */
+	volatile s32 seek_ms; /* saltar ahí (-1: nada) */
 	u8 *cover;
 	int cw, ch;
 	bool cover_ok;
@@ -319,6 +320,9 @@ typedef struct {
 	int rate, chans;
 	u32 left; /* wav: bytes que quedan */
 	bool wav8;
+	long data_at;   /* wav y AAC: dónde empieza el audio (para saltar) */
+	u32 data_len;   /* wav: cuántos bytes de audio; AAC: los del archivo desde data_at */
+	u32 dur_ms;
 } Dec;
 
 static void copy_tag(char *out, size_t n, const mpg123_string *s)
@@ -555,7 +559,10 @@ static bool dec_open(Dec *d, const char *path, MusicState *st)
 		d->kind = 4;
 		if (!(d->f = fopen(sp, "rb")) || !(d->ab = malloc(AAC_BUF)))
 			return false;
-		aac_id3(d->f, st);
+		d->data_at = aac_id3(d->f, st);
+		fseek(d->f, 0, SEEK_END);
+		d->data_len = (u32)(ftell(d->f) - d->data_at);
+		fseek(d->f, d->data_at, SEEK_SET);
 		aac_fill(d);
 		unsigned long rate;
 		unsigned char ch;
@@ -595,7 +602,8 @@ static bool dec_open(Dec *d, const char *path, MusicState *st)
 				bits = fm[14] | fm[15] << 8;
 				fseek(d->f, sz - 16 + (sz & 1), SEEK_CUR);
 			} else if (!memcmp(c, "data", 4)) {
-				d->left = sz;
+				d->left = d->data_len = sz;
+				d->data_at = ftell(d->f);
 				break;
 			} else
 				fseek(d->f, sz + (sz & 1), SEEK_CUR);
@@ -689,6 +697,38 @@ static int dec_read(Dec *d, s16 *out)
 	return got;
 }
 
+/* ir a ms (más o menos: al principio del trozo, en SoundCloud; por la proporción del archivo, en AAC). Devuelve
+ * dónde quedó, o -1 si no se pudo */
+static long dec_seek(Dec *d, u32 ms)
+{
+	if (d->kind == 0) {
+		off_t r = mpg123_seek(d->mh, (off_t)((u64)ms * d->rate / 1000), SEEK_SET);
+		return r < 0 ? -1 : (long)((u64)r * 1000 / d->rate);
+	}
+	if (d->kind == 1)
+		return ov_time_seek(&d->vf, ms) == 0 ? (long)ms : -1;
+	if (d->kind == 2) {
+		u32 bpf = (u32)d->chans * (d->wav8 ? 1 : 2), fr = (u32)((u64)ms * d->rate / 1000), off = fr * bpf;
+		if (off >= d->data_len)
+			return -1;
+		if (fseek(d->f, d->data_at + (long)off, SEEK_SET))
+			return -1;
+		d->left = d->data_len - off;
+		return (long)ms;
+	}
+	if (d->kind == 3)
+		return sc_stream_seek(d->sc, ms);
+	if (d->kind == 4 && d->dur_ms) { // (sin índice: por la proporción; el decodificador busca la trama siguiente)
+		u32 off = (u32)((u64)d->data_len * ms / d->dur_ms);
+		if (fseek(d->f, d->data_at + (long)off, SEEK_SET))
+			return -1;
+		d->an = d->aat = 0, d->aeof = false;
+		NeAACDecPostSeekReset(d->aac, -1);
+		return (long)ms;
+	}
+	return -1;
+}
+
 static void dec_close(Dec *d)
 {
 	if (d->kind == 3)
@@ -753,6 +793,8 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 	LightLock_Unlock(&M.lock);
 	Dec d;
 	bool ok = dec_open(&d, path, &st);
+	d.dur_ms = st.dur_ms;
+	M.seek_ms = -1;
 	LightLock_Lock(&M.lock);
 	snprintf(M.s.name, sizeof M.s.name, "%s", M.list[idx]);
 	if (!st.title[0]) { // sin etiquetas: el nombre del archivo, sin extensión
@@ -800,6 +842,24 @@ static int play_one(s16 **buf, ndspWaveBuf *wb)
 			} else {
 				cmd = c;
 				break;
+			}
+		}
+		s32 sk = M.seek_ms; // saltar a otra parte: fuera lo que está en cola y desde ahí
+		if (sk >= 0) {
+			M.seek_ms = -1;
+			long at = dec_seek(&d, (u32)sk);
+			if (d.kind == 3 && at < 0 && d.dur_ms) // (SoundCloud: aún sin la lista de trozos)
+				at = -1;
+			if (at >= 0) {
+				ndspChnWaveBufClear(CH);
+				for (int i = 0; i < NBUF; i++)
+					queued_samples[i] = 0, wb[i].status = NDSP_WBUF_DONE;
+				played = (u64)at * d.rate / 1000, eof = false;
+				LightLock_Lock(&M.lock);
+				M.s.pos_ms = (u32)at;
+				LightLock_Unlock(&M.lock);
+				if (paused)
+					ndspChnSetPaused(CH, true);
 			}
 		}
 		bool busy = false, starved = false;
@@ -1001,6 +1061,14 @@ int music_append(char (*names)[256], int n)
 void music_toggle(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_TOGGLE); }
 void music_next(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_NEXT); }
 void music_prev(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_PREV); }
+void music_seek(u32 ms)
+{
+	if (M.thr && M.s.st != MU_OFF) {
+		M.seek_ms = (s32)ms;
+		LightEvent_Signal(&M.ev);
+	}
+}
+
 void music_stop(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_STOP); }
 
 void music_set_shuffle(bool on)

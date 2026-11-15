@@ -1,6 +1,36 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Ver artista':
+        ('View artist',
+         'アーティストを見る'),
+    'Esta canción está protegida (DRM): SoundCloud solo deja escucharla en su app oficial.':
+        ('This song is protected (DRM): SoundCloud only lets you play it in its official app.',
+         'この曲は保護されています(DRM)。SoundCloudの公式アプリでのみ再生できます。'),
+    'Ninguna de estas canciones se puede escuchar aquí: están protegidas (DRM).':
+        ('None of these songs can be played here: they are protected (DRM).',
+         'これらの曲はここでは再生できません(DRMで保護されています)。'),
+    'Lo sigues':
+        ('Following',
+         'フォロー中'),
+    'Su canción más escuchada: «%s» (%s reproducciones).':
+        ('Most played: «%s» (%s plays).',
+         '最も再生された曲:「%s」(再生%s回)'),
+    'L R Secciones · %s Reproducir · %s Opciones':
+        ('L R Sections · %s Play · %s Options',
+         'L R セクション · %s 再生 · %s オプション'),
+    'Populares':
+        ('Popular',
+         '人気'),
+    'Listas':
+        ('Playlists',
+         'プレイリスト'),
+    '%d · %s reproducciones · %s':
+        ('%d · %s plays · %s',
+         '%d · 再生%s回 · %s'),
+    'Protegida: solo en la app oficial de SoundCloud':
+        ('Protected: only in the official SoundCloud app',
+         '保護済み: SoundCloud公式アプリのみ'),
     '¿Falta alguna? Abre Cloud3DS en ella, en la misma Wi-Fi, o añádela por su IP con «+» (la muestra su app Conectar).':
         ('Missing one? Open Cloud3DS on it, on the same Wi-Fi, or add it by IP with «+» (shown in its Connect app).',
          '見つからない場合は、同じWi-Fiでその本体のCloud3DSを開くか、「+」でIPから追加してください(「接続」に表示されます)。'),
@@ -100,9 +130,6 @@ TR = {
     'Cuando un artista que sigues suba algo nuevo, aparecerá aquí.':
         ('When an artist you follow uploads something new, it will appear here.',
          'フォロー中のアーティストが新しい曲を公開すると、ここに表示されます。'),
-    'Popular · %s reproducciones · %s':
-        ('Popular · %s plays · %s',
-         '人気 · 再生%s回 · %s'),
     'Artista · %s seguidores · 1 canción':
         ('Artist · %s followers · 1 song',
          'アーティスト · フォロワー%s · 1曲'),
@@ -430,9 +457,6 @@ TR = {
     'Repetir lista':
         ('Repeat list',
          'リストをリピート'),
-    'Ir a SoundCloud':
-        ('Go to SoundCloud',
-         'SoundCloudへ'),
     'No se pudo conectar con SoundCloud. Inténtalo de nuevo más tarde.':
         ('Could not connect to SoundCloud. Try again later.',
          'SoundCloudに接続できませんでした。しばらくしてからもう一度お試しください。'),

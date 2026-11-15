@@ -1194,6 +1194,49 @@ static bool mu_on(void)
 	return MU.s.st == MU_PLAY || MU.s.st == MU_PAUSE;
 }
 
+// ---- moverse por la canción con el Circle Pad (de lado): mientras se mueve, una marca recorre la canción (más
+// deprisa cuanto más se inclina); al soltarlo, se salta ahí. Hasta que el reproductor llega, se enseña la marca
+static struct {
+	bool on, pending;
+	float ms;
+	u64 rel, since, last;
+} SEEK;
+
+static u32 mu_pos(void)
+{
+	return SEEK.on || SEEK.pending ? (u32)SEEK.ms : MU.s.pos_ms;
+}
+
+static void mu_scrub(void)
+{
+	u64 now = util_ms();
+	float dt = SEEK.last ? fminf(0.1f, (now - SEEK.last) / 1000.0f) : 0;
+	SEEK.last = now;
+	if (SEEK.pending && (now - SEEK.since > 4000 || (MU.s.pos_ms + 1500 > SEEK.ms && MU.s.pos_ms < SEEK.ms + 3000)))
+		SEEK.pending = false; // (ya llegó, o no llegará)
+	if (!mu_on() || !MU.s.dur_ms || MU.s.loading) {
+		SEEK.on = false;
+		return;
+	}
+	circlePosition cp;
+	hidCircleRead(&cp);
+	int ax = abs(cp.dx);
+	if (ax > 36 && ax > abs(cp.dy)) {
+		if (!SEEK.on)
+			SEEK.on = true, SEEK.pending = false, SEEK.ms = (float)MU.s.pos_ms;
+		float k = (ax - 36) / 120.0f;
+		k = k > 1 ? 1 : k;
+		SEEK.ms += (cp.dx > 0 ? 1 : -1) * (3000 + 37000 * k * k) * dt; // (de 3 a 40 s por segundo)
+		SEEK.ms = clampf(SEEK.ms, 0, (float)MU.s.dur_ms - 800);
+		SEEK.rel = now;
+		// (de lado, el Circle Pad es solo para esto: que las listas no se muevan con él)
+		g_kdown &= ~(KEY_CPAD_LEFT | KEY_CPAD_RIGHT), g_krepeat &= ~(KEY_CPAD_LEFT | KEY_CPAD_RIGHT);
+	} else if (SEEK.on && now - SEEK.rel > 180) {
+		SEEK.on = false, SEEK.pending = true, SEEK.since = now;
+		music_seek((u32)SEEK.ms);
+	}
+}
+
 static void mu_fmt(u32 ms, char *out, size_t n)
 {
 	snprintf(out, n, "%lu:%02lu", (unsigned long)(ms / 60000), (unsigned long)(ms / 1000 % 60));
@@ -1241,9 +1284,9 @@ static void music_top(float a)
 		draw_rrect(rx + i * bw + 1, wy + (wh - bh) / 2, bw - 2, bh, 1.5f, col_alpha(T.accent2, a * 0.85f));
 	}
 	// tiempo
-	float py = py0 + PS - 4 - text_lineh(TS_SUB) - 8, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	float py = py0 + PS - 4 - text_lineh(TS_SUB) - 8, f = MU.s.dur_ms ? fminf(1, (float)mu_pos() / MU.s.dur_ms) : 0;
 	char t1[16], t2[16];
-	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
+	mu_fmt(mu_pos(), t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
 	text_draw(t1, rx, py + 8, TS_SUB, col_alpha(T.text3, a));
 	if (MU.s.dur_ms)
@@ -1268,7 +1311,7 @@ static void music_bar(void)
 	float y = SCR_H - TABBAR_H - MU_BAR_H - 4, x = 8, w = BOT_W - 16;
 	draw_rrect(x, y + 2, w, MU_BAR_H, 12, T.shadow);
 	draw_rrect(x, y, w, MU_BAR_H, 12, T.surface2);
-	float f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	float f = MU.s.dur_ms ? fminf(1, (float)mu_pos() / MU.s.dur_ms) : 0;
 	draw_rect(x + 12, y + MU_BAR_H - 2.5f, (w - 24) * f, 1.5f, MU_ACC);
 	// la carátula (o una nota), lo que suena y, a la derecha, play/pausa y siguiente
 	float as = MU_BAR_H - 8;
@@ -6814,7 +6857,7 @@ static void music_sheet(void)
 		text_draw_center_clip(MU.s.title, (lx + ex) / 2, y + 10, ex - lx - 10, TS_BODY, T.text);
 	}
 	char sub[200], t1[16], t2[16];
-	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
+	mu_fmt(mu_pos(), t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
 	snprintf(sub, sizeof sub, "%d / %d · %s / %s", MU.s.idx + 1, MU.s.n, t1, MU.s.dur_ms ? t2 : "--:--");
 	text_draw_center(sub, BOT_W / 2, y + 28, TS_SUB, T.text3);
@@ -7846,7 +7889,7 @@ static void music_stage(void)
 	// la onda (también el progreso): la de verdad de la canción si es de SoundCloud; si no, una que sigue el volumen.
 	// Lo escuchado, del color; lo que falta, apagado. Debajo, un punto por cada comentario
 	const int NB = SC_WAVE;
-	float wx = 22, ww = TOP_W - 44, wy = SCR_H - 32, bw = ww / NB, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	float wx = 22, ww = TOP_W - 44, wy = SCR_H - 32, bw = ww / NB, f = MU.s.dur_ms ? fminf(1, (float)mu_pos() / MU.s.dur_ms) : 0;
 	bool real = inf && inf->has_wave;
 	for (int i = 0; i < NB; i++) {
 		float tgt = real ? 0.1f + 0.9f * inf->wave[i] / 255.0f
@@ -7857,17 +7900,25 @@ static void music_stage(void)
 		draw_rrect(bx + 0.8f, wy - hh / 2, bw - 2, hh, 1.2f, done ? st_shift(c, (float)i / NB * 0.1f, 1, 1) : 0x30FFFFFF);
 	}
 	draw_circle(wx + ww * f, wy, 3.5f, 0xFFFFFFFF);
+	if (SEEK.on || SEEK.pending) { // moviéndose por la canción: a dónde se va
+		char tm[16];
+		mu_fmt(mu_pos(), tm, sizeof tm);
+		float px = wx + ww * f, bw = text_width(tm, TS_BODY) + 18, bx = clampf(px - bw / 2, 8, TOP_W - 8 - bw);
+		draw_rect(px - 0.75f, wy - 18, 1.5f, 30, 0xC0FFFFFF);
+		draw_rrect(bx, wy - 42, bw, 22, 11, SEEK.on ? st_shift(c, 0, 0.9f, 1) : 0xC0000000);
+		text_draw_center(tm, bx + bw / 2, wy - 31 - text_lineh(TS_BODY) / 2, TS_BODY, 0xFFFFFFFF);
+	}
 	const ScComment *show = NULL;
 	if (inf && SCS.comments && MU.s.dur_ms) {
 		for (int k = 0; k < inf->nc; k++) {
 			float cx = wx + ww * fminf(1, (float)inf->c[k].ms / MU.s.dur_ms);
 			draw_rect(cx - 0.5f, wy + 14, 1, 2, 0x50FFFFFF);
-			if (inf->c[k].ms <= MU.s.pos_ms && MU.s.pos_ms - inf->c[k].ms < 4500)
+			if (inf->c[k].ms <= mu_pos() && mu_pos() - inf->c[k].ms < 4500)
 				show = &inf->c[k]; // (el último que ya pasó, unos segundos)
 		}
 	}
 	if (show) { // el comentario, en su momento: un globo encima de la onda que apunta a donde se escribió
-		float age = (MU.s.pos_ms - show->ms) / 1000.0f, al = fminf(1, fminf(age * 4, (4.5f - age) * 2));
+		float age = (mu_pos() - show->ms) / 1000.0f, al = fminf(1, fminf(age * 4, (4.5f - age) * 2));
 		char who[48];
 		snprintf(who, sizeof who, "%s  ", show->user);
 		float uw = text_width(who, TS_SUB), bw2 = fminf(uw + text_width(show->body, TS_SUB) + 20, TOP_W - 40);
@@ -7878,7 +7929,7 @@ static void music_stage(void)
 		text_draw_clip(show->body, bx + 10 + uw, by + 10 - text_lineh(TS_SUB) / 2, bw2 - 20 - uw, TS_SUB, col_alpha(0xFFFFFFFF, al));
 	}
 	char t1[16], t2[16];
-	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
+	mu_fmt(mu_pos(), t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
 	text_draw(t1, wx, SCR_H - 15, TS_SUB, 0x90FFFFFF);
 	if (MU.s.dur_ms)
@@ -13862,6 +13913,10 @@ static void draw_bottom(void)
 	gfx_target(g_bot, T.bg);
 	g_clip_ell = false;
 	g_sheets_now = 0;
+	if ((U.app == AP_MUSIC && !hm_is_open()) || MU.open) // (en Música o con el reproductor: el Circle Pad recorre la canción)
+		mu_scrub();
+	else
+		SEEK.on = false;
 	if (U.splash >= 0) {
 		splash_bot(1);
 		return;
@@ -14196,6 +14251,25 @@ static void lid_and_sleep(void)
 	bool busy = xfer_active() > 0 || upd_busy() || ins_busy() || music_playing() || (!open && mu_on());
 	aptSetSleepAllowed(!busy);
 	music_lid(!open);
+	// con música de SoundCloud, el Wi-Fi no se suelta al cerrar la tapa: el modo exclusivo de infraestructura de NDM,
+	// bloqueado, impide que el sistema lo apague (y que se ponga a buscar StreetPass); al parar, se devuelve
+	static int wifi_held; // 0 no, 1 retenido, 2 no se pudo (no se reintenta en cada vuelta)
+	bool want_wifi = mu_on() && !strncmp(MU.s.name, "sc:", 3);
+	if (want_wifi && !wifi_held) {
+		wifi_held = 2;
+		if (R_SUCCEEDED(ndmuInit())) {
+			Result r1 = NDMU_EnterExclusiveState(NDM_EXCLUSIVE_STATE_INFRASTRUCTURE), r2 = NDMU_LockState();
+			util_log("música: Wi-Fi retenido con la tapa cerrada: %08lX %08lX", (unsigned long)r1, (unsigned long)r2);
+			wifi_held = 1;
+		}
+	} else if (!want_wifi && wifi_held) {
+		if (wifi_held == 1) {
+			NDMU_UnlockState();
+			NDMU_LeaveExclusiveState();
+			ndmuExit();
+		}
+		wifi_held = 0;
+	}
 	if (!open && mu_on()) { // tapa cerrada: L o R una vez, pausa o sigue; dos veces L, la anterior; dos veces R, la siguiente
 		static u32 tap_key;
 		static u64 tap_at;

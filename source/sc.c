@@ -1096,6 +1096,9 @@ struct ScStream {
 	int cw, ch;
 	volatile bool cover_ready;
 	bool thr_done, orphan; // (bajo lk) el hilo terminó; nadie lo espera: lo libera el hilo al acabar
+	u32 *seg_ms;           // dónde empieza cada trozo (para saltar)
+	int nseg;
+	volatile int seek_seg; // el trozo al que saltar (-1: ninguno), lo atiende el hilo
 };
 
 typedef struct {
@@ -1240,19 +1243,42 @@ static void stream_run(void *arg)
 	}
 	s->cfg.rate = (int)rate, s->cfg.chans = ch, s->dec_ok = true;
 	s->dur_ms = pl.total_ms ? pl.total_ms : s->t.dur_ms;
+	if ((s->seg_ms = malloc(sizeof *s->seg_ms * (pl.n ? pl.n : 1)))) { // (dónde empieza cada trozo)
+		u32 acc = 0;
+		for (int k = 0; k < pl.n; k++)
+			s->seg_ms[k] = acc, acc += pl.seg[k].ms;
+		s->nseg = pl.n;
+	}
 	s->st = 1;
 	util_log("soundcloud: %s: %d trozos, %u ms, %d Hz", s->t.id, pl.n, (unsigned)s->dur_ms, s->cfg.rate);
-	for (int i = 0; i < pl.n && !s->stop; i++) {
-		if (i == 1)
-			cover_fetch(s); // (después del primer trozo: que empiece a sonar cuanto antes)
+	// los trozos, en orden; al acabar se espera por si se salta a otra parte (sc_stream_seek vacía la cola y dice desde
+	// qué trozo seguir: lo que se estaba bajando de antes ya no entra)
+	bool cover_done = false;
+	int i = 0;
+	while (!s->stop) {
+		LightLock_Lock(&s->lk);
+		if (s->seek_seg >= 0)
+			i = s->seek_seg, s->seek_seg = -1, s->eof = false;
+		LightLock_Unlock(&s->lk);
+		if (i >= pl.n) {
+			s->eof = true;
+			svcSleepThread(50 * 1000000ll);
+			continue;
+		}
+		if (i >= 1 && !cover_done)
+			cover_fetch(s), cover_done = true; // (después del primer trozo: que empiece a sonar cuanto antes)
+		bool skip = false;
 		while (!s->stop) { // hueco en la cola
 			LightLock_Lock(&s->lk);
 			bool room = s->qn < QMAX;
+			skip = s->seek_seg >= 0;
 			LightLock_Unlock(&s->lk);
-			if (room)
+			if (room || skip)
 				break;
 			svcSleepThread(50 * 1000000ll);
 		}
+		if (skip || s->stop)
+			continue;
 		Seg sg = {0};
 		u8 *d = NULL;
 		for (int tries = 0; tries < 3 && !d && !s->stop; tries++)
@@ -1260,18 +1286,27 @@ static void stream_run(void *arg)
 		if (!d) {
 			if (!s->stop)
 				util_log("soundcloud: %s: no llegó el trozo %d", s->t.id, i);
-			break;
+			i = pl.n; // (se acaba aquí, salvo que se salte a otra parte)
+			continue;
 		}
 		sg.data = d, sg.len = n;
 		FrCtx fc = {&sg, 0};
 		if (fmp4_frames(d, n, &s->cfg, fr_cb, &fc) <= 0) {
 			seg_free(&sg);
+			i++;
 			continue;
 		}
 		LightLock_Lock(&s->lk);
-		s->q[(s->qh + s->qn) % QMAX] = sg;
-		s->qn++;
+		bool stale = s->seek_seg >= 0; // (se pidió saltar mientras llegaba: ya no vale)
+		if (!stale) {
+			s->q[(s->qh + s->qn) % QMAX] = sg;
+			s->qn++;
+		}
 		LightLock_Unlock(&s->lk);
+		if (stale)
+			seg_free(&sg);
+		else
+			i++;
 	}
 	hls_free(&pl);
 	s->eof = true;
@@ -1284,6 +1319,7 @@ static void stream_free(ScStream *s)
 	if (s->dec)
 		NeAACDecClose(s->dec);
 	free(s->cover);
+	free(s->seg_ms);
 	free(s);
 }
 
@@ -1305,6 +1341,7 @@ ScStream *sc_stream_open(const char *id)
 	ScStream *s = calloc(1, sizeof *s);
 	if (!s)
 		return NULL;
+	s->seek_seg = -1;
 	if (!sc_track(id, &s->t)) {
 		free(s);
 		return NULL;
@@ -1329,6 +1366,25 @@ int sc_stream_ready(ScStream *s, int *rate, int *chans, u32 *dur_ms, char *err, 
 	if (s->st < 0)
 		util_strlcpy(err, s->err, en);
 	return s->st;
+}
+
+// saltar a ms: desde el trozo en que cae (devuelve dónde empieza) o -1 si aún no se sabe. Desde el hilo de la música
+long sc_stream_seek(ScStream *s, u32 ms)
+{
+	if (s->st != 1 || !s->seg_ms || !s->nseg)
+		return -1;
+	int k = 0;
+	while (k + 1 < s->nseg && s->seg_ms[k + 1] <= ms)
+		k++;
+	LightLock_Lock(&s->lk);
+	for (int q = 0; q < QMAX; q++)
+		seg_free(&s->q[q]);
+	s->qh = s->qn = 0, s->npend = s->pend_at = 0;
+	s->seek_seg = k, s->eof = false;
+	LightLock_Unlock(&s->lk);
+	if (s->dec)
+		NeAACDecPostSeekReset(s->dec, -1);
+	return (long)s->seg_ms[k];
 }
 
 int sc_stream_read(ScStream *s, s16 *out, int frames)

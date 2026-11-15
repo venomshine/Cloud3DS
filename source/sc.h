@@ -146,4 +146,5 @@ int  sc_stream_ready(ScStream *s, int *rate, int *chans, u32 *dur_ms, char *err,
 /* hasta frames muestras estéreo en out: cuántas; 0 se acabó; -1 aún no hay (cargando) */
 int  sc_stream_read(ScStream *s, s16 *out, int frames);
 bool sc_stream_cover(ScStream *s, u8 **rgba, int *w, int *h); /* la carátula, cuando llega (una vez) */
+long sc_stream_seek(ScStream *s, u32 ms); /* ir a ms (al principio del trozo en que cae); -1 si aún no se puede */
 void sc_stream_close(ScStream *s);
