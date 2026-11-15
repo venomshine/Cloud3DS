@@ -1,6 +1,18 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    '¿Falta alguna? Abre Cloud3DS en ella, en la misma Wi-Fi, o añádela por su IP con «+» (la muestra su app Conectar).':
+        ('Missing one? Open Cloud3DS on it, on the same Wi-Fi, or add it by IP with «+» (shown in its Connect app).',
+         '見つからない場合は、同じWi-Fiでその本体のCloud3DSを開くか、「+」でIPから追加してください(「接続」に表示されます)。'),
+    'Seguir leyendo · %d %%':
+        ('Continue reading · %d %%',
+         '続きを読む · %d %%'),
+    'Seguir leyendo':
+        ('Continue reading',
+         '続きを読む'),
+    'Última lectura: %s':
+        ('Last read: %s',
+         '最後に読んだ日: %s'),
     'Solo artistas verificados':
         ('Verified artists only',
          '認証済みアーティストのみ'),
@@ -478,18 +490,9 @@ TR = {
     'Lector':
         ('Reader',
          'リーダー'),
-    'Continuar: %s':
-        ('Continue: %s',
-         '続き: %s'),
     'Página %d de %d':
         ('Page %d of %d',
          '%d / %d ページ'),
-    'Progreso':
-        ('Progress',
-         '進み具合'),
-    'Última lectura':
-        ('Last read',
-         '最後に読んだ日'),
     'Sin empezar':
         ('Not started',
          '未読'),
@@ -2605,12 +2608,6 @@ TR = {
     'Sin conectar':
         ('Not connected',
          '未接続'),
-    'Reproduciendo:':
-        ('Playing:',
-         '再生中:'),
-    'En pausa:':
-        ('Paused:',
-         '一時停止中:'),
     '1 transferencia en curso':
         ('1 transfer in progress',
          '転送中:1件'),
@@ -3415,9 +3412,6 @@ TR = {
     'Continuar la lectura':
         ('Continue reading',
          '続きを読む'),
-    'Los archivos TXT solo se buscan en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Los demás se pueden abrir desde Archivos.':
-        ('TXT files are only searched in reading folders (/Books, /Manga, /Documents, /Downloads…). Others can be opened from Files.',
-         'TXTは読書用フォルダー(/Books、/Manga、/Documents、/Downloadsなど)だけで検索します。その他はファイルから開けます。'),
     'Los archivos CIA se instalan durante la descarga. Los archivos descargados se guardan en /Downloads.':
         ('CIA files are installed while downloading. Downloaded files are saved to /Downloads.',
          'CIAはダウンロード中にインストールされます。ダウンロードしたものはすべて /Downloads に保存されます。'),

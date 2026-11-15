@@ -11829,6 +11829,13 @@ static void sh_bottom(void)
 		else
 			empty_state(IC_DEVICES, _("Buscando consolas…"), _("Abre Cloud3DS en la otra consola, conectada a la misma red Wi-Fi. Si no aparece, añádela por su IP con «+» (se muestra en su app Conectar)."));
 	}
+	else if (SH.level == 0 && SH.view == 0 && cnt <= 3) { // pocas consolas: debajo, cómo añadir otra
+		float hy = VIEW_Y + cnt * RH - l->off + 22;
+		draw_rect(40, hy, BOT_W - 80, 1, T.divider);
+		draw_icon(IC_PLUS, BOT_W / 2, hy + 22, 14, T.text3);
+		wrap_center(_("¿Falta alguna? Abre Cloud3DS en ella, en la misma Wi-Fi, o añádela por su IP con «+» (la muestra su app Conectar)."), BOT_W / 2, hy + 36, 260,
+		            TS_SUB, 3, T.text3);
+	}
 	for (int i = 0; i < cnt; i++) {
 		float y = VIEW_Y + i * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
