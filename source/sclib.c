@@ -26,6 +26,8 @@ static struct {
 	List_ likes;
 	List_ *l[SCL_LISTS];
 	int nl;
+	ScFollow f[SCL_ARTISTS_MAX];
+	int nf;
 } L;
 
 static List_ *get(int list) { return list == SCL_LIKES ? &L.likes : list >= 0 && list < L.nl ? L.l[list] : NULL; }
@@ -58,6 +60,14 @@ static void save(void)
 		cJSON_AddStringToObject(o, "name", L.l[i]->name);
 		put_list(o, L.l[i]);
 		cJSON_AddItemToArray(ls, o);
+	}
+	cJSON *fs = cJSON_AddArrayToObject(root, "artists");
+	for (int i = 0; i < L.nf; i++) {
+		cJSON *o = cJSON_CreateObject();
+		cJSON_AddStringToObject(o, "id", L.f[i].id);
+		cJSON_AddStringToObject(o, "name", L.f[i].name);
+		cJSON_AddStringToObject(o, "seen", L.f[i].seen);
+		cJSON_AddItemToArray(fs, o);
 	}
 	char *txt = cJSON_PrintUnformatted(root);
 	cJSON_Delete(root);
@@ -123,6 +133,15 @@ void scl_load(void)
 			util_strlcpy(l->name, js(it, "name"), sizeof l->name);
 			read_list(it, l);
 			L.l[L.nl++] = l;
+		}
+		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(root, "artists"))
+		{
+			if (L.nf >= SCL_ARTISTS_MAX || !*js(it, "id"))
+				continue;
+			ScFollow *f = &L.f[L.nf++];
+			util_strlcpy(f->id, js(it, "id"), sizeof f->id);
+			util_strlcpy(f->name, js(it, "name"), sizeof f->name);
+			util_strlcpy(f->seen, js(it, "seen"), sizeof f->seen);
 		}
 		cJSON_Delete(root);
 	}
@@ -253,4 +272,60 @@ void scl_ids(int list, char *out, size_t n)
 		o += (size_t)snprintf(out + o, o < n ? n - o : 0, "%s%s", i ? "," : "", l->t[i].id);
 	if (o >= n)
 		out[n - 1] = 0;
+}
+
+static int ffind(const char *id)
+{
+	for (int i = 0; i < L.nf; i++)
+		if (!strcmp(L.f[i].id, id))
+			return i;
+	return -1;
+}
+
+bool scl_following(const char *id)
+{
+	scl_load();
+	return ffind(id) >= 0;
+}
+
+int scl_follow(const char *id, const char *name, bool on)
+{
+	scl_load();
+	int k = ffind(id);
+	if (on) {
+		if (k >= 0)
+			return 0;
+		if (L.nf >= SCL_ARTISTS_MAX)
+			return -1;
+		ScFollow *f = &L.f[L.nf++];
+		memset(f, 0, sizeof *f);
+		util_strlcpy(f->id, id, sizeof f->id);
+		util_strlcpy(f->name, name, sizeof f->name);
+	} else {
+		if (k < 0)
+			return 0;
+		memmove(&L.f[k], &L.f[k + 1], sizeof L.f[0] * (L.nf - k - 1));
+		L.nf--;
+	}
+	save();
+	return 1;
+}
+
+int scl_follows(ScFollow *out, int max)
+{
+	scl_load();
+	int n = L.nf < max ? L.nf : max;
+	if (n)
+		memcpy(out, L.f, sizeof *out * n);
+	return n;
+}
+
+void scl_set_seen(const char *id, const char *seen)
+{
+	scl_load();
+	int k = ffind(id);
+	if (k < 0 || !seen[0] || !strcmp(L.f[k].seen, seen))
+		return;
+	util_strlcpy(L.f[k].seen, seen, sizeof L.f[k].seen);
+	save();
 }

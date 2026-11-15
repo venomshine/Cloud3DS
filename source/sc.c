@@ -233,6 +233,8 @@ static bool parse_track(const cJSON *t, ScTrack *o)
 	const cJSON *user = cJSON_GetObjectItemCaseSensitive(t, "user");
 	util_strlcpy(o->title, js(t, "title") ? js(t, "title") : "?", sizeof o->title);
 	util_strlcpy(o->artist, js(user, "username") ? js(user, "username") : "", sizeof o->artist);
+	if (js(t, "created_at"))
+		util_strlcpy(o->created, js(t, "created_at"), sizeof o->created);
 	const cJSON *uid = cJSON_GetObjectItemCaseSensitive(user, "id");
 	if (cJSON_IsNumber(uid))
 		snprintf(o->uid, sizeof o->uid, "%.0f", uid->valuedouble);
@@ -297,6 +299,14 @@ static struct {
 	ScList l[SC_MAX];
 	ScArtist a[SC_ARTISTS];
 	int nt, nl, na, st;
+	// novedades de los artistas seguidos (aparte de las búsquedas)
+	bool chk_pending, chk_busy;
+	char chk_ids[SCL_ARTISTS_MAX][16], chk_since[SCL_ARTISTS_MAX][24];
+	int chk_n;
+	ScTrack new_t[SC_NEW_MAX];
+	int nnew;
+	char latest[SCL_ARTISTS_MAX][24];
+	u32 new_rev;
 	char err[32];
 	u32 rev;
 } Q;
@@ -494,6 +504,80 @@ static void do_artist(const char *id)
 	util_log("soundcloud: artista %s: %d canciones %s", id, nt, err);
 }
 
+// de cada artista, sus últimas canciones: las subidas después de «since» (si no está vacío) son nuevas
+static void do_check(void)
+{
+	static char ids[SCL_ARTISTS_MAX][16], since[SCL_ARTISTS_MAX][24], latest[SCL_ARTISTS_MAX][24];
+	static ScTrack nt_[SC_NEW_MAX];
+	LightLock_Lock(&CL);
+	int n = Q.chk_n;
+	memcpy(ids, Q.chk_ids, sizeof ids[0] * n);
+	memcpy(since, Q.chk_since, sizeof since[0] * n);
+	Q.chk_pending = false, Q.chk_busy = true;
+	LightLock_Unlock(&CL);
+	int nn = 0;
+	for (int i = 0; i < n && !Q.quit; i++) {
+		util_strlcpy(latest[i], since[i], sizeof latest[0]);
+		char path[100], err[32] = "";
+		snprintf(path, sizeof path, "/users/%s/tracks?limit=5", ids[i]);
+		cJSON *j = api(path, err, sizeof err), *it;
+		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+		{
+			ScTrack t;
+			if (!parse_track(it, &t) || !t.created[0])
+				continue;
+			if (strcmp(t.created, latest[i]) > 0)
+				util_strlcpy(latest[i], t.created, sizeof latest[0]);
+			if (since[i][0] && strcmp(t.created, since[i]) > 0 && nn < SC_NEW_MAX)
+				reg_put(&t), nt_[nn++] = t;
+		}
+		cJSON_Delete(j);
+	}
+	for (int a = 1; a < nn; a++) // (la más reciente primero)
+		for (int b = a; b > 0 && strcmp(nt_[b - 1].created, nt_[b].created) < 0; b--) {
+			ScTrack x = nt_[b];
+			nt_[b] = nt_[b - 1], nt_[b - 1] = x;
+		}
+	LightLock_Lock(&CL);
+	if (!Q.quit) {
+		memcpy(Q.new_t, nt_, sizeof nt_[0] * nn), Q.nnew = nn;
+		memcpy(Q.latest, latest, sizeof latest[0] * n);
+		Q.chk_busy = false, Q.new_rev++;
+	}
+	LightLock_Unlock(&CL);
+	util_log("soundcloud: novedades de %d artistas: %d", n, nn);
+}
+
+void sc_check_new(const char (*ids)[16], const char (*since)[24], int n)
+{
+	sc_init();
+	if (n > SCL_ARTISTS_MAX)
+		n = SCL_ARTISTS_MAX;
+	LightLock_Lock(&CL);
+	memcpy(Q.chk_ids, ids, sizeof Q.chk_ids[0] * n);
+	memcpy(Q.chk_since, since, sizeof Q.chk_since[0] * n);
+	Q.chk_n = n, Q.chk_pending = true;
+	LightLock_Unlock(&CL);
+	LightEvent_Signal(&Q.ev);
+}
+
+u32 sc_new_results(ScTrack *t, int *nt, char (*latest)[24], int *nl, bool *busy)
+{
+	if (!cl_init) {
+		*nt = *nl = 0, *busy = false;
+		return 0;
+	}
+	LightLock_Lock(&CL);
+	if (t)
+		memcpy(t, Q.new_t, sizeof *t * Q.nnew);
+	if (latest)
+		memcpy(latest, Q.latest, sizeof latest[0] * Q.chk_n);
+	*nt = Q.nnew, *nl = Q.chk_n, *busy = Q.chk_busy || Q.chk_pending;
+	u32 r = Q.new_rev;
+	LightLock_Unlock(&CL);
+	return r;
+}
+
 static void thread_main(void *arg)
 {
 	(void)arg;
@@ -505,9 +589,14 @@ static void thread_main(void *arg)
 			static char q[SC_IDS_LEN];
 			util_strlcpy(q, Q.q, sizeof q);
 			Q.job = 0;
+			bool chk = Q.chk_pending;
 			LightLock_Unlock(&CL);
-			if (Q.quit || !job)
+			if (Q.quit || (!job && !chk))
 				break;
+			if (!job) { // (las novedades, cuando no hay nada que buscar)
+				do_check();
+				continue;
+			}
 			if (job == 1)
 				do_search(q);
 			else if (job == 2)

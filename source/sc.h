@@ -24,6 +24,7 @@ typedef struct {
 	char id[24];
 	char title[128], artist[96];
 	char uid[16];        /* el autor (para «Ir al artista») */
+	char created[24];    /* cuándo se subió (ISO 8601: se ordena como texto) */
 	u32  dur_ms;
 	char art[256];       /* carátula (o el avatar del autor) */
 	char tc[400];        /* la transcodificación AAC elegida (api-v2) */
@@ -56,6 +57,16 @@ void sc_open_list(const char *id, const char *title);
 void sc_open_ids(const char *ids);  /* canciones por su número («1,2,3», hasta SC_MAX), en ese orden (las guardadas) */
 void sc_open_artist(const char *id); /* las canciones de un artista */
 /* lo último encontrado (copia); st: SCQ_*, err: por qué falló. Devuelve el número de versión (cambia al llegar) */
+/* novedades de los artistas que se siguen: ids y, de cada uno, desde cuándo se miró (vacío: la primera vez, solo se
+ * apunta lo último, sin avisar). En su hilo, sin tocar lo que se está buscando */
+#define SC_NEW_MAX 30
+#ifndef SCL_ARTISTS_MAX
+#define SCL_ARTISTS_MAX 40 /* artistas seguidos, como mucho */
+#endif
+void sc_check_new(const char (*ids)[16], const char (*since)[24], int n);
+/* lo encontrado (las nuevas, la más reciente primero) y, de cada artista, lo más reciente visto; cambia el número de
+ * versión al terminar. busy: aún buscando */
+u32  sc_new_results(ScTrack *t, int *nt, char (*latest)[24], int *nl, bool *busy);
 u32  sc_results(ScTrack *t, int *nt, ScList *l, int *nl, ScArtist *a, int *na, int *st, char *err, size_t en);
 bool sc_track(const char *id, ScTrack *out); /* una canción ya vista (para el reproductor) */
 /* descargar una canción que el autor deja descargar: su audio (AAC, con título, artista y carátula) a SC_DL_DIR, en su
