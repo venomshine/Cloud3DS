@@ -17,6 +17,14 @@
   <img src="docs/ajustes.png" width="260" alt="Ajustes">
 </p>
 <p align="center">
+  <img src="docs/musica.png" width="260" alt="Música: SoundCloud con tus listas y lo que recomienda">
+  <img src="docs/sonando.png" width="260" alt="Ahora suena: la carátula, la onda de la canción y sus datos">
+  <img src="docs/artista.png" width="260" alt="El perfil de un artista: cabecera, foto, biografía y sus secciones">
+</p>
+<p align="center">
+  <img src="docs/lector.png" width="260" alt="Lector: portadas, por dónde vas y lo leído">
+</p>
+<p align="center">
   <img src="docs/web-movil.png" width="200" alt="La SD en el móvil, con carpetas destacadas y las del sistema aparte">
   <img src="docs/web-subidas.png" width="200" alt="Qué hacer si un archivo ya existe">
 </p>
@@ -45,7 +53,7 @@ Necesitas una consola con homebrew (por ejemplo, con [3ds.hacks.guide](https://3
 
 **Actualizaciones:** Cloud3DS busca versiones nuevas al abrirse. Cuando haya una, ve a **Ajustes → Actualizaciones** y pulsa **Actualizar**: la descarga, comprueba que es el archivo original y la instala, sin FBI ni cables.
 
-El móvil o el PC tienen que estar en **la misma red** que la consola. En algunas Wi-Fi públicas los dispositivos no se pueden ver entre sí; ahí no funcionará. Tus archivos no salen de tu red: nada pasa por Internet. La app solo se conecta a GitHub para buscar actualizaciones, y eso se puede desactivar en Ajustes.
+El móvil o el PC tienen que estar en **la misma red** que la consola. En algunas Wi-Fi públicas los dispositivos no se pueden ver entre sí; ahí no funcionará. Tus archivos no salen de tu red: la web de la consola solo se ve en tu Wi-Fi y nada de ella pasa por Internet. La app solo sale a Internet para lo que tú usas: buscar actualizaciones en GitHub (se puede desactivar en Ajustes), escuchar SoundCloud en Música, la Nube (OneDrive), las Descargas y el Navegador.
 
 ## Funciones
 
@@ -66,14 +74,15 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
   - **Conectar:** el QR, la dirección y el PIN, la actividad en directo y los dispositivos vinculados.
   - **Descargas:** desde un enlace, escaneando un código QR o con el enlace copiado; la última tarjeta, «Ver lo descargado», abre `/Downloads`, donde queda todo lo descargado (también desde la Nube o el Navegador). Los CIA se instalan mientras se descargan.
   - **Nube:** OneDrive en la consola, como Archivos: abre fotos y textos (y guarda los cambios en la nube), música, páginas, ZIP y CIA; copia, corta, cambia el nombre, elimina, crea carpetas y selecciona varios. Comparte el portapapeles con Archivos: lo copiado en la SD se sube con X y lo copiado en la nube se descarga en cualquier carpeta de la SD. Las capturas nuevas se suben solas.
-  - **Música:** busca la música de la SD y la agrupa por canciones, artistas y álbumes según sus etiquetas; lo que no las tiene va aparte, en «Sin datos», donde se puede ocultar o eliminar (siempre opcional). Sigue sonando en segundo plano.
-  - **Lector:** PDF, manga y cómics (CBZ), EPUB, DOCX y TXT con su biblioteca (recientes, todos y por carpetas, con la página por la que vas). Se lee en horizontal (una página repartida entre las dos pantallas) o con la consola de lado, como un libro (una página en cada pantalla); el manga, de derecha a izquierda. Usa [MuPDF](https://mupdf.com).
+  - **Música:** **SoundCloud** en streaming, sin cuenta: busca canciones, artistas y playlists (también solo de artistas verificados), con una sección Descubrir, géneros y búsquedas recientes. Biblioteca en la consola: «Me gusta», listas propias y artistas que sigues, con aviso (también en las notificaciones del sistema) cuando suben algo nuevo. Perfil de cada artista con su cabecera, biografía, populares, canciones, álbumes y listas. Mientras suena: la carátula de fondo, la onda real de la canción, sus reproducciones, los comentarios en el segundo en que se escribieron, radio de canciones parecidas al acabar la lista, ecualizador (con presets o a mano) y moverse por la canción con el Circle Pad. Se descargan las que el autor permite. Las canciones protegidas con DRM (muchas de discográficas) se ven con un candado: SoundCloud solo las deja escuchar en su app. **En la consola**, la música de la SD por canciones, artistas y álbumes, con sus carátulas (las de las etiquetas o el `cover.jpg` de la carpeta). Sigue sonando con la tapa cerrada, por los auriculares o por los altavoces, y se controla con L y R.
+  - **Lector:** PDF, manga y cómics (CBZ), EPUB, DOCX y TXT con su biblioteca de portadas (recientes y todos, con la página por la que vas). Se lee con la consola de lado, como un libro, con zoom y manga de derecha a izquierda. Usa [MuPDF](https://mupdf.com).
   - **Compartir:** pasa apps homebrew instaladas a otra consola en la misma Wi-Fi, como Zapya. Se vinculan una vez comprobando un código, cada una ve las apps instaladas de la otra y las pide; quien da acepta cada pedido (o marca a la otra como «de confianza») y Cloud3DS arma su instalador (CIA) a partir de lo instalado, lo envía y la otra lo instala. Solo homebrew: nunca juegos de cartucho, de la eShop ni del sistema.
   - **Navegador** (experimental) y **Ajustes**; en «Acerca de», los QR de GitHub, Discord y Ko-fi.
 - **Operaciones delicadas protegidas:** al instalar, desinstalar o borrar datos aparece una pantalla de espera que bloquea los botones y HOME hasta que termina, para que no se corte a mitad. Una descarga que se está instalando se puede cancelar sin riesgo.
 - El servidor se puede apagar en Ajustes → Conexión (la nube y las descargas siguen funcionando).
 - **Se actualiza sola:** busca versiones nuevas en GitHub y las instala desde Ajustes, comprobando antes que el archivo es el original (SHA-256). Nunca baja de versión.
-- **Puedes cerrar la tapa:** mientras transfiere, la consola no se suspende y apaga la pantalla.
+- **Puedes cerrar la tapa:** mientras transfiere o suena música, la consola no se suspende y apaga la pantalla.
+- **En el inicio**, arriba: lo que suena y el último libro, para seguir donde lo dejaste.
 - Fecha, hora, Wi-Fi y batería en la pantalla superior. Tema oscuro y claro.
 - Idiomas: **español, inglés y japonés** (o el de la consola). La web usa el idioma del móvil o del PC.
 
@@ -87,7 +96,8 @@ El móvil o el PC tienen que estar en **la misma red** que la consola. En alguna
 | **B** | Atrás; en la pantalla principal de una aplicación, vuelve al inicio |
 | **Y** | En Archivos: opciones de lo elegido · en Títulos: ordenar por tamaño o por nombre · en el inicio: tamaño de los iconos |
 | **X** | En Archivos: crear una carpeta o un documento, o pegar lo copiado |
-| **L / R** | Cambiar de sección (Conectar, Música, Compartir) |
+| **L / R** | Cambiar de sección (Conectar, Música, perfil de un artista, Compartir) · con la tapa cerrada y música: pausa o sigue (dos veces: anterior o siguiente) |
+| **Circle Pad** | En Música, de lado: moverse por la canción que suena |
 | **SELECT** | Volver al inicio desde cualquier aplicación |
 | **START** | Salir (siempre pregunta) |
 
@@ -123,7 +133,11 @@ source/   código de la app
   ciabuild.c      armar el CIA de una app homebrew instalada (Compartir)
   reader.c        el Lector: MuPDF en su hilo y la biblioteca
   cloud.c         OneDrive
-  music.c         reproductor de música
+  music.c         reproductor de música (ecualizador, saltar, tapa cerrada)
+  mlib.c          biblioteca de música de la SD y sus carátulas
+  sc.c sclib.c    SoundCloud (búsquedas, streaming HLS/AAC, carátulas) y su biblioteca en la consola
+  schls.c         listas HLS y trozos fMP4 de SoundCloud
+  share.c         Compartir entre consolas
   browser.c       navegador web (experimental; brcss, brlayout, jsdom, canvas, svg)
   img.c           abrir fotos para el visor y las miniaturas de la consola
   txt.c           abrir, editar y guardar textos sin cambiar su formato
@@ -150,7 +164,7 @@ Para añadir o corregir traducciones, edita `tools/i18n_tr.py` y ejecuta `python
 
 **Install:** open **FBI** → *Remote Install* → *Scan QR Code* and scan the QR above, or download `Cloud3DS.cia` / `Cloud3DS.3dsx` from the [latest release](https://github.com/venomshine/Cloud3DS/releases/latest).
 
-**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, copy and move, view photos and videos, rename and delete. If something already exists, choose to replace (or merge folders), rename, keep both, skip or cancel all. Highlight folders with a color, and system folders are shown in their own group. Devices show their real name when the network provides it, can be renamed and unpaired from the console. On the console, every feature is an app on the home menu: Files, Titles (installed games and apps, their size, updates, DLC, extra data, save backups and uninstalling), Connect (QR, address, PIN, activity and devices), Downloads (from a link or a QR code; CIA files install while they download), Cloud (OneDrive, managed like Files: copy, cut, rename, delete and new folders, sharing one clipboard with the SD card), Browser (experimental), Music and Settings. SELECT always returns to the home menu. Installing, uninstalling and deleting data show a waiting screen that blocks the buttons and HOME until they finish. The server can be turned off in Settings → Connection. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads and copies never leave half-written files behind.
+**Use:** open Cloud3DS with the console on Wi-Fi. Scan the QR code with your phone's camera, or type the address and PIN shown on the console in your PC's browser (same network). Browse, upload (drag and drop files or whole folders), download, copy and move, view photos and videos, rename and delete. If something already exists, choose to replace (or merge folders), rename, keep both, skip or cancel all. Highlight folders with a color, and system folders are shown in their own group. Devices show their real name when the network provides it, can be renamed and unpaired from the console. On the console, every feature is an app on the home menu: Files, Titles (installed games and apps, their size, updates, DLC, extra data, save backups and uninstalling), Connect (QR, address, PIN, activity and devices), Downloads (from a link or a QR code; CIA files install while they download), Cloud (OneDrive, managed like Files: copy, cut, rename, delete and new folders, sharing one clipboard with the SD card), Browser (experimental), Music (SoundCloud streaming with likes, your own playlists, followed artists with new-upload alerts, artist profiles, Discover, real waveforms, timed comments, radio, an equalizer and Circle Pad seeking, plus the SD card's music with album art), Reader (PDF, CBZ, EPUB, DOCX and TXT with covers and progress), Share (homebrew apps between consoles) and Settings. SELECT always returns to the home menu. Installing, uninstalling and deleting data show a waiting screen that blocks the buttons and HOME until they finish. The server can be turned off in Settings → Connection. The PIN stays the same until you change it (pick your own in Settings). Read-only mode and system-folder protection are on hand, and uploads and copies never leave half-written files behind.
 
 **Updates:** Cloud3DS checks GitHub for new versions when it opens. Go to **Settings → Updates** to download, verify (SHA-256) and install the new one without FBI.
 
@@ -175,4 +189,4 @@ Cloud3DS es software libre bajo la **[GNU GPL v3](LICENSE)** con términos adici
 
 *License: GNU GPL v3 with additional attribution terms — see [NOTICE.md](NOTICE.md).*
 
-Incluye cJSON (MIT), QR Code generator de Project Nayuki (MIT), libcurl (curl), Mbed TLS (Apache-2.0) y los certificados raíz de Mozilla (MPL-2.0), que conservan sus licencias.
+Incluye cJSON (MIT), QR Code generator de Project Nayuki (MIT), libcurl (curl), Mbed TLS (Apache-2.0), MuPDF (AGPL-3.0), FAAD2 (GPL-2.0 o posterior) y los certificados raíz de Mozilla (MPL-2.0), entre otros, que conservan sus licencias: la lista completa está en [NOTICE.md](NOTICE.md).
