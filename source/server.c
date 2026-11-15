@@ -17,6 +17,9 @@
 #include "dl.h"
 #include "hash.h"
 #include "music.h"
+#include "mlib.h"
+#include "sc.h"
+#include "sclib.h"
 #include "live.h"
 #include "titles.h"
 #include "remote.h"
@@ -1366,7 +1369,16 @@ static void h_music(Conn *c, bool post)
 			music_shuffle();
 		else if (!strcmp(op, "repeat"))
 			music_repeat();
-		else {
+		else if (!strcmp(op, "like")) { // SoundCloud: «Me gusta» de lo que suena
+			MusicState ms;
+			ScTrack t;
+			music_get(&ms);
+			if (strncmp(ms.name, "sc:", 3) || !sc_track(ms.name + 3, &t)) {
+				resp_err(c, 400, "not_sc");
+				return;
+			}
+			scl_like(&t, !scl_liked(t.id));
+		} else {
 			resp_err(c, 400, "bad_op");
 			return;
 		}
@@ -1381,10 +1393,44 @@ static void h_music(Conn *c, bool post)
 	buf_json_str(&b, m.artist);
 	buf_puts(&b, ",\"dir\":");
 	buf_json_str(&b, m.dir);
-	buf_printf(&b, ",\"i\":%d,\"n\":%d,\"pos\":%lu,\"dur\":%lu,\"shuffle\":%s,\"repeat\":%d}", m.idx, m.n, (unsigned long)m.pos_ms,
+	buf_printf(&b, ",\"i\":%d,\"n\":%d,\"pos\":%lu,\"dur\":%lu,\"shuffle\":%s,\"repeat\":%d", m.idx, m.n, (unsigned long)m.pos_ms,
 	           (unsigned long)m.dur_ms, m.shuffle ? "true" : "false", m.repeat);
+	// de dónde es y su carátula: la de SoundCloud (su dirección) o la de la canción de la SD (api/cover)
+	bool sc = !strncmp(m.name, "sc:", 3);
+	ScTrack t;
+	buf_printf(&b, ",\"sc\":%s,\"liked\":%s,\"art\":", sc ? "true" : "false", sc && scl_liked(m.name + 3) ? "true" : "false");
+	if (sc && sc_track(m.name + 3, &t))
+		buf_json_str(&b, t.art);
+	else if (!sc && m.st != MU_OFF) {
+		char full[800];
+		snprintf(full, sizeof full, "%s%s%s", m.dir, m.dir[0] && strcmp(m.dir, "/") ? "/" : "", m.name);
+		buf_puts(&b, "\"/api/cover?p=");
+		pct_encode(&b, full);
+		buf_puts(&b, "\"");
+	} else
+		buf_puts(&b, "\"\"");
+	buf_puts(&b, "}");
 	resp_json(c, 200, &b);
 	free(b.p);
+}
+
+/* la carátula de una canción de la SD (la de su etiqueta o la de su carpeta), tal cual: JPEG o PNG */
+static void h_cover(Conn *c)
+{
+	char p[800];
+	if (!qget(c->query, "p", p, sizeof p) || !fsx_path_ok(p) || !music_is_audio(p)) {
+		resp_err(c, 400, "bad_path");
+		return;
+	}
+	size_t n = 0;
+	u8 *img = mlib_cover_data(p, &n);
+	if (!img) {
+		resp_err(c, 404, "no_cover");
+		return;
+	}
+	bool png = n > 4 && !memcmp(img, "\x89PNG", 4);
+	resp(c, 200, png ? "image/png" : "image/jpeg", (const char *)img, n, "Cache-Control: max-age=3600\r\n");
+	free(img);
 }
 
 /* MD5 y SHA-256: POST empieza (p = archivo), GET dice cómo va (el mismo trabajo que en la consola) */
@@ -2294,6 +2340,8 @@ static void route(Conn *c, const char *body)
 		h_titles(c);
 	else if (strcmp(p, "title_icon") == 0 && get)
 		h_title_icon(c);
+	else if (strcmp(p, "cover") == 0 && get)
+		h_cover(c);
 	else if (strcmp(p, "save_backup") == 0 && post)
 		h_save_backup(c);
 	else if (strcmp(p, "dl") == 0 && post)
