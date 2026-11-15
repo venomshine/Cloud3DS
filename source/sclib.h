@@ -22,6 +22,7 @@ typedef struct {
 	char title[128], artist[96];
 	char uid[16];
 	u32  dur_ms;
+	char art[128];   /* su carátula (las guardadas antes de esto, sin ella hasta que se vuelvan a ver) */
 } ScSaved;
 
 void scl_load(void);
@@ -40,14 +41,19 @@ bool scl_has(int list, const char *id);
 int  scl_tracks(int list, ScSaved *out, int max);
 /* los números de sus canciones, separados por comas (para sc_open_ids) */
 void scl_ids(int list, char *out, size_t n);
+/* lo que llega de SoundCloud de canciones guardadas: sus carátulas, a lo guardado (si no la tenían) */
+void scl_touch(const ScTrack *t, int n);
+/* la carátula de una lista (la de su primera canción que la tenga); "" si ninguna */
+const char *scl_list_art(int list);
 
 /* artistas seguidos: de cada uno, su número, su nombre y lo último suyo que se vio (para avisar de lo nuevo) */
 typedef struct {
 	char id[16];
 	char name[96];
 	char seen[24]; /* created_at de lo último visto (vacío: aún no se miró) */
+	char art[128]; /* su foto */
 } ScFollow;
 bool scl_following(const char *id);
-int  scl_follow(const char *id, const char *name, bool on); /* 1 hecho; 0 nada; -1 lleno */
+int  scl_follow(const char *id, const char *name, const char *art, bool on); /* 1 hecho; 0 nada; -1 lleno */
 int  scl_follows(ScFollow *out, int max);
 void scl_set_seen(const char *id, const char *seen);

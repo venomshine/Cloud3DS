@@ -825,6 +825,40 @@ void draw_texture_part(Texture *t, float x, float y, float w, float h, float u0,
     C2D_Image im = {t->img.tex, &sub};
     C2D_DrawImageAt(im, x, y, Z, NULL, w / sub.width, h / sub.height);
 }
+// con las esquinas redondeadas (r ≥ la mitad: un círculo): la imagen en tiras horizontales, cada una del ancho que cabe
+static void tex_strip(Texture *t, float x, float y, float w, float h, float u0, float v0, float u1, float v1, const C2D_ImageTint *tint) {
+    if (!cmd_room() || w <= 0 || h <= 0) return;
+    const Tex3DS_SubTexture *st = t->img.subtex;
+    Tex3DS_SubTexture sub = *st;
+    sub.left = st->left + (st->right - st->left) * u0;
+    sub.right = st->left + (st->right - st->left) * u1;
+    sub.top = st->top + (st->bottom - st->top) * v0;
+    sub.bottom = st->top + (st->bottom - st->top) * v1;
+    sub.width = (u16)fmaxf(1, w), sub.height = (u16)fmaxf(1, h);
+    C2D_Image im = {t->img.tex, &sub};
+    C2D_DrawParams p = {{x, y, w, h}, {0, 0}, Z, 0};
+    C2D_DrawImage(im, &p, tint);
+}
+void draw_texture_round(Texture *t, float x, float y, float w, float h, float r, float alpha) {
+    if (!t->ok) return;
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
+    C2D_ImageTint tint;
+    C2D_AlphaImageTint(&tint, alpha);
+    const C2D_ImageTint *ti = alpha < 0.999f ? &tint : NULL;
+    if (r < 0.5f) {
+        tex_strip(t, x, y, w, h, 0, 0, 1, 1, ti);
+        return;
+    }
+    float step = r > 30 ? 2 : 1;
+    for (float yy = 0; yy < r; yy += step) { // (las esquinas: arriba y abajo a la vez)
+        float sh = fminf(step, r - yy), dy = r - (yy + sh / 2), in = r - sqrtf(fmaxf(0, r * r - dy * dy));
+        float u0 = in / w, u1 = 1 - in / w;
+        tex_strip(t, x + in, y + yy, w - 2 * in, sh, u0, yy / h, u1, (yy + sh) / h, ti);
+        tex_strip(t, x + in, y + h - yy - sh, w - 2 * in, sh, u0, (h - yy - sh) / h, u1, (h - yy) / h, ti);
+    }
+    tex_strip(t, x, y + r, w, h - 2 * r, 0, r / h, 1, (h - r) / h, ti);
+}
 #ifdef G3_FONTDBG
 void font_debug(void) {
     FILE *f = fopen("sdmc:/fontdbg.txt", "w");

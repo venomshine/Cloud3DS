@@ -31,11 +31,14 @@ typedef struct {
 	u32  cover_rev;       /* cambia cuando llega la carátula (SoundCloud: después de empezar) */
 	char err[32];         /* «no_dsp», «bad_file»… */
 	bool loading;         /* SoundCloud: esperando a que llegue el audio */
+	int  left;            /* cuántas quedan por sonar después de esta */
 } MusicState;
 
 bool music_is_audio(const char *name);
 /* empieza por start, con names (de dir) como lista. Con dir "", names son rutas enteras (de carpetas distintas) */
 bool music_play(const char *dir, char (*names)[256], int n, int start);
+/* añadir al final de la lista que suena, sin cortarla (las que ya estén, no); cuántas se añadieron */
+int  music_append(char (*names)[256], int n);
 void music_toggle(void);
 void music_next(void);
 void music_prev(void);

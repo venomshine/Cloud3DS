@@ -110,5 +110,6 @@ bool tex_from_rgb565(Texture *t, const u16 *px, int w, int h);  // reutilizable 
 void tex_nearest(Texture *t);
 void tex_free(Texture *t);
 void draw_texture(Texture *t, float x, float y, float w, float h, float alpha);
+void draw_texture_round(Texture *t, float x, float y, float w, float h, float r, float alpha); /* esquinas redondas (r ≥ w/2: círculo) */
 void draw_texture_tint(Texture *t, float x, float y, float w, float h, u32 col);
 void draw_texture_part(Texture *t, float x, float y, float w, float h, float u0, float v0, float u1, float v1);

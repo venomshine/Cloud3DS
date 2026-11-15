@@ -31,12 +31,17 @@ typedef struct {
 	char auth[700];      /* track_authorization */
 	bool preview;        /* solo 30 s (la canción completa es de pago) */
 	bool downloadable;   /* el autor deja descargarla */
+	u32  plays, likes;   /* reproducciones y «me gusta» en SoundCloud */
+	char genre[32];
+	char wave[96];       /* la onda (wave.sndcdn.com/…json) */
 } ScTrack;
 
 typedef struct {
-	char id[24];
+	char id[80];         /* el número o, las de SoundCloud («Tendencias»), su urn («soundcloud:system-playlists:…») */
 	char title[128], user[96];
 	int  count;
+	char art[256];       /* su carátula */
+	bool album;
 } ScList;
 
 typedef struct {
@@ -44,6 +49,7 @@ typedef struct {
 	char name[96];
 	int  tracks;
 	u32  followers;
+	char art[256];       /* su foto */
 } ScArtist;
 
 enum { SCQ_IDLE, SCQ_BUSY, SCQ_DONE, SCQ_ERR };
@@ -69,6 +75,48 @@ void sc_check_new(const char (*ids)[16], const char (*since)[24], int n);
 u32  sc_new_results(ScTrack *t, int *nt, char (*latest)[24], int *nl, bool *busy);
 u32  sc_results(ScTrack *t, int *nt, ScList *l, int *nl, ScArtist *a, int *na, int *st, char *err, size_t en);
 bool sc_track(const char *id, ScTrack *out); /* una canción ya vista (para el reproductor) */
+/* la página del artista abierto (sc_open_artist): sus datos y cuántas de las canciones son las populares (van primero);
+ * sus listas y álbumes llegan como playlists */
+bool sc_artist_page(ScArtist *a, int *ntop);
+
+/* ---- aparte de las búsquedas (en el mismo hilo, cuando no hay otra cosa) */
+/* Descubrir: las selecciones de SoundCloud (tendencias por género, recomendadas…) */
+#define SC_SECTIONS 6
+#define SC_SEC_ITEMS 12
+typedef struct {
+	char title[64];
+	int  n;
+	ScList it[SC_SEC_ITEMS];
+} ScSection;
+void sc_discover(void);
+u32  sc_discover_results(ScSection *s, int *n, bool *busy);
+
+/* lo que suena: su onda (SC_WAVE barras, 0-255) y los comentarios con su momento (por orden) */
+#define SC_WAVE 64
+#define SC_COMMENTS 120
+typedef struct {
+	u32  ms;
+	char user[40];
+	char body[120];
+} ScComment;
+typedef struct {
+	char id[24];
+	bool has_wave;
+	u8   wave[SC_WAVE];
+	int  nc;
+	ScComment c[SC_COMMENTS];
+} ScInfo;
+void sc_info(const char *id);
+u32  sc_info_results(ScInfo *out); /* (cambia el número al llegar) */
+
+/* la radio: canciones parecidas a una (para seguir cuando se acaba la lista) */
+#define SC_RADIO 20
+void sc_radio(const char *id);
+u32  sc_radio_results(ScTrack *t, int *n, char *seed, size_t sn);
+
+/* carátulas pequeñas (64×64 como mucho), en su propio hilo: se piden y se recogen cuando llegan */
+void sc_thumb_want(const char *url);
+bool sc_thumb_take(char *url, size_t un, u8 **rgba, int *w, int *h);
 /* descargar una canción que el autor deja descargar: su audio (AAC, con título, artista y carátula) a SC_DL_DIR, en su
  * hilo y de una en una. 0 empezó; 1 ya hay otra en curso; 2 no se puede (no la deja o es un fragmento); 3 error */
 #define SC_DL_DIR "/Music/SoundCloud"

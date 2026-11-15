@@ -40,6 +40,8 @@ static void put_track(cJSON *arr, const ScSaved *s)
 	cJSON_AddStringToObject(o, "artist", s->artist);
 	cJSON_AddStringToObject(o, "uid", s->uid);
 	cJSON_AddNumberToObject(o, "ms", s->dur_ms);
+	if (s->art[0])
+		cJSON_AddStringToObject(o, "art", s->art);
 	cJSON_AddItemToArray(arr, o);
 }
 
@@ -67,6 +69,8 @@ static void save(void)
 		cJSON_AddStringToObject(o, "id", L.f[i].id);
 		cJSON_AddStringToObject(o, "name", L.f[i].name);
 		cJSON_AddStringToObject(o, "seen", L.f[i].seen);
+		if (L.f[i].art[0])
+			cJSON_AddStringToObject(o, "art", L.f[i].art);
 		cJSON_AddItemToArray(fs, o);
 	}
 	char *txt = cJSON_PrintUnformatted(root);
@@ -102,6 +106,7 @@ static void read_list(const cJSON *o, List_ *l)
 		util_strlcpy(s->title, js(it, "title"), sizeof s->title);
 		util_strlcpy(s->artist, js(it, "artist"), sizeof s->artist);
 		util_strlcpy(s->uid, js(it, "uid"), sizeof s->uid);
+		util_strlcpy(s->art, js(it, "art"), sizeof s->art);
 		const cJSON *ms = cJSON_GetObjectItemCaseSensitive(it, "ms");
 		s->dur_ms = cJSON_IsNumber(ms) ? (u32)ms->valuedouble : 0;
 	}
@@ -142,6 +147,7 @@ void scl_load(void)
 			util_strlcpy(f->id, js(it, "id"), sizeof f->id);
 			util_strlcpy(f->name, js(it, "name"), sizeof f->name);
 			util_strlcpy(f->seen, js(it, "seen"), sizeof f->seen);
+			util_strlcpy(f->art, js(it, "art"), sizeof f->art);
 		}
 		cJSON_Delete(root);
 	}
@@ -180,6 +186,8 @@ int scl_add(int list, const ScTrack *t)
 	util_strlcpy(s->artist, t->artist, sizeof s->artist);
 	util_strlcpy(s->uid, t->uid, sizeof s->uid);
 	s->dur_ms = t->dur_ms;
+	if (strlen(t->art) < sizeof s->art)
+		util_strlcpy(s->art, t->art, sizeof s->art);
 	l->n++;
 	save();
 	return 1;
@@ -288,19 +296,24 @@ bool scl_following(const char *id)
 	return ffind(id) >= 0;
 }
 
-int scl_follow(const char *id, const char *name, bool on)
+int scl_follow(const char *id, const char *name, const char *art, bool on)
 {
 	scl_load();
 	int k = ffind(id);
 	if (on) {
-		if (k >= 0)
+		if (k >= 0) { // (ya: si no tenía foto, la de ahora)
+			if (art && art[0] && !L.f[k].art[0] && strlen(art) < sizeof L.f[k].art)
+				util_strlcpy(L.f[k].art, art, sizeof L.f[k].art), save();
 			return 0;
+		}
 		if (L.nf >= SCL_ARTISTS_MAX)
 			return -1;
 		ScFollow *f = &L.f[L.nf++];
 		memset(f, 0, sizeof *f);
 		util_strlcpy(f->id, id, sizeof f->id);
 		util_strlcpy(f->name, name, sizeof f->name);
+		if (art && strlen(art) < sizeof f->art)
+			util_strlcpy(f->art, art, sizeof f->art);
 	} else {
 		if (k < 0)
 			return 0;
@@ -328,4 +341,38 @@ void scl_set_seen(const char *id, const char *seen)
 		return;
 	util_strlcpy(L.f[k].seen, seen, sizeof L.f[k].seen);
 	save();
+}
+
+static bool touch_list(List_ *l, const ScTrack *t, int n)
+{
+	bool ch = false;
+	for (int i = 0; l && i < l->n; i++)
+		if (!l->t[i].art[0])
+			for (int k = 0; k < n; k++)
+				if (t[k].art[0] && strlen(t[k].art) < sizeof l->t[i].art && !strcmp(t[k].id, l->t[i].id)) {
+					util_strlcpy(l->t[i].art, t[k].art, sizeof l->t[i].art);
+					ch = true;
+					break;
+				}
+	return ch;
+}
+
+void scl_touch(const ScTrack *t, int n)
+{
+	scl_load();
+	bool ch = touch_list(&L.likes, t, n);
+	for (int i = 0; i < L.nl; i++)
+		ch |= touch_list(L.l[i], t, n);
+	if (ch)
+		save();
+}
+
+const char *scl_list_art(int list)
+{
+	scl_load();
+	const List_ *l = get(list);
+	for (int i = 0; l && i < l->n; i++)
+		if (l->t[i].art[0])
+			return l->t[i].art;
+	return "";
 }

@@ -739,10 +739,10 @@ static void set_state(int st, const char *err)
 /* toca la canción de order[pos]; devuelve el siguiente comando que la cortó (o C_NONE si acabó sola) */
 static int play_one(s16 **buf, ndspWaveBuf *wb)
 {
-	int idx = M.order[M.pos];
 	char path[800];
 	MusicState st = {0};
 	LightLock_Lock(&M.lock);
+	int idx = M.order[M.pos];
 	if (!M.s.dir[0]) // (la biblioteca: cada una con su ruta entera)
 		snprintf(path, sizeof path, "%s", M.list[idx]);
 	else
@@ -887,17 +887,21 @@ static void music_thread(void *arg)
 			}
 			LightLock_Lock(&M.lock);
 			int rep = M.s.repeat;
-			LightLock_Unlock(&M.lock);
+			bool end = false;
 			if (r == C_PREV)
 				M.pos = (M.pos + M.n - 1) % M.n;
 			else if (r == C_NEXT || rep != MR_ONE) {
 				M.pos++;
 				if (M.pos >= M.n) {
 					if (rep == MR_OFF && r != C_NEXT) // se acabó la carpeta
-						break;
-					M.pos = 0;
+						end = true, M.pos = M.n - 1;
+					else
+						M.pos = 0;
 				}
 			}
+			LightLock_Unlock(&M.lock);
+			if (end)
+				break;
 		}
 		if (M.cmd != C_PLAY && M.s.st != MU_ERROR)
 			set_state(MU_OFF, NULL);
@@ -968,6 +972,32 @@ bool music_play(const char *dir, char (*names)[256], int n, int start)
 	return M.thr != NULL;
 }
 
+int music_append(char (*names)[256], int n)
+{
+	if (!M.thr || M.s.st == MU_OFF || n <= 0)
+		return 0;
+	LightLock_Lock(&M.lock);
+	int add = 0;
+	char (*nl)[256] = realloc(M.list, (size_t)(M.n + n) * sizeof *M.list);
+	int *no = nl ? realloc(M.order, (size_t)(M.n + n) * sizeof *M.order) : NULL;
+	if (nl)
+		M.list = nl;
+	if (no)
+		M.order = no;
+	for (int i = 0; no && i < n && M.n < LIST_MAX; i++) {
+		bool dup = false;
+		for (int k = 0; k < M.n && !dup; k++)
+			dup = !strcmp(M.list[k], names[i]);
+		if (dup)
+			continue;
+		memcpy(M.list[M.n], names[i], sizeof M.list[0]);
+		M.order[M.n] = M.n, M.n++, add++;
+	}
+	M.s.n = M.n;
+	LightLock_Unlock(&M.lock);
+	return add;
+}
+
 void music_toggle(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_TOGGLE); }
 void music_next(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_NEXT); }
 void music_prev(void) { if (M.thr && M.s.st != MU_OFF) mu_send(C_PREV); }
@@ -1018,6 +1048,7 @@ void music_get(MusicState *s)
 	}
 	LightLock_Lock(&M.lock);
 	*s = M.s;
+	s->left = M.n - 1 - M.pos;
 	LightLock_Unlock(&M.lock);
 }
 

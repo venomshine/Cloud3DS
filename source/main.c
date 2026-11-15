@@ -1117,6 +1117,40 @@ static struct {
 	float bars[24];   // la onda de arriba
 } MU = {.cover_track = 0xFFFFFFFF};
 
+#define ST_SC 0xFF2266FF // naranja SoundCloud (ABGR)
+
+// ---- ajustes de SoundCloud (APP_DIR/soundcloud_ajustes.txt): la radio al acabar la lista y los comentarios
+#define SCS_FILE APP_DIR "/soundcloud_ajustes.txt"
+static struct {
+	bool loaded, radio, comments;
+} SCS = {.radio = true, .comments = true};
+
+static void scs_load(void)
+{
+	if (SCS.loaded)
+		return;
+	SCS.loaded = true;
+	FILE *f = fopen(SCS_FILE, "r");
+	char ln[64];
+	while (f && fgets(ln, sizeof ln, f)) {
+		if (!strncmp(ln, "radio=", 6))
+			SCS.radio = ln[6] == '1';
+		else if (!strncmp(ln, "comentarios=", 12))
+			SCS.comments = ln[12] == '1';
+	}
+	if (f)
+		fclose(f);
+}
+
+static void scs_save(void)
+{
+	FILE *f = fopen(SCS_FILE, "w");
+	if (!f)
+		return;
+	fprintf(f, "radio=%d\ncomentarios=%d\n", SCS.radio, SCS.comments);
+	fclose(f);
+}
+
 // ▶ o ❚❚ dibujados (sin depender de la fuente)
 static void mu_icon(float cx, float cy, float s, bool playing, u32 c)
 {
@@ -1202,21 +1236,34 @@ static void music_bar(void)
 {
 	if (!mu_bar_shown())
 		return;
+	mu_sync_cover();
 	float y = SCR_H - TABBAR_H - MU_BAR_H - 4, x = 8, w = BOT_W - 16;
 	draw_rrect(x, y + 2, w, MU_BAR_H, 12, T.shadow);
 	draw_rrect(x, y, w, MU_BAR_H, 12, T.surface2);
 	float f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
-	draw_rect(x + 10, y + MU_BAR_H - 3, (w - 20) * f, 2, T.accent);
-	float bx = x + 18, nx = x + w - 18;
-	draw_circle(bx, y + MU_BAR_H / 2, 10, touch_in(bx - 14, y, 28, MU_BAR_H) ? T.accent2 : T.accent);
-	mu_icon(bx, y + MU_BAR_H / 2, 11, MU.s.st == MU_PLAY, 0xFFFFFFFF);
-	draw_icon(IC_CHEV_RIGHT, nx, y + MU_BAR_H / 2, 12, T.text2);
+	draw_rect(x + 12, y + MU_BAR_H - 2.5f, (w - 24) * f, 1.5f, T.accent);
+	// la carátula (o una nota), lo que suena y, a la derecha, play/pausa y siguiente
+	float as = MU_BAR_H - 8;
+	if (MU.cover.ok)
+		draw_texture_round(&MU.cover, x + 4, y + 4, as, as, 5, 1);
+	else {
+		draw_rrect(x + 4, y + 4, as, as, 5, col_alpha(T.accent2, 0.25f));
+		draw_icon(IC_NOTE, x + 4 + as / 2, y + 4 + as / 2, 11, T.accent2);
+	}
+	float px = x + w - 50, nx = x + w - 18;
+	bool pp = touch_in(px - 14, y, 28, MU_BAR_H);
+	if (pp)
+		draw_circle(px, y + MU_BAR_H / 2, 12, col_alpha(T.accent, 0.25f));
+	mu_icon(px, y + MU_BAR_H / 2, 12, MU.s.st == MU_PLAY, T.text);
+	draw_tri(nx - 7, y + MU_BAR_H / 2 - 5, nx - 7, y + MU_BAR_H / 2 + 5, nx, y + MU_BAR_H / 2, T.text); // ▶▶
+	draw_tri(nx, y + MU_BAR_H / 2 - 5, nx, y + MU_BAR_H / 2 + 5, nx + 7, y + MU_BAR_H / 2, T.text);
 	char t[300];
 	snprintf(t, sizeof t, MU.s.artist[0] ? "%s · %s" : "%s", MU.s.title, MU.s.artist);
-	text_draw_clip(t, bx + 18, y + MU_BAR_H / 2 - text_lineh(TS_SUB) / 2, nx - bx - 36, TS_SUB, T.text);
-	if (tap(bx - 14, y, 28, MU_BAR_H))
+	float tx = x + 4 + as + 8;
+	text_draw_clip(t, tx, y + MU_BAR_H / 2 - text_lineh(TS_SUB) / 2, px - 18 - tx, TS_SUB, T.text);
+	if (tap(px - 14, y, 28, MU_BAR_H))
 		music_toggle(), g_touch.up = false;
-	else if (tap(nx - 16, y, 32, MU_BAR_H))
+	else if (tap(nx - 14, y, 30, MU_BAR_H))
 		music_next(), g_touch.up = false;
 	else if (tap(x, y, w, MU_BAR_H)) {
 		MU.open = MU.just = true, MU.sel = 2;
@@ -6708,7 +6755,31 @@ static void music_sheet(void)
 			g_kdown &= ~KEY_L;
 		}
 	}
-	text_draw_center_clip(MU.s.title, BOT_W / 2 - 30, y + 10, BOT_W - 130, TS_BODY, T.text);
+	float lx = 20; // SoundCloud: la radio y los comentarios, arriba a la izquierda
+	if (!strncmp(MU.s.name, "sc:", 3)) {
+		const char *rl = _("Radio");
+		float rw = text_width(rl, TS_SUB) + 30, ry = y + 8;
+		draw_rrect(lx, ry, rw, 20, 10, touch_in(lx, ry, rw, 20) ? T.surface2 : SCS.radio ? col_alpha(ST_SC, 0.22f) : T.bg);
+		draw_icon(IC_SPARK, lx + 13, ry + 10, 10, SCS.radio ? ST_SC : T.text3);
+		text_draw(rl, lx + 23, ry + 10 - text_lineh(TS_SUB) / 2, TS_SUB, SCS.radio ? ST_SC : T.text2);
+		if (!fresh && tap(lx, ry, rw, 20)) {
+			SCS.radio = !SCS.radio, scs_save();
+			toast_icon(SCS.radio ? _("Radio activada: al acabar la lista seguirán canciones parecidas") : _("Radio desactivada"), IC_SPARK, SCS.radio ? ST_SC : T.text2);
+		}
+		lx += rw + 6;
+		draw_rrect(lx, ry, 26, 20, 10, touch_in(lx, ry, 26, 20) ? T.surface2 : SCS.comments ? col_alpha(T.accent, 0.2f) : T.bg);
+		draw_icon(IC_CHAT, lx + 13, ry + 10, 11, SCS.comments ? T.accent : T.text3);
+		if (!fresh && tap(lx, ry, 26, 20)) {
+			SCS.comments = !SCS.comments, scs_save();
+			toast_icon(SCS.comments ? _("Comentarios visibles arriba") : _("Comentarios ocultos"), IC_CHAT, SCS.comments ? T.accent : T.text2);
+		}
+		lx += 32;
+	}
+	{
+		int eq = music_eq();
+		float ex = BOT_W - 20 - (text_width(eq ? _(EQ_NAMES[eq]) : "EQ", TS_SUB) + 30);
+		text_draw_center_clip(MU.s.title, (lx + ex) / 2, y + 10, ex - lx - 10, TS_BODY, T.text);
+	}
 	char sub[200], t1[16], t2[16];
 	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
@@ -6871,7 +6942,260 @@ static struct {
 	float lm_anim;
 	int lm_sel;
 	bool scerr_shown;
+	ScArtist artist;     // la página del artista abierto (sus datos) y cuántas de sus canciones son las populares
+	int ntop;
+	float cx[SC_SECTIONS + 1], cxt[SC_SECTIONS + 1]; // inicio: desplazamiento de cada carrusel (0: tus listas)
+	int dax, dcar;       // el arrastre en curso: 0 sin decidir, 1 de lado (el carrusel dcar), 2 vertical
+	char list_art[256];  // la carátula de la lista abierta (para arriba)
+	ScList *apl;         // las listas y álbumes del artista abierto
+	int napl;
+	char (*fa_art)[128]; // la foto de cada artista que se sigue
 } SCV;
+
+// ---- carátulas pequeñas (las de las filas y las tarjetas): se piden al dibujarlas y llegan solas (sc_thumb_*). Se
+// guardan las 40 últimas usadas; la grande de arriba, aparte
+#define TC_N 40
+static struct {
+	char url[256];
+	Texture tex;
+	u32 used, req;
+	u8 st; // 0 libre, 1 pedida, 2 lista, 3 no se pudo
+} TC[TC_N];
+static struct {
+	char url[256];
+	Texture tex;
+	u32 tint; // su color (para el fondo)
+} HERO;
+static u32 st_tint_of(const u8 *rgba, int w, int h);
+static u32 tc_frame;
+
+// la misma carátula, grande (300×300 en SoundCloud; se reduce a 160)
+static void art_big(const char *url, char *out, size_t n)
+{
+	util_strlcpy(out, url, n);
+	char *lg = strstr(out, "-large.");
+	if (lg && strlen(out) + 8 < n) {
+		char tail[80];
+		util_strlcpy(tail, lg + 6, sizeof tail);
+		snprintf(lg, n - (size_t)(lg - out), "-t300x300%s", tail);
+	}
+}
+
+static void tc_pump(void)
+{
+	tc_frame++;
+	char url[256];
+	u8 *rgba;
+	int w, h;
+	for (int k = 0; k < 3 && sc_thumb_take(url, sizeof url, &rgba, &w, &h); k++) {
+		if (!strcmp(url, HERO.url)) {
+			tex_free(&HERO.tex);
+			if (rgba && tex_from_rgba(&HERO.tex, rgba, w, h))
+				HERO.tint = st_tint_of(rgba, w, h);
+		} else
+			for (int i = 0; i < TC_N; i++)
+				if (TC[i].st == 1 && !strcmp(TC[i].url, url)) {
+					TC[i].st = rgba && tex_from_rgba(&TC[i].tex, rgba, w, h) ? 2 : 3;
+					break;
+				}
+		free(rgba);
+	}
+}
+
+static Texture *tc_get(const char *url)
+{
+	if (!url || !url[0] || strlen(url) >= sizeof TC[0].url)
+		return NULL;
+	int lru = -1;
+	for (int i = 0; i < TC_N; i++) {
+		if (TC[i].st && !strcmp(TC[i].url, url)) {
+			TC[i].used = tc_frame;
+			if (TC[i].st == 1 && tc_frame - TC[i].req > 45) // (aún sin llegar: que sea de las siguientes)
+				TC[i].req = tc_frame, sc_thumb_want(url);
+			return TC[i].st == 2 ? &TC[i].tex : NULL;
+		}
+		if (!TC[i].st)
+			lru = lru >= 0 && !TC[lru].st ? lru : i;
+		else if (TC[i].used != tc_frame && (lru < 0 || (TC[lru].st && TC[i].used < TC[lru].used)))
+			lru = i;
+	}
+	if (lru < 0)
+		return NULL;
+	tex_free(&TC[lru].tex);
+	util_strlcpy(TC[lru].url, url, sizeof TC[0].url);
+	TC[lru].st = 1, TC[lru].used = TC[lru].req = tc_frame;
+	sc_thumb_want(url);
+	return NULL;
+}
+
+// la grande de arriba (NULL mientras llega)
+static Texture *hero_get(const char *url)
+{
+	if (!url || !url[0])
+		return NULL;
+	char big[300];
+	art_big(url, big, sizeof big);
+	if (strlen(big) >= sizeof HERO.url)
+		return NULL;
+	if (strcmp(HERO.url, big)) {
+		tex_free(&HERO.tex);
+		HERO.tint = 0;
+		util_strlcpy(HERO.url, big, sizeof HERO.url);
+		sc_thumb_want(big);
+	}
+	return HERO.tex.ok ? &HERO.tex : NULL;
+}
+
+// las esquinas de un rectángulo, redondas: se tapan con el color de fondo (para los degradados, que no las tienen)
+static void round_mask(float x, float y, float w, float h, float r, u32 bg)
+{
+	float t = r * 0.42f + 1.5f, R = r + t / 2 - 0.4f;
+	draw_arc(x + r, y + r, R, t, (float)M_PI, (float)(M_PI * 1.5), bg);
+	draw_arc(x + w - r, y + r, R, t, (float)(M_PI * 1.5), (float)(M_PI * 2), bg);
+	draw_arc(x + w - r, y + h - r, R, t, 0, (float)M_PI_2, bg);
+	draw_arc(x + r, y + h - r, R, t, (float)M_PI_2, (float)M_PI, bg);
+}
+
+// una carátula de s × s con esquinas r (r ≥ s/2: redonda, como las de los artistas). Sin ella (aún): un cuadro del
+// color col con el icono. seed: para que cada una sin carátula tenga su tono
+static void draw_art(const char *url, float x, float y, float s, float r, u32 col, IconId ic)
+{
+	Texture *t = tc_get(url);
+	if (t) {
+		draw_texture_round(t, x, y, s, s, r, 1);
+		return;
+	}
+	draw_rrect(x, y, s, s, r, col_alpha(col, 0.2f));
+	draw_icon(ic, x + s / 2, y + s / 2, s * 0.4f, col);
+}
+
+// un color para lo que no tiene carátula: el mismo siempre para el mismo texto
+static u32 art_tone(const char *seed)
+{
+	u32 h = 2166136261u;
+	for (const char *p = seed; p && *p; p++)
+		h = (h ^ (u8)*p) * 16777619u;
+	float hue = (h % 360) / 360.0f, r, g, b, f = hue * 6 - (int)(hue * 6);
+	switch ((int)(hue * 6) % 6) {
+	case 0: r = 1, g = f, b = 0; break;
+	case 1: r = 1 - f, g = 1, b = 0; break;
+	case 2: r = 0, g = 1, b = f; break;
+	case 3: r = 0, g = 1 - f, b = 1; break;
+	case 4: r = f, g = 0, b = 1; break;
+	default: r = 1, g = 0, b = 1 - f;
+	}
+	r = 0.35f + 0.6f * r, g = 0.35f + 0.6f * g, b = 0.35f + 0.6f * b;
+	return 0xFF000000 | (u32)(b * 255) << 16 | (u32)(g * 255) << 8 | (u32)(r * 255);
+}
+
+// 1234 → «1,2 K»; 392000 → «392 K»; 1500000 → «1,5 M» (con punto en inglés y japonés)
+static void fmt_count(u32 n, char *out, size_t sz)
+{
+	const char dec = g_lang == LANG_ES ? ',' : '.', *sp = g_lang == LANG_ES ? " " : "";
+	if (n < 1000)
+		snprintf(out, sz, "%lu", (unsigned long)n);
+	else if (n < 10000)
+		snprintf(out, sz, "%lu%c%lu%sK", (unsigned long)(n / 1000), dec, (unsigned long)(n / 100 % 10), sp);
+	else if (n < 1000000)
+		snprintf(out, sz, "%lu%sK", (unsigned long)(n / 1000), sp);
+	else if (n < 10000000)
+		snprintf(out, sz, "%lu%c%lu%sM", (unsigned long)(n / 1000000), dec, (unsigned long)(n / 100000 % 10), sp);
+	else
+		snprintf(out, sz, "%lu%sM", (unsigned long)(n / 1000000), sp);
+}
+
+// ---- Descubrir (las selecciones de SoundCloud), lo que suena (onda y comentarios) y la radio
+static struct {
+	ScSection *s;
+	int n;
+	u32 rev;
+	bool asked;
+	u64 next;
+} DISC;
+static struct {
+	ScInfo *in;
+	u32 rev, track;
+} INF;
+static struct {
+	u32 track, rev;
+	char seed[24];
+	bool asked;
+} RAD;
+
+// el título de una selección, en el idioma de la app (las conocidas)
+static const char *disc_title(const char *t)
+{
+	if (!strcmp(t, "Artists to watch out for"))
+		return _("Artistas que despuntan");
+	if (!strcmp(t, "Curated by SoundCloud"))
+		return _("Seleccionadas por SoundCloud");
+	if (!strcmp(t, "Trending by genre"))
+		return _("Tendencias por género");
+	if (!strcmp(t, "Trending Music"))
+		return _("Lo más escuchado");
+	return t;
+}
+
+// cada vuelta, esté donde esté la app: las carátulas que llegan, Descubrir (al entrar), lo que suena y la radio
+static void sc_tick(void)
+{
+	tc_pump();
+	scs_load();
+	u64 now = util_ms();
+	if (!DISC.asked && now >= DISC.next && U.app == AP_MUSIC && !SCV.local && util_ip())
+		sc_discover(), DISC.asked = true;
+	if (DISC.asked) {
+		bool busy;
+		int n;
+		u32 r = sc_discover_results(NULL, &n, &busy);
+		if (!busy && r != DISC.rev) {
+			DISC.rev = r;
+			if (!DISC.s)
+				DISC.s = malloc(sizeof *DISC.s * SC_SECTIONS);
+			if (DISC.s)
+				sc_discover_results(DISC.s, &DISC.n, &busy);
+			if (!DISC.n) // (sin red o SoundCloud no respondió: otra vez en un rato)
+				DISC.asked = false, DISC.next = now + 60000;
+		}
+	}
+	bool scs = mu_on() && !strncmp(MU.s.name, "sc:", 3) && !MU.s.loading;
+	if (scs && MU.s.track != INF.track) { // (lo que suena: su onda y sus comentarios)
+		INF.track = MU.s.track;
+		sc_info(MU.s.name + 3);
+	}
+	if (!INF.in)
+		INF.in = calloc(1, sizeof *INF.in);
+	u32 ir = sc_info_results(NULL);
+	if (INF.in && ir != INF.rev)
+		INF.rev = ir, sc_info_results(INF.in);
+	// la radio: con la última de la lista sonando (y sin repetir), se piden las parecidas y se añaden detrás
+	if (scs && SCS.radio && MU.s.left == 0 && MU.s.repeat == MR_OFF && MU.s.track != RAD.track) {
+		RAD.track = MU.s.track, RAD.asked = true;
+		util_strlcpy(RAD.seed, MU.s.name + 3, sizeof RAD.seed);
+		sc_radio(RAD.seed);
+	}
+	if (RAD.asked) {
+		static ScTrack rt[SC_RADIO];
+		static char names[SC_RADIO][256];
+		char seed[24];
+		int n;
+		u32 r = sc_radio_results(rt, &n, seed, sizeof seed);
+		if (r != RAD.rev) {
+			RAD.rev = r;
+			if (!strcmp(seed, RAD.seed)) {
+				RAD.asked = false;
+				for (int k = 0; k < n; k++)
+					snprintf(names[k], sizeof names[0], "sc:%s", rt[k].id);
+				int add = mu_on() ? music_append(names, n) : 0;
+				if (add) {
+					char m[120];
+					snprintf(m, sizeof m, add == 1 ? _("Radio: 1 canción parecida a continuación") : _("Radio: %d canciones parecidas a continuación"), add);
+					toast_icon(m, IC_SPARK, ST_SC);
+				}
+			}
+		}
+	}
+}
 
 // lo último que se buscó y se escuchó en SoundCloud (APP_DIR/soundcloud_recientes.txt): «q\t<búsqueda>» y
 // «p\t<título>\t<artista>», lo más reciente primero
@@ -7071,18 +7395,23 @@ static bool sc_alloc(void)
 		SCV.a = malloc(sizeof *SCV.a * SC_ARTISTS);
 		SCV.sv = malloc(sizeof *SCV.sv * SCL_TRACKS);
 		SCV.fa = malloc(sizeof *SCV.fa * SCL_ARTISTS_MAX);
+		SCV.apl = malloc(sizeof *SCV.apl * SC_MAX);
+		SCV.fa_art = malloc(sizeof *SCV.fa_art * SCL_ARTISTS_MAX);
 	}
-	return SCV.t && SCV.pt && SCV.l && SCV.a && SCV.sv && SCV.fa;
+	return SCV.t && SCV.pt && SCV.l && SCV.a && SCV.sv && SCV.fa && SCV.apl && SCV.fa_art;
 }
 
 // abrir una lista: de SoundCloud, un artista, «Me gusta» o una propia (las guardadas se ven al momento y se piden de
 // nuevo a SoundCloud para poder escucharlas)
-static void sc_open(int lk, const char *id, const char *title, int mine)
+static void sc_open_art(int lk, const char *id, const char *title, int mine, const char *art)
 {
 	if (!sc_alloc())
 		return;
+	util_strlcpy(SCV.list_art, art ? art : lk == LK_LIKES ? scl_list_art(SCL_LIKES) : lk == LK_MINE ? scl_list_art(mine) : "", sizeof SCV.list_art);
+	if (lk == LK_ARTIST && (!id || strcmp(SCV.artist.id, id)))
+		memset(&SCV.artist, 0, sizeof SCV.artist), SCV.ntop = 0;
 	SCV.back = SCV.view == SV_LIST ? SCV.back : SCV.view;
-	SCV.view = SV_LIST, SCV.lk = lk, SCV.mine = mine, SCV.want = 2, SCV.npt = 0, SCV.nsv = 0, SCV.sv_fresh = false;
+	SCV.view = SV_LIST, SCV.lk = lk, SCV.mine = mine, SCV.want = 2, SCV.npt = 0, SCV.nsv = 0, SCV.sv_fresh = false, SCV.napl = 0;
 	SCV.lp.sel = 0, SCV.lp.off = SCV.lp.target = 0;
 	util_strlcpy(SCV.list_title, title, sizeof SCV.list_title);
 	if (lk == LK_SC)
@@ -7100,6 +7429,7 @@ static void sc_open(int lk, const char *id, const char *title, int mine)
 			memset(&SCV.fa[i], 0, sizeof SCV.fa[i]);
 			util_strlcpy(SCV.fa[i].id, fl[i].id, sizeof SCV.fa[i].id);
 			util_strlcpy(SCV.fa[i].name, fl[i].name, sizeof SCV.fa[i].name);
+			util_strlcpy(SCV.fa_art[i], fl[i].art, sizeof SCV.fa_art[0]);
 		}
 		SCV.want = 0, SCV.sv_fresh = true;
 	} else {
@@ -7113,6 +7443,7 @@ static void sc_open(int lk, const char *id, const char *title, int mine)
 			SCV.want = 0, SCV.sv_fresh = true;
 	}
 }
+static void sc_open(int lk, const char *id, const char *title, int mine) { sc_open_art(lk, id, title, mine, NULL); }
 static int sc_saved_list(void) { return SCV.lk == LK_LIKES ? SCL_LIKES : SCV.mine; }
 
 // una lista guardada cambió (Me gusta, añadir o quitar): lo que se ve, al día sin volver a pedirlo
@@ -7145,6 +7476,7 @@ static const char *sc_err_text(const char *e)
 // la descarga de SoundCloud: al terminar, un aviso (se mira en cada vuelta, esté donde esté la aplicación)
 static void sc_dl_tick(void)
 {
+	sc_tick();
 	sc_news_tick();
 	if (mu_on() && !MU.s.loading && !strncmp(MU.s.name, "sc:", 3) && MU.s.track != SCH.track && MU.s.title[0]) { // (lo que suena, apuntado)
 		SCH.track = MU.s.track;
@@ -7188,6 +7520,17 @@ static void sc_poll(void)
 	} else if (SCV.want == 2) {
 		memcpy(SCV.pt, t, sizeof *t * nt), SCV.npt = nt;
 		SCV.sv_fresh = true;
+		if (SCV.lk == LK_LIKES || SCV.lk == LK_MINE) // (las guardadas: sus carátulas, a la biblioteca)
+			scl_touch(t, nt);
+		if (SCV.lk == LK_ARTIST) {
+			memcpy(SCV.apl, l, sizeof *l * nl), SCV.napl = nl;
+			if (!sc_artist_page(&SCV.artist, &SCV.ntop) || strcmp(SCV.artist.id, SCV.aid))
+				memset(&SCV.artist, 0, sizeof SCV.artist), SCV.ntop = 0;
+			if (SCV.artist.art[0] && scl_following(SCV.aid)) // (su foto, a los seguidos)
+				scl_follow(SCV.aid, SCV.artist.name, SCV.artist.art, true);
+		}
+		if (!SCV.list_art[0] && nt && SCV.lk != LK_ARTIST)
+			util_strlcpy(SCV.list_art, t[0].art, sizeof SCV.list_art);
 	}
 	SCV.want = 0;
 }
@@ -7226,11 +7569,10 @@ static void sc_toggle_like(const ScTrack *t)
 // de color sobre el negro y, sin música, un saludo según la hora y lo último que sonó
 static struct {
 	u32 tint;        // el color de la carátula (ABGR), o el de la fuente si no tiene
-	float wave[56];  // la onda
+	float wave[SC_WAVE]; // la onda
 } ST;
 
 #define ST_BG 0xFF120D0B   // (casi negro azulado, en ABGR)
-#define ST_SC 0xFF2266FF   // naranja SoundCloud
 #define ST_MAG 0xFFA040E0  // magenta
 
 // de RGB a HSV y vuelta (0-1): para avivar el color de la carátula y sacar su pareja
@@ -7359,12 +7701,39 @@ static void music_stage(void)
 	} else
 		st_aurora(0, c);
 	draw_header();
-	// lo que suena, abajo a la izquierda
+	// lo que suena, abajo a la izquierda; a la derecha del rótulo, sus datos en SoundCloud
 	bool sc = !strncmp(MU.s.name, "sc:", 3), liked = sc && scl_liked(MU.s.name + 3);
-	float x = 22, w = TOP_W - 44, y = 118;
+	ScTrack cur;
+	bool have = sc && sc_track(MU.s.name + 3, &cur);
+	const ScInfo *inf = sc && INF.in && !strcmp(INF.in->id, MU.s.name + 3) ? INF.in : NULL;
+	float x = 22, w = TOP_W - 44, y = 98;
 	st_label(MU.s.loading ? _("Cargando") : MU.s.st == MU_PAUSE ? _("En pausa") : _("Ahora suena"), x, y, 2.2f, 0.42f, st_shift(c, 0, 1, 1));
 	if (MU.s.loading)
 		draw_arc(x + text_width(_("Cargando"), 0.42f) + 34, y + 7, 5, 1.6f, g_time * 6, g_time * 6 + 4.2f, st_shift(c, 0, 1, 1));
+	if (have && !MU.s.loading) { // ▶ reproducciones · ♥ me gusta · género (de derecha a izquierda)
+		float rx = x + w;
+		char nb[24];
+		if (cur.genre[0]) {
+			char g[40];
+			snprintf(g, sizeof g, "#%s", cur.genre);
+			float gw = fminf(text_width(g, TS_SUB), 110);
+			text_draw_clip(g, rx - gw, y, gw, TS_SUB, 0xB0FFFFFF);
+			rx -= gw + 12;
+		}
+		if (cur.likes) {
+			fmt_count(cur.likes, nb, sizeof nb);
+			float nw = text_width(nb, TS_SUB);
+			text_draw(nb, rx - nw, y, TS_SUB, 0xB0FFFFFF);
+			draw_icon(IC_HEART, rx - nw - 9, y + 7, 10, 0xB0FFFFFF);
+			rx -= nw + 26;
+		}
+		if (cur.plays) {
+			fmt_count(cur.plays, nb, sizeof nb);
+			float nw = text_width(nb, TS_SUB);
+			text_draw(nb, rx - nw, y, TS_SUB, 0xB0FFFFFF);
+			mu_icon(rx - nw - 9, y + 7, 9, false, 0xB0FFFFFF);
+		}
+	}
 	y += 18;
 	int nl = text_wrap_lines(MU.s.title, w - (liked ? 24 : 0), 0.85f, 2, x, y, 0xFFFFFFFF, true);
 	if (liked)
@@ -7372,26 +7741,54 @@ static void music_stage(void)
 	y += nl * text_lineh(0.85f) + 2;
 	char sub[200];
 	int eq = music_eq();
-	snprintf(sub, sizeof sub, "%s%s%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : _("En la consola"), eq ? "  ·  EQ " : "",
-	         eq ? _(EQ_NAMES[eq]) : "");
+	snprintf(sub, sizeof sub, "%s%s%s%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : _("En la consola"), eq ? "  ·  EQ " : "",
+	         eq ? _(EQ_NAMES[eq]) : "", sc && SCS.radio && MU.s.left <= 0 && MU.s.repeat == MR_OFF ? _("  ·  Radio") : "");
 	text_draw_clip(sub, x, y, w, TS_BODY, 0xA8FFFFFF);
-	// la onda (también el progreso): lo escuchado, del color; lo que falta, apagado
-	const int NB = sizeof ST.wave / sizeof ST.wave[0];
-	float wx = 22, ww = TOP_W - 44, wy = SCR_H - 34, bw = ww / NB, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	// la onda (también el progreso): la de verdad de la canción si es de SoundCloud; si no, una que sigue el volumen.
+	// Lo escuchado, del color; lo que falta, apagado. Debajo, un punto por cada comentario
+	const int NB = SC_WAVE;
+	float wx = 22, ww = TOP_W - 44, wy = SCR_H - 32, bw = ww / NB, f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
+	bool real = inf && inf->has_wave;
 	for (int i = 0; i < NB; i++) {
-		float tgt = play ? 0.12f + MU.s.level * (0.4f + 0.6f * fabsf(sinf(g_time * (1.7f + i * 0.21f) + i * 0.9f))) : 0.06f + 0.04f * sinf(i * 0.7f);
+		float tgt = real ? 0.1f + 0.9f * inf->wave[i] / 255.0f
+		            : play ? 0.12f + MU.s.level * (0.4f + 0.6f * fabsf(sinf(g_time * (1.7f + i * 0.21f) + i * 0.9f))) : 0.06f + 0.04f * sinf(i * 0.7f);
 		ST.wave[i] = approach(ST.wave[i], fminf(1, tgt), 9);
-		float hh = fmaxf(2, ST.wave[i] * 26), bx = wx + i * bw;
+		float hh = fmaxf(2, ST.wave[i] * 24), bx = wx + i * bw;
 		bool done = (i + 0.5f) / NB <= f;
-		draw_rrect(bx + 1, wy - hh / 2, bw - 2.5f, hh, 1.2f, done ? st_shift(c, (float)i / NB * 0.1f, 1, 1) : 0x30FFFFFF);
+		draw_rrect(bx + 0.8f, wy - hh / 2, bw - 2, hh, 1.2f, done ? st_shift(c, (float)i / NB * 0.1f, 1, 1) : 0x30FFFFFF);
 	}
 	draw_circle(wx + ww * f, wy, 3.5f, 0xFFFFFFFF);
+	const ScComment *show = NULL;
+	if (inf && SCS.comments && MU.s.dur_ms) {
+		for (int k = 0; k < inf->nc; k++) {
+			float cx = wx + ww * fminf(1, (float)inf->c[k].ms / MU.s.dur_ms);
+			draw_rect(cx - 0.5f, wy + 14, 1, 2, 0x50FFFFFF);
+			if (inf->c[k].ms <= MU.s.pos_ms && MU.s.pos_ms - inf->c[k].ms < 4500)
+				show = &inf->c[k]; // (el último que ya pasó, unos segundos)
+		}
+	}
+	if (show) { // el comentario, en su momento: un globo encima de la onda que apunta a donde se escribió
+		float age = (MU.s.pos_ms - show->ms) / 1000.0f, al = fminf(1, fminf(age * 4, (4.5f - age) * 2));
+		char who[48];
+		snprintf(who, sizeof who, "%s  ", show->user);
+		float uw = text_width(who, TS_SUB), bw2 = fminf(uw + text_width(show->body, TS_SUB) + 20, TOP_W - 40);
+		float px = wx + ww * fminf(1, (float)show->ms / MU.s.dur_ms), bx = clampf(px - 24, 18, TOP_W - 18 - bw2), by = wy - 40;
+		draw_rrect(bx, by, bw2, 20, 10, col_alpha(0xFF000000, 0.62f * al));
+		draw_tri(px - 4, by + 20, px + 4, by + 20, px, by + 25, col_alpha(0xFF000000, 0.62f * al));
+		text_draw_clip(who, bx + 10, by + 10 - text_lineh(TS_SUB) / 2, bw2 - 20, TS_SUB, col_alpha(st_shift(c, 0, 1, 1), al));
+		text_draw_clip(show->body, bx + 10 + uw, by + 10 - text_lineh(TS_SUB) / 2, bw2 - 20 - uw, TS_SUB, col_alpha(0xFFFFFFFF, al));
+	}
 	char t1[16], t2[16];
 	mu_fmt(MU.s.pos_ms, t1, sizeof t1);
 	mu_fmt(MU.s.dur_ms, t2, sizeof t2);
-	text_draw(t1, wx, SCR_H - 16, TS_SUB, 0x90FFFFFF);
+	text_draw(t1, wx, SCR_H - 15, TS_SUB, 0x90FFFFFF);
 	if (MU.s.dur_ms)
-		text_draw_right(t2, wx + ww, SCR_H - 16, TS_SUB, 0x90FFFFFF);
+		text_draw_right(t2, wx + ww, SCR_H - 15, TS_SUB, 0x90FFFFFF);
+	if (inf && inf->nc && SCS.comments) {
+		char cn[32];
+		snprintf(cn, sizeof cn, inf->nc == 1 ? _("1 comentario") : _("%d comentarios"), inf->nc);
+		text_draw_center(cn, TOP_W / 2, SCR_H - 15, TS_SUB, 0x60FFFFFF);
+	}
 }
 
 // sin música: el saludo según la hora, sobre la aurora; debajo, lo último que sonó (o lo que pase)
@@ -7427,10 +7824,10 @@ static void music_idle_stage(const char *label, const char *big, const char *sub
 	}
 }
 
-static void sc_toggle_follow(const char *id, const char *name)
+static void sc_toggle_follow(const char *id, const char *name, const char *art)
 {
 	bool on = !scl_following(id);
-	int r = scl_follow(id, name, on);
+	int r = scl_follow(id, name, art, on);
 	char m[160];
 	if (r < 0)
 		snprintf(m, sizeof m, "%s", _("Ya sigues al máximo de artistas: deja de seguir a alguno primero"));
@@ -7441,6 +7838,32 @@ static void sc_toggle_follow(const char *id, const char *name)
 		SCN.next = util_ms() + 3000; // (mirar pronto: así queda apuntado lo último que tiene)
 	if (SCV.view == SV_LIST && SCV.lk == LK_FOLLOWS)
 		sc_open(LK_FOLLOWS, NULL, SCV.list_title, 0), SCV.back = SV_HOME;
+}
+
+// arriba, con una lista, un artista o una búsqueda abiertos: su carátula en grande (la del artista, redonda) sobre una luz
+// de su color y, al lado, qué es, el nombre en grande y cuántas canciones tiene
+static void sc_hero_top(const char *kind, const char *title, const char *sub, const char *art, bool round, IconId ic, u32 icol, const char *msg, u32 mc)
+{
+	Texture *h = hero_get(art);
+	u32 c = h && HERO.tint ? HERO.tint : icol;
+	st_aurora(24, c);
+	const float S = 132, x = 24, y = 46;
+	float r = round ? S / 2 : 10;
+	draw_rrect(x + 2, y + 6, S - 4, S, r, 0x70000000); // (su sombra)
+	if (h)
+		draw_texture_round(h, x, y, S, S, r, 1);
+	else {
+		draw_rrect(x, y, S, S, r, st_shift(c, 0, 0.35f, 1));
+		draw_halo_col(x + S / 2, y + S / 2, S * 0.55f, st_shift(c, 0, 0.9f, 0.4f));
+		draw_icon(ic, x + S / 2, y + S / 2, 46, 0xE0FFFFFF);
+	}
+	float tx = x + S + 18, tw = TOP_W - tx - 18, ty = y + 8;
+	st_label(kind, tx, ty, 2, 0.4f, st_shift(c, 0, 1, 1));
+	ty += 19;
+	ty += text_wrap_lines(title, tw, 0.82f, 3, tx, ty, 0xFFFFFFFF, true) * text_lineh(0.82f) + 4;
+	text_wrap_lines(sub, tw, TS_SUB, 2, tx, ty, 0xB0FFFFFF, true);
+	if (msg)
+		text_wrap_lines(msg, TOP_W - 48, TS_SUB, 2, 24, y + S + 14, mc, true);
 }
 
 static void sc_top(void)
@@ -7462,16 +7885,45 @@ static void sc_top(void)
 	if (SCV.view == SV_HOME)
 		music_idle_stage("SoundCloud", NULL, NULL, msg, mc);
 	else {
+		const ScTrack *first = SCV.view == SV_RESULTS ? (SCV.nt ? &SCV.t[0] : NULL) : SCV.npt ? &SCV.pt[0] : NULL;
+		const char *art = SCV.list_art[0] ? SCV.list_art : first ? first->art : "";
+		bool round = false;
+		IconId ic = IC_LIST;
+		u32 icol = ST_SC;
+		int n = SCV.lk == LK_LIKES || SCV.lk == LK_MINE ? SCV.nsv : SCV.npt;
+		u32 total = 0; // (lo que dura la lista)
+		for (int i = 0; i < SCV.npt; i++)
+			total += SCV.pt[i].dur_ms / 1000;
+		char dur[48] = "";
+		if (total >= 3600)
+			snprintf(dur, sizeof dur, _(" · %lu h %lu min"), (unsigned long)(total / 3600), (unsigned long)(total / 60 % 60));
+		else if (total >= 60)
+			snprintf(dur, sizeof dur, _(" · %lu min"), (unsigned long)(total / 60));
 		if (busy)
 			snprintf(sub, sizeof sub, "%s", SCV.view == SV_LIST ? _("Cargando…") : _("Buscando…"));
 		else if (SCV.view == SV_RESULTS)
 			snprintf(sub, sizeof sub, _("%d canciones · %d artistas · %d playlists"), SCV.nt, SCV.na, SCV.nl);
 		else if (SCV.lk == LK_FOLLOWS)
 			snprintf(sub, sizeof sub, SCV.nfa == 1 ? _("1 artista") : _("%d artistas"), SCV.nfa);
-		else {
-			int n = SCV.lk == LK_LIKES || SCV.lk == LK_MINE ? SCV.nsv : SCV.npt;
+		else if (SCV.lk == LK_ARTIST && SCV.artist.id[0]) {
+			char fc[16];
+			fmt_count(SCV.artist.followers, fc, sizeof fc);
+			snprintf(sub, sizeof sub, SCV.artist.tracks == 1 ? _("%s seguidores · 1 canción") : _("%s seguidores · %d canciones"), fc, SCV.artist.tracks);
+		} else {
 			snprintf(sub, sizeof sub, n == 1 ? _("1 canción") : _("%d canciones"), n);
+			strncat(sub, dur, sizeof sub - strlen(sub) - 1);
 		}
+		if (SCV.view == SV_RESULTS)
+			ic = IC_SEARCH;
+		else if (SCV.lk == LK_ARTIST) {
+			round = true, ic = IC_USER, icol = T.accent2;
+			art = SCV.artist.art[0] ? SCV.artist.art : SCV.list_art;
+		} else if (SCV.lk == LK_LIKES)
+			ic = IC_HEART, icol = 0xFF5050FF;
+		else if (SCV.lk == LK_NEW)
+			ic = IC_SPARK;
+		else if (SCV.lk == LK_FOLLOWS)
+			ic = IC_USER, icol = T.accent2, art = "";
 		const char *k = SCV.view == SV_RESULTS ? _("Búsqueda")
 		              : SCV.lk == LK_ARTIST   ? (scl_following(SCV.aid) ? _("Artista que sigues") : _("Artista"))
 		              : SCV.lk == LK_SC       ? _("Playlist de SoundCloud")
@@ -7479,7 +7931,7 @@ static void sc_top(void)
 		              : SCV.lk == LK_NEW      ? _("De los artistas que sigues")
 		              : SCV.lk == LK_FOLLOWS  ? _("Tu biblioteca")
 		                                      : _("Tu lista");
-		music_idle_stage(k, SCV.view == SV_LIST ? SCV.list_title : SCV.q, sub, msg, mc);
+		sc_hero_top(k, SCV.view == SV_LIST ? SCV.list_title : SCV.q, sub, art, round, ic, icol, msg, mc);
 	}
 	char dt[128];
 	int pct;
@@ -7495,12 +7947,18 @@ static void sc_top(void)
 	text_draw_right(hint, TOP_W - 16, SCR_H - 18, TS_SUB, 0x80FFFFFF);
 }
 
-// ---- inicio: la biblioteca (Me gusta y las listas), los géneros y las búsquedas recientes, con desplazamiento. Cada
-// elemento se apunta con su rectángulo; la cruceta va al más cercano en esa dirección
+// ---- inicio, como una app de música: arriba tres accesos (Me gusta, Novedades y Siguiendo); debajo, tus listas y lo que
+// recomienda SoundCloud en carruseles de carátulas; luego los géneros en mosaico y las búsquedas recientes. Cada
+// elemento se apunta con su rectángulo; la cruceta va al más cercano en esa dirección y los carruseles se desplazan
+// solos hasta lo elegido (o con el dedo, de lado)
 typedef struct {
 	float x, y, w, h;
-	int kind, i; // kind: 0 Me gusta, 1 una lista, 2 nueva lista, 3 género, 4 búsqueda reciente, 5 novedades, 6 artistas seguidos
+	int kind, i; // kind: 0 Me gusta, 1 una lista, 2 nueva lista, 3 género, 4 búsqueda reciente, 5 novedades, 6 siguiendo, 7 de Descubrir
+	int car;     // su carrusel (-1: ninguno)
 } ScItem;
+
+#define SC_CARD 74   // las tarjetas de los carruseles: la carátula (cuadrada) y dos líneas debajo
+#define SC_CARD_H (SC_CARD + 30)
 
 static void sc_home(bool sheet)
 {
@@ -7508,43 +7966,64 @@ static void sc_home(bool sheet)
 	                                   {"Pop", "pop"},     {"Rock", "rock"},         {"Hip hop", "hip hop"},                {N_("Reguetón"), "reggaeton"},
 	                                   {"Jazz", "jazz"},   {N_("Clásica"), "classical"}};
 	enum { NG = sizeof G / sizeof G[0] };
-	static ScItem it[NG + SCL_LISTS + SCH_N + 6];
+	static ScItem it[3 + SCL_LISTS + 1 + SC_SECTIONS * SC_SEC_ITEMS + NG + SCH_N];
+	static float lab_y[4 + SC_SECTIONS];
+	static const char *lab_t[4 + SC_SECTIONS];
+	static float car_y[SC_SECTIONS + 1], car_w[SC_SECTIONS + 1];
+	int nlab = 0, ncar = 0;
 	static ScFollow fl_[SCL_ARTISTS_MAX];
 	int nfol = scl_follows(fl_, SCL_ARTISTS_MAX);
 	sch_load();
 	int n = 0, nl = scl_nlists();
-	const float RH = 36, gap = 6, ch = 26;
-	float y = 4; // (en el contenido; en pantalla, VIEW_Y + y − hoff)
-	// la estructura de esta vuelta
-	float lab_y[3];
-	lab_y[0] = y, y += text_lineh(TS_SUB) + 4;
-	if (SCN.n)
-		it[n++] = (ScItem){8, y, BOT_W - 16, RH, 5, 0}, y += RH;
-	it[n++] = (ScItem){8, y, BOT_W - 16, RH, 0, 0}, y += RH;
-	if (nfol)
-		it[n++] = (ScItem){8, y, BOT_W - 16, RH, 6, 0}, y += RH;
-	for (int i = 0; i < nl; i++)
-		it[n++] = (ScItem){8, y, BOT_W - 16, RH, 1, i}, y += RH;
-	if (nl < SCL_LISTS)
-		it[n++] = (ScItem){8, y, BOT_W - 16, RH, 2, 0}, y += RH;
-	y += 8;
-	lab_y[1] = y, y += text_lineh(TS_SUB) + 4;
-	float cx = 14, cy = y;
-	for (int i = 0; i < NG; i++) {
-		float w = text_width(_(G[i][0]), TS_SUB) + 32;
-		if (cx + w > BOT_W - 14)
-			cx = 14, cy += ch + gap;
-		it[n++] = (ScItem){cx, cy, w, ch, 3, i}, cx += w + gap;
+	const float M = 12, GAP = 10;
+	float y = 6; // (en el contenido; en pantalla, VIEW_Y + y − hoff)
+	// los tres accesos
+	float tw = (BOT_W - 2 * M - 2 * 6) / 3;
+	it[n++] = (ScItem){M, y, tw, 46, 0, 0, -1};
+	it[n++] = (ScItem){M + tw + 6, y, tw, 46, 5, 0, -1};
+	it[n++] = (ScItem){M + 2 * (tw + 6), y, tw, 46, 6, 0, -1};
+	y += 46 + 14;
+	// tus listas (y «Nueva lista»)
+	lab_t[nlab] = _("Tus listas"), lab_y[nlab++] = y, y += 20;
+	car_y[ncar] = y;
+	{
+		float cx = M;
+		for (int i = 0; i < nl; i++, cx += SC_CARD + GAP)
+			it[n++] = (ScItem){cx - SCV.cx[ncar], y, SC_CARD, SC_CARD_H, 1, i, ncar};
+		if (nl < SCL_LISTS)
+			it[n++] = (ScItem){cx - SCV.cx[ncar], y, SC_CARD, SC_CARD_H, 2, 0, ncar}, cx += SC_CARD + GAP;
+		car_w[ncar++] = cx - GAP + M;
 	}
-	y = cy + ch + 12;
-	lab_y[2] = y;
+	y += SC_CARD_H + 10;
+	// Descubrir: las selecciones de SoundCloud
+	if (DISC.n && DISC.s)
+		for (int sct = 0; sct < DISC.n && ncar <= SC_SECTIONS; sct++) {
+			lab_t[nlab] = disc_title(DISC.s[sct].title), lab_y[nlab++] = y, y += 20;
+			car_y[ncar] = y;
+			float cx = M;
+			for (int k = 0; k < DISC.s[sct].n; k++, cx += SC_CARD + GAP)
+				it[n++] = (ScItem){cx - SCV.cx[ncar], y, SC_CARD, SC_CARD_H, 7, sct * SC_SEC_ITEMS + k, ncar};
+			car_w[ncar++] = cx - GAP + M;
+			y += SC_CARD_H + 10;
+		}
+	float disc_ph = -1; // (aún llegando: tarjetas vacías que brillan)
+	if (!DISC.n) {
+		lab_t[nlab] = _("Descubrir"), lab_y[nlab++] = y, y += 20;
+		disc_ph = y, y += SC_CARD_H + 10;
+	}
+	// géneros: un mosaico de dos columnas
+	lab_t[nlab] = _("Géneros"), lab_y[nlab++] = y, y += 20;
+	float gw = (BOT_W - 2 * M - 8) / 2;
+	for (int i = 0; i < NG; i++)
+		it[n++] = (ScItem){M + (i % 2) * (gw + 8), y + (i / 2) * 40, gw, 34, 3, i, -1};
+	y += (NG + 1) / 2 * 40 + 6;
 	if (SCH.nq) {
-		y += text_lineh(TS_SUB) + 2;
+		lab_t[nlab] = _("Búsquedas recientes"), lab_y[nlab++] = y, y += 20;
 		for (int i = 0; i < SCH.nq; i++)
-			it[n++] = (ScItem){8, y, BOT_W - 16, 28, 4, i}, y += 28;
+			it[n++] = (ScItem){8, y, BOT_W - 16, 28, 4, i, -1}, y += 28;
 	}
-	float total = y + 8;
-	// desplazamiento: el dedo o, con la cruceta, lo justo para ver lo elegido
+	float total = y + 8 + (mu_bar_shown() ? MU_BAR_H + 6 : 0); // (al final, lo que tapa el reproductor)
+	// con la cruceta: al más cercano en esa dirección; los carruseles, hasta lo elegido
 	if (SCV.hsel >= n)
 		SCV.hsel = n - 1;
 	if (U.buttons && !sheet) {
@@ -7556,7 +8035,10 @@ static void sc_home(bool sheet)
 			float dy = it[i].y - c->y;
 			if ((k & KEY_DOWN) ? dy <= 1 : dy >= -1)
 				continue;
-			float d = fabsf(dy) * 4 + fabsf(it[i].x + it[i].w / 2 - (c->x + c->w / 2));
+			float ix = it[i].x + it[i].w / 2, cxm = c->x + c->w / 2;
+			if (it[i].car >= 0) // (en un carrusel, lo que se ve)
+				ix = clampf(ix, M, BOT_W - M);
+			float d = fabsf(dy) * 4 + fabsf(ix - cxm);
 			if (d < bd)
 				bd = d, best = i;
 		}
@@ -7569,79 +8051,132 @@ static void sc_home(bool sheet)
 		if ((k & KEY_LEFT) && SCV.hsel > 0 && it[SCV.hsel - 1].y == c->y)
 			SCV.hsel--;
 		if (k & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
-			const ScItem *s = &it[SCV.hsel];
-			if (s->y - 24 < SCV.htarget)
-				SCV.htarget = s->y - 24;
-			if (s->y + s->h + 8 > SCV.htarget + VIEW_H)
-				SCV.htarget = s->y + s->h + 8 - VIEW_H;
+			const ScItem *e = &it[SCV.hsel];
+			if (e->y - 26 < SCV.htarget)
+				SCV.htarget = e->y - 26;
+			if (e->y + e->h + 8 > SCV.htarget + VIEW_H)
+				SCV.htarget = e->y + e->h + 8 - VIEW_H;
+			if (e->car >= 0) { // (la x sin desplazar: la del contenido del carrusel)
+				float bx = e->x + SCV.cx[e->car];
+				if (bx - SCV.cxt[e->car] < M)
+					SCV.cxt[e->car] = bx - M;
+				if (bx + e->w - SCV.cxt[e->car] > BOT_W - M)
+					SCV.cxt[e->car] = bx + e->w - (BOT_W - M);
+			}
 		}
 	}
-	if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && !sheet)
-		SCV.htarget -= g_touch.y - g_touch.py, SCV.hoff = SCV.htarget;
+	// el dedo: de lado, el carrusel que hay debajo; si no, toda la página
+	if (g_touch.down)
+		SCV.dax = 0, SCV.dcar = -1;
+	if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && !sheet) {
+		if (!SCV.dax) {
+			float cy = g_touch.sy - VIEW_Y + SCV.hoff;
+			SCV.dcar = -1;
+			for (int c = 0; c < ncar; c++)
+				if (cy >= car_y[c] && cy < car_y[c] + SC_CARD_H)
+					SCV.dcar = c;
+			SCV.dax = SCV.dcar >= 0 && fabsf(g_touch.x - g_touch.sx) > fabsf(g_touch.y - g_touch.sy) ? 1 : 2;
+		}
+		if (SCV.dax == 1)
+			SCV.cxt[SCV.dcar] -= g_touch.x - g_touch.px, SCV.cx[SCV.dcar] = SCV.cxt[SCV.dcar];
+		else
+			SCV.htarget -= g_touch.y - g_touch.py, SCV.hoff = SCV.htarget;
+	}
+	for (int c = 0; c < ncar; c++) {
+		SCV.cxt[c] = clampf(SCV.cxt[c], 0, fmaxf(0, car_w[c] - BOT_W));
+		SCV.cx[c] = approach(SCV.cx[c], SCV.cxt[c], 18);
+	}
 	SCV.htarget = clampf(SCV.htarget, 0, fmaxf(0, total - VIEW_H));
 	SCV.hoff = approach(SCV.hoff, SCV.htarget, 18);
 	const float oy = VIEW_Y - SCV.hoff;
-	// dibujo
-	static const char *const LAB[3] = {N_("Mi biblioteca"), N_("Géneros"), N_("Búsquedas recientes")};
-	for (int k = 0; k < 3; k++)
-		if (k < 2 || SCH.nq)
-			st_label(_(LAB[k]), 14, oy + lab_y[k], 1.6f, 0.4f, T.text3);
+	// dibujo: los títulos de sección (grandes, como en las apps de música)
+	for (int k = 0; k < nlab; k++)
+		text_draw_clip(lab_t[k], M, oy + lab_y[k], BOT_W - 2 * M, 0.54f, T.text);
+	if (disc_ph >= 0)
+		for (int k = 0; k < 4; k++) {
+			float x = M + k * (SC_CARD + GAP), yy = oy + disc_ph;
+			draw_rrect(x, yy, SC_CARD, SC_CARD, 8, T.surface);
+			draw_shimmer_bar(x, yy, SC_CARD, SC_CARD, g_time + k * 0.2f);
+			draw_rrect(x, yy + SC_CARD + 6, SC_CARD * 0.8f, 7, 3.5f, T.surface);
+			draw_rrect(x, yy + SC_CARD + 17, SC_CARD * 0.5f, 6, 3, T.surface);
+		}
 	int run = -1;
+	bool tap_ok = !sheet && SCV.dax != 1; // (al soltar un carrusel arrastrado, no se abre nada)
 	for (int i = 0; i < n; i++) {
 		const ScItem *e = &it[i];
 		float x = e->x, yy = oy + e->y;
-		if (yy + e->h < VIEW_Y || yy > VIEW_Y + VIEW_H)
+		if (yy + e->h < VIEW_Y || yy > VIEW_Y + VIEW_H || x + e->w < 0 || x > BOT_W)
 			continue;
-		bool foc = U.buttons && SCV.hsel == i, pr = touch_in(x, yy, e->w, e->h) && g_touch.sy >= VIEW_Y;
-		if (e->kind == 3) { // un género: cada uno con su color (un punto y un fondo muy suave)
-			u32 gc = st_rgb((float)e->i / NG, 0.65f, 0.95f, 1);
-			draw_rrect(x, yy, e->w, e->h, 13, col_alpha(gc, foc || pr ? 0.38f : 0.14f));
+		bool foc = U.buttons && SCV.hsel == i, pr = touch_in(x, yy, e->w, e->h) && g_touch.sy >= VIEW_Y && SCV.dax != 1;
+		if (e->kind == 0 || e->kind == 5 || e->kind == 6) { // un acceso: degradado de su color, icono y número
+			u32 c = e->kind == 0 ? 0xFF5050FF : e->kind == 5 ? ST_SC : T.accent2;
+			int cnt = e->kind == 0 ? scl_count(SCL_LIKES) : e->kind == 5 ? SCN.n : nfol;
+			const char *l = e->kind == 0 ? _("Me gusta") : e->kind == 5 ? _("Novedades") : _("Siguiendo");
+			draw_grad4(x, yy, e->w, e->h, col_alpha(c, pr ? 0.55f : 0.42f), col_alpha(c, pr ? 0.4f : 0.26f), col_alpha(c, pr ? 0.45f : 0.3f), col_alpha(c, 0.14f));
+			round_mask(x, yy, e->w, e->h, 10, T.bg);
+			draw_icon(e->kind == 0 ? IC_HEART : e->kind == 5 ? IC_SPARK : IC_USER, x + 16, yy + 15, 13, c);
+			char nb[16];
+			snprintf(nb, sizeof nb, "%d", cnt);
+			text_draw_right(nb, x + e->w - 10, yy + 8, TS_SUB, col_alpha(T.text, 0.8f));
+			text_draw_clip(l, x + 10, yy + e->h - 8 - text_lineh(TS_BODY), e->w - 16, TS_BODY, T.text);
+			if (e->kind == 5 && SCN.unseen)
+				draw_circle(x + e->w - 8, yy + 6, 4, ST_SC);
 			if (foc)
-				draw_rrect_outline(x, yy, e->w, e->h, 13, 1.5f, gc);
-			draw_circle(x + 11, yy + e->h / 2, 3, gc);
-			text_draw_center(_(G[e->i][0]), x + e->w / 2 + 5, yy + (e->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.text);
-		} else {
+				draw_rrect_outline(x - 2, yy - 2, e->w + 4, e->h + 4, 13, 2, T.accent);
+		} else if (e->kind == 1 || e->kind == 2 || e->kind == 7) { // una tarjeta: la carátula y, debajo, su nombre
+			char t1[128], t2[64] = "";
+			const char *art = "";
+			IconId ic = IC_LIST;
+			u32 col;
+			if (e->kind == 1) {
+				util_strlcpy(t1, scl_list_name(e->i), sizeof t1);
+				int c = scl_count(e->i);
+				snprintf(t2, sizeof t2, c == 1 ? _("1 canción") : _("%d canciones"), c);
+				art = scl_list_art(e->i), col = art_tone(t1);
+			} else if (e->kind == 2)
+				util_strlcpy(t1, _("Nueva lista"), sizeof t1), ic = IC_PLUS, col = T.text2;
+			else {
+				const ScList *pl = &DISC.s[e->i / SC_SEC_ITEMS].it[e->i % SC_SEC_ITEMS];
+				util_strlcpy(t1, pl->title, sizeof t1);
+				snprintf(t2, sizeof t2, pl->count == 1 ? _("1 canción") : _("%d canciones"), pl->count);
+				art = pl->art, col = art_tone(t1);
+			}
+			if (e->kind == 2) {
+				draw_rrect(x, yy, SC_CARD, SC_CARD, 8, pr ? T.surface2 : T.surface);
+				draw_rrect_outline(x + 6, yy + 6, SC_CARD - 12, SC_CARD - 12, 6, 1.2f, col_alpha(T.text3, 0.5f));
+				draw_icon(IC_PLUS, x + SC_CARD / 2, yy + SC_CARD / 2, 20, T.text2);
+			} else {
+				draw_rrect(x + 2, yy + 3, SC_CARD - 4, SC_CARD, 8, T.shadow);
+				draw_art(art, x, yy, SC_CARD, 8, col, ic);
+				if (pr)
+					draw_rrect(x, yy, SC_CARD, SC_CARD, 8, 0x30000000);
+			}
+			if (foc)
+				draw_rrect_outline(x - 3, yy - 3, SC_CARD + 6, SC_CARD + 6, 10, 2, T.accent);
+			g_clip_ell = true;
+			text_draw_clip(t1, x, yy + SC_CARD + 4, SC_CARD, TS_SUB, T.text);
+			text_draw_clip(t2, x, yy + SC_CARD + 4 + text_lineh(TS_SUB), SC_CARD, 0.36f, T.text3);
+			g_clip_ell = false;
+		} else if (e->kind == 3) { // un género: un mosaico de color
+			u32 gc = st_rgb((float)e->i / NG, 0.62f, 0.85f, 1), gc2 = st_rgb((float)e->i / NG + 0.07f, 0.7f, 0.6f, 1);
+			draw_grad4(x, yy, e->w, e->h, gc, gc2, gc, gc2);
+			round_mask(x, yy, e->w, e->h, 9, T.bg);
+			if (pr)
+				draw_rrect(x, yy, e->w, e->h, 9, 0x30000000);
+			draw_icon(IC_NOTE, x + e->w - 18, yy + e->h / 2, 16, 0x50FFFFFF);
+			text_draw_clip(_(G[e->i][0]), x + 10, yy + (e->h - text_lineh(TS_BODY)) / 2, e->w - 36, TS_BODY, 0xFFFFFFFF);
+			if (foc)
+				draw_rrect_outline(x - 2, yy - 2, e->w + 4, e->h + 4, 11, 2, T.accent);
+		} else { // una búsqueda reciente
 			if (foc || pr)
 				draw_rrect(x, yy + 1, e->w, e->h - 2, 10, T.surface);
 			if (foc)
 				draw_rrect_outline(x, yy + 1, e->w, e->h - 2, 10, 1.5f, T.accent);
-			char t1[96], t2[48] = "";
-			IconId ic = IC_LIST;
-			u32 col = T.accent;
-			if (e->kind == 0) {
-				util_strlcpy(t1, _("Me gusta"), sizeof t1);
-				int c = scl_count(SCL_LIKES);
-				snprintf(t2, sizeof t2, c == 1 ? _("1 canción") : _("%d canciones"), c);
-				ic = IC_HEART, col = 0xFF5050FF;
-			} else if (e->kind == 1) {
-				util_strlcpy(t1, scl_list_name(e->i), sizeof t1);
-				int c = scl_count(e->i);
-				snprintf(t2, sizeof t2, c == 1 ? _("1 canción") : _("%d canciones"), c);
-			} else if (e->kind == 5) {
-				util_strlcpy(t1, _("Novedades"), sizeof t1);
-				snprintf(t2, sizeof t2, SCN.n == 1 ? _("1 canción nueva") : _("%d canciones nuevas"), SCN.n);
-				ic = IC_SPARK, col = 0xFF0055FF;
-			} else if (e->kind == 6) {
-				util_strlcpy(t1, _("Artistas que sigues"), sizeof t1);
-				snprintf(t2, sizeof t2, nfol == 1 ? _("1 artista") : _("%d artistas"), nfol);
-				ic = IC_USER, col = T.accent2;
-			} else if (e->kind == 2)
-				util_strlcpy(t1, _("Nueva lista"), sizeof t1), ic = IC_PLUS, col = T.text2;
-			else
-				util_strlcpy(t1, SCH.q[e->i], sizeof t1), ic = IC_CLOCK, col = T.text3;
-			if (e->kind <= 2 || e->kind >= 5) {
-				draw_rrect(x + 6, yy + (e->h - 24) / 2, 24, 24, 7, col_alpha(col, 0.16f));
-				draw_icon(ic, x + 18, yy + e->h / 2, 13, col);
-				if (e->kind == 5 && SCN.unseen) // (sin mirar aún)
-					draw_circle(x + 28, yy + (e->h - 24) / 2 + 2, 4, 0xFF0055FF);
-			} else
-				draw_icon(ic, x + 18, yy + e->h / 2, 12, col);
-			float tw = text_width(t2, TS_SUB);
-			text_draw_clip(t1, x + 40, yy + (e->h - text_lineh(TS_BODY)) / 2, e->w - 56 - tw, TS_BODY, T.text);
-			if (t2[0])
-				text_draw_right(t2, x + e->w - 10, yy + (e->h - text_lineh(TS_SUB)) / 2, TS_SUB, T.text3);
+			draw_icon(IC_CLOCK, x + 16, yy + e->h / 2, 12, T.text3);
+			text_draw_clip(SCH.q[e->i], x + 32, yy + (e->h - text_lineh(TS_BODY)) / 2, e->w - 56, TS_BODY, T.text);
+			draw_icon(IC_CHEV_RIGHT, x + e->w - 12, yy + e->h / 2, 10, T.text3);
 		}
-		if (!sheet && g_touch.sy >= VIEW_Y && tap(x, yy, e->w, e->h))
+		if (tap_ok && g_touch.sy >= VIEW_Y && tap(x, yy, e->w, e->h))
 			run = i, SCV.hsel = i;
 	}
 	if (!sheet && U.buttons && (g_kdown & KEY_A))
@@ -7659,7 +8194,10 @@ static void sc_home(bool sheet)
 		sc_open(LK_MINE, NULL, scl_list_name(e->i), e->i);
 	else if (e->kind == 2)
 		U.want_sclist = 1, SCV.am_t.id[0] = 0; // (una lista vacía)
-	else {
+	else if (e->kind == 7) {
+		const ScList *pl = &DISC.s[e->i / SC_SEC_ITEMS].it[e->i % SC_SEC_ITEMS];
+		sc_open_art(LK_SC, pl->id, pl->title, 0, pl->art);
+	} else {
 		char q[96];
 		util_strlcpy(q, e->kind == 3 ? G[e->i][1] : SCH.q[e->i], sizeof q);
 		sc_go(q);
@@ -7724,24 +8262,28 @@ static void sc_bottom(void)
 			g_kdown = kd, g_krepeat = kr, g_touch = tc;
 		return;
 	}
-	// resultados (canciones, artistas y playlists) o una lista
+	// resultados (canciones, artistas y playlists), una lista o la página de un artista (sus populares primero, luego
+	// las demás canciones y sus listas y álbumes). Cada fila, con su carátula (los artistas, en redondo)
 	bool res = SCV.view == SV_RESULTS;
 	List *l = res ? &SCV.lr : &SCV.lp;
 	const ScTrack *trk = res ? SCV.t : SCV.pt;
 	bool placeholder = !res && mine && !SCV.sv_fresh; // (guardada, aún sin llegar: se ve lo guardado)
-	bool fol = !res && SCV.lk == LK_FOLLOWS;
+	bool fol = !res && SCV.lk == LK_FOLLOWS, art_pg = !res && SCV.lk == LK_ARTIST;
 	const ScArtist *arts = fol ? SCV.fa : SCV.a; // (artistas: de la búsqueda o los que se siguen)
-	int ntr = fol ? 0 : placeholder ? SCV.nsv : res ? SCV.nt : SCV.npt, nar = res ? SCV.na : fol ? SCV.nfa : 0, npl = res ? SCV.nl : 0,
-	    cnt = ntr + nar + npl;
-	const float RH = 40;
+	const ScList *pls = res ? SCV.l : SCV.apl;
+	int ntr = fol ? 0 : placeholder ? SCV.nsv : res ? SCV.nt : SCV.npt, nar = res ? SCV.na : fol ? SCV.nfa : 0,
+	    npl = res ? SCV.nl : art_pg ? SCV.napl : 0, cnt = ntr + nar + npl;
+	const float RH = 44, AS = 34;
 	list_update(l, cnt, RH);
 	if (!cnt) {
 		if (SCV.st == SCQ_BUSY && SCV.want)
 			empty_state(IC_SEARCH, res ? _("Buscando…") : _("Cargando…"), _("Conectando con SoundCloud."));
-		else if (SCV.st == SCQ_ERR && !mine)
+		else if (SCV.st == SCQ_ERR && !mine && SCV.lk != LK_NEW)
 			empty_state(IC_CLOSE, res ? _("No se pudo buscar") : _("No se pudo cargar"), sc_err_text(SCV.err));
 		else if (fol)
 			empty_state(IC_USER, _("No sigues a ningún artista"), _("En la página de un artista, ⋮ > Seguir. Cuando suba algo nuevo, Cloud3DS te avisará."));
+		else if (!res && SCV.lk == LK_NEW)
+			empty_state(IC_SPARK, _("Estás al día"), _("Cuando un artista que sigues suba algo nuevo, aparecerá aquí."));
 		else if (mine)
 			empty_state(SCV.lk == LK_LIKES ? IC_HEART : IC_LIST, _("Aún no hay canciones"),
 			            _("Con Y en una canción puedes darle «Me gusta» o añadirla a una lista."));
@@ -7757,54 +8299,79 @@ static void sc_bottom(void)
 		bool was = l->sel == i;
 		bool t = row(l, i, y, RH);
 		char t1[160], t2[200];
-		IconId ic = IC_SPEAKER;
-		u32 col = T.accent;
-		bool liked = false;
+		const char *art = "";
+		float ar = 5;
+		IconId ic = IC_NOTE;
+		u32 col;
+		bool liked = false, now = false;
 		if (i < ntr) {
 			const char *id, *title, *artist;
 			u32 dur;
 			bool prev = false;
 			if (placeholder)
-				id = SCV.sv[i].id, title = SCV.sv[i].title, artist = SCV.sv[i].artist, dur = SCV.sv[i].dur_ms;
+				id = SCV.sv[i].id, title = SCV.sv[i].title, artist = SCV.sv[i].artist, dur = SCV.sv[i].dur_ms, art = SCV.sv[i].art;
 			else
-				id = trk[i].id, title = trk[i].title, artist = trk[i].artist, dur = trk[i].dur_ms, prev = trk[i].preview;
+				id = trk[i].id, title = trk[i].title, artist = trk[i].artist, dur = trk[i].dur_ms, prev = trk[i].preview, art = trk[i].art;
 			util_strlcpy(t1, title, sizeof t1);
-			char d[16];
+			char d[16], pc[16];
 			mu_fmt(dur, d, sizeof d);
-			snprintf(t2, sizeof t2, "%s%s%s%s", artist, artist[0] ? " · " : "", d, prev ? _(" · Fragmento de 30 s") : "");
-			bool now = mu_on() && !strncmp(ms.name, "sc:", 3) && !strcmp(ms.name + 3, id);
-			if (now)
-				ic = IC_SPARK, col = T.accent2;
-			else if (prev || placeholder)
-				col = T.text3;
+			if (art_pg && !placeholder) { // (en su página: populares, con sus reproducciones; las demás, con el año)
+				fmt_count(trk[i].plays, pc, sizeof pc);
+				if (i < SCV.ntop)
+					snprintf(t2, sizeof t2, _("Popular · %s reproducciones · %s"), pc, d);
+				else
+					snprintf(t2, sizeof t2, "%.4s · %s", trk[i].created, d);
+			} else
+				snprintf(t2, sizeof t2, "%s%s%s", artist, artist[0] ? " · " : "", d);
+			if (prev)
+				strncat(t2, _(" · Fragmento de 30 s"), sizeof t2 - strlen(t2) - 1);
+			now = mu_on() && !strncmp(ms.name, "sc:", 3) && !strcmp(ms.name + 3, id);
 			liked = scl_liked(id);
+			col = art_tone(artist);
 		} else if (i < ntr + nar) {
 			const ScArtist *a = &arts[i - ntr];
 			util_strlcpy(t1, a->name, sizeof t1);
+			char fc[16];
+			fmt_count(a->followers, fc, sizeof fc);
 			if (fol)
 				util_strlcpy(t2, _("Artista · lo sigues"), sizeof t2);
 			else
-				snprintf(t2, sizeof t2, a->tracks == 1 ? _("Artista · 1 canción") : _("Artista · %d canciones"), a->tracks);
+				snprintf(t2, sizeof t2, a->tracks == 1 ? _("Artista · %s seguidores · 1 canción") : _("Artista · %s seguidores · %d canciones"), fc, a->tracks);
 			if (!fol && scl_following(a->id))
 				strncat(t2, _(" · lo sigues"), sizeof t2 - strlen(t2) - 1);
-			ic = IC_USER, col = T.accent2;
+			art = fol ? SCV.fa_art[i - ntr] : a->art, ar = AS / 2, ic = IC_USER, col = art_tone(a->name);
 		} else {
-			const ScList *p = &SCV.l[i - ntr - nar];
+			const ScList *p = &pls[i - ntr - nar];
 			util_strlcpy(t1, p->title, sizeof t1);
-			snprintf(t2, sizeof t2, p->count == 1 ? _("Playlist · %s · 1 canción") : _("Playlist · %s · %d canciones"), p->user, p->count);
-			ic = IC_LIST, col = T.warn;
+			const char *kind = p->album ? _("Álbum") : _("Playlist");
+			if (art_pg)
+				snprintf(t2, sizeof t2, p->count == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), kind, p->count);
+			else
+				snprintf(t2, sizeof t2, p->count == 1 ? _("%s · %s · 1 canción") : _("%s · %s · %d canciones"), kind, p->user, p->count);
+			art = p->art, ic = IC_LIST, col = art_tone(p->title);
 		}
-		draw_rrect(14, y + (RH - 26) / 2, 26, 26, 8, col_alpha(col, 0.16f));
-		draw_icon(ic, 27, y + RH / 2, 14, col);
+		float ax = 14, ay = y + (RH - AS) / 2;
+		draw_art(art, ax, ay, AS, ar, col, ic);
+		if (now) { // lo que suena: la carátula, oscurecida, con tres barras que bailan
+			draw_rrect(ax, ay, AS, AS, ar, 0x90000000);
+			bool pl = ms.st == MU_PLAY && !ms.loading;
+			for (int k = 0; k < 3; k++) {
+				float hh = pl ? 6 + 9 * fabsf(sinf(g_time * (4.1f + k * 1.3f) + k * 1.7f)) : 4;
+				draw_rrect(ax + AS / 2 - 8 + k * 6, ay + AS / 2 + 8 - hh, 4, hh, 1.5f, ST_SC);
+			}
+		}
+		float tx = ax + AS + 10, tw = BOT_W - tx - (liked ? 50 : 36);
 		g_clip_ell = l->sel != i;
-		text_draw_clip(t1, 50, y + 5, BOT_W - 100, TS_BODY, T.text);
-		text_draw_clip(t2, 50, y + 22, BOT_W - 100, TS_SUB, T.text3);
+		text_draw_clip(t1, tx, y + 7, tw, TS_BODY, now ? ST_SC : T.text);
+		text_draw_clip(t2, tx, y + 25, tw, TS_SUB, T.text3);
 		g_clip_ell = false;
+		if (!was && l->sel != i + 1 && i + 1 < cnt) // (una línea fina entre filas, desde el texto)
+			draw_rect(tx, y + RH - 0.5f, BOT_W - tx - 10, 1, col_alpha(T.text3, 0.18f));
 		if (liked)
-			draw_icon(IC_HEART, BOT_W - 50, y + RH / 2, 11, 0xFF5050FF);
+			draw_icon(IC_HEART, BOT_W - 48, y + RH / 2, 11, 0xFF5050FF);
 		if (l->sel == i) {
-			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
-			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
+			draw_circle(BOT_W - 24, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
+			draw_icon(IC_DOTS, BOT_W - 24, y + RH / 2, 14, T.accent);
 		}
 		bool open = (t && was) || activate(l, i);
 		if (t && was && g_touch.px > BOT_W - 44)
@@ -7816,9 +8383,9 @@ static void sc_bottom(void)
 				else
 					sc_play(trk, ntr, i, false);
 			} else if (i < ntr + nar)
-				sc_open(LK_ARTIST, arts[i - ntr].id, arts[i - ntr].name, 0);
+				sc_open_art(LK_ARTIST, arts[i - ntr].id, arts[i - ntr].name, 0, fol ? SCV.fa_art[i - ntr] : arts[i - ntr].art);
 			else
-				sc_open(LK_SC, SCV.l[i - ntr - nar].id, SCV.l[i - ntr - nar].title, 0);
+				sc_open_art(LK_SC, pls[i - ntr - nar].id, pls[i - ntr - nar].title, 0, pls[i - ntr - nar].art);
 		}
 	}
 	gfx_clip_off();
@@ -7850,7 +8417,7 @@ static void sc_bottom(void)
 			if (st_->downloadable)
 				ic[n] = IC_DOWNLOAD, lab[n] = _("Descargar a la SD"), col[n] = T.text, act[n++] = A_DL;
 		} else if (i >= ntr && i < cnt) {
-			util_strlcpy(title, i < ntr + nar ? arts[i - ntr].name : SCV.l[i - ntr - nar].title, sizeof title);
+			util_strlcpy(title, i < ntr + nar ? arts[i - ntr].name : pls[i - ntr - nar].title, sizeof title);
 			ic[n] = i < ntr + nar ? IC_USER : IC_LIST, lab[n] = _("Abrir"), col[n] = T.accent, act[n++] = A_OPEN;
 			if (i < ntr + nar) {
 				bool f = scl_following(arts[i - ntr].id);
@@ -7881,12 +8448,12 @@ static void sc_bottom(void)
 				else
 					toast_icon(e == 1 ? _("Espera a que termine la descarga en curso") : _("No se pudo descargar"), IC_CLOSE, T.danger);
 			} else if (a == A_FOLLOW)
-				sc_toggle_follow(arts[i - ntr].id, arts[i - ntr].name);
+				sc_toggle_follow(arts[i - ntr].id, arts[i - ntr].name, arts[i - ntr].art);
 			else if (a == A_OPEN) {
 				if (i < ntr + nar)
-					sc_open(LK_ARTIST, arts[i - ntr].id, arts[i - ntr].name, 0);
+					sc_open_art(LK_ARTIST, arts[i - ntr].id, arts[i - ntr].name, 0, arts[i - ntr].art);
 				else
-					sc_open(LK_SC, SCV.l[i - ntr - nar].id, SCV.l[i - ntr - nar].title, 0);
+					sc_open_art(LK_SC, pls[i - ntr - nar].id, pls[i - ntr - nar].title, 0, pls[i - ntr - nar].art);
 			}
 		}
 	}
@@ -7939,7 +8506,7 @@ static void sc_bottom(void)
 			else if (a == L_REN)
 				U.want_sclist = 2;
 			else if (a == L_FOLLOW)
-				sc_toggle_follow(SCV.aid, SCV.list_title);
+				sc_toggle_follow(SCV.aid, SCV.list_title, SCV.artist.art);
 			else if (a == L_DEL) {
 				char msg[200];
 				snprintf(msg, sizeof msg, _("Se eliminará la lista «%s». Las canciones siguen en SoundCloud."), SCV.list_title);

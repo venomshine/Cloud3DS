@@ -1,6 +1,96 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Radio':
+        ('Radio',
+         'ラジオ'),
+    'Radio activada: al acabar la lista seguirán canciones parecidas':
+        ('Radio on: similar songs will follow when the list ends',
+         'ラジオ オン: リストの終了後に似た曲が続きます'),
+    'Radio desactivada':
+        ('Radio off',
+         'ラジオ オフ'),
+    'Comentarios visibles arriba':
+        ('Comments shown on the top screen',
+         'コメントを上画面に表示'),
+    'Comentarios ocultos':
+        ('Comments hidden',
+         'コメントを非表示'),
+    'Artistas que despuntan':
+        ('Artists to watch',
+         '注目のアーティスト'),
+    'Seleccionadas por SoundCloud':
+        ('Curated by SoundCloud',
+         'SoundCloudのおすすめ'),
+    'Tendencias por género':
+        ('Trending by genre',
+         'ジャンル別トレンド'),
+    'Lo más escuchado':
+        ('Most played',
+         '人気の曲'),
+    'Radio: 1 canción parecida a continuación':
+        ('Radio: 1 similar song up next',
+         'ラジオ: 似た曲を1曲追加しました'),
+    'Radio: %d canciones parecidas a continuación':
+        ('Radio: %d similar songs up next',
+         'ラジオ: 似た曲を%d曲追加しました'),
+    '  ·  Radio':
+        ('  ·  Radio',
+         '  ·  ラジオ'),
+    '1 comentario':
+        ('1 comment',
+         'コメント1件'),
+    '%d comentarios':
+        ('%d comments',
+         'コメント%d件'),
+    ' · %lu h %lu min':
+        (' · %lu h %lu min',
+         ' · %lu時間%lu分'),
+    ' · %lu min':
+        (' · %lu min',
+         ' · %lu分'),
+    '%s seguidores · 1 canción':
+        ('%s followers · 1 song',
+         'フォロワー%s · 1曲'),
+    '%s seguidores · %d canciones':
+        ('%s followers · %d songs',
+         'フォロワー%s · %d曲'),
+    'Tus listas':
+        ('Your playlists',
+         'あなたのリスト'),
+    'Descubrir':
+        ('Discover',
+         '見つける'),
+    'Siguiendo':
+        ('Following',
+         'フォロー中'),
+    'Estás al día':
+        ("You're all caught up",
+         '新着はありません'),
+    'Cuando un artista que sigues suba algo nuevo, aparecerá aquí.':
+        ('When an artist you follow uploads something new, it will appear here.',
+         'フォロー中のアーティストが新しい曲を公開すると、ここに表示されます。'),
+    'Popular · %s reproducciones · %s':
+        ('Popular · %s plays · %s',
+         '人気 · 再生%s回 · %s'),
+    'Artista · %s seguidores · 1 canción':
+        ('Artist · %s followers · 1 song',
+         'アーティスト · フォロワー%s · 1曲'),
+    'Artista · %s seguidores · %d canciones':
+        ('Artist · %s followers · %d songs',
+         'アーティスト · フォロワー%s · %d曲'),
+    'Álbum':
+        ('Album',
+         'アルバム'),
+    'Playlist':
+        ('Playlist',
+         'プレイリスト'),
+    '%s · %s · 1 canción':
+        ('%s · %s · 1 song',
+         '%s · %s · 1曲'),
+    '%s · %s · %d canciones':
+        ('%s · %s · %d songs',
+         '%s · %s · %d曲'),
     'Personalizado':
         ('Custom',
          'カスタム'),
@@ -85,12 +175,6 @@ TR = {
     '%d artistas':
         ('%d artists',
          'アーティスト%d人'),
-    '1 canción nueva':
-        ('1 new song',
-         '新曲1曲'),
-    '%d canciones nuevas':
-        ('%d new songs',
-         '新曲%d曲'),
     'Artistas que sigues':
         ('Artists you follow',
          'フォロー中のアーティスト'),
@@ -142,9 +226,6 @@ TR = {
     '%d canciones · %d artistas · %d playlists':
         ('%d songs · %d artists · %d playlists',
          '%d曲 · アーティスト%d人 · プレイリスト%d件'),
-    'Mi biblioteca':
-        ('My library',
-         'マイライブラリ'),
     'Nueva lista':
         ('New list',
          '新しいリスト'),
@@ -154,12 +235,6 @@ TR = {
     'Con Y en una canción puedes darle «Me gusta» o añadirla a una lista.':
         ('Press Y on a song to like it or add it to a list.',
          '曲の上でYを押すと、お気に入りやリストに追加できます。'),
-    'Artista · 1 canción':
-        ('Artist · 1 song',
-         'アーティスト · 1曲'),
-    'Artista · %d canciones':
-        ('Artist · %d songs',
-         'アーティスト · %d曲'),
     'Cargando la lista… un momento':
         ('Loading the list… one moment',
          'リストを読み込み中です。少々お待ちください'),
@@ -355,12 +430,6 @@ TR = {
     ' · Fragmento de 30 s':
         (' · 30 s preview',
          ' · 30秒プレビュー'),
-    'Playlist · %s · 1 canción':
-        ('Playlist · %s · 1 song',
-         'プレイリスト · %s · 1曲'),
-    'Playlist · %s · %d canciones':
-        ('Playlist · %s · %d songs',
-         'プレイリスト · %s · %d曲'),
     'Escucha SoundCloud en streaming y la música de tu tarjeta SD. Sigue sonando en segundo plano.':
         ('Stream SoundCloud and play the music on your SD card. Keeps playing in the background.',
          'SoundCloudのストリーミングとSDカードの音楽を再生します。バックグラウンドでも再生を続けます。'),

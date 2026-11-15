@@ -13,6 +13,7 @@
 #include "schls.h"
 #include "util.h"
 
+#include <math.h>
 #include <neaacdec.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -252,6 +253,57 @@ static bool parse_track(const cJSON *t, ScTrack *o)
 		util_strlcpy(o->auth, au, sizeof o->auth);
 	o->downloadable = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(t, "downloadable")) &&
 	                  !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(t, "has_downloads_left"));
+	const cJSON *pc = cJSON_GetObjectItemCaseSensitive(t, "playback_count"), *lc = cJSON_GetObjectItemCaseSensitive(t, "likes_count");
+	o->plays = cJSON_IsNumber(pc) ? (u32)pc->valuedouble : 0;
+	o->likes = cJSON_IsNumber(lc) ? (u32)lc->valuedouble : 0;
+	if (js(t, "genre"))
+		util_strlcpy(o->genre, js(t, "genre"), sizeof o->genre);
+	const char *wv = js(t, "waveform_url");
+	if (wv && strlen(wv) < sizeof o->wave)
+		util_strlcpy(o->wave, wv, sizeof o->wave);
+	return true;
+}
+
+// una playlist (o álbum, o una de SoundCloud: con urn y sin número de canciones)
+static bool parse_list(const cJSON *it, ScList *o)
+{
+	memset(o, 0, sizeof *o);
+	const cJSON *id = cJSON_GetObjectItemCaseSensitive(it, "id"), *tc = cJSON_GetObjectItemCaseSensitive(it, "track_count");
+	if (cJSON_IsNumber(id))
+		snprintf(o->id, sizeof o->id, "%.0f", id->valuedouble);
+	else if (js(it, "urn") && strlen(js(it, "urn")) < sizeof o->id)
+		util_strlcpy(o->id, js(it, "urn"), sizeof o->id);
+	else
+		return false;
+	util_strlcpy(o->title, js(it, "title") ? js(it, "title") : "?", sizeof o->title);
+	const char *u = js(cJSON_GetObjectItemCaseSensitive(it, "user"), "username");
+	util_strlcpy(o->user, u ? u : "SoundCloud", sizeof o->user);
+	o->count = cJSON_IsNumber(tc) ? tc->valueint : cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(it, "tracks"));
+	const char *art = js(it, "artwork_url");
+	if (!art)
+		art = js(it, "calculated_artwork_url");
+	if (!art)
+		art = js(cJSON_GetObjectItemCaseSensitive(it, "user"), "avatar_url");
+	if (art)
+		util_strlcpy(o->art, art, sizeof o->art);
+	o->album = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(it, "is_album"));
+	return true;
+}
+
+// un artista (un usuario de SoundCloud)
+static bool parse_user(const cJSON *it, ScArtist *o)
+{
+	memset(o, 0, sizeof *o);
+	const cJSON *id = cJSON_GetObjectItemCaseSensitive(it, "id"), *tc = cJSON_GetObjectItemCaseSensitive(it, "track_count"),
+	            *fc = cJSON_GetObjectItemCaseSensitive(it, "followers_count");
+	if (!cJSON_IsNumber(id))
+		return false;
+	snprintf(o->id, sizeof o->id, "%.0f", id->valuedouble);
+	util_strlcpy(o->name, js(it, "username") ? js(it, "username") : "?", sizeof o->name);
+	o->tracks = cJSON_IsNumber(tc) ? tc->valueint : 0;
+	o->followers = cJSON_IsNumber(fc) ? (u32)fc->valuedouble : 0;
+	if (js(it, "avatar_url"))
+		util_strlcpy(o->art, js(it, "avatar_url"), sizeof o->art);
 	return true;
 }
 
@@ -307,6 +359,21 @@ static struct {
 	int nnew;
 	char latest[SCL_ARTISTS_MAX][24];
 	u32 new_rev;
+	// el artista abierto
+	ScArtist artist;
+	int ntop;
+	// Descubrir, lo que suena (onda y comentarios) y la radio
+	bool disc_pending, disc_busy, info_pending, radio_pending;
+	ScSection *sec;
+	int nsec;
+	u32 disc_rev;
+	char info_id[24], radio_id[24];
+	ScInfo *info;
+	u32 info_rev;
+	ScTrack radio[SC_RADIO];
+	int nradio;
+	char radio_seed[24];
+	u32 radio_rev;
 	char err[32];
 	u32 rev;
 } Q;
@@ -345,16 +412,8 @@ static void do_search(const char *q)
 		j = api(path, err2, sizeof err2);
 		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
 		{
-			const cJSON *id = cJSON_GetObjectItemCaseSensitive(it, "id"), *tc = cJSON_GetObjectItemCaseSensitive(it, "track_count");
-			if (nl >= SC_MAX || !cJSON_IsNumber(id))
-				continue;
-			ScList *o = &l[nl++];
-			memset(o, 0, sizeof *o);
-			snprintf(o->id, sizeof o->id, "%.0f", id->valuedouble);
-			util_strlcpy(o->title, js(it, "title") ? js(it, "title") : "?", sizeof o->title);
-			const char *u = js(cJSON_GetObjectItemCaseSensitive(it, "user"), "username");
-			util_strlcpy(o->user, u ? u : "", sizeof o->user);
-			o->count = cJSON_IsNumber(tc) ? tc->valueint : 0;
+			if (nl < SC_MAX && parse_list(it, &l[nl]))
+				nl++;
 		}
 		cJSON_Delete(j);
 		// los artistas (los que tienen canciones)
@@ -362,16 +421,8 @@ static void do_search(const char *q)
 		j = api(path, err2, sizeof err2);
 		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
 		{
-			const cJSON *id = cJSON_GetObjectItemCaseSensitive(it, "id"), *tc = cJSON_GetObjectItemCaseSensitive(it, "track_count"),
-			            *fc = cJSON_GetObjectItemCaseSensitive(it, "followers_count");
-			if (na >= SC_ARTISTS || !cJSON_IsNumber(id) || !cJSON_IsNumber(tc) || tc->valueint <= 0)
-				continue;
-			ScArtist *o = &ar[na++];
-			memset(o, 0, sizeof *o);
-			snprintf(o->id, sizeof o->id, "%.0f", id->valuedouble);
-			util_strlcpy(o->name, js(it, "username") ? js(it, "username") : "?", sizeof o->name);
-			o->tracks = tc->valueint;
-			o->followers = cJSON_IsNumber(fc) ? (u32)fc->valuedouble : 0;
+			if (na < SC_ARTISTS && parse_user(it, &ar[na]) && ar[na].tracks > 0)
+				na++;
 		}
 		cJSON_Delete(j);
 	}
@@ -379,7 +430,7 @@ static void do_search(const char *q)
 		memcpy(Q.t, t, sizeof t[0] * nt);
 		memcpy(Q.l, l, sizeof l[0] * nl);
 		memcpy(Q.a, ar, sizeof ar[0] * na);
-		Q.nt = nt, Q.nl = nl, Q.na = na;
+		Q.nt = nt, Q.nl = nl, Q.na = na, Q.ntop = 0;
 		util_strlcpy(Q.err, err, sizeof Q.err);
 		Q.st = nt || nl || !err[0] ? SCQ_DONE : SCQ_ERR;
 		Q.rev++;
@@ -392,7 +443,7 @@ static void do_list(const char *id)
 	char path[160], err[32] = "";
 	static ScTrack t[SC_MAX];
 	int nt = 0;
-	snprintf(path, sizeof path, "/playlists/%s", id);
+	snprintf(path, sizeof path, strncmp(id, "soundcloud:", 11) ? "/playlists/%s" : "/system-playlists/%s", id);
 	cJSON *j = api(path, err, sizeof err), *it;
 	// las primeras vienen enteras; las demás, solo con su número: se piden de 50 en 50
 	char ids[SC_MAX][24];
@@ -429,7 +480,7 @@ static void do_list(const char *id)
 	}
 	if (!Q.quit) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
-		Q.nt = nt, Q.nl = 0, Q.na = 0;
+		Q.nt = nt, Q.nl = 0, Q.na = 0, Q.ntop = 0;
 		util_strlcpy(Q.err, err, sizeof Q.err);
 		Q.st = nt || !err[0] ? SCQ_DONE : SCQ_ERR;
 		Q.rev++;
@@ -473,35 +524,308 @@ static void do_ids(const char *list)
 			}
 	if (!Q.quit) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
-		Q.nt = nt, Q.nl = 0, Q.na = 0;
+		Q.nt = nt, Q.nl = 0, Q.na = 0, Q.ntop = 0;
 		util_strlcpy(Q.err, err, sizeof Q.err);
 		Q.st = nt || !err[0] ? SCQ_DONE : SCQ_ERR;
 		Q.rev++;
 	}
 }
 
-// las canciones de un artista (las más recientes)
+// la página de un artista: sus datos, sus populares (primero), las demás canciones (de la más reciente) y sus listas
 static void do_artist(const char *id)
 {
-	char path[100], err[32] = "";
+	char path[100], err[32] = "", e2[32];
 	static ScTrack t[SC_MAX];
-	int nt = 0;
-	snprintf(path, sizeof path, "/users/%s/tracks?limit=%d&linked_partitioning=1", id, SC_MAX);
-	cJSON *j = api(path, err, sizeof err), *it;
+	static ScList l[SC_MAX];
+	ScArtist ar;
+	memset(&ar, 0, sizeof ar);
+	int nt = 0, nl = 0, ntop = 0;
+	snprintf(path, sizeof path, "/users/%s", id);
+	cJSON *j = api(path, e2, sizeof e2), *it;
+	if (j)
+		parse_user(j, &ar);
+	cJSON_Delete(j);
+	snprintf(path, sizeof path, "/users/%s/toptracks?limit=10", id);
+	j = api(path, e2, sizeof e2);
 	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
 	{
-		if (nt < SC_MAX && parse_track(it, &t[nt]))
+		if (nt < 10 && parse_track(it, &t[nt]))
 			reg_put(&t[nt]), nt++;
 	}
 	cJSON_Delete(j);
-	if (!Q.quit) {
-		memcpy(Q.t, t, sizeof t[0] * nt);
-		Q.nt = nt, Q.nl = 0, Q.na = 0;
-		util_strlcpy(Q.err, err, sizeof Q.err);
-		Q.st = nt || !err[0] ? SCQ_DONE : SCQ_ERR;
-		Q.rev++;
+	ntop = nt;
+	snprintf(path, sizeof path, "/users/%s/tracks?limit=%d&linked_partitioning=1", id, SC_MAX);
+	j = api(path, err, sizeof err);
+	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+	{
+		if (nt >= SC_MAX || !parse_track(it, &t[nt]))
+			continue;
+		bool dup = false;
+		for (int k = 0; k < ntop && !dup; k++)
+			dup = !strcmp(t[k].id, t[nt].id);
+		if (!dup)
+			reg_put(&t[nt]), nt++;
 	}
-	util_log("soundcloud: artista %s: %d canciones %s", id, nt, err);
+	cJSON_Delete(j);
+	snprintf(path, sizeof path, "/users/%s/playlists?limit=20", id);
+	j = api(path, e2, sizeof e2);
+	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+	{
+		if (nl < SC_MAX && parse_list(it, &l[nl]) && l[nl].count > 0)
+			nl++;
+	}
+	cJSON_Delete(j);
+	if (!Q.quit) {
+		LightLock_Lock(&CL);
+		memcpy(Q.t, t, sizeof t[0] * nt);
+		memcpy(Q.l, l, sizeof l[0] * nl);
+		Q.nt = nt, Q.nl = nl, Q.na = 0, Q.ntop = ntop, Q.artist = ar;
+		util_strlcpy(Q.err, err, sizeof Q.err);
+		Q.st = nt || nl || !err[0] ? SCQ_DONE : SCQ_ERR;
+		Q.rev++;
+		LightLock_Unlock(&CL);
+	}
+	util_log("soundcloud: artista %s: %d canciones (%d populares), %d listas %s", id, nt, ntop, nl, err);
+}
+
+bool sc_artist_page(ScArtist *a, int *ntop)
+{
+	if (!cl_init)
+		return false;
+	LightLock_Lock(&CL);
+	*a = Q.artist, *ntop = Q.ntop;
+	LightLock_Unlock(&CL);
+	return a->id[0];
+}
+
+// Descubrir: las selecciones de la portada de SoundCloud (las que traen playlists)
+static void do_discover(void)
+{
+	static ScSection sec[SC_SECTIONS];
+	int ns = 0;
+	char err[32] = "";
+	cJSON *j = api("/mixed-selections?limit=10", err, sizeof err), *s_;
+	cJSON_ArrayForEach(s_, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+	{
+		if (ns >= SC_SECTIONS)
+			break;
+		ScSection *o = &sec[ns];
+		memset(o, 0, sizeof *o);
+		util_strlcpy(o->title, js(s_, "title") ? js(s_, "title") : "", sizeof o->title);
+		const cJSON *it;
+		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(s_, "items"), "collection"))
+		{
+			if (o->n < SC_SEC_ITEMS && parse_list(it, &o->it[o->n]) && o->it[o->n].count > 0)
+				o->n++;
+		}
+		if (o->n && o->title[0])
+			ns++;
+	}
+	cJSON_Delete(j);
+	LightLock_Lock(&CL);
+	if (!Q.sec)
+		Q.sec = malloc(sizeof *Q.sec * SC_SECTIONS);
+	if (Q.sec && !Q.quit)
+		memcpy(Q.sec, sec, sizeof sec[0] * ns), Q.nsec = ns;
+	Q.disc_busy = false, Q.disc_rev++;
+	LightLock_Unlock(&CL);
+	util_log("soundcloud: descubrir: %d secciones %s", ns, err);
+}
+
+void sc_discover(void)
+{
+	sc_init();
+	LightLock_Lock(&CL);
+	Q.disc_pending = Q.disc_busy = true;
+	LightLock_Unlock(&CL);
+	LightEvent_Signal(&Q.ev);
+}
+
+u32 sc_discover_results(ScSection *s, int *n, bool *busy)
+{
+	if (!cl_init) {
+		*n = 0, *busy = false;
+		return 0;
+	}
+	LightLock_Lock(&CL);
+	*n = Q.sec ? Q.nsec : 0, *busy = Q.disc_busy;
+	if (s && *n)
+		memcpy(s, Q.sec, sizeof *s * *n);
+	u32 r = Q.disc_rev;
+	LightLock_Unlock(&CL);
+	return r;
+}
+
+// sin emojis ni otros signos fuera del plano básico (la fuente de la consola no los tiene), ni saltos de línea
+static void plain_text(char *s)
+{
+	unsigned char *r = (unsigned char *)s, *w = r;
+	while (*r) {
+		int n = *r < 0x80 ? 1 : (*r >> 5) == 6 ? 2 : (*r >> 4) == 14 ? 3 : (*r >> 3) == 30 ? 4 : 1;
+		bool drop = n == 4 || (n == 3 && r[0] == 0xEF && r[1] == 0xB8 && r[2] == 0x8F) || // (U+FE0F)
+		            (n == 3 && r[0] == 0xE2 && r[1] == 0x80 && r[2] == 0x8D) ||          // (U+200D)
+		            (n == 3 && r[0] == 0xE2 && (r[1] == 0x9C || r[1] == 0x9D || r[1] == 0x98 || r[1] == 0x99)); // (dingbats)
+		for (int k = 1; k < n; k++)
+			if (!r[k]) {
+				*w = 0;
+				return;
+			}
+		if (!drop) {
+			for (int k = 0; k < n; k++)
+				*w++ = (*r == '\n' || *r == '\r' || *r == '\t') ? ' ' : r[k];
+		}
+		r += n;
+	}
+	*w = 0;
+	// (espacios de más, fuera)
+	char *a = s, *o = s;
+	while (*a == ' ')
+		a++;
+	for (; *a; a++)
+		if (*a != ' ' || (o > s && o[-1] != ' '))
+			*o++ = *a;
+	while (o > s && o[-1] == ' ')
+		o--;
+	*o = 0;
+}
+
+static int cmt_cmp(const void *a, const void *b)
+{
+	u32 x = ((const ScComment *)a)->ms, y = ((const ScComment *)b)->ms;
+	return x < y ? -1 : x > y;
+}
+
+// lo que suena: la onda (el JSON de wave.sndcdn.com: «samples», de 0 a «height») y los comentarios con su momento
+static void do_info(const char *id)
+{
+	static ScInfo in;
+	memset(&in, 0, sizeof in);
+	util_strlcpy(in.id, id, sizeof in.id);
+	ScTrack t;
+	if (sc_track(id, &t) && t.wave[0]) {
+		long code;
+		char *b = get(t.wave, 256 * 1024, &code, NULL);
+		cJSON *j = b ? cJSON_Parse(b) : NULL;
+		free(b);
+		const cJSON *sm = cJSON_GetObjectItemCaseSensitive(j, "samples"), *hh = cJSON_GetObjectItemCaseSensitive(j, "height");
+		int n = cJSON_GetArraySize(sm), h = cJSON_IsNumber(hh) && hh->valueint > 0 ? hh->valueint : 140;
+		if (n >= SC_WAVE) {
+			float acc[SC_WAVE] = {0}, mx = 1, mn = 1e9f;
+			int cnt[SC_WAVE] = {0}, i = 0;
+			const cJSON *v;
+			cJSON_ArrayForEach(v, sm)
+			{
+				int k = i++ * SC_WAVE / n;
+				if (cJSON_IsNumber(v) && k < SC_WAVE)
+					acc[k] += (float)v->valuedouble, cnt[k]++;
+			}
+			for (int k = 0; k < SC_WAVE; k++) {
+				acc[k] = cnt[k] ? acc[k] / cnt[k] : 0;
+				mx = fmaxf(mx, acc[k]), mn = fminf(mn, acc[k]);
+			}
+			(void)h;
+			// entre lo más bajo y lo más alto (que se vea la forma aunque esté masterizada muy alta), con un mínimo
+			float lo = fminf(mn, mx * 0.5f), span = fmaxf(1, mx - lo);
+			for (int k = 0; k < SC_WAVE; k++)
+				in.wave[k] = (u8)fminf(255, 255 * (0.08f + 0.92f * powf((acc[k] - lo) / span, 1.3f)));
+			in.has_wave = true;
+		}
+		cJSON_Delete(j);
+	}
+	char path[160], err[32];
+	snprintf(path, sizeof path, "/tracks/%s/comments?threaded=0&filter_replies=1&limit=200", id);
+	cJSON *j = api(path, err, sizeof err), *it;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+	{
+		const cJSON *ts = cJSON_GetObjectItemCaseSensitive(it, "timestamp");
+		const char *body = js(it, "body"), *user = js(cJSON_GetObjectItemCaseSensitive(it, "user"), "username");
+		if (in.nc >= SC_COMMENTS || !cJSON_IsNumber(ts) || !body)
+			continue;
+		ScComment *c = &in.c[in.nc];
+		c->ms = (u32)ts->valuedouble;
+		util_strlcpy(c->body, body, sizeof c->body);
+		util_strlcpy(c->user, user ? user : "", sizeof c->user);
+		plain_text(c->body), plain_text(c->user);
+		if (c->body[0])
+			in.nc++;
+	}
+	cJSON_Delete(j);
+	qsort(in.c, in.nc, sizeof in.c[0], cmt_cmp);
+	LightLock_Lock(&CL);
+	if (!Q.info)
+		Q.info = malloc(sizeof *Q.info);
+	if (Q.info && !strcmp(Q.info_id, id)) // (si no, ya se pidió otra)
+		*Q.info = in, Q.info_rev++;
+	LightLock_Unlock(&CL);
+	util_log("soundcloud: info de %s: onda %d, %d comentarios", id, in.has_wave, in.nc);
+}
+
+void sc_info(const char *id)
+{
+	sc_init();
+	LightLock_Lock(&CL);
+	util_strlcpy(Q.info_id, id, sizeof Q.info_id);
+	Q.info_pending = true;
+	LightLock_Unlock(&CL);
+	LightEvent_Signal(&Q.ev);
+}
+
+u32 sc_info_results(ScInfo *out)
+{
+	if (!cl_init)
+		return 0;
+	LightLock_Lock(&CL);
+	u32 r = Q.info_rev;
+	if (out && Q.info)
+		*out = *Q.info;
+	LightLock_Unlock(&CL);
+	return r;
+}
+
+// la radio: las relacionadas con una canción
+static void do_radio(const char *id)
+{
+	static ScTrack t[SC_RADIO];
+	int n = 0;
+	char path[100], err[32];
+	snprintf(path, sizeof path, "/tracks/%s/related?limit=%d", id, SC_RADIO);
+	cJSON *j = api(path, err, sizeof err), *it;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+	{
+		if (n < SC_RADIO && parse_track(it, &t[n]) && !t[n].preview)
+			reg_put(&t[n]), n++;
+	}
+	cJSON_Delete(j);
+	LightLock_Lock(&CL);
+	memcpy(Q.radio, t, sizeof t[0] * n), Q.nradio = n;
+	util_strlcpy(Q.radio_seed, id, sizeof Q.radio_seed);
+	Q.radio_rev++;
+	LightLock_Unlock(&CL);
+	util_log("soundcloud: radio desde %s: %d canciones %s", id, n, err);
+}
+
+void sc_radio(const char *id)
+{
+	sc_init();
+	LightLock_Lock(&CL);
+	util_strlcpy(Q.radio_id, id, sizeof Q.radio_id);
+	Q.radio_pending = true;
+	LightLock_Unlock(&CL);
+	LightEvent_Signal(&Q.ev);
+}
+
+u32 sc_radio_results(ScTrack *t, int *n, char *seed, size_t sn)
+{
+	if (!cl_init) {
+		*n = 0;
+		return 0;
+	}
+	LightLock_Lock(&CL);
+	memcpy(t, Q.radio, sizeof *t * Q.nradio), *n = Q.nradio;
+	util_strlcpy(seed, Q.radio_seed, sn);
+	u32 r = Q.radio_rev;
+	LightLock_Unlock(&CL);
+	return r;
 }
 
 // de cada artista, sus últimas canciones: las subidas después de «since» (si no está vacío) son nuevas
@@ -589,12 +913,26 @@ static void thread_main(void *arg)
 			static char q[SC_IDS_LEN];
 			util_strlcpy(q, Q.q, sizeof q);
 			Q.job = 0;
-			bool chk = Q.chk_pending;
+			bool chk = Q.chk_pending, info = Q.info_pending, radio = Q.radio_pending, disc = Q.disc_pending;
+			static char sid[24];
+			if (!job && info)
+				util_strlcpy(sid, Q.info_id, sizeof sid), Q.info_pending = false;
+			else if (!job && radio)
+				util_strlcpy(sid, Q.radio_id, sizeof sid), Q.radio_pending = false;
+			else if (!job && disc)
+				Q.disc_pending = false;
 			LightLock_Unlock(&CL);
-			if (Q.quit || (!job && !chk))
+			if (Q.quit || (!job && !chk && !info && !radio && !disc))
 				break;
-			if (!job) { // (las novedades, cuando no hay nada que buscar)
-				do_check();
+			if (!job) { // (lo de aparte, cuando no hay nada que buscar: primero lo que suena)
+				if (info)
+					do_info(sid);
+				else if (radio)
+					do_radio(sid);
+				else if (disc)
+					do_discover();
+				else
+					do_check();
 				continue;
 			}
 			if (job == 1)
@@ -622,8 +960,10 @@ void sc_init(void)
 	Q.thr = threadCreate(thread_main, NULL, 48 * 1024, prio + 1, -2, false);
 }
 
+void sc_thumb_exit(void);
 void sc_exit(void)
 {
+	sc_thumb_exit();
 	if (D.thr) {
 		D.stop = true;
 		threadJoin(D.thr, 5000000000ull);
@@ -1186,4 +1526,116 @@ int sc_download_state(char *title, size_t n, int *pct)
 	if (st == SCD_DONE || st == SCD_FAIL) // (el final, una vez)
 		D.st = SCD_IDLE;
 	return st;
+}
+
+/* ================================================================ carátulas pequeñas
+ * Las listas piden la carátula de cada fila que se ve; un hilo las baja (la «large» de SoundCloud, 100×100), las
+ * reduce a 64×64 y las deja para recoger. Si se piden muchas, las más antiguas sin empezar se descartan. */
+
+#define TQ_N 12
+static struct {
+	Thread thr;
+	LightLock lk;
+	LightEvent ev;
+	volatile bool quit;
+	char want[TQ_N][256];
+	int nwant;
+	struct {
+		char url[256];
+		u8 *rgba;
+		int w, h; // (w 0: no se pudo)
+	} got[TQ_N];
+	int ngot;
+} TH;
+
+static void thumb_thread(void *arg)
+{
+	(void)arg;
+	while (!TH.quit) {
+		LightEvent_Wait(&TH.ev);
+		for (;;) {
+			char url[256];
+			LightLock_Lock(&TH.lk);
+			bool have = TH.nwant > 0 && TH.ngot < TQ_N;
+			if (have) { // (la última pedida: la que se está mirando)
+				util_strlcpy(url, TH.want[TH.nwant - 1], sizeof url);
+				TH.nwant--;
+			}
+			LightLock_Unlock(&TH.lk);
+			if (!have || TH.quit)
+				break;
+			size_t n = 0;
+			long code;
+			u8 *b = (u8 *)get(url, 512 * 1024, &code, &n), *rgba = NULL;
+			int w = 0, h = 0;
+			int fit = strstr(url, "-t300x300") ? 160 : 64; // (las grandes: la cabecera de arriba)
+			if (!b || img_mem_fit(b, n, fit, fit, &rgba, &w, &h) != IMG_OK)
+				rgba = NULL, w = h = 0;
+			free(b);
+			LightLock_Lock(&TH.lk);
+			if (TH.ngot < TQ_N) {
+				util_strlcpy(TH.got[TH.ngot].url, url, sizeof TH.got[0].url);
+				TH.got[TH.ngot].rgba = rgba, TH.got[TH.ngot].w = w, TH.got[TH.ngot].h = h, TH.ngot++;
+			} else
+				free(rgba);
+			LightLock_Unlock(&TH.lk);
+		}
+	}
+}
+
+void sc_thumb_want(const char *url)
+{
+	if (!url || !url[0] || strlen(url) >= sizeof TH.want[0])
+		return;
+	if (!TH.thr) {
+		LightLock_Init(&TH.lk);
+		LightEvent_Init(&TH.ev, RESET_ONESHOT);
+		s32 prio = 0x30;
+		svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+		TH.thr = threadCreate(thumb_thread, NULL, 32 * 1024, prio + 2, -2, false);
+		if (!TH.thr)
+			return;
+	}
+	LightLock_Lock(&TH.lk);
+	int k = 0;
+	while (k < TH.nwant && strcmp(TH.want[k], url))
+		k++;
+	if (k < TH.nwant) // (ya pedida: pasa a ser la siguiente)
+		memmove(TH.want[k], TH.want[k + 1], sizeof TH.want[0] * (TH.nwant - k - 1)), TH.nwant--;
+	if (TH.nwant == TQ_N)
+		memmove(TH.want[0], TH.want[1], sizeof TH.want[0] * (TQ_N - 1)), TH.nwant--;
+	util_strlcpy(TH.want[TH.nwant++], url, sizeof TH.want[0]);
+	LightLock_Unlock(&TH.lk);
+	LightEvent_Signal(&TH.ev);
+}
+
+bool sc_thumb_take(char *url, size_t un, u8 **rgba, int *w, int *h)
+{
+	if (!TH.thr)
+		return false;
+	LightLock_Lock(&TH.lk);
+	bool ok = TH.ngot > 0;
+	if (ok) {
+		TH.ngot--;
+		util_strlcpy(url, TH.got[TH.ngot].url, un);
+		*rgba = TH.got[TH.ngot].rgba, *w = TH.got[TH.ngot].w, *h = TH.got[TH.ngot].h;
+	}
+	LightLock_Unlock(&TH.lk);
+	if (ok)
+		LightEvent_Signal(&TH.ev); // (hay sitio: que siga)
+	return ok;
+}
+
+void sc_thumb_exit(void)
+{
+	if (!TH.thr)
+		return;
+	TH.quit = true;
+	LightEvent_Signal(&TH.ev);
+	threadJoin(TH.thr, 3000000000ull);
+	threadFree(TH.thr);
+	TH.thr = NULL;
+	for (int i = 0; i < TH.ngot; i++)
+		free(TH.got[i].rgba);
+	TH.ngot = 0;
 }
