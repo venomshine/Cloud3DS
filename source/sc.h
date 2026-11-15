@@ -34,6 +34,7 @@ typedef struct {
 	u32  plays, likes;   /* reproducciones y «me gusta» en SoundCloud */
 	char genre[32];
 	char wave[96];       /* la onda (wave.sndcdn.com/…json) */
+	bool verified;       /* el autor es un artista verificado por SoundCloud */
 } ScTrack;
 
 typedef struct {
@@ -42,6 +43,7 @@ typedef struct {
 	int  count;
 	char art[256];       /* su carátula */
 	bool album;
+	bool verified;       /* de un artista verificado */
 } ScList;
 
 typedef struct {
@@ -50,6 +52,7 @@ typedef struct {
 	int  tracks;
 	u32  followers;
 	char art[256];       /* su foto */
+	bool verified;
 } ScArtist;
 
 enum { SCQ_IDLE, SCQ_BUSY, SCQ_DONE, SCQ_ERR };
@@ -59,6 +62,8 @@ void sc_exit(void);
 
 /* buscar (canciones y playlists) o abrir una playlist (sus canciones), en su hilo */
 void sc_search(const char *q);
+/* solo lo de artistas verificados: SoundCloud no lo filtra, así que se piden más canciones (200) y se quitan las demás */
+void sc_search_verified(const char *q);
 void sc_open_list(const char *id, const char *title);
 void sc_open_ids(const char *ids);  /* canciones por su número («1,2,3», hasta SC_MAX), en ese orden (las guardadas) */
 void sc_open_artist(const char *id); /* las canciones de un artista */

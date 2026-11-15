@@ -1,6 +1,24 @@
 # Traducciones de la interfaz de la consola.
 # Clave: texto en español tal cual aparece en _("..."). Valor: (inglés, japonés).
 TR = {
+    'Solo artistas verificados':
+        ('Verified artists only',
+         '認証済みアーティストのみ'),
+    'Todos los artistas':
+        ('All artists',
+         'すべてのアーティスト'),
+    'Ningún artista verificado':
+        ('No verified artists',
+         '認証済みアーティストはいません'),
+    'No hay artistas verificados para esta búsqueda. Pulsa L o el botón de la marca para ver todos.':
+        ('There are no verified artists for this search. Press L or the check button to see everyone.',
+         'この検索に認証済みアーティストはいません。Lかチェックのボタンですべて表示します。'),
+    'Artista verificado':
+        ('Verified artist',
+         '認証済みアーティスト'),
+    'Solo verificados: %d canciones · %d artistas · %d playlists':
+        ('Verified only: %d songs · %d artists · %d playlists',
+         '認証済みのみ: %d曲 · アーティスト%d · プレイリスト%d'),
     'Radio':
         ('Radio',
          'ラジオ'),

@@ -1122,7 +1122,7 @@ static struct {
 // ---- ajustes de SoundCloud (APP_DIR/soundcloud_ajustes.txt): la radio al acabar la lista y los comentarios
 #define SCS_FILE APP_DIR "/soundcloud_ajustes.txt"
 static struct {
-	bool loaded, radio, comments;
+	bool loaded, radio, comments, verified; // verified: buscar solo artistas verificados
 } SCS = {.radio = true, .comments = true};
 
 static void scs_load(void)
@@ -1137,9 +1137,35 @@ static void scs_load(void)
 			SCS.radio = ln[6] == '1';
 		else if (!strncmp(ln, "comentarios=", 12))
 			SCS.comments = ln[12] == '1';
+		else if (!strncmp(ln, "verificados=", 12))
+			SCS.verified = ln[12] == '1';
 	}
 	if (f)
 		fclose(f);
+}
+
+// la insignia de artista verificado (un círculo azul con una marca), centrada en cx, cy
+#define SC_VER_COL 0xFFFF8A2E // (azul, en ABGR)
+static void draw_verified(float cx, float cy, float r)
+{
+	draw_circle(cx, cy, r, SC_VER_COL);
+	draw_line(cx - r * 0.45f, cy + r * 0.02f, cx - r * 0.1f, cy + r * 0.38f, r * 0.3f, 0xFFFFFFFF);
+	draw_line(cx - r * 0.12f, cy + r * 0.38f, cx + r * 0.5f, cy - r * 0.35f, r * 0.3f, 0xFFFFFFFF);
+}
+
+// un texto con la insignia detrás de sus primeros split bytes (el nombre del artista); maxw: hasta dónde llega
+static void text_badge(const char *s, int split, float x, float y, float maxw, float sc, u32 c)
+{
+	float r = text_lineh(sc) * 0.32f, w1 = text_width_n(s, split, sc);
+	if (w1 + 2 * r + 4 > maxw) { // (no cabe ni el nombre: sin insignia)
+		text_draw_clip(s, x, y, maxw, sc, c);
+		return;
+	}
+	text_draw_n(s, split, x, y, sc, c);
+	draw_verified(x + w1 + r + 3, y + text_lineh(sc) / 2, r);
+	float x2 = x + w1 + 2 * r + 5;
+	if (s[split])
+		text_draw_clip(s + split, x2, y, maxw - (x2 - x), sc, c);
 }
 
 static void scs_save(void)
@@ -1147,7 +1173,7 @@ static void scs_save(void)
 	FILE *f = fopen(SCS_FILE, "w");
 	if (!f)
 		return;
-	fprintf(f, "radio=%d\ncomentarios=%d\n", SCS.radio, SCS.comments);
+	fprintf(f, "radio=%d\ncomentarios=%d\nverificados=%d\n", SCS.radio, SCS.comments, SCS.verified);
 	fclose(f);
 }
 
@@ -1248,7 +1274,7 @@ static void music_bar(void)
 		draw_texture_round(&MU.cover, x + 4, y + 4, as, as, 5, 1);
 	else {
 		draw_rrect(x + 4, y + 4, as, as, 5, col_alpha(T.accent2, 0.25f));
-		draw_icon(IC_NOTE, x + 4 + as / 2, y + 4 + as / 2, 11, T.accent2);
+		draw_icon(IC_SPEAKER, x + 4 + as / 2, y + 4 + as / 2, 11, T.accent2);
 	}
 	float px = x + w - 50, nx = x + w - 18;
 	bool pp = touch_in(px - 14, y, 28, MU_BAR_H);
@@ -7375,7 +7401,10 @@ static void sc_go(const char *q)
 	util_strlcpy(SCV.q, q, sizeof SCV.q);
 	SCV.view = SV_RESULTS, SCV.want = 1, SCV.nt = SCV.nl = SCV.na = 0;
 	SCV.lr.sel = 0, SCV.lr.off = SCV.lr.target = 0;
-	sc_search(q);
+	if (SCS.verified)
+		sc_search_verified(q);
+	else
+		sc_search(q);
 	sch_add_query(q);
 }
 
@@ -7743,7 +7772,10 @@ static void music_stage(void)
 	int eq = music_eq();
 	snprintf(sub, sizeof sub, "%s%s%s%s%s%s", MU.s.artist, MU.s.artist[0] ? "  ·  " : "", sc ? "SoundCloud" : _("En la consola"), eq ? "  ·  EQ " : "",
 	         eq ? _(EQ_NAMES[eq]) : "", sc && SCS.radio && MU.s.left <= 0 && MU.s.repeat == MR_OFF ? _("  ·  Radio") : "");
-	text_draw_clip(sub, x, y, w, TS_BODY, 0xA8FFFFFF);
+	if (have && cur.verified && MU.s.artist[0]) // (con la insignia de verificado detrás del artista)
+		text_badge(sub, (int)strlen(MU.s.artist), x, y, w, TS_BODY, 0xA8FFFFFF);
+	else
+		text_draw_clip(sub, x, y, w, TS_BODY, 0xA8FFFFFF);
 	// la onda (también el progreso): la de verdad de la canción si es de SoundCloud; si no, una que sigue el volumen.
 	// Lo escuchado, del color; lo que falta, apagado. Debajo, un punto por cada comentario
 	const int NB = SC_WAVE;
@@ -7902,7 +7934,8 @@ static void sc_top(void)
 		if (busy)
 			snprintf(sub, sizeof sub, "%s", SCV.view == SV_LIST ? _("Cargando…") : _("Buscando…"));
 		else if (SCV.view == SV_RESULTS)
-			snprintf(sub, sizeof sub, _("%d canciones · %d artistas · %d playlists"), SCV.nt, SCV.na, SCV.nl);
+			snprintf(sub, sizeof sub, SCS.verified ? _("Solo verificados: %d canciones · %d artistas · %d playlists") : _("%d canciones · %d artistas · %d playlists"), SCV.nt,
+			         SCV.na, SCV.nl);
 		else if (SCV.lk == LK_FOLLOWS)
 			snprintf(sub, sizeof sub, SCV.nfa == 1 ? _("1 artista") : _("%d artistas"), SCV.nfa);
 		else if (SCV.lk == LK_ARTIST && SCV.artist.id[0]) {
@@ -7925,7 +7958,7 @@ static void sc_top(void)
 		else if (SCV.lk == LK_FOLLOWS)
 			ic = IC_USER, icol = T.accent2, art = "";
 		const char *k = SCV.view == SV_RESULTS ? _("Búsqueda")
-		              : SCV.lk == LK_ARTIST   ? (scl_following(SCV.aid) ? _("Artista que sigues") : _("Artista"))
+		              : SCV.lk == LK_ARTIST   ? (scl_following(SCV.aid) ? _("Artista que sigues") : SCV.artist.verified ? _("Artista verificado") : _("Artista"))
 		              : SCV.lk == LK_SC       ? _("Playlist de SoundCloud")
 		              : SCV.lk == LK_LIKES    ? _("Tu biblioteca")
 		              : SCV.lk == LK_NEW      ? _("De los artistas que sigues")
@@ -8163,7 +8196,6 @@ static void sc_home(bool sheet)
 			round_mask(x, yy, e->w, e->h, 9, T.bg);
 			if (pr)
 				draw_rrect(x, yy, e->w, e->h, 9, 0x30000000);
-			draw_icon(IC_NOTE, x + e->w - 18, yy + e->h / 2, 16, 0x50FFFFFF);
 			text_draw_clip(_(G[e->i][0]), x + 10, yy + (e->h - text_lineh(TS_BODY)) / 2, e->w - 36, TS_BODY, 0xFFFFFFFF);
 			if (foc)
 				draw_rrect_outline(x - 2, yy - 2, e->w + 4, e->h + 4, 11, 2, T.accent);
@@ -8224,7 +8256,7 @@ static void sc_bottom(void)
 	bool mine = SCV.view == SV_LIST && (SCV.lk == LK_LIKES || SCV.lk == LK_MINE);
 	float dx = sx - 30; // (⋮ de la lista)
 	if (SCV.view != SV_HOME) {
-		tab_header_w(SCV.view == SV_LIST ? SCV.list_title : SCV.q, true, (SCV.view == SV_LIST ? dx : sx) - 40);
+		tab_header_w(SCV.view == SV_LIST ? SCV.list_title : SCV.q, true, dx - 40);
 		if (!sheet && (tap(0, 0, 170, VIEW_Y) || (g_kdown & KEY_B))) {
 			SCV.view = SCV.view == SV_LIST ? SCV.back : SV_HOME;
 			g_kdown &= ~KEY_B;
@@ -8235,6 +8267,22 @@ static void sc_bottom(void)
 		if ((g_kdown & KEY_B) && !sheet) {
 			hm_show();
 			return;
+		}
+	}
+	if (SCV.view == SV_RESULTS) { // solo artistas verificados (o L): se vuelve a buscar
+		bool on = SCS.verified;
+		draw_circle(dx + 13, 16, 12, touch_in(dx, 2, 26, 28) ? T.surface2 : on ? col_alpha(SC_VER_COL, 0.25f) : T.surface);
+		if (on)
+			draw_verified(dx + 13, 16, 7);
+		else {
+			draw_ring(dx + 13, 16, 6.5f, 1.4f, T.text3);
+			draw_line(dx + 9.5f, 16.2f, dx + 12, 18.6f, 1.4f, T.text3);
+			draw_line(dx + 12, 18.6f, dx + 16.5f, 13.6f, 1.4f, T.text3);
+		}
+		if (!sheet && (hdr_hit(dx + 1, 4, 24, 24) || (g_kdown & KEY_L))) {
+			SCS.verified = !SCS.verified, scs_save();
+			toast_icon(SCS.verified ? _("Solo artistas verificados") : _("Todos los artistas"), IC_CHECK, SCS.verified ? SC_VER_COL : T.text2);
+			sc_go(SCV.q);
 		}
 	}
 	if (SCV.view == SV_LIST) {
@@ -8287,6 +8335,8 @@ static void sc_bottom(void)
 		else if (mine)
 			empty_state(SCV.lk == LK_LIKES ? IC_HEART : IC_LIST, _("Aún no hay canciones"),
 			            _("Con Y en una canción puedes darle «Me gusta» o añadirla a una lista."));
+		else if (res && SCS.verified)
+			empty_state(IC_CHECK, _("Ningún artista verificado"), _("No hay artistas verificados para esta búsqueda. Pulsa L o el botón de la marca para ver todos."));
 		else
 			empty_state(IC_SEARCH, _("Sin resultados"), _("Prueba con otras palabras."));
 	}
@@ -8301,9 +8351,10 @@ static void sc_bottom(void)
 		char t1[160], t2[200];
 		const char *art = "";
 		float ar = 5;
-		IconId ic = IC_NOTE;
+		IconId ic = IC_SPEAKER;
 		u32 col;
 		bool liked = false, now = false;
+		int s1 = -1, s2 = -1; // (verificado: dónde va la insignia, en el título o en la línea de debajo)
 		if (i < ntr) {
 			const char *id, *title, *artist;
 			u32 dur;
@@ -8321,8 +8372,11 @@ static void sc_bottom(void)
 					snprintf(t2, sizeof t2, _("Popular · %s reproducciones · %s"), pc, d);
 				else
 					snprintf(t2, sizeof t2, "%.4s · %s", trk[i].created, d);
-			} else
+			} else {
 				snprintf(t2, sizeof t2, "%s%s%s", artist, artist[0] ? " · " : "", d);
+				if (!placeholder && trk[i].verified && artist[0])
+					s2 = (int)strlen(artist);
+			}
 			if (prev)
 				strncat(t2, _(" · Fragmento de 30 s"), sizeof t2 - strlen(t2) - 1);
 			now = mu_on() && !strncmp(ms.name, "sc:", 3) && !strcmp(ms.name + 3, id);
@@ -8340,14 +8394,20 @@ static void sc_bottom(void)
 			if (!fol && scl_following(a->id))
 				strncat(t2, _(" · lo sigues"), sizeof t2 - strlen(t2) - 1);
 			art = fol ? SCV.fa_art[i - ntr] : a->art, ar = AS / 2, ic = IC_USER, col = art_tone(a->name);
+			if (!fol && a->verified)
+				s1 = (int)strlen(t1);
 		} else {
 			const ScList *p = &pls[i - ntr - nar];
 			util_strlcpy(t1, p->title, sizeof t1);
 			const char *kind = p->album ? _("Álbum") : _("Playlist");
 			if (art_pg)
 				snprintf(t2, sizeof t2, p->count == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), kind, p->count);
-			else
+			else {
 				snprintf(t2, sizeof t2, p->count == 1 ? _("%s · %s · 1 canción") : _("%s · %s · %d canciones"), kind, p->user, p->count);
+				const char *u = strstr(t2, p->user);
+				if (p->verified && u && p->user[0])
+					s2 = (int)(u - t2 + strlen(p->user));
+			}
 			art = p->art, ic = IC_LIST, col = art_tone(p->title);
 		}
 		float ax = 14, ay = y + (RH - AS) / 2;
@@ -8362,8 +8422,14 @@ static void sc_bottom(void)
 		}
 		float tx = ax + AS + 10, tw = BOT_W - tx - (liked ? 50 : 36);
 		g_clip_ell = l->sel != i;
-		text_draw_clip(t1, tx, y + 7, tw, TS_BODY, now ? ST_SC : T.text);
-		text_draw_clip(t2, tx, y + 25, tw, TS_SUB, T.text3);
+		if (s1 >= 0)
+			text_badge(t1, s1, tx, y + 7, tw, TS_BODY, now ? ST_SC : T.text);
+		else
+			text_draw_clip(t1, tx, y + 7, tw, TS_BODY, now ? ST_SC : T.text);
+		if (s2 >= 0)
+			text_badge(t2, s2, tx, y + 25, tw, TS_SUB, T.text3);
+		else
+			text_draw_clip(t2, tx, y + 25, tw, TS_SUB, T.text3);
 		g_clip_ell = false;
 		if (!was && l->sel != i + 1 && i + 1 < cnt) // (una línea fina entre filas, desde el texto)
 			draw_rect(tx, y + RH - 0.5f, BOT_W - tx - 10, 1, col_alpha(T.text3, 0.18f));

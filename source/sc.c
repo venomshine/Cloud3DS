@@ -253,6 +253,7 @@ static bool parse_track(const cJSON *t, ScTrack *o)
 		util_strlcpy(o->auth, au, sizeof o->auth);
 	o->downloadable = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(t, "downloadable")) &&
 	                  !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(t, "has_downloads_left"));
+	o->verified = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(user, "verified"));
 	const cJSON *pc = cJSON_GetObjectItemCaseSensitive(t, "playback_count"), *lc = cJSON_GetObjectItemCaseSensitive(t, "likes_count");
 	o->plays = cJSON_IsNumber(pc) ? (u32)pc->valuedouble : 0;
 	o->likes = cJSON_IsNumber(lc) ? (u32)lc->valuedouble : 0;
@@ -287,6 +288,7 @@ static bool parse_list(const cJSON *it, ScList *o)
 	if (art)
 		util_strlcpy(o->art, art, sizeof o->art);
 	o->album = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(it, "is_album"));
+	o->verified = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(it, "user"), "verified"));
 	return true;
 }
 
@@ -304,6 +306,7 @@ static bool parse_user(const cJSON *it, ScArtist *o)
 	o->followers = cJSON_IsNumber(fc) ? (u32)fc->valuedouble : 0;
 	if (js(it, "avatar_url"))
 		util_strlcpy(o->art, js(it, "avatar_url"), sizeof o->art);
+	o->verified = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(it, "verified"));
 	return true;
 }
 
@@ -345,7 +348,7 @@ static struct {
 	Thread thr;
 	LightEvent ev;
 	volatile bool quit;
-	int job; // 1 buscar, 2 abrir una playlist, 3 canciones por su número, 4 las de un artista
+	int job; // 1 buscar, 2 abrir una playlist, 3 canciones por su número, 4 las de un artista, 5 buscar (verificados)
 	char q[SC_IDS_LEN], list_title[128];
 	ScTrack t[SC_MAX];
 	ScList l[SC_MAX];
@@ -376,6 +379,7 @@ static struct {
 	u32 radio_rev;
 	char err[32];
 	u32 rev;
+	u32 seq, run_seq; // la última petición y la que se está haciendo (lo de una anterior ya no se enseña)
 } Q;
 
 static void pct(const char *in, char *out, size_t n)
@@ -390,7 +394,7 @@ static void pct(const char *in, char *out, size_t n)
 	out[o] = 0;
 }
 
-static void do_search(const char *q)
+static void do_search(const char *q, bool ver)
 {
 	char e[200], path[300], err[32] = "";
 	pct(q, e, sizeof e);
@@ -398,21 +402,28 @@ static void do_search(const char *q)
 	static ScList l[SC_MAX];
 	static ScArtist ar[SC_ARTISTS];
 	int nt = 0, nl = 0, na = 0;
-	snprintf(path, sizeof path, "/search/tracks?q=%s&limit=40&linked_partitioning=1", e);
-	cJSON *j = api(path, err, sizeof err), *it;
-	cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
-	{
-		if (nt < SC_MAX && parse_track(it, &t[nt]))
-			reg_put(&t[nt]), nt++;
+	cJSON *j = NULL, *it;
+	for (int page = 0; page < (ver ? 2 : 1) && !Q.quit; page++) { // (solo verificados: dos tandas de 100)
+		snprintf(path, sizeof path, "/search/tracks?q=%s&limit=%d&offset=%d&linked_partitioning=1", e, ver ? 100 : 40, page * 100);
+		j = api(path, err, sizeof err);
+		int got = 0;
+		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
+		{
+			got++;
+			if (nt < SC_MAX && parse_track(it, &t[nt]) && (!ver || t[nt].verified))
+				reg_put(&t[nt]), nt++;
+		}
+		cJSON_Delete(j);
+		if (got < 100)
+			break;
 	}
-	cJSON_Delete(j);
 	if (!err[0] || nt) {
-		snprintf(path, sizeof path, "/search/playlists_without_albums?q=%s&limit=15", e);
+		snprintf(path, sizeof path, "/search/playlists_without_albums?q=%s&limit=%d", e, ver ? 50 : 15);
 		char err2[32] = "";
 		j = api(path, err2, sizeof err2);
 		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
 		{
-			if (nl < SC_MAX && parse_list(it, &l[nl]))
+			if (nl < SC_MAX && parse_list(it, &l[nl]) && (!ver || l[nl].verified))
 				nl++;
 		}
 		cJSON_Delete(j);
@@ -421,12 +432,12 @@ static void do_search(const char *q)
 		j = api(path, err2, sizeof err2);
 		cJSON_ArrayForEach(it, cJSON_GetObjectItemCaseSensitive(j, "collection"))
 		{
-			if (na < SC_ARTISTS && parse_user(it, &ar[na]) && ar[na].tracks > 0)
+			if (na < SC_ARTISTS && parse_user(it, &ar[na]) && ar[na].tracks > 0 && (!ver || ar[na].verified))
 				na++;
 		}
 		cJSON_Delete(j);
 	}
-	if (!Q.quit) {
+	if (!Q.quit && Q.run_seq == Q.seq) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
 		memcpy(Q.l, l, sizeof l[0] * nl);
 		memcpy(Q.a, ar, sizeof ar[0] * na);
@@ -435,7 +446,7 @@ static void do_search(const char *q)
 		Q.st = nt || nl || !err[0] ? SCQ_DONE : SCQ_ERR;
 		Q.rev++;
 	}
-	util_log("soundcloud: «%s»: %d canciones, %d playlists, %d artistas %s", q, nt, nl, na, err);
+	util_log("soundcloud: «%s»%s: %d canciones, %d playlists, %d artistas %s", q, ver ? " (verificados)" : "", nt, nl, na, err);
 }
 
 static void do_list(const char *id)
@@ -478,7 +489,7 @@ static void do_list(const char *id)
 		}
 		cJSON_Delete(a);
 	}
-	if (!Q.quit) {
+	if (!Q.quit && Q.run_seq == Q.seq) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
 		Q.nt = nt, Q.nl = 0, Q.na = 0, Q.ntop = 0;
 		util_strlcpy(Q.err, err, sizeof Q.err);
@@ -522,7 +533,7 @@ static void do_ids(const char *list)
 				t[nt++] = got[k];
 				break;
 			}
-	if (!Q.quit) {
+	if (!Q.quit && Q.run_seq == Q.seq) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
 		Q.nt = nt, Q.nl = 0, Q.na = 0, Q.ntop = 0;
 		util_strlcpy(Q.err, err, sizeof Q.err);
@@ -575,16 +586,16 @@ static void do_artist(const char *id)
 			nl++;
 	}
 	cJSON_Delete(j);
-	if (!Q.quit) {
-		LightLock_Lock(&CL);
+	LightLock_Lock(&CL);
+	if (!Q.quit && Q.run_seq == Q.seq) {
 		memcpy(Q.t, t, sizeof t[0] * nt);
 		memcpy(Q.l, l, sizeof l[0] * nl);
 		Q.nt = nt, Q.nl = nl, Q.na = 0, Q.ntop = ntop, Q.artist = ar;
 		util_strlcpy(Q.err, err, sizeof Q.err);
 		Q.st = nt || nl || !err[0] ? SCQ_DONE : SCQ_ERR;
 		Q.rev++;
-		LightLock_Unlock(&CL);
 	}
+	LightLock_Unlock(&CL);
 	util_log("soundcloud: artista %s: %d canciones (%d populares), %d listas %s", id, nt, ntop, nl, err);
 }
 
@@ -910,6 +921,7 @@ static void thread_main(void *arg)
 		for (;;) {
 			LightLock_Lock(&CL);
 			int job = Q.job;
+			Q.run_seq = Q.seq;
 			static char q[SC_IDS_LEN];
 			util_strlcpy(q, Q.q, sizeof q);
 			Q.job = 0;
@@ -935,8 +947,8 @@ static void thread_main(void *arg)
 					do_check();
 				continue;
 			}
-			if (job == 1)
-				do_search(q);
+			if (job == 1 || job == 5)
+				do_search(q, job == 5);
 			else if (job == 2)
 				do_list(q);
 			else if (job == 3)
@@ -983,7 +995,7 @@ static void push(int job, const char *q)
 {
 	sc_init();
 	LightLock_Lock(&CL);
-	Q.job = job;
+	Q.job = job, Q.seq++;
 	util_strlcpy(Q.q, q, sizeof Q.q);
 	Q.st = SCQ_BUSY, Q.rev++;
 	LightLock_Unlock(&CL);
@@ -991,6 +1003,7 @@ static void push(int job, const char *q)
 }
 
 void sc_search(const char *q) { push(1, q); }
+void sc_search_verified(const char *q) { push(5, q); }
 void sc_open_list(const char *id, const char *title)
 {
 	util_strlcpy(Q.list_title, title ? title : "", sizeof Q.list_title);
