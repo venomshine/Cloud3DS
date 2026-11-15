@@ -10,6 +10,7 @@
 #include "dl.h"
 #include "fsx.h"
 #include "img.h"
+#include "mlib.h"
 #include "schls.h"
 #include "util.h"
 
@@ -1579,9 +1580,18 @@ static void thumb_thread(void *arg)
 				break;
 			size_t n = 0;
 			long code;
-			u8 *b = (u8 *)get(url, 512 * 1024, &code, &n), *rgba = NULL;
+			u8 *b, *rgba = NULL;
 			int w = 0, h = 0;
-			int fit = strstr(url, "-t300x300") ? 160 : 64; // (las grandes: la cabecera de arriba)
+			int fit = strstr(url, "-t300x300") || strstr(url, "#big") ? 160 : 64; // (las grandes: la cabecera de arriba)
+			if (!strncmp(url, "file:", 5)) { // (de la SD: la de la canción o la de su carpeta)
+				char path[256];
+				util_strlcpy(path, url + 5, sizeof path);
+				char *hb = strstr(path, "#big");
+				if (hb)
+					*hb = 0;
+				b = mlib_cover_data(path, &n);
+			} else
+				b = (u8 *)get(url, 512 * 1024, &code, &n);
 			if (!b || img_mem_fit(b, n, fit, fit, &rgba, &w, &h) != IMG_OK)
 				rgba = NULL, w = h = 0;
 			free(b);

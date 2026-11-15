@@ -38,3 +38,7 @@ void mlib_hide(const char *path, bool hide);
 void mlib_forget(const char *path); /* (borrada: fuera de la lista) */
 int  mlib_where(void);              /* MLS_* */
 void mlib_set_where(int w);         /* y vuelve a buscar */
+
+/* la carátula de una canción: la de su etiqueta ID3v2 o la de su carpeta (cover.jpg, folder.jpg…). Bytes de la imagen
+ * (malloc) o NULL. Lee la SD: desde un hilo */
+u8 *mlib_cover_data(const char *path, size_t *n);

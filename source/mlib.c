@@ -571,3 +571,108 @@ void mlib_set_where(int w)
 	save();
 	mlib_scan();
 }
+
+/* ---------------------------------------------------------------- carátulas
+ * La imagen que trae la canción en su etiqueta ID3v2 (APIC; PIC en la 2.2): MP3 y AAC. Si no trae, la de su carpeta
+ * (cover.jpg, folder.jpg…). Devuelve los bytes de la imagen (JPEG o PNG), malloc, o NULL. */
+
+static u32 id3_size(const u8 *b, bool synchsafe)
+{
+	return synchsafe ? (u32)(b[0] & 127) << 21 | (u32)(b[1] & 127) << 14 | (u32)(b[2] & 127) << 7 | (b[3] & 127)
+	                 : (u32)b[0] << 24 | (u32)b[1] << 16 | (u32)b[2] << 8 | b[3];
+}
+
+// después de la descripción (terminada en 0, o en 00 00 si es UTF-16)
+static const u8 *skip_desc(const u8 *q, const u8 *end, int enc)
+{
+	if (enc == 1 || enc == 2) {
+		for (; q + 1 < end; q += 2)
+			if (!q[0] && !q[1])
+				return q + 2;
+		return NULL;
+	}
+	const u8 *z = memchr(q, 0, (size_t)(end - q));
+	return z ? z + 1 : NULL;
+}
+
+static u8 *cover_id3(FILE *f, size_t *outn)
+{
+	u8 h[10];
+	if (fread(h, 1, 10, f) != 10 || memcmp(h, "ID3", 3) || h[3] < 2 || h[3] > 4)
+		return NULL;
+	u32 n = id3_size(h + 6, true);
+	if (n < 10 || n > (8u << 20))
+		return NULL;
+	u8 *b = malloc(n);
+	if (!b || fread(b, 1, n, f) != n) {
+		free(b);
+		return NULL;
+	}
+	u8 *res = NULL;
+	u32 p = 0;
+	if (h[3] >= 3 && (h[5] & 0x40)) // (cabecera extendida)
+		p = 4 + (h[3] == 4 ? id3_size(b, true) - 4 : id3_size(b, false));
+	bool v22 = h[3] == 2;
+	u32 hl = v22 ? 6 : 10;
+	while (p + hl <= n && b[p] && !res) {
+		u32 fs = v22 ? (u32)b[p + 3] << 16 | (u32)b[p + 4] << 8 | b[p + 5] : id3_size(b + p + 4, h[3] == 4);
+		if (!fs || p + hl + fs > n)
+			break;
+		const u8 *fb = b + p + hl, *end = fb + fs;
+		if (!v22 && !memcmp(b + p, "APIC", 4) && fs > 4) { // codificación, MIME (con 0), tipo, descripción, imagen
+			const u8 *q = memchr(fb + 1, 0, fs - 1);
+			if (q && q + 2 < end && (q = skip_desc(q + 2, end, fb[0])) && q < end)
+				res = malloc((size_t)(end - q)), *outn = (size_t)(end - q);
+			if (res)
+				memcpy(res, q, *outn);
+		} else if (v22 && !memcmp(b + p, "PIC", 3) && fs > 6) { // codificación, formato (3), tipo, descripción, imagen
+			const u8 *q = skip_desc(fb + 5, end, fb[0]);
+			if (q && q < end && (res = malloc((size_t)(end - q))))
+				*outn = (size_t)(end - q), memcpy(res, q, *outn);
+		}
+		p += hl + fs;
+	}
+	free(b);
+	return res;
+}
+
+static u8 *read_small(const char *sp, size_t *outn)
+{
+	FILE *f = fopen(sp, "rb");
+	if (!f)
+		return NULL;
+	fseek(f, 0, SEEK_END);
+	long n = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	u8 *b = n > 0 && n < (3 << 20) ? malloc((size_t)n) : NULL;
+	if (b && fread(b, 1, (size_t)n, f) != (size_t)n)
+		free(b), b = NULL;
+	fclose(f);
+	if (b)
+		*outn = (size_t)n;
+	return b;
+}
+
+u8 *mlib_cover_data(const char *path, size_t *n)
+{
+	char sp[600];
+	snprintf(sp, sizeof sp, "sdmc:%s", path);
+	FILE *f = fopen(sp, "rb");
+	u8 *r = NULL;
+	if (f) {
+		setvbuf(f, NULL, _IOFBF, 64 * 1024);
+		r = cover_id3(f, n);
+		fclose(f);
+	}
+	if (r)
+		return r;
+	static const char *const NAMES[] = {"cover.jpg", "folder.jpg", "front.jpg", "Cover.jpg", "Folder.jpg", "Front.jpg", "AlbumArtSmall.jpg", "cover.png", "folder.png"};
+	char *sl = strrchr(sp, '/');
+	if (!sl)
+		return NULL;
+	for (size_t k = 0; k < sizeof NAMES / sizeof NAMES[0] && !r; k++) {
+		snprintf(sl + 1, sizeof sp - (size_t)(sl + 1 - sp), "%s", NAMES[k]);
+		r = read_small(sp, n);
+	}
+	return r;
+}

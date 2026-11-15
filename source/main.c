@@ -8574,6 +8574,7 @@ static struct {
 	char (*grp)[64];      // artistas o álbumes a la vista
 	char (*gsub)[64];     // (de cada álbum: su artista)
 	int *gcnt, ng;
+	int *gfirst;          // (de cada grupo, una de sus canciones: su carátula)
 	bool show_hidden;
 	bool om, om_just;     // opciones de una canción o de un grupo
 	float om_anim;
@@ -8625,7 +8626,8 @@ static void ml_build(void)
 		ML.grp = malloc(sizeof *ML.grp * MLIB_MAX);
 		ML.gsub = malloc(sizeof *ML.gsub * MLIB_MAX);
 		ML.gcnt = malloc(sizeof(int) * MLIB_MAX);
-		if (!ML.lib || !ML.ix || !ML.grp || !ML.gsub || !ML.gcnt)
+		ML.gfirst = malloc(sizeof(int) * MLIB_MAX);
+		if (!ML.lib || !ML.ix || !ML.grp || !ML.gsub || !ML.gcnt || !ML.gfirst)
 			return;
 		ML.rev = r - 1;
 	}
@@ -8688,11 +8690,15 @@ static void ml_build(void)
 			if (g == ML.ng && ML.ng < MLIB_MAX) {
 				util_strlcpy(ML.grp[g], gname, sizeof ML.grp[0]);
 				util_strlcpy(ML.gsub[g], gsub, sizeof ML.gsub[0]);
-				ML.gcnt[g] = 0;
+				ML.gcnt[g] = 0, ML.gfirst[g] = i;
 				ML.ng++;
 			}
-			if (g < ML.ng)
+			if (g < ML.ng) {
 				ML.gcnt[g]++;
+				const MSong *f0 = &ML.lib[ML.gfirst[g]]; // (su carátula: la de la primera pista)
+				if (m->track && (!f0->track || m->track < f0->track))
+					ML.gfirst[g] = i;
+			}
 		}
 	}
 	ML_SORT = ML.lib;
@@ -8709,6 +8715,7 @@ static void ml_build(void)
 			memcpy(u, ML.gsub[b], 64), memcpy(ML.gsub[b], ML.gsub[b - 1], 64), memcpy(ML.gsub[b - 1], u, 64);
 			int c = ML.gcnt[b];
 			ML.gcnt[b] = ML.gcnt[b - 1], ML.gcnt[b - 1] = c;
+			c = ML.gfirst[b], ML.gfirst[b] = ML.gfirst[b - 1], ML.gfirst[b - 1] = c;
 		}
 	List *l = &ML.l[ML.level];
 	int cnt = ml_grouping() ? ML.ng + (ML.tab == MLT_ARTISTS && ML.level == 1) : ML.n;
@@ -8770,15 +8777,6 @@ static void ml_top(void)
 		music_stage();
 		return;
 	}
-	float y0 = BODY_Y, h = SCR_H - 8 - y0;
-	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
-	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
-	const float X = CARD_X + 16, W = CARD_W - 32;
-	draw_circle(X + 30, y0 + 40, 26, col_alpha(MU_ACC, 0.16f));
-	draw_icon(IC_SPEAKER, X + 30, y0 + 40, 24, MU_ACC);
-	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
-	text_draw_clip(_("Biblioteca de música"), tx, y, tw, TS_TITLE, T.text);
-	y += text_lineh(TS_TITLE) + 4;
 	int na = 0, nb = 0;
 	{ // (artistas y álbumes distintos)
 		static u32 seen = 0xFFFFFFFF;
@@ -8804,29 +8802,35 @@ static void ml_top(void)
 		}
 		na = ca, nb = cb;
 	}
-	char l1[160];
-	snprintf(l1, sizeof l1, _("%d canciones · %d artistas · %d álbumes"), ML.nlib - ML.nhidden, na, nb);
-	text_draw_clip(l1, tx, y, tw, TS_SUB, T.text2);
-	y += text_lineh(TS_SUB) + 4;
-	int found;
-	if (mlib_scanning(&found)) {
-		char l2[96];
-		snprintf(l2, sizeof l2, _("Buscando música en la SD… %d"), found);
-		text_draw_clip(l2, tx, y, tw, TS_SUB, MU_ACC);
-		y += text_lineh(TS_SUB) + 4;
+	// como en SoundCloud: dentro de un artista o un álbum, su carátula en grande; en la lista, la biblioteca
+	char sub[200], msg[220] = "", art[300] = "";
+	const char *kind, *title;
+	bool round = false;
+	IconId ic = IC_SPEAKER;
+	if (ML.level > 0 && ML.n) {
+		snprintf(art, sizeof art, "file:%s#big", ML.lib[ML.ix[0]].path);
+		bool alb = ML.level == 2 && ML.album[0];
+		kind = alb ? _("Álbum") : _("Artista"), title = alb ? ML.album : ML.artist;
+		round = !alb, ic = alb ? IC_STAR : IC_USER;
+		if (alb && ML.lib[ML.ix[0]].artist[0])
+			snprintf(sub, sizeof sub, ML.n == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), ML.lib[ML.ix[0]].artist, ML.n);
+		else
+			snprintf(sub, sizeof sub, ML.n == 1 ? _("1 canción") : _("%d canciones"), ML.n);
+	} else {
+		kind = _("En la consola"), title = _("Biblioteca de música");
+		snprintf(sub, sizeof sub, _("%d canciones · %d artistas · %d álbumes"), ML.nlib - ML.nhidden, na, nb);
+		int found;
+		if (mlib_scanning(&found))
+			snprintf(msg, sizeof msg, _("Buscando música en la SD… %d"), found);
+		else if (ML.nnotag)
+			snprintf(msg, sizeof msg, _("%d canciones no tienen etiquetas (título, artista o álbum). Aparecen en «Sin datos», donde puedes ocultarlas o eliminarlas."), ML.nnotag);
+		else
+			snprintf(msg, sizeof msg, "%s", _("Las canciones se agrupan por artista y álbum según sus etiquetas."));
 	}
-	y = fmaxf(y, y0 + 76) + 8;
-	draw_rect(X, y, W, 1, T.divider);
-	y += 10;
-	char l3[200];
-	if (ML.nnotag)
-		snprintf(l3, sizeof l3, _("%d canciones no tienen etiquetas (título, artista o álbum). Aparecen en «Sin datos», donde puedes ocultarlas o eliminarlas."), ML.nnotag);
-	else
-		snprintf(l3, sizeof l3, "%s", _("Las canciones se agrupan por artista y álbum según sus etiquetas."));
-	y += text_wrap_lines(l3, W, TS_SUB, 3, X, y, T.text2, true) * text_lineh(TS_SUB) + 8;
+	sc_hero_top(kind, title, sub, art, round, ic, MU_ACC, msg[0] ? msg : NULL, 0xB0FFFFFF);
 	char hint[160];
 	snprintf(hint, sizeof hint, _("%s Reproducir · %s Opciones · L R Pestañas"), GLYPH_A, GLYPH_Y);
-	text_draw_right(hint, X + W, y0 + h - 10 - text_lineh(TS_SUB), TS_SUB, T.text3);
+	text_draw_right(hint, TOP_W - 16, SCR_H - 18, TS_SUB, 0x80FFFFFF);
 }
 
 static void ml_bottom(void)
@@ -8885,16 +8889,82 @@ static void ml_bottom(void)
 	bool grp = ml_grouping();
 	bool all_row = ML.tab == MLT_ARTISTS && ML.level == 1; // «Todas las canciones» del artista, la primera
 	int cnt = grp ? ML.ng + all_row : ML.n;
-	const float RH = 40;
-	list_update(l, cnt, RH);
+	const float RH = 44, AS = 34;
+	bool grid = ML.tab == MLT_ALBUMS && ML.level == 0; // (los álbumes: en cuadrícula, con su carátula)
+	if (!grid)
+		list_update(l, cnt, RH);
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+	MusicState ms_;
+	music_get(&ms_);
+	if (grid && cnt) { // tres por fila; la cruceta se mueve por la cuadrícula
+		const int C = 3;
+		const float M = 12, G = 10, CW = (BOT_W - 2 * M - (C - 1) * G) / C, CH = CW + 32;
+		int rows = (cnt + C - 1) / C;
+		float total = rows * (CH + 8) + 8 + (mu_bar_shown() ? MU_BAR_H + 6 : 0);
+		if (U.buttons && !sheet && !g_dialog.open) {
+			u32 k = g_krepeat;
+			if ((k & KEY_RIGHT) && l->sel + 1 < cnt)
+				l->sel++;
+			if ((k & KEY_LEFT) && l->sel > 0)
+				l->sel--;
+			if ((k & KEY_DOWN) && l->sel + C < cnt)
+				l->sel += C;
+			else if ((k & KEY_DOWN) && l->sel / C < rows - 1)
+				l->sel = cnt - 1;
+			if (k & KEY_UP) {
+				if (l->sel >= C)
+					l->sel -= C;
+				else
+					hdr_enter();
+			}
+			if (k & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
+				float cy = 8 + (l->sel / C) * (CH + 8);
+				if (cy - 8 < l->target)
+					l->target = cy - 8;
+				if (cy + CH + 8 > l->target + VIEW_H)
+					l->target = cy + CH + 8 - VIEW_H;
+			}
+		}
+		if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && !sheet)
+			l->target -= g_touch.y - g_touch.py, l->off = l->target;
+		l->target = clampf(l->target, 0, fmaxf(0, total - VIEW_H));
+		l->off = approach(l->off, l->target, 18);
+		for (int i = 0; i < cnt; i++) {
+			float x = M + (i % C) * (CW + G), y = VIEW_Y + 8 + (i / C) * (CH + 8) - l->off;
+			if (y + CH < VIEW_Y || y > VIEW_Y + VIEW_H)
+				continue;
+			const MSong *m0 = &ML.lib[ML.gfirst[i]];
+			char au[300];
+			snprintf(au, sizeof au, "file:%s", m0->path);
+			bool foc = U.buttons && l->sel == i, pr = touch_in(x, y, CW, CH) && g_touch.sy >= VIEW_Y;
+			draw_rrect(x + 2, y + 3, CW - 4, CW, 8, T.shadow);
+			draw_art(au, x, y, CW, 8, T.text3, IC_SPEAKER);
+			if (pr)
+				draw_rrect(x, y, CW, CW, 8, 0x30000000);
+			if (foc)
+				draw_rrect_outline(x - 3, y - 3, CW + 6, CW + 6, 10, 2, MU_ACC);
+			g_clip_ell = !foc;
+			text_draw_clip(ML.grp[i], x, y + CW + 4, CW, TS_SUB, T.text);
+			char sub[96];
+			snprintf(sub, sizeof sub, "%s", ML.gsub[i][0] ? ML.gsub[i] : "");
+			text_draw_clip(sub, x, y + CW + 4 + text_lineh(TS_SUB), CW, 0.36f, T.text3);
+			g_clip_ell = false;
+			if (!sheet && !g_dialog.open && g_touch.sy >= VIEW_Y && tap(x, y, CW, CH)) {
+				l->sel = i;
+				ml_enter(i, false, false);
+				break;
+			}
+		}
+		if (!sheet && U.buttons && !g_dialog.open && (g_kdown & KEY_A) && l->sel < cnt)
+			ml_enter(l->sel, false, false);
+	}
 	if (!cnt) {
 		int found;
 		bool sc = mlib_scanning(&found);
 		empty_state(IC_SPEAKER, sc ? _("Buscando música…") : _("No hay música"),
 		            sc ? _("Se analiza toda la tarjeta SD. La primera vez puede tardar unos minutos.") : _("Copia canciones MP3, OGG o WAV a la SD (por ejemplo, a /Music) y aparecerán aquí."));
 	}
-	for (int i = 0; i < cnt; i++) {
+	for (int i = 0; i < (grid ? 0 : cnt); i++) { // (en cuadrícula, ya están)
 		float y = VIEW_Y + i * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
@@ -8902,7 +8972,9 @@ static void ml_bottom(void)
 		bool t = row(l, i, y, RH);
 		if (!U.buttons && l->sel == i)
 			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
-		char t1[128], t2[160];
+		char t1[128], t2[160], au[300] = "";
+		float ar = 5;
+		bool now = false;
 		IconId ic = IC_SPEAKER;
 		u32 col = MU_ACC;
 		bool dim = false;
@@ -8920,7 +8992,10 @@ static void ml_bottom(void)
 				snprintf(t2, sizeof t2, ML.gcnt[g] == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), ML.gsub[g], ML.gcnt[g]);
 			else
 				snprintf(t2, sizeof t2, ML.gcnt[g] == 1 ? _("1 canción") : _("%d canciones"), ML.gcnt[g]);
-			ic = ML.tab == MLT_ARTISTS && ML.level == 0 ? IC_USER : IC_STAR, col = ML.tab == MLT_ARTISTS && ML.level == 0 ? MU_ACC : T.warn;
+			ic = ML.tab == MLT_ARTISTS && ML.level == 0 ? IC_USER : IC_STAR, col = T.text3;
+			snprintf(au, sizeof au, "file:%s", ML.lib[ML.gfirst[g]].path);
+			if (ML.tab == MLT_ARTISTS && ML.level == 0)
+				ar = AS / 2;
 		} else {
 			const MSong *m = &ML.lib[ML.ix[i]];
 			char tb[128];
@@ -8935,23 +9010,39 @@ static void ml_bottom(void)
 			else
 				snprintf(t2, sizeof t2, "%s%s%s", m->artist, m->artist[0] && m->album[0] ? " · " : "", m->album);
 			dim = m->hidden;
-			if (m->notag)
-				col = T.text3;
+			col = T.text3;
+			snprintf(au, sizeof au, "file:%s", m->path);
+			now = mu_on() && !ms_.dir[0] && !strcmp(ms_.name, m->path);
 		}
-		draw_rrect(14, y + (RH - 26) / 2, 26, 26, 8, col_alpha(col, 0.16f));
-		draw_icon(ic, 27, y + RH / 2, 14, col);
+		float ax = 14, ay = y + (RH - AS) / 2;
+		if (au[0])
+			draw_art(au, ax, ay, AS, ar, col, ic);
+		else {
+			draw_rrect(ax, ay, AS, AS, 6, col_alpha(MU_ACC, 0.16f));
+			draw_icon(ic, ax + AS / 2, ay + AS / 2, 15, MU_ACC);
+		}
+		if (now) { // lo que suena: la carátula, oscurecida, con tres barras que bailan
+			draw_rrect(ax, ay, AS, AS, ar, 0x90000000);
+			for (int k = 0; k < 3; k++) {
+				float hh = ms_.st == MU_PLAY ? 6 + 9 * fabsf(sinf(g_time * (4.1f + k * 1.3f) + k * 1.7f)) : 4;
+				draw_rrect(ax + AS / 2 - 8 + k * 6, ay + AS / 2 + 8 - hh, 4, hh, 1.5f, MU_ACC);
+			}
+		}
+		float tx = ax + AS + 10, tw = BOT_W - tx - 36;
 		g_clip_ell = l->sel != i;
-		text_draw_clip(t1, 50, y + 5, BOT_W - 90, TS_BODY, dim ? T.text3 : T.text);
+		text_draw_clip(t1, tx, y + 7, tw, TS_BODY, dim ? T.text3 : now ? MU_ACC : T.text);
 		if (dim) {
 			char t3[200];
 			snprintf(t3, sizeof t3, "%s · %s", _("Oculta"), t2);
 			util_strlcpy(t2, t3, sizeof t2);
 		}
-		text_draw_clip(t2, 50, y + 22, BOT_W - 90, TS_SUB, T.text3);
+		text_draw_clip(t2, tx, y + 25, tw, TS_SUB, T.text3);
 		g_clip_ell = false;
+		if (!was && l->sel != i + 1 && i + 1 < cnt)
+			draw_rect(tx, y + RH - 0.5f, BOT_W - tx - 10, 1, col_alpha(T.text3, 0.18f));
 		if (l->sel == i) {
-			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(MU_ACC, 0.3f));
-			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, MU_ACC);
+			draw_circle(BOT_W - 24, y + RH / 2, 11, col_alpha(MU_ACC, 0.3f));
+			draw_icon(IC_DOTS, BOT_W - 24, y + RH / 2, 14, MU_ACC);
 		}
 		bool open = (t && was) || activate(l, i);
 		if (t && was && g_touch.px > BOT_W - 44)
@@ -12296,10 +12387,6 @@ static struct {
 	bool hm, hm_just;        // opciones de la cabecera
 	float hm_anim;
 	int hm_sel;
-	char cov_for[256];       // portada de lo elegido
-	Texture cov;
-	u64 sel_t;
-	char sel_path[256];
 } RL;
 
 static struct {
@@ -12463,94 +12550,145 @@ static const RBook *rl_selected(void)
 
 static void rv_open(const char *path, int ret_app);
 
-// la portada de lo elegido (la pide cuando la selección se queda quieta un momento)
-static void rl_cover(const RBook *b)
+// ---- portadas: las 24 últimas que se han visto. El hilo del Lector hace una cada vez (rd_cover): se le pide la
+// primera que falte de las que se están dibujando, y cuando llega, la siguiente
+#define RC_N 24
+#define RC_W 112
+#define RC_H 158
+static struct {
+	char path[256];
+	Texture tex;
+	u32 used;
+	u8 st; // 0 libre, 1 esperando, 2 lista, 3 sin portada
+} RC[RC_N];
+static struct {
+	u32 frame;
+	int want;    // la que se está pidiendo (-1: ninguna)
+	u64 since;
+} RCQ = {.want = -1};
+
+static void rc_pump(void)
 {
-	if (!b) {
-		RL.sel_path[0] = 0;
+	RCQ.frame++;
+	if (RCQ.want < 0) // (la siguiente: la primera que espera, de las que se están viendo)
+		for (int i = 0; i < RC_N; i++)
+			if (RC[i].st == 1 && RCQ.frame - RC[i].used < 3) {
+				RCQ.want = i, RCQ.since = util_ms();
+				break;
+			}
+	if (RCQ.want < 0)
+		return;
+	int i = RCQ.want;
+	if (RC[i].st != 1) {
+		RCQ.want = -1;
 		return;
 	}
-	if (strcmp(RL.sel_path, b->path)) {
-		util_strlcpy(RL.sel_path, b->path, sizeof RL.sel_path);
-		RL.sel_t = util_ms();
-	}
-	if (!strcmp(RL.cov_for, b->path) || util_ms() - RL.sel_t < 250)
-		return;
 	u16 *px;
 	int w, h;
-	if (rd_cover(b->path, 112, 158, &px, &w, &h)) {
-		tex_from_rgb565(&RL.cov, px, w, h);
+	if (rd_cover(RC[i].path, RC_W, RC_H, &px, &w, &h)) {
+		RC[i].st = tex_from_rgb565(&RC[i].tex, px, w, h) ? 2 : 3;
 		free(px);
-		util_strlcpy(RL.cov_for, b->path, sizeof RL.cov_for);
-	}
+		RCQ.want = -1;
+	} else if (util_ms() - RCQ.since > 8000) // (no llega: sin portada)
+		RC[i].st = 3, RCQ.want = -1;
 }
 
+static Texture *rc_get(const char *path)
+{
+	int lru = -1;
+	for (int i = 0; i < RC_N; i++) {
+		if (RC[i].st && !strcmp(RC[i].path, path)) {
+			RC[i].used = RCQ.frame;
+			return RC[i].st == 2 ? &RC[i].tex : NULL;
+		}
+		if (!RC[i].st)
+			lru = lru >= 0 && !RC[lru].st ? lru : i;
+		else if (i != RCQ.want && RC[i].used != RCQ.frame && (lru < 0 || (RC[lru].st && RC[i].used < RC[lru].used)))
+			lru = i;
+	}
+	if (lru < 0)
+		return NULL;
+	tex_free(&RC[lru].tex);
+	util_strlcpy(RC[lru].path, path, sizeof RC[0].path);
+	RC[lru].st = 1, RC[lru].used = RCQ.frame;
+	return NULL;
+}
+
+// la portada de un documento en w × h (sin ella: un cuadro con el icono de su tipo)
+static void rc_draw(const RBook *b, float x, float y, float w, float h, float r)
+{
+	Texture *t = rc_get(b->path);
+	if (t) {
+		draw_texture_round(t, x, y, w, h, r, 1);
+		return;
+	}
+	draw_rrect(x, y, w, h, r, T.surface2);
+	draw_icon(rd_kind_icon(b->kind), x + w / 2, y + h / 2, fminf(w, h) * 0.4f, rd_kind_col(b->kind));
+}
+
+// arriba: lo elegido con su portada en grande, el nombre y por dónde va (o, sin nada, la biblioteca); sobre una luz
+// del color del Lector
 static void rl_top(void)
 {
 	rl_build();
-	float y0 = BODY_Y, h = SCR_H - 8 - y0;
-	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
-	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
-	const float X = CARD_X + 14, W = CARD_W - 28;
+	rc_pump();
+	u32 c = ap_col(AP_READER);
+	st_aurora(24, c);
 	const RBook *b = rl_selected();
-	rl_cover(b);
-	if (b) { // el documento elegido: portada, nombre y por dónde va
-		const float CW = 112, CH = 158;
-		float cx = X, cy = y0 + 12;
-		draw_rrect(cx, cy, CW, CH, 8, T.surface2);
-		if (!strcmp(RL.cov_for, b->path) && RL.cov.ok) {
-			float s = fminf(CW / RL.cov.w, CH / RL.cov.h), w = RL.cov.w * s, hh = RL.cov.h * s;
-			draw_texture(&RL.cov, cx + (CW - w) / 2, cy + (CH - hh) / 2, w, hh, 1);
-		} else
-			draw_icon(rd_kind_icon(b->kind), cx + CW / 2, cy + CH / 2, 36, rd_kind_col(b->kind));
-		float tx = cx + CW + 14, tw = X + W - tx, y = cy + 2;
-		char tb[128];
-		y += text_wrap_lines(rb_title(b, tb, sizeof tb), tw, TS_TITLE, 2, tx, y, T.text, true) * text_lineh(TS_TITLE) + 4;
-		char v[200], sz[24];
+	const float x = 24, y = 40, CW = 112, CH = 158;
+	if (b) {
+		draw_rrect(x + 2, y + 6, CW - 4, CH, 6, 0x70000000);
+		rc_draw(b, x, y, CW, CH, 6);
+		float tx = x + CW + 18, tw = TOP_W - tx - 18, ty = y + 6;
+		char v[200], sz[24], tb[128];
 		util_fmt_size(sz, sizeof sz, b->size);
 		snprintf(v, sizeof v, "%s · %s", rd_kind_name(b->kind), sz);
-		y = info_row(tx, y, tw, _("Tipo"), v, T.text2, 1);
+		st_label(v, tx, ty, 2, 0.4f, st_shift(c, 0, 1, 1));
+		ty += 19;
+		ty += text_wrap_lines(rb_title(b, tb, sizeof tb), tw, 0.78f, 3, tx, ty, 0xFFFFFFFF, true) * text_lineh(0.78f) + 6;
 		char d[256];
 		rl_parent(b->path, d, sizeof d);
-		y = info_row(tx, y, tw, _("Carpeta"), d, T.text2, 1);
+		text_draw_clip(d, tx, ty, tw, TS_SUB, 0x90FFFFFF);
+		ty += text_lineh(TS_SUB) + 10;
 		if (b->last && b->pages > 0) {
 			snprintf(v, sizeof v, _("Página %d de %d"), b->page + 1, b->pages);
-			y = info_row(tx, y, tw, _("Progreso"), v, T.text2, 1);
+			text_draw(v, tx, ty, TS_BODY, 0xE0FFFFFF);
+			char pc[16];
+			snprintf(pc, sizeof pc, "%d %%", (b->page + 1) * 100 / b->pages);
+			text_draw_right(pc, tx + tw, ty, TS_BODY, st_shift(c, 0, 1, 1));
+			ty += text_lineh(TS_BODY) + 4;
+			draw_rrect(tx, ty, tw, 5, 2.5f, 0x30FFFFFF);
+			draw_rrect(tx, ty, fmaxf(5, tw * (b->page + 1) / (float)b->pages), 5, 2.5f, st_shift(c, 0, 1, 1));
+			ty += 14;
 			f_fmt_date(sz, sizeof sz, b->last);
-			y = info_row(tx, y, tw, _("Última lectura"), sz, T.text3, 1);
-			float pw = tw, py = y + 4;
-			draw_rrect(tx, py, pw, 6, 3, T.surface2);
-			draw_rrect(tx, py, fmaxf(6, pw * (b->page + 1) / (float)b->pages), 6, 3, ap_col(AP_READER));
+			snprintf(v, sizeof v, _("Última lectura: %s"), sz);
+			text_draw_clip(v, tx, ty, tw, TS_SUB, 0x90FFFFFF);
 		} else
-			y = info_row(tx, y, tw, _("Progreso"), _("Sin empezar"), T.text3, 1);
+			text_draw(_("Sin empezar"), tx, ty, TS_BODY, 0x90FFFFFF);
 		char hint[96];
 		snprintf(hint, sizeof hint, _("%s Leer · %s Opciones"), GLYPH_A, GLYPH_Y);
-		text_draw_right(hint, X + W, y0 + h - 10 - text_lineh(TS_SUB), TS_SUB, T.text2);
+		text_draw_right(hint, TOP_W - 16, SCR_H - 18, TS_SUB, 0x80FFFFFF);
 		return;
 	}
-	draw_circle(X + 30, y0 + 40, 26, col_alpha(ap_col(AP_READER), 0.16f));
-	draw_icon(IC_BOOK, X + 30, y0 + 40, 24, ap_col(AP_READER));
-	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
-	text_draw_clip(_("Biblioteca de lectura"), tx, y, tw, TS_TITLE, T.text);
-	y += text_lineh(TS_TITLE) + 4;
+	draw_rrect(x, y, CW, CH, 8, st_shift(c, 0, 0.35f, 1));
+	draw_icon(IC_BOOK, x + CW / 2, y + CH / 2, 44, 0xE0FFFFFF);
+	float tx = x + CW + 18, tw = TOP_W - tx - 18, ty = y + 6;
+	st_label(_("Lector"), tx, ty, 2, 0.4f, st_shift(c, 0, 1, 1));
+	ty += 19;
+	ty += text_wrap_lines(_("Biblioteca de lectura"), tw, 0.78f, 2, tx, ty, 0xFFFFFFFF, true) * text_lineh(0.78f) + 4;
 	char l1[96];
 	snprintf(l1, sizeof l1, RL.nlib == 1 ? _("1 documento") : _("%d documentos"), RL.nlib);
-	text_draw_clip(l1, tx, y, tw, TS_SUB, T.text2);
-	y += text_lineh(TS_SUB) + 4;
+	text_draw_clip(l1, tx, ty, tw, TS_SUB, 0xB0FFFFFF);
+	ty += text_lineh(TS_SUB) + 6;
 	int found;
 	if (rlib_scanning(&found)) {
 		char l2[96];
 		snprintf(l2, sizeof l2, _("Buscando documentos en la SD… %d"), found);
-		text_draw_clip(l2, tx, y, tw, TS_SUB, T.accent);
+		text_draw_clip(l2, tx, ty, tw, TS_SUB, st_shift(c, 0, 1, 1));
+		ty += text_lineh(TS_SUB) + 6;
 	}
-	y = y0 + 84;
-	draw_rect(X, y, W, 1, T.divider);
-	y += 10;
-	y += text_wrap_lines(_("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Se lee con la consola girada a la izquierda (el Circle Pad abajo), con zoom y manga de derecha a izquierda."),
-	                     W, TS_SUB, 3, X, y, T.text2, true) *
-	         text_lineh(TS_SUB) + 6;
-	text_wrap_lines(_("Los archivos TXT solo se buscan en las carpetas de lectura (/Books, /Manga, /Documents, /Downloads…). Los demás se pueden abrir desde Archivos."), W, TS_SUB, 3, X, y,
-	                T.text3, true);
+	text_wrap_lines(_("PDF, manga y cómics (CBZ), EPUB, DOCX y TXT. Se lee con la consola girada a la izquierda (el Circle Pad abajo), con zoom y manga de derecha a izquierda."), tw,
+	                TS_SUB, 5, tx, ty, 0x90FFFFFF, true);
 }
 
 static void rl_bottom(void)
@@ -12595,11 +12733,78 @@ static void rl_bottom(void)
 	if (hdr_hit(hx - 13, hy - 13, 26, 26))
 		RL.hm = RL.hm_just = true, RL.hm_sel = 0;
 	rl_build();
+	rc_pump();
 	List *l = &RL.l;
 	int cnt = RL.n;
-	const float RH = 40;
-	list_update(l, cnt, RH);
+	const float RH = 50;
+	bool grid = RL.tab == RLT_RECENT; // (lo reciente: las portadas en cuadrícula, con lo leído debajo)
+	if (!grid)
+		list_update(l, cnt, RH);
 	gfx_clip(0, VIEW_Y, BOT_W, VIEW_H);
+	if (grid && cnt) {
+		const int C = 4;
+		const float M = 12, G = 10, CW = (BOT_W - 2 * M - (C - 1) * G) / C, CHC = CW * 1.41f, CH = CHC + 26;
+		int rows = (cnt + C - 1) / C;
+		float total = rows * (CH + 8) + 8 + (mu_bar_shown() ? MU_BAR_H + 6 : 0);
+		if (U.buttons && !sheet && !g_dialog.open) {
+			u32 k = g_krepeat;
+			if ((k & KEY_RIGHT) && l->sel + 1 < cnt)
+				l->sel++;
+			if ((k & KEY_LEFT) && l->sel > 0)
+				l->sel--;
+			if ((k & KEY_DOWN) && l->sel + C < cnt)
+				l->sel += C;
+			else if ((k & KEY_DOWN) && l->sel / C < rows - 1)
+				l->sel = cnt - 1;
+			if (k & KEY_UP) {
+				if (l->sel >= C)
+					l->sel -= C;
+				else
+					hdr_enter();
+			}
+			if (k & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) {
+				float cy = 8 + (l->sel / C) * (CH + 8);
+				if (cy - 8 < l->target)
+					l->target = cy - 8;
+				if (cy + CH + 8 > l->target + VIEW_H)
+					l->target = cy + CH + 8 - VIEW_H;
+			}
+		}
+		if (g_touch.held && g_touch.drag && g_touch.sy >= VIEW_Y && !sheet)
+			l->target -= g_touch.y - g_touch.py, l->off = l->target;
+		l->target = clampf(l->target, 0, fmaxf(0, total - VIEW_H));
+		l->off = approach(l->off, l->target, 18);
+		for (int i = 0; i < cnt; i++) {
+			float x = M + (i % C) * (CW + G), y = VIEW_Y + 8 + (i / C) * (CH + 8) - l->off;
+			if (y + CH < VIEW_Y || y > VIEW_Y + VIEW_H)
+				continue;
+			const RBook *b = &RL.lib[RL.ix[i]];
+			bool foc = U.buttons && l->sel == i, pr = touch_in(x, y, CW, CH) && g_touch.sy >= VIEW_Y;
+			draw_rrect(x + 2, y + 3, CW - 4, CHC, 5, T.shadow);
+			rc_draw(b, x, y, CW, CHC, 5);
+			if (pr)
+				draw_rrect(x, y, CW, CHC, 5, 0x30000000);
+			if (foc)
+				draw_rrect_outline(x - 3, y - 3, CW + 6, CHC + 6, 7, 2, T.accent);
+			char tb[128];
+			g_clip_ell = !foc;
+			text_draw_clip(rb_title(b, tb, sizeof tb), x, y + CHC + 4, CW, 0.38f, T.text);
+			g_clip_ell = false;
+			if (b->pages > 0) { // lo leído
+				float py = y + CHC + 6 + text_lineh(0.38f);
+				draw_rrect(x, py, CW, 3, 1.5f, T.surface2);
+				draw_rrect(x, py, fmaxf(3, CW * (b->page + 1) / (float)b->pages), 3, 1.5f, ap_col(AP_READER));
+			}
+			if (!sheet && !g_dialog.open && g_touch.sy >= VIEW_Y && tap(x, y, CW, CH)) {
+				if (l->sel == i || !U.buttons) // (un toque abre; con la cruceta, A)
+					rv_open(b->path, AP_READER);
+				l->sel = i;
+				break;
+			}
+		}
+		if (!sheet && U.buttons && !g_dialog.open && (g_kdown & KEY_A) && l->sel < cnt)
+			rv_open(RL.lib[RL.ix[l->sel]].path, AP_READER);
+	}
 	if (!cnt) {
 		int found;
 		bool sc = rlib_scanning(&found);
@@ -12610,7 +12815,7 @@ static void rl_bottom(void)
 			            sc ? _("Se analiza la tarjeta SD. La primera vez puede tardar unos minutos.")
 			               : _("Copia PDF, CBZ, EPUB, DOCX o TXT a la SD (por ejemplo, a /Books o a /Manga) y aparecerán aquí."));
 	}
-	for (int i = 0; i < cnt; i++) {
+	for (int i = 0; i < (grid ? 0 : cnt); i++) {
 		float y = VIEW_Y + i * RH - l->off;
 		if (y + RH < VIEW_Y || y > VIEW_Y + VIEW_H)
 			continue;
@@ -12619,8 +12824,6 @@ static void rl_bottom(void)
 		if (!U.buttons && l->sel == i)
 			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
 		char t1[256], t2[200];
-		IconId ic;
-		u32 col;
 		const RBook *b = &RL.lib[RL.ix[i]];
 		{
 			char tb[128], sz[24];
@@ -12630,19 +12833,19 @@ static void rl_bottom(void)
 				snprintf(t2, sizeof t2, _("%s · %s · página %d de %d"), rd_kind_name(b->kind), sz, b->page + 1, b->pages);
 			else
 				snprintf(t2, sizeof t2, "%s · %s", rd_kind_name(b->kind), sz);
-			ic = rd_kind_icon(b->kind), col = rd_kind_col(b->kind);
 		}
-		draw_rrect(14, y + (RH - 26) / 2, 26, 26, 8, col_alpha(col, 0.16f));
-		draw_icon(ic, 27, y + RH / 2, 14, col);
+		rc_draw(b, 16, y + 5, 29, RH - 10, 3); // (su portada, pequeña)
+		const float tx = 56;
 		g_clip_ell = l->sel != i;
-		text_draw_clip(t1, 50, y + 5, BOT_W - 90, TS_BODY, T.text);
-		text_draw_clip(t2, 50, y + 22, BOT_W - 90, TS_SUB, T.text3);
+		text_draw_clip(t1, tx, y + 8, BOT_W - tx - 36, TS_BODY, T.text);
+		text_draw_clip(t2, tx, y + 26, BOT_W - tx - 36, TS_SUB, T.text3);
 		g_clip_ell = false;
 		if (b->last && b->pages > 0) { // lo leído, en una línea fina debajo
-			float pw = BOT_W - 90 - 50;
-			draw_rect(50, y + RH - 4, pw, 2, T.surface2);
-			draw_rect(50, y + RH - 4, pw * (b->page + 1) / (float)b->pages, 2, ap_col(AP_READER));
-		}
+			float pw = BOT_W - tx - 44;
+			draw_rect(tx, y + RH - 6, pw, 2, T.surface2);
+			draw_rect(tx, y + RH - 6, pw * (b->page + 1) / (float)b->pages, 2, ap_col(AP_READER));
+		} else if (!was && l->sel != i + 1 && i + 1 < cnt)
+			draw_rect(tx, y + RH - 0.5f, BOT_W - tx - 10, 1, col_alpha(T.text3, 0.18f));
 		if (l->sel == i) {
 			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
 			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
