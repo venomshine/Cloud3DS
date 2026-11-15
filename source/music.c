@@ -56,6 +56,69 @@ bool music_is_audio(const char *name)
 	return false;
 }
 
+/* ---------------------------------------------------------------- con la tapa cerrada
+ * Al cerrar la tapa el sistema pide dormir el DSP (APTCMD_DSP_SLEEP) aunque la app no deje entrar en reposo, y libctru
+ * lo descarga: la música se corta. Mientras la tapa esté cerrada y haya música, se despierta otra vez (aptDspWakeup,
+ * como hace Sound3DS). Y sin auriculares, el códec silencia los altavoces con la tapa cerrada: se fuerza su salida
+ * (página 100, registro 69 del códec, el mismo que usa Luma3DS para «forzar la salida de audio») */
+extern void aptDspWakeup(void);
+static dspHookCookie dsp_cookie;
+static volatile bool dsp_slept;
+static void dsp_hook(DSP_HookType h) { dsp_slept = h == DSPHOOK_ONSLEEP; }
+
+#define CDC_OUT_PAGE 100
+#define CDC_OUT_REG 69
+#define CDC_OUT_SPEAKERS 0x20
+static bool cdc_known;
+static u8 cdc_normal;
+
+static bool cdc_rw(u8 *val, bool write)
+{
+	srvSetBlockingPolicy(true); // (sin esperar: si no existe o está ocupado, falla al momento)
+	Result r = cdcChkInit();
+	srvSetBlockingPolicy(false);
+	if (R_FAILED(r))
+		return false;
+	r = write ? CDCCHK_WriteRegisters2(CDC_OUT_PAGE, CDC_OUT_REG, val, 1) : CDCCHK_ReadRegisters2(CDC_OUT_PAGE, CDC_OUT_REG, val, 1);
+	cdcChkExit();
+	return R_SUCCEEDED(r);
+}
+
+void music_lid(bool closed)
+{
+	if (!M.dsp)
+		return;
+	bool on = M.thr && (M.s.st == MU_PLAY || M.s.st == MU_PAUSE);
+	if (closed && on && dsp_slept)
+		aptDspWakeup(); // (si aún no terminó de dormirse no hace nada: se reintenta en la vuelta siguiente)
+	static u64 last;
+	static bool was;
+	u64 now = osGetTime();
+	if (closed == was && !closed && now - last > 3000)
+		return; // (abierta: solo un rato después de abrirla, para devolver la salida normal)
+	if (closed != was)
+		last = now, was = closed;
+	static u64 checked;
+	if (now - checked < 500)
+		return;
+	checked = now;
+	if (!cdc_known)
+		cdc_known = cdc_rw(&cdc_normal, false);
+	u8 cur;
+	if (!cdc_known || !cdc_rw(&cur, false))
+		return;
+	bool phones = false;
+	DSP_GetHeadphoneStatus(&phones);
+	if (closed && on && !phones) {
+		if (cur != CDC_OUT_SPEAKERS) {
+			u8 v = CDC_OUT_SPEAKERS;
+			cdc_rw(&v, true);
+			util_log("música: tapa cerrada sin auriculares: a los altavoces");
+		}
+	} else if (cur == CDC_OUT_SPEAKERS && cdc_normal != CDC_OUT_SPEAKERS)
+		cdc_rw(&cdc_normal, true);
+}
+
 /* audio: el firmware de la consola (/3ds/dspfirm.cdc) o, si no está, OpenDSP de romfs */
 static bool dsp_up(void)
 {
@@ -82,6 +145,10 @@ static bool dsp_up(void)
 		fclose(f);
 	}
 	util_log("música: audio %s", M.dsp ? "listo" : "sin firmware DSP");
+	if (M.dsp) {
+		dspHook(&dsp_cookie, dsp_hook);
+		cdc_known = cdc_rw(&cdc_normal, false); // (la salida normal, antes de tocarla)
+	}
 	return M.dsp;
 }
 
@@ -835,8 +902,15 @@ void music_exit(void)
 		threadFree(M.thr);
 		M.thr = NULL;
 	}
-	if (M.dsp)
+	if (M.dsp) {
+		if (cdc_known && cdc_normal != CDC_OUT_SPEAKERS) { // (la salida, como estaba)
+			u8 cur;
+			if (cdc_rw(&cur, false) && cur == CDC_OUT_SPEAKERS)
+				cdc_rw(&cdc_normal, true);
+		}
+		dspUnhook(&dsp_cookie);
 		ndspExit();
+	}
 	free(M.opendsp);
 	free(M.list);
 	free(M.order);

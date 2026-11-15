@@ -164,6 +164,7 @@ AccessControlInfo:
    - cam:u
    - cfg:u
    - cfg:i
+   - cdc:CHK
    - csnd:SND
    - dsp::DSP
    - frd:u

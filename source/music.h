@@ -47,4 +47,6 @@ void music_get(MusicState *s);
 bool music_playing(void);  /* sonando (no en pausa) */
 /* la carátula de la canción actual, si la trae (RGBA, malloc); *track dice de cuál */
 bool music_cover(u8 **rgba, int *w, int *h, u32 *track);
+/* cada vuelta: con la tapa cerrada y música, el DSP despierto y, sin auriculares, la salida por los altavoces */
+void music_lid(bool closed);
 void music_exit(void);
