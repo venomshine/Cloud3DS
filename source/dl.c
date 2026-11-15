@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 #ifdef TEST_CA_SD /* solo en compilaciones de prueba (make TEST_CA=1): raíces de la SD, para probar tras un proxy */
 #define CA_BUNDLE "sdmc:/3ds/Cloud3DS/test_ca.pem"
@@ -984,6 +985,8 @@ typedef struct {
 	char serr[24];
 	u64 sdone;         /* lo que ya recibió AM */
 	bool blocked;      /* un título del sistema: ni se instala ni se guarda */
+	u64 t0;            /* cuándo empezó (para la velocidad media del registro) */
+	int conns;         /* conexiones a la vez (1, o más si se partió) */
 } Job;
 
 enum { SM_FILE, SM_PROBE, SM_STREAM };
@@ -1314,6 +1317,286 @@ static void stream_done(DlItem *s, Job *j, CURLcode r, long code, const char *gn
 	state_unlock();
 }
 
+/* ---------------------------------------------------------------- bajar en varias conexiones
+ * Como 3dsDL: un archivo grande de un servidor que acepta rangos se baja en PAR_N trozos a la vez, cada uno con su
+ * conexión (la CPU de la 3DS hace el TLS de una a la vez, pero mientras una espera a la red otra descifra). Cada
+ * trozo junta 256 KB y los escribe en su sitio del archivo, que se reserva entero al principio. No vale para instalar
+ * mientras baja (AM necesita los datos en orden). Si algo no cuadra, se baja como siempre, con una sola conexión */
+#define PAR_N 4
+#define PAR_MIN (4u << 20)     /* desde 4 MB */
+#define PAR_BUF (256 * 1024)
+
+typedef struct {
+	CURL *c;
+	u64 at, end;   /* lo que falta: [at, end] (at: lo próximo que llega) */
+	u64 bstart;    /* dónde va lo que hay en buf */
+	u8 *buf;
+	size_t bn;
+	int tries;
+	bool done, bad;
+	struct ParCtx *p;
+} ParConn;
+
+typedef struct ParCtx {
+	FILE *f;
+	bool io_err;
+} ParCtx;
+
+static bool par_flush(ParConn *k)
+{
+	if (!k->bn)
+		return true;
+	if (fseeko(k->p->f, (off_t)k->bstart, SEEK_SET) != 0 || fwrite(k->buf, 1, k->bn, k->p->f) != k->bn) {
+		k->p->io_err = true;
+		return false;
+	}
+	k->bstart += k->bn, k->bn = 0;
+	return true;
+}
+
+static size_t par_body(char *d, size_t sz, size_t nm, void *u)
+{
+	ParConn *k = u;
+	size_t n = sz * nm;
+	long code = 0;
+	curl_easy_getinfo(k->c, CURLINFO_RESPONSE_CODE, &code);
+	if (code != 206) { // (el servidor no respetó el rango: este trozo no vale)
+		k->bad = true;
+		return 0;
+	}
+	if (k->at + n > k->end + 1) // (más de lo pedido: lo de sobra, fuera)
+		n = k->at > k->end ? 0 : (size_t)(k->end + 1 - k->at);
+	for (size_t o = 0; o < n;) {
+		size_t c = PAR_BUF - k->bn < n - o ? PAR_BUF - k->bn : n - o;
+		memcpy(k->buf + k->bn, d + o, c);
+		k->bn += c, o += c, k->at += c;
+		if (k->bn == PAR_BUF && !par_flush(k))
+			return 0;
+	}
+	return sz * nm;
+}
+
+static size_t par_probe_hdr(char *d, size_t s, size_t m, void *u)
+{
+	Job *j = u;
+	size_t k = s * m;
+	char line[512];
+	snprintf(line, sizeof line, "%.*s", (int)(k < sizeof line - 1 ? k : sizeof line - 1), d);
+	if (!strncasecmp(line, "HTTP/", 5)) {
+		const char *sp = strchr(line, ' ');
+		j->status = sp ? strtol(sp + 1, NULL, 10) : 0;
+		j->cd_name[0] = 0, j->snap->total = 0;
+	} else if (!strncasecmp(line, "Content-Disposition:", 20))
+		cd_filename(line + 20, j->cd_name, sizeof j->cd_name);
+	else if (!strncasecmp(line, "Content-Range:", 14)) { // «bytes 0-0/12345»
+		const char *sl = strchr(line, '/');
+		if (sl && sl[1] != '*')
+			j->snap->total = strtoull(sl + 1, NULL, 10);
+	}
+	return k;
+}
+static size_t par_sink(char *d, size_t s, size_t m, void *u)
+{
+	(void)d;
+	return ((Job *)u)->status == 206 ? s * m : 0; // (si no respeta el rango mandaría el archivo entero: se corta ya)
+}
+
+static CURL *par_easy(ParConn *k, const char *url, char *eb)
+{
+	CURL *c = curl_easy_init();
+	if (!c)
+		return NULL;
+	common_opts(c, eb);
+	curl_easy_setopt(c, CURLOPT_SOCKOPTDATA, (void *)1);
+	curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+	curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+	curl_easy_setopt(c, CURLOPT_NOPROGRESS, 1L);
+	curl_easy_setopt(c, CURLOPT_URL, url);
+	char rg[64];
+	snprintf(rg, sizeof rg, "%llu-%llu", (unsigned long long)k->at, (unsigned long long)k->end);
+	curl_easy_setopt(c, CURLOPT_RANGE, rg);
+	curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, par_body);
+	curl_easy_setopt(c, CURLOPT_WRITEDATA, k);
+	k->c = c, k->bstart = k->at, k->bn = 0, k->bad = false;
+	return c;
+}
+
+/* devuelve true si se encargó (r y code dicen cómo acabó); false: no se puede partir, se baja como siempre */
+static bool par_download(Job *j, const char *url0, CURLcode *r_out, long *code_out, char *eff, size_t en, char *eb)
+{
+	// 1. ¿acepta rangos y cuánto ocupa? (un byte, siguiendo las redirecciones: la dirección final es la que se usa)
+	CURL *c = curl_easy_init();
+	if (!c)
+		return false;
+	common_opts(c, eb);
+	curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+	curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+	curl_easy_setopt(c, CURLOPT_URL, url0);
+	curl_easy_setopt(c, CURLOPT_RANGE, "0-0");
+	curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, par_probe_hdr);
+	curl_easy_setopt(c, CURLOPT_HEADERDATA, j);
+	curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, par_sink);
+	curl_easy_setopt(c, CURLOPT_WRITEDATA, j);
+	curl_easy_setopt(c, CURLOPT_NOPROGRESS, 1L);
+	j->snap->total = 0, j->status = 0;
+	CURLcode pr = curl_easy_perform(c);
+	char url[2048] = "";
+	char *ce = NULL;
+	curl_easy_getinfo(c, CURLINFO_EFFECTIVE_URL, &ce);
+	util_strlcpy(url, ce ? ce : url0, sizeof url);
+	curl_easy_cleanup(c);
+	u64 total = j->snap->total;
+	if (j->smode == SM_PROBE) { // (pedido desde la consola: un CIA se instala mientras baja, en orden; lo demás, partido)
+		char nm[256];
+		util_strlcpy(nm, j->cd_name, sizeof nm);
+		if (!nm[0])
+			name_from_url(url, nm, sizeof nm);
+		const char *dot = strrchr(nm, '.');
+		if (!dot || !strcasecmp(dot, ".cia") || strlen(dot) > 6) {
+			util_log("dl: «%s» puede ser un CIA: una conexión, instalándolo mientras baja", nm);
+			j->status = 0, j->snap->total = 0;
+			return false;
+		}
+	}
+	if (pr != CURLE_OK || j->status != 206 || total < PAR_MIN) {
+		util_log("dl: sin partir (%s): rango %ld, %llu bytes", pr == CURLE_OK ? "no acepta rangos o es pequeño" : curl_easy_strerror(pr), j->status,
+		         (unsigned long long)total);
+		j->status = 0, j->snap->total = 0;
+		return false;
+	}
+	util_strlcpy(eff, url, en);
+	j->smode = SM_FILE;
+	u64 fr = 0, tot = 0;
+	if (fsx_space(&fr, &tot) && fr < total + 512 * 1024) {
+		j->no_space = true;
+		*r_out = CURLE_WRITE_ERROR, *code_out = 206;
+		return true;
+	}
+	// 2. el archivo, entero desde ya; y los trozos (alineados a 64 KB)
+	char sp[720];
+	snprintf(sp, sizeof sp, "sdmc:%s", j->part);
+	ParCtx pc = {fopen(sp, "wb"), false};
+	if (!pc.f) {
+		*r_out = CURLE_WRITE_ERROR, *code_out = 206;
+		return true;
+	}
+	setvbuf(pc.f, NULL, _IONBF, 0); // (ya se escribe en bloques de 256 KB)
+	ftruncate(fileno(pc.f), (off_t)total);
+	state_lock();
+	Xfer *x = xfer_get(j->xid);
+	if (x)
+		x->total = total;
+	state_unlock();
+	ParConn k[PAR_N];
+	memset(k, 0, sizeof k);
+	CURLM *mh = curl_multi_init();
+	u64 piece = (total / PAR_N + 0xFFFF) & ~(u64)0xFFFF;
+	int nk = 0;
+	bool ok = mh != NULL;
+	for (int i = 0; i < PAR_N && ok; i++) {
+		u64 a = (u64)i * piece;
+		if (a >= total)
+			break;
+		k[i].p = &pc, k[i].at = a, k[i].end = (i == PAR_N - 1 || a + piece >= total ? total : a + piece) - 1;
+		if (!(k[i].buf = malloc(PAR_BUF)) || !par_easy(&k[i], url, eb) || curl_multi_add_handle(mh, k[i].c) != CURLM_OK)
+			ok = false;
+		nk++;
+	}
+	j->conns = nk;
+	// 3. todos a la vez; el progreso es la suma; un trozo que se corta, se vuelve a pedir desde donde iba (3 veces)
+	CURLcode res = ok ? CURLE_OK : CURLE_OUT_OF_MEMORY;
+	int running = ok ? 1 : 0;
+	while (running && res == CURLE_OK) {
+		if (curl_multi_perform(mh, &running) != CURLM_OK) {
+			res = CURLE_RECV_ERROR;
+			break;
+		}
+		CURLMsg *msg;
+		int left;
+		while ((msg = curl_multi_info_read(mh, &left))) {
+			if (msg->msg != CURLMSG_DONE)
+				continue;
+			ParConn *kc = NULL;
+			for (int i = 0; i < nk; i++)
+				if (k[i].c == msg->easy_handle)
+					kc = &k[i];
+			if (!kc)
+				continue;
+			CURLcode cr = msg->data.result;
+			curl_multi_remove_handle(mh, kc->c);
+			curl_easy_cleanup(kc->c);
+			kc->c = NULL;
+			if (!par_flush(kc)) {
+				res = CURLE_WRITE_ERROR;
+				break;
+			}
+			if (cr == CURLE_OK && kc->at > kc->end)
+				kc->done = true;
+			else if (kc->bad || ++kc->tries > 3) {
+				res = kc->bad ? CURLE_RANGE_ERROR : cr != CURLE_OK ? cr : CURLE_PARTIAL_FILE;
+				util_log("dl: trozo %d (%llu-%llu) falló: %s", (int)(kc - k), (unsigned long long)kc->at, (unsigned long long)kc->end,
+				         curl_easy_strerror(res));
+			} else if (par_easy(kc, url, eb) && curl_multi_add_handle(mh, kc->c) == CURLM_OK)
+				running = 1; // (otra vez, desde donde se quedó)
+			else
+				res = CURLE_OUT_OF_MEMORY;
+		}
+		if (pc.io_err)
+			res = CURLE_WRITE_ERROR;
+		// el progreso y la velocidad, como con una conexión
+		u64 done = 0, now = util_ms();
+		for (int i = 0; i < nk; i++) {
+			u64 start = (u64)i * piece;
+			done += k[i].at - start;
+		}
+		if (now - j->t_last >= 500) {
+			u64 dd = done > j->d_last ? done - j->d_last : 0, spd = dd * 1000 / (now - j->t_last ? now - j->t_last : 1);
+			j->speed = j->speed ? (j->speed * 3 + spd) / 4 : spd;
+			j->t_last = now, j->d_last = done;
+			lock();
+			DlItem *it = find(j->snap->id);
+			if (it) {
+				it->done = done, it->total = total, it->speed = j->speed;
+				D.rev++;
+			}
+			unlock();
+			state_lock();
+			xfer_progress(j->xid, done);
+			state_unlock();
+		}
+		if (D.quit || D.pause || D.cancel || t_stopped()) {
+			res = CURLE_ABORTED_BY_CALLBACK;
+			break;
+		}
+		if (running)
+			curl_multi_poll(mh, NULL, 0, 100, NULL);
+	}
+	for (int i = 0; i < nk; i++) {
+		if (k[i].c) {
+			curl_multi_remove_handle(mh, k[i].c);
+			if (res == CURLE_OK)
+				par_flush(&k[i]);
+			curl_easy_cleanup(k[i].c);
+		}
+		free(k[i].buf);
+	}
+	if (mh)
+		curl_multi_cleanup(mh);
+	bool all = res == CURLE_OK;
+	for (int i = 0; i < nk && all; i++)
+		all = k[i].done;
+	if (res == CURLE_OK && !all)
+		res = CURLE_PARTIAL_FILE;
+	if (fclose(pc.f) != 0 && res == CURLE_OK)
+		res = CURLE_WRITE_ERROR;
+	if (res != CURLE_OK) // (partido no se puede seguir luego: al pausar o fallar, se empieza de nuevo)
+		remove(sp);
+	j->accept_ranges = false; // (que no se intente reanudar sobre un archivo reservado entero)
+	j->status = 200, j->snap->total = total;
+	*r_out = res, *code_out = res == CURLE_OK ? 206 : 0;
+	return true;
+}
+
 static void run(DlItem *s)
 {
 	Job j = {0};
@@ -1344,17 +1627,22 @@ static void run(DlItem *s)
 	state_lock();
 	j.xid = xfer_begin(XF_FETCH, s->name[0] ? s->name : s->host, s->host, s->total);
 	state_unlock();
-	j.t_last = util_ms();
+	j.t_last = j.t0 = util_ms();
 	j.d_last = j.base;
+	j.conns = 1;
 	char eb[CURL_ERROR_SIZE] = "";
 	CURLcode r = CURLE_FAILED_INIT;
 	long code = 0;
 	char eff[1024] = "";
+	// grande, desde el principio y para guardar (no para instalar mientras baja): en varias conexiones si se puede
+	bool par = !j.base && (j.smode == SM_FILE || j.smode == SM_PROBE) && par_download(&j, url, &r, &code, eff, sizeof eff, eb);
 	// las descargas, como en FBI: sin comprobar el certificado (muchas consolas no aceptan los de algunos servidores y
 	// la descarga no empezaba). Las peticiones con la sesión de OneDrive (dl_request) sí lo comprueban
-	int hr = hc_ready ? hc_body(&j, url, false, &code, eff, sizeof eff) : HC_NOCONN;
-	const char *engine = "httpc";
-	if (hr == HC_OK)
+	int hr = par ? HC_OK : hc_ready ? hc_body(&j, url, false, &code, eff, sizeof eff) : HC_NOCONN;
+	const char *engine = par ? "curl, en varias conexiones" : "httpc";
+	if (par)
+		; // (ya está: r y code los dejó par_download)
+	else if (hr == HC_OK)
 		r = CURLE_OK;
 	else if (hr == HC_HTTP)
 		r = CURLE_HTTP_RETURNED_ERROR;
@@ -1419,7 +1707,10 @@ static void run(DlItem *s)
 			got = sz;
 	}
 	s->done = got;
-	util_log("dl: %s -> %s %d, HTTP %ld, %llu bytes %s", url, engine, (int)r, code, (unsigned long long)got, eb);
+	u64 el = util_ms() - j.t0;
+	util_log("dl: %s -> %s %d, HTTP %ld, %llu bytes en %llu.%llu s (%llu KB/s, %d conexiones) %s", url, engine, (int)r, code, (unsigned long long)got,
+	         (unsigned long long)(el / 1000), (unsigned long long)(el / 100 % 10), (unsigned long long)((got - j.base) * 1000 / (el ? el : 1) / 1024),
+	         j.conns, eb);
 	char sp[720];
 	snprintf(sp, sizeof sp, "sdmc:%s", j.part);
 	int xs = XS_FAILED;
