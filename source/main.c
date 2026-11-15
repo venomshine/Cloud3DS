@@ -1117,7 +1117,8 @@ static struct {
 	float bars[24];   // la onda de arriba
 } MU = {.cover_track = 0xFFFFFFFF};
 
-#define ST_SC 0xFF2266FF // naranja SoundCloud (ABGR)
+#define ST_SC 0xFF2E6AE8 // el acento de Música: un naranja SoundCloud algo apagado (ABGR), el único color
+#define MU_ACC ST_SC
 
 // ---- ajustes de SoundCloud (APP_DIR/soundcloud_ajustes.txt): la radio al acabar la lista y los comentarios
 #define SCS_FILE APP_DIR "/soundcloud_ajustes.txt"
@@ -1145,7 +1146,7 @@ static void scs_load(void)
 }
 
 // la insignia de artista verificado (un círculo azul con una marca), centrada en cx, cy
-#define SC_VER_COL 0xFFFF8A2E // (azul, en ABGR)
+#define SC_VER_COL MU_ACC // (del acento, como todo)
 static void draw_verified(float cx, float cy, float r)
 {
 	draw_circle(cx, cy, r, SC_VER_COL);
@@ -1226,7 +1227,7 @@ static void music_top(float a)
 	bool liked_now = !strncmp(MU.s.name, "sc:", 3) && scl_liked(MU.s.name + 3);
 	text_draw_clip(MU.s.title, rx, y, rw - (liked_now ? 20 : 0), TS_TITLE, col_alpha(T.text, a));
 	if (liked_now) // (SoundCloud: te gusta)
-		draw_icon(IC_HEART, rx + rw - 8, y + text_lineh(TS_TITLE) / 2, 12, col_alpha(0xFF5050FF, a));
+		draw_icon(IC_HEART, rx + rw - 8, y + text_lineh(TS_TITLE) / 2, 12, col_alpha(MU_ACC, a));
 	y += text_lineh(TS_TITLE) + 2;
 	if (MU.s.artist[0])
 		text_draw_clip(MU.s.artist, rx, y, rw, TS_SUB, col_alpha(T.text2, a));
@@ -1267,19 +1268,19 @@ static void music_bar(void)
 	draw_rrect(x, y + 2, w, MU_BAR_H, 12, T.shadow);
 	draw_rrect(x, y, w, MU_BAR_H, 12, T.surface2);
 	float f = MU.s.dur_ms ? fminf(1, (float)MU.s.pos_ms / MU.s.dur_ms) : 0;
-	draw_rect(x + 12, y + MU_BAR_H - 2.5f, (w - 24) * f, 1.5f, T.accent);
+	draw_rect(x + 12, y + MU_BAR_H - 2.5f, (w - 24) * f, 1.5f, MU_ACC);
 	// la carátula (o una nota), lo que suena y, a la derecha, play/pausa y siguiente
 	float as = MU_BAR_H - 8;
 	if (MU.cover.ok)
 		draw_texture_round(&MU.cover, x + 4, y + 4, as, as, 5, 1);
 	else {
-		draw_rrect(x + 4, y + 4, as, as, 5, col_alpha(T.accent2, 0.25f));
-		draw_icon(IC_SPEAKER, x + 4 + as / 2, y + 4 + as / 2, 11, T.accent2);
+		draw_rrect(x + 4, y + 4, as, as, 5, col_alpha(MU_ACC, 0.25f));
+		draw_icon(IC_SPEAKER, x + 4 + as / 2, y + 4 + as / 2, 11, MU_ACC);
 	}
 	float px = x + w - 50, nx = x + w - 18;
 	bool pp = touch_in(px - 14, y, 28, MU_BAR_H);
 	if (pp)
-		draw_circle(px, y + MU_BAR_H / 2, 12, col_alpha(T.accent, 0.25f));
+		draw_circle(px, y + MU_BAR_H / 2, 12, col_alpha(MU_ACC, 0.25f));
 	mu_icon(px, y + MU_BAR_H / 2, 12, MU.s.st == MU_PLAY, T.text);
 	draw_tri(nx - 7, y + MU_BAR_H / 2 - 5, nx - 7, y + MU_BAR_H / 2 + 5, nx, y + MU_BAR_H / 2, T.text); // ▶▶
 	draw_tri(nx, y + MU_BAR_H / 2 - 5, nx, y + MU_BAR_H / 2 + 5, nx + 7, y + MU_BAR_H / 2, T.text);
@@ -6677,7 +6678,7 @@ static void eq_bars(void)
 	float okw = text_width(ok, TS_SUB) + 24, okx = BOT_W - 22 - okw, rw = text_width(rl, TS_SUB) + 24, rx = okx - 8 - rw, by = cy0 + 10;
 	draw_rrect(rx, by, rw, 22, 11, touch_in(rx, by, rw, 22) ? T.surface2 : T.bg);
 	text_draw_center(rl, rx + rw / 2, by + 11 - text_lineh(TS_SUB) / 2, TS_SUB, T.text2);
-	draw_rrect(okx, by, okw, 22, 11, T.accent);
+	draw_rrect(okx, by, okw, 22, 11, MU_ACC);
 	text_draw_center(ok, okx + okw / 2, by + 11 - text_lineh(TS_SUB) / 2, TS_SUB, 0xFFFFFFFF);
 	bool changed = false;
 	if (tap(rx, by, rw, 22) || (g_kdown & KEY_X)) {
@@ -6722,19 +6723,19 @@ static void eq_bars(void)
 	}
 	draw_rect(30, mid, BOT_W - 60, 1, T.divider); // (0 dB)
 	for (int i = 0; i < 4; i++) // (la curva)
-		draw_line(cx[i], ky[i], cx[i + 1], ky[i + 1], 2, col_alpha(T.accent, 0.45f));
+		draw_line(cx[i], ky[i], cx[i + 1], ky[i + 1], 2, col_alpha(MU_ACC, 0.45f));
 	for (int i = 0; i < 5; i++) {
 		bool on = i == EQB.sel;
 		draw_rrect(cx[i] - 3, top, 6, bot - top, 3, T.surface2);
 		float y0 = fminf(mid, ky[i]), y1 = fmaxf(mid, ky[i]);
 		if (y1 - y0 > 1)
-			draw_rrect(cx[i] - 3, y0, 6, y1 - y0, 3, T.accent);
+			draw_rrect(cx[i] - 3, y0, 6, y1 - y0, 3, MU_ACC);
 		draw_circle(cx[i], ky[i], on ? 10 : 8, 0xFFFFFFFF);
 		if (on && U.buttons)
-			draw_ring(cx[i], ky[i], 12, 1.5f, T.accent);
+			draw_ring(cx[i], ky[i], 12, 1.5f, MU_ACC);
 		char db[8];
 		snprintf(db, sizeof db, "%+d", EQB.g[i]);
-		text_draw_center(EQB.g[i] ? db : "0", cx[i], top - 20, TS_SUB, on ? T.accent : T.text2);
+		text_draw_center(EQB.g[i] ? db : "0", cx[i], top - 20, TS_SUB, on ? MU_ACC : T.text2);
 		text_draw_center(FL[i], cx[i], bot + 8, TS_SUB, T.text3);
 	}
 	char hint[120];
@@ -6772,10 +6773,10 @@ static void music_sheet(void)
 		int eq = music_eq();
 		const char *el = eq ? _(EQ_NAMES[eq]) : "EQ";
 		float ew = text_width(el, TS_SUB) + 30, ex = BOT_W - 20 - ew, ey = y + 8;
-		draw_rrect(ex, ey, ew, 20, 10, touch_in(ex, ey, ew, 20) ? T.surface2 : eq ? col_alpha(T.accent, 0.2f) : T.bg);
+		draw_rrect(ex, ey, ew, 20, 10, touch_in(ex, ey, ew, 20) ? T.surface2 : eq ? col_alpha(MU_ACC, 0.2f) : T.bg);
 		for (int k = 0; k < 3; k++) // (tres barritas)
-			draw_rect(ex + 9 + k * 4, ey + 14 - (k == 1 ? 8 : 5), 2.5f, k == 1 ? 8 : 5, eq ? T.accent : T.text2);
-		text_draw(el, ex + 24, ey + 10 - text_lineh(TS_SUB) / 2, TS_SUB, eq ? T.accent : T.text2);
+			draw_rect(ex + 9 + k * 4, ey + 14 - (k == 1 ? 8 : 5), 2.5f, k == 1 ? 8 : 5, eq ? MU_ACC : T.text2);
+		text_draw(el, ex + 24, ey + 10 - text_lineh(TS_SUB) / 2, TS_SUB, eq ? MU_ACC : T.text2);
 		if (!fresh && (tap(ex, ey, ew, 20) || (g_kdown & KEY_L))) {
 			EQS.open = EQS.just = true, EQS.sel = eq, fresh = true;
 			g_kdown &= ~KEY_L;
@@ -6793,11 +6794,11 @@ static void music_sheet(void)
 			toast_icon(SCS.radio ? _("Radio activada: al acabar la lista seguirán canciones parecidas") : _("Radio desactivada"), IC_SPARK, SCS.radio ? ST_SC : T.text2);
 		}
 		lx += rw + 6;
-		draw_rrect(lx, ry, 26, 20, 10, touch_in(lx, ry, 26, 20) ? T.surface2 : SCS.comments ? col_alpha(T.accent, 0.2f) : T.bg);
-		draw_icon(IC_CHAT, lx + 13, ry + 10, 11, SCS.comments ? T.accent : T.text3);
+		draw_rrect(lx, ry, 26, 20, 10, touch_in(lx, ry, 26, 20) ? T.surface2 : SCS.comments ? col_alpha(MU_ACC, 0.2f) : T.bg);
+		draw_icon(IC_CHAT, lx + 13, ry + 10, 11, SCS.comments ? MU_ACC : T.text3);
 		if (!fresh && tap(lx, ry, 26, 20)) {
 			SCS.comments = !SCS.comments, scs_save();
-			toast_icon(SCS.comments ? _("Comentarios visibles arriba") : _("Comentarios ocultos"), IC_CHAT, SCS.comments ? T.accent : T.text2);
+			toast_icon(SCS.comments ? _("Comentarios visibles arriba") : _("Comentarios ocultos"), IC_CHAT, SCS.comments ? MU_ACC : T.text2);
 		}
 		lx += 32;
 	}
@@ -6823,15 +6824,15 @@ static void music_sheet(void)
 		float cx = gx + i * bw + bw / 2, cy = by + 20;
 		bool on = (i == 0 && MU.s.shuffle) || (i == 4 && MU.s.repeat != MR_OFF);
 		bool hl = touch_in(cx - 22, by, 44, 40) || (U.buttons && MU.sel == i);
-		draw_circle(cx, cy, i == 2 ? 19 : 15, i == 2 ? T.accent : hl ? T.surface2 : T.bg);
+		draw_circle(cx, cy, i == 2 ? 19 : 15, i == 2 ? MU_ACC : hl ? T.surface2 : T.bg);
 		if (U.buttons && MU.sel == i)
-			draw_ring(cx, cy, i == 2 ? 20 : 16, 1.5f, T.accent);
+			draw_ring(cx, cy, i == 2 ? 20 : 16, 1.5f, MU_ACC);
 		if (i == 2)
 			mu_icon(cx, cy, 17, MU.s.st == MU_PLAY, 0xFFFFFFFF);
 		else
-			draw_icon(IC5[i], cx, cy, 13, on ? T.accent : T.text2);
+			draw_icon(IC5[i], cx, cy, 13, on ? MU_ACC : T.text2);
 		if (i == 4 && MU.s.repeat == MR_ONE)
-			text_draw_center("1", cx + 9, cy + 2, 0.34f, T.accent);
+			text_draw_center("1", cx + 9, cy + 2, 0.34f, MU_ACC);
 		if (!fresh && tap(cx - 22, by, 44, 40))
 			run = i;
 	}
@@ -6850,8 +6851,8 @@ static void music_sheet(void)
 		float hx = 26 + lw;
 		char b3[48];
 		snprintf(b3, sizeof b3, "%s %s", GLYPH_R, liked ? _("Te gusta") : _("Me gusta"));
-		draw_rrect(hx, ly, lw, 26, 13, touch_in(hx, ly, lw, 26) ? T.surface2 : liked ? col_alpha(0xFF5050FF, 0.2f) : T.bg);
-		text_draw_center_clip(b3, hx + lw / 2, ly + 13 - text_lineh(TS_SUB) / 2, lw - 8, TS_SUB, liked ? 0xFF5050FF : T.text2);
+		draw_rrect(hx, ly, lw, 26, 13, touch_in(hx, ly, lw, 26) ? T.surface2 : liked ? col_alpha(MU_ACC, 0.2f) : T.bg);
+		text_draw_center_clip(b3, hx + lw / 2, ly + 13 - text_lineh(TS_SUB) / 2, lw - 8, TS_SUB, liked ? MU_ACC : T.text2);
 		if (have && !fresh && (tap(hx, ly, lw, 26) || (g_kdown & KEY_R)))
 			sc_toggle_like(&cur);
 	}
@@ -6910,7 +6911,7 @@ static void music_sheet(void)
 		u32 col[MU_EQ_N];
 		int cur = music_eq();
 		for (int k = 0; k < MU_EQ_N; k++)
-			ic[k] = k == cur ? IC_CHECK : IC_SPEAKER, lab[k] = _(EQ_NAMES[k]), col[k] = k == cur ? T.accent : T.text;
+			ic[k] = k == cur ? IC_CHECK : IC_SPEAKER, lab[k] = _(EQ_NAMES[k]), col[k] = k == cur ? MU_ACC : T.text;
 		lab[MU_EQ_CUSTOM] = _("Personalizado…"), ic[MU_EQ_CUSTOM] = cur == MU_EQ_CUSTOM ? IC_CHECK : IC_EDIT;
 		int r = sheet_list(&EQS.open, &EQS.just, &EQS.anim, &EQS.sel, _("Ecualizador"), ic, lab, col, MU_EQ_N);
 		if (r == MU_EQ_CUSTOM) { // (a mano: las barras)
@@ -6920,7 +6921,7 @@ static void music_sheet(void)
 			music_set_eq(r);
 			char m[80];
 			snprintf(m, sizeof m, _("Ecualizador: %s"), _(EQ_NAMES[r]));
-			toast_icon(m, IC_CHECK, T.accent);
+			toast_icon(m, IC_CHECK, MU_ACC);
 		}
 	}
 	eq_bars();
@@ -7072,16 +7073,6 @@ static Texture *hero_get(const char *url)
 	return HERO.tex.ok ? &HERO.tex : NULL;
 }
 
-// las esquinas de un rectángulo, redondas: se tapan con el color de fondo (para los degradados, que no las tienen)
-static void round_mask(float x, float y, float w, float h, float r, u32 bg)
-{
-	float t = r * 0.42f + 1.5f, R = r + t / 2 - 0.4f;
-	draw_arc(x + r, y + r, R, t, (float)M_PI, (float)(M_PI * 1.5), bg);
-	draw_arc(x + w - r, y + r, R, t, (float)(M_PI * 1.5), (float)(M_PI * 2), bg);
-	draw_arc(x + w - r, y + h - r, R, t, 0, (float)M_PI_2, bg);
-	draw_arc(x + r, y + h - r, R, t, (float)M_PI_2, (float)M_PI, bg);
-}
-
 // una carátula de s × s con esquinas r (r ≥ s/2: redonda, como las de los artistas). Sin ella (aún): un cuadro del
 // color col con el icono. seed: para que cada una sin carátula tenga su tono
 static void draw_art(const char *url, float x, float y, float s, float r, u32 col, IconId ic)
@@ -7098,20 +7089,8 @@ static void draw_art(const char *url, float x, float y, float s, float r, u32 co
 // un color para lo que no tiene carátula: el mismo siempre para el mismo texto
 static u32 art_tone(const char *seed)
 {
-	u32 h = 2166136261u;
-	for (const char *p = seed; p && *p; p++)
-		h = (h ^ (u8)*p) * 16777619u;
-	float hue = (h % 360) / 360.0f, r, g, b, f = hue * 6 - (int)(hue * 6);
-	switch ((int)(hue * 6) % 6) {
-	case 0: r = 1, g = f, b = 0; break;
-	case 1: r = 1 - f, g = 1, b = 0; break;
-	case 2: r = 0, g = 1, b = f; break;
-	case 3: r = 0, g = 1 - f, b = 1; break;
-	case 4: r = f, g = 0, b = 1; break;
-	default: r = 1, g = 0, b = 1 - f;
-	}
-	r = 0.35f + 0.6f * r, g = 0.35f + 0.6f * g, b = 0.35f + 0.6f * b;
-	return 0xFF000000 | (u32)(b * 255) << 16 | (u32)(g * 255) << 8 | (u32)(r * 255);
+	(void)seed; // (todas iguales: gris, sin colores)
+	return T.text3;
 }
 
 // 1234 → «1,2 K»; 392000 → «392 K»; 1500000 → «1,5 M» (con punto en inglés y japonés)
@@ -7589,7 +7568,7 @@ static void sc_toggle_like(const ScTrack *t)
 	if (r < 0)
 		toast_icon(_("«Me gusta» está lleno: quita alguna canción primero"), IC_CLOSE, T.danger);
 	else
-		toast_icon(on ? _("Añadida a «Me gusta»") : _("Quitada de «Me gusta»"), IC_HEART, on ? 0xFF5050FF : T.text2);
+		toast_icon(on ? _("Añadida a «Me gusta»") : _("Quitada de «Me gusta»"), IC_HEART, on ? MU_ACC : T.text2);
 	sc_refresh_saved();
 }
 
@@ -7637,9 +7616,10 @@ static u32 st_rgb(float h, float s, float v, float a)
 // otro tono del mismo color (dh: cuánto se gira el tono) con brillo v y alfa a
 static u32 st_shift(u32 c, float dh, float v, float a)
 {
+	(void)dh; // (un solo tono: el acento, más o menos claro)
 	float h, s, vv;
 	st_hsv(c, &h, &s, &vv);
-	return st_rgb(h + dh, fmaxf(s, 0.55f), v, a);
+	return st_rgb(h, fminf(s, 0.75f), v, a);
 }
 
 // el color de una carátula: la media de sus píxeles más vivos, avivada
@@ -7688,9 +7668,8 @@ static void st_aurora(float y0, u32 c)
 		c = ST_SC;
 	draw_rect(0, y0, TOP_W, SCR_H - y0, ST_BG);
 	float t = g_time * 0.25f;
-	draw_halo_col(110 + 40 * sinf(t), y0 + 70 + 25 * cosf(t * 1.3f), 190, st_shift(c, 0, 0.9f, 0.55f));
-	draw_halo_col(320 + 35 * cosf(t * 0.8f), y0 + 150 + 20 * sinf(t * 1.1f), 170, st_shift(c, 0.14f, 0.85f, 0.42f));
-	draw_halo_col(230 + 60 * sinf(t * 0.6f + 1), y0 + 20, 120, st_shift(c, -0.1f, 0.8f, 0.25f));
+	draw_halo_col(110 + 40 * sinf(t), y0 + 70 + 25 * cosf(t * 1.3f), 190, st_shift(c, 0, 0.7f, 0.32f));
+	draw_halo_col(320 + 35 * cosf(t * 0.8f), y0 + 150 + 20 * sinf(t * 1.1f), 170, st_shift(c, 0, 0.5f, 0.22f));
 	draw_grad_v(0, SCR_H - 70, TOP_W, 70, 0x00000000 | (ST_BG & 0xFFFFFF), ST_BG); // (abajo, oscuro: que se lea)
 }
 
@@ -7716,7 +7695,7 @@ static void st_label(const char *s, float x, float y, float sp, float sc, u32 c)
 static void music_stage(void)
 {
 	mu_sync_cover();
-	u32 c = ST.tint ? ST.tint : ST_SC;
+	u32 c = ST_SC; // (el acento de siempre, sea cual sea la carátula)
 	bool play = MU.s.st == MU_PLAY && !MU.s.loading;
 	// el fondo: la carátula a todo lo ancho (un poco subida) y, de arriba abajo, cada vez más negro
 	draw_rect(0, 0, TOP_W, SCR_H, ST_BG);
@@ -7726,7 +7705,7 @@ static void music_stage(void)
 		draw_grad_v(0, 0, TOP_W, 40, 0x90000000, 0x00000000); // (la cabecera, legible)
 		draw_grad_v(0, 40, TOP_W, 140, ST_BG & 0x00FFFFFF, ST_BG);
 		draw_rect(0, 180, TOP_W, SCR_H - 180, ST_BG);
-		draw_halo_col(TOP_W / 2, SCR_H + 30, 220, st_shift(c, 0, 0.8f, 0.35f)); // (abajo, un reflejo de su color)
+		draw_halo_col(TOP_W / 2, SCR_H + 30, 220, st_shift(c, 0, 0.6f, 0.2f)); // (abajo, un reflejo de su color)
 	} else
 		st_aurora(0, c);
 	draw_header();
@@ -7766,7 +7745,7 @@ static void music_stage(void)
 	y += 18;
 	int nl = text_wrap_lines(MU.s.title, w - (liked ? 24 : 0), 0.85f, 2, x, y, 0xFFFFFFFF, true);
 	if (liked)
-		draw_icon(IC_HEART, x + w - 8, y + text_lineh(0.85f) / 2, 14, 0xFF5050FF);
+		draw_icon(IC_HEART, x + w - 8, y + text_lineh(0.85f) / 2, 14, MU_ACC);
 	y += nl * text_lineh(0.85f) + 2;
 	char sub[200];
 	int eq = music_eq();
@@ -7877,7 +7856,8 @@ static void sc_toggle_follow(const char *id, const char *name, const char *art)
 static void sc_hero_top(const char *kind, const char *title, const char *sub, const char *art, bool round, IconId ic, u32 icol, const char *msg, u32 mc)
 {
 	Texture *h = hero_get(art);
-	u32 c = h && HERO.tint ? HERO.tint : icol;
+	u32 c = ST_SC;
+	(void)icol;
 	st_aurora(24, c);
 	const float S = 132, x = 24, y = 46;
 	float r = round ? S / 2 : 10;
@@ -7949,14 +7929,14 @@ static void sc_top(void)
 		if (SCV.view == SV_RESULTS)
 			ic = IC_SEARCH;
 		else if (SCV.lk == LK_ARTIST) {
-			round = true, ic = IC_USER, icol = T.accent2;
+			round = true, ic = IC_USER, icol = MU_ACC;
 			art = SCV.artist.art[0] ? SCV.artist.art : SCV.list_art;
 		} else if (SCV.lk == LK_LIKES)
-			ic = IC_HEART, icol = 0xFF5050FF;
+			ic = IC_HEART, icol = MU_ACC;
 		else if (SCV.lk == LK_NEW)
 			ic = IC_SPARK;
 		else if (SCV.lk == LK_FOLLOWS)
-			ic = IC_USER, icol = T.accent2, art = "";
+			ic = IC_USER, icol = MU_ACC, art = "";
 		const char *k = SCV.view == SV_RESULTS ? _("Búsqueda")
 		              : SCV.lk == LK_ARTIST   ? (scl_following(SCV.aid) ? _("Artista que sigues") : SCV.artist.verified ? _("Artista verificado") : _("Artista"))
 		              : SCV.lk == LK_SC       ? _("Playlist de SoundCloud")
@@ -8142,20 +8122,19 @@ static void sc_home(bool sheet)
 			continue;
 		bool foc = U.buttons && SCV.hsel == i, pr = touch_in(x, yy, e->w, e->h) && g_touch.sy >= VIEW_Y && SCV.dax != 1;
 		if (e->kind == 0 || e->kind == 5 || e->kind == 6) { // un acceso: degradado de su color, icono y número
-			u32 c = e->kind == 0 ? 0xFF5050FF : e->kind == 5 ? ST_SC : T.accent2;
+			u32 c = MU_ACC;
 			int cnt = e->kind == 0 ? scl_count(SCL_LIKES) : e->kind == 5 ? SCN.n : nfol;
 			const char *l = e->kind == 0 ? _("Me gusta") : e->kind == 5 ? _("Novedades") : _("Siguiendo");
-			draw_grad4(x, yy, e->w, e->h, col_alpha(c, pr ? 0.55f : 0.42f), col_alpha(c, pr ? 0.4f : 0.26f), col_alpha(c, pr ? 0.45f : 0.3f), col_alpha(c, 0.14f));
-			round_mask(x, yy, e->w, e->h, 10, T.bg);
+			draw_rrect(x, yy, e->w, e->h, 10, pr ? T.surface2 : T.surface);
 			draw_icon(e->kind == 0 ? IC_HEART : e->kind == 5 ? IC_SPARK : IC_USER, x + 16, yy + 15, 13, c);
 			char nb[16];
 			snprintf(nb, sizeof nb, "%d", cnt);
-			text_draw_right(nb, x + e->w - 10, yy + 8, TS_SUB, col_alpha(T.text, 0.8f));
+			text_draw_right(nb, x + e->w - 10, yy + 8, TS_SUB, T.text3);
 			text_draw_clip(l, x + 10, yy + e->h - 8 - text_lineh(TS_BODY), e->w - 16, TS_BODY, T.text);
 			if (e->kind == 5 && SCN.unseen)
 				draw_circle(x + e->w - 8, yy + 6, 4, ST_SC);
 			if (foc)
-				draw_rrect_outline(x - 2, yy - 2, e->w + 4, e->h + 4, 13, 2, T.accent);
+				draw_rrect_outline(x - 2, yy - 2, e->w + 4, e->h + 4, 13, 2, MU_ACC);
 		} else if (e->kind == 1 || e->kind == 2 || e->kind == 7) { // una tarjeta: la carátula y, debajo, su nombre
 			char t1[128], t2[64] = "";
 			const char *art = "";
@@ -8185,25 +8164,22 @@ static void sc_home(bool sheet)
 					draw_rrect(x, yy, SC_CARD, SC_CARD, 8, 0x30000000);
 			}
 			if (foc)
-				draw_rrect_outline(x - 3, yy - 3, SC_CARD + 6, SC_CARD + 6, 10, 2, T.accent);
+				draw_rrect_outline(x - 3, yy - 3, SC_CARD + 6, SC_CARD + 6, 10, 2, MU_ACC);
 			g_clip_ell = true;
 			text_draw_clip(t1, x, yy + SC_CARD + 4, SC_CARD, TS_SUB, T.text);
 			text_draw_clip(t2, x, yy + SC_CARD + 4 + text_lineh(TS_SUB), SC_CARD, 0.36f, T.text3);
 			g_clip_ell = false;
 		} else if (e->kind == 3) { // un género: un mosaico de color
-			u32 gc = st_rgb((float)e->i / NG, 0.62f, 0.85f, 1), gc2 = st_rgb((float)e->i / NG + 0.07f, 0.7f, 0.6f, 1);
-			draw_grad4(x, yy, e->w, e->h, gc, gc2, gc, gc2);
-			round_mask(x, yy, e->w, e->h, 9, T.bg);
-			if (pr)
-				draw_rrect(x, yy, e->w, e->h, 9, 0x30000000);
-			text_draw_clip(_(G[e->i][0]), x + 10, yy + (e->h - text_lineh(TS_BODY)) / 2, e->w - 36, TS_BODY, 0xFFFFFFFF);
+			draw_rrect(x, yy, e->w, e->h, 9, pr ? T.surface2 : T.surface);
+			draw_rrect(x + 8, yy + 9, 3, e->h - 18, 1.5f, MU_ACC);
+			text_draw_clip(_(G[e->i][0]), x + 18, yy + (e->h - text_lineh(TS_BODY)) / 2, e->w - 26, TS_BODY, T.text);
 			if (foc)
-				draw_rrect_outline(x - 2, yy - 2, e->w + 4, e->h + 4, 11, 2, T.accent);
+				draw_rrect_outline(x - 2, yy - 2, e->w + 4, e->h + 4, 11, 2, MU_ACC);
 		} else { // una búsqueda reciente
 			if (foc || pr)
 				draw_rrect(x, yy + 1, e->w, e->h - 2, 10, T.surface);
 			if (foc)
-				draw_rrect_outline(x, yy + 1, e->w, e->h - 2, 10, 1.5f, T.accent);
+				draw_rrect_outline(x, yy + 1, e->w, e->h - 2, 10, 1.5f, MU_ACC);
 			draw_icon(IC_CLOCK, x + 16, yy + e->h / 2, 12, T.text3);
 			text_draw_clip(SCH.q[e->i], x + 32, yy + (e->h - text_lineh(TS_BODY)) / 2, e->w - 56, TS_BODY, T.text);
 			draw_icon(IC_CHEV_RIGHT, x + e->w - 12, yy + e->h / 2, 10, T.text3);
@@ -8271,7 +8247,7 @@ static void sc_bottom(void)
 	}
 	if (SCV.view == SV_RESULTS) { // solo artistas verificados (o L): se vuelve a buscar
 		bool on = SCS.verified;
-		draw_circle(dx + 13, 16, 12, touch_in(dx, 2, 26, 28) ? T.surface2 : on ? col_alpha(SC_VER_COL, 0.25f) : T.surface);
+		draw_circle(dx + 13, 16, 12, touch_in(dx, 2, 26, 28) ? T.surface2 : on ? col_alpha(MU_ACC, 0.25f) : T.surface);
 		if (on)
 			draw_verified(dx + 13, 16, 7);
 		else {
@@ -8281,7 +8257,7 @@ static void sc_bottom(void)
 		}
 		if (!sheet && (hdr_hit(dx + 1, 4, 24, 24) || (g_kdown & KEY_L))) {
 			SCS.verified = !SCS.verified, scs_save();
-			toast_icon(SCS.verified ? _("Solo artistas verificados") : _("Todos los artistas"), IC_CHECK, SCS.verified ? SC_VER_COL : T.text2);
+			toast_icon(SCS.verified ? _("Solo artistas verificados") : _("Todos los artistas"), IC_CHECK, SCS.verified ? MU_ACC : T.text2);
 			sc_go(SCV.q);
 		}
 	}
@@ -8296,7 +8272,7 @@ static void sc_bottom(void)
 	if (!sheet && (hdr_hit(sx + 1, 4, 24, 24) || (g_kdown & KEY_X)))
 		U.want_scq = true;
 	draw_rrect(cx, 5, cw, 22, 11, touch_in(cx, 3, cw, 26) ? T.surface2 : T.surface);
-	draw_icon(IC_FOLDER, cx + 14, 16, 12, T.accent);
+	draw_icon(IC_FOLDER, cx + 14, 16, 12, MU_ACC);
 	text_draw(cl, cx + 26, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text);
 	if (!sheet && hdr_hit(cx, 5, cw, 22)) {
 		SCV.local = true;
@@ -8434,10 +8410,10 @@ static void sc_bottom(void)
 		if (!was && l->sel != i + 1 && i + 1 < cnt) // (una línea fina entre filas, desde el texto)
 			draw_rect(tx, y + RH - 0.5f, BOT_W - tx - 10, 1, col_alpha(T.text3, 0.18f));
 		if (liked)
-			draw_icon(IC_HEART, BOT_W - 48, y + RH / 2, 11, 0xFF5050FF);
+			draw_icon(IC_HEART, BOT_W - 48, y + RH / 2, 11, MU_ACC);
 		if (l->sel == i) {
-			draw_circle(BOT_W - 24, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
-			draw_icon(IC_DOTS, BOT_W - 24, y + RH / 2, 14, T.accent);
+			draw_circle(BOT_W - 24, y + RH / 2, 11, col_alpha(MU_ACC, 0.3f));
+			draw_icon(IC_DOTS, BOT_W - 24, y + RH / 2, 14, MU_ACC);
 		}
 		bool open = (t && was) || activate(l, i);
 		if (t && was && g_touch.px > BOT_W - 44)
@@ -8472,9 +8448,9 @@ static void sc_bottom(void)
 		if (st_) {
 			util_strlcpy(title, st_->title, sizeof title);
 			bool lk = scl_liked(st_->id);
-			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = T.accent, act[n++] = A_PLAY;
+			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = MU_ACC, act[n++] = A_PLAY;
 			ic[n] = IC_SPARK, lab[n] = _("Reproducir en aleatorio"), col[n] = T.text, act[n++] = A_SHUF;
-			ic[n] = IC_HEART, lab[n] = lk ? _("Quitar de «Me gusta»") : _("Me gusta"), col[n] = lk ? T.text : 0xFF5050FF, act[n++] = A_LIKE;
+			ic[n] = IC_HEART, lab[n] = lk ? _("Quitar de «Me gusta»") : _("Me gusta"), col[n] = lk ? T.text : MU_ACC, act[n++] = A_LIKE;
 			ic[n] = IC_PLUS, lab[n] = _("Añadir a una lista…"), col[n] = T.text, act[n++] = A_ADD;
 			if (!res && SCV.lk == LK_MINE)
 				ic[n] = IC_CLOSE, lab[n] = _("Quitar de esta lista"), col[n] = T.text, act[n++] = A_REMOVE;
@@ -8484,7 +8460,7 @@ static void sc_bottom(void)
 				ic[n] = IC_DOWNLOAD, lab[n] = _("Descargar a la SD"), col[n] = T.text, act[n++] = A_DL;
 		} else if (i >= ntr && i < cnt) {
 			util_strlcpy(title, i < ntr + nar ? arts[i - ntr].name : pls[i - ntr - nar].title, sizeof title);
-			ic[n] = i < ntr + nar ? IC_USER : IC_LIST, lab[n] = _("Abrir"), col[n] = T.accent, act[n++] = A_OPEN;
+			ic[n] = i < ntr + nar ? IC_USER : IC_LIST, lab[n] = _("Abrir"), col[n] = MU_ACC, act[n++] = A_OPEN;
 			if (i < ntr + nar) {
 				bool f = scl_following(arts[i - ntr].id);
 				ic[n] = f ? IC_CLOSE : IC_SPARK, lab[n] = f ? _("Dejar de seguir") : _("Seguir (avisar cuando suba algo)"), col[n] = T.text, act[n++] = A_FOLLOW;
@@ -8510,7 +8486,7 @@ static void sc_bottom(void)
 			else if (a == A_DL) {
 				int e = sc_download(st_->id);
 				if (e == 0)
-					toast_icon(_("Descargando en /Music/SoundCloud…"), IC_DOWNLOAD, T.accent);
+					toast_icon(_("Descargando en /Music/SoundCloud…"), IC_DOWNLOAD, MU_ACC);
 				else
 					toast_icon(e == 1 ? _("Espera a que termine la descarga en curso") : _("No se pudo descargar"), IC_CLOSE, T.danger);
 			} else if (a == A_FOLLOW)
@@ -8532,7 +8508,7 @@ static void sc_bottom(void)
 		for (int k = 0; k < nl; k++)
 			ic[n] = scl_has(k, SCV.am_t.id) ? IC_CHECK : IC_LIST, lab[n] = scl_list_name(k), col[n++] = T.text;
 		if (nl < SCL_LISTS)
-			ic[n] = IC_PLUS, lab[n] = _("Nueva lista…"), col[n++] = T.accent;
+			ic[n] = IC_PLUS, lab[n] = _("Nueva lista…"), col[n++] = MU_ACC;
 		int r = sheet_list(&SCV.am, &SCV.am_just, &SCV.am_anim, &SCV.am_sel, _("Añadir a una lista"), ic, lab, col, n);
 		if (r >= 0 && r < nl) {
 			int e = scl_add(r, &SCV.am_t);
@@ -8555,7 +8531,7 @@ static void sc_bottom(void)
 			ic[n] = f ? IC_CLOSE : IC_SPARK, lab[n] = f ? _("Dejar de seguir") : _("Seguir (avisar cuando suba algo)"), col[n] = f ? T.text : 0xFF0055FF, act[n++] = L_FOLLOW;
 		}
 		if (SCV.view == SV_LIST && SCV.npt) {
-			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir todo"), col[n] = T.accent, act[n++] = L_PLAY;
+			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir todo"), col[n] = MU_ACC, act[n++] = L_PLAY;
 			ic[n] = IC_SPARK, lab[n] = _("Reproducir en aleatorio"), col[n] = T.text, act[n++] = L_SHUF;
 		}
 		if (SCV.view == SV_LIST && SCV.lk == LK_MINE) {
@@ -8798,8 +8774,8 @@ static void ml_top(void)
 	draw_rrect(CARD_X, y0 + 3, CARD_W, h, 16, T.shadow);
 	draw_rrect(CARD_X, y0, CARD_W, h, 16, T.surface);
 	const float X = CARD_X + 16, W = CARD_W - 32;
-	draw_circle(X + 30, y0 + 40, 26, col_alpha(T.accent, 0.16f));
-	draw_icon(IC_SPEAKER, X + 30, y0 + 40, 24, T.accent);
+	draw_circle(X + 30, y0 + 40, 26, col_alpha(MU_ACC, 0.16f));
+	draw_icon(IC_SPEAKER, X + 30, y0 + 40, 24, MU_ACC);
 	float tx = X + 70, tw = X + W - tx, y = y0 + 18;
 	text_draw_clip(_("Biblioteca de música"), tx, y, tw, TS_TITLE, T.text);
 	y += text_lineh(TS_TITLE) + 4;
@@ -8836,7 +8812,7 @@ static void ml_top(void)
 	if (mlib_scanning(&found)) {
 		char l2[96];
 		snprintf(l2, sizeof l2, _("Buscando música en la SD… %d"), found);
-		text_draw_clip(l2, tx, y, tw, TS_SUB, T.accent);
+		text_draw_clip(l2, tx, y, tw, TS_SUB, MU_ACC);
 		y += text_lineh(TS_SUB) + 4;
 	}
 	y = fmaxf(y, y0 + 76) + 8;
@@ -8928,7 +8904,7 @@ static void ml_bottom(void)
 			draw_rrect(6, y + 1, BOT_W - 12, RH - 2, 10, T.surface);
 		char t1[128], t2[160];
 		IconId ic = IC_SPEAKER;
-		u32 col = T.accent;
+		u32 col = MU_ACC;
 		bool dim = false;
 		if (grp && all_row && i == 0) {
 			util_strlcpy(t1, _("Todas las canciones"), sizeof t1);
@@ -8936,7 +8912,7 @@ static void ml_bottom(void)
 			for (int g = 0; g < ML.ng; g++)
 				c += ML.gcnt[g];
 			snprintf(t2, sizeof t2, c == 1 ? _("1 canción") : _("%d canciones"), c);
-			ic = IC_LIST, col = T.accent2;
+			ic = IC_LIST, col = MU_ACC;
 		} else if (grp) {
 			int g = i - all_row;
 			util_strlcpy(t1, ML.grp[g], sizeof t1);
@@ -8944,7 +8920,7 @@ static void ml_bottom(void)
 				snprintf(t2, sizeof t2, ML.gcnt[g] == 1 ? _("%s · 1 canción") : _("%s · %d canciones"), ML.gsub[g], ML.gcnt[g]);
 			else
 				snprintf(t2, sizeof t2, ML.gcnt[g] == 1 ? _("1 canción") : _("%d canciones"), ML.gcnt[g]);
-			ic = ML.tab == MLT_ARTISTS && ML.level == 0 ? IC_USER : IC_STAR, col = ML.tab == MLT_ARTISTS && ML.level == 0 ? T.accent2 : T.warn;
+			ic = ML.tab == MLT_ARTISTS && ML.level == 0 ? IC_USER : IC_STAR, col = ML.tab == MLT_ARTISTS && ML.level == 0 ? MU_ACC : T.warn;
 		} else {
 			const MSong *m = &ML.lib[ML.ix[i]];
 			char tb[128];
@@ -8974,8 +8950,8 @@ static void ml_bottom(void)
 		text_draw_clip(t2, 50, y + 22, BOT_W - 90, TS_SUB, T.text3);
 		g_clip_ell = false;
 		if (l->sel == i) {
-			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(T.accent, 0.3f));
-			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, T.accent);
+			draw_circle(BOT_W - 26, y + RH / 2, 11, col_alpha(MU_ACC, 0.3f));
+			draw_icon(IC_DOTS, BOT_W - 26, y + RH / 2, 14, MU_ACC);
 		}
 		bool open = (t && was) || activate(l, i);
 		if (t && was && g_touch.px > BOT_W - 44)
@@ -9004,13 +8980,13 @@ static void ml_bottom(void)
 		const MSong *m = !grp && ML.om_i >= 0 && ML.om_i < ML.n ? &ML.lib[ML.ix[ML.om_i]] : NULL;
 		if (grp) {
 			util_strlcpy(title, all_row && ML.om_i == 0 ? _("Todas las canciones") : ML.om_i - all_row >= 0 && ML.om_i - all_row < ML.ng ? ML.grp[ML.om_i - all_row] : "", sizeof title);
-			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = T.accent, act[n++] = 0;
+			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = MU_ACC, act[n++] = 0;
 			ic[n] = IC_SPARK, lab[n] = _("Reproducir en aleatorio"), col[n] = T.text, act[n++] = 1;
 			ic[n] = IC_FOLDER, lab[n] = _("Abrir"), col[n] = T.text, act[n++] = 2;
 		} else if (m) {
 			char tb[128];
 			util_strlcpy(title, ml_title(m, tb, sizeof tb), sizeof title);
-			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = T.accent, act[n++] = 3;
+			ic[n] = IC_SPEAKER, lab[n] = _("Reproducir"), col[n] = MU_ACC, act[n++] = 3;
 			ic[n] = IC_SPARK, lab[n] = _("Reproducir en aleatorio"), col[n] = T.text, act[n++] = 4;
 			ic[n] = m->hidden ? IC_CHECK : IC_CLOSE, lab[n] = m->hidden ? _("Volver a mostrar") : _("Ocultar de la biblioteca"), col[n] = T.text, act[n++] = 5;
 			ic[n] = IC_FOLDER, lab[n] = _("Ir a la carpeta"), col[n] = T.text, act[n++] = 6;
@@ -9062,10 +9038,10 @@ static void ml_bottom(void)
 			int a = act[r];
 			if (a == 0) {
 				mlib_scan();
-				toast_icon(_("Buscando música en la SD…"), IC_REFRESH, T.accent);
+				toast_icon(_("Buscando música en la SD…"), IC_REFRESH, MU_ACC);
 			} else if (a == 1) {
 				mlib_set_where(mlib_where() == MLS_ALL ? MLS_MUSIC : MLS_ALL);
-				toast_icon(mlib_where() == MLS_ALL ? _("Buscando en toda la SD…") : _("Buscando solo en las carpetas de música…"), IC_REFRESH, T.accent);
+				toast_icon(mlib_where() == MLS_ALL ? _("Buscando en toda la SD…") : _("Buscando solo en las carpetas de música…"), IC_REFRESH, MU_ACC);
 			} else if (a == 2)
 				ML.show_hidden = !ML.show_hidden, ML.built = 0xFFFFFFFF;
 			else if (a == 3) {
@@ -9141,7 +9117,7 @@ static void tab_files(void)
 		const char *all = MS.n >= F.n && F.n ? _("Ninguno") : _("Todo");
 		float aw = text_width(all, TS_SUB) + 20, ax = BOT_W - 12 - aw;
 		draw_rrect(ax, 6, aw, 20, 10, touch_in(ax, 4, aw, 24) ? T.surface2 : T.surface);
-		text_draw_center(all, ax + aw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
+		text_draw_center(all, ax + aw / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, MU_ACC);
 		if (!g_dialog.open && (hdr_hit(ax, 6, aw, 20) || (U.buttons && (g_kdown & KEY_X))))
 			ms_all();
 		if (!g_dialog.open && (tap(0, 0, 150, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
@@ -9157,7 +9133,7 @@ static void tab_files(void)
 		else
 			snprintf(c, sizeof c, SR.n >= SR_MAX ? _("%d o más") : SR.n == 1 ? _("1 resultado") : _("%d resultados"), SR.n);
 		if (!SR.done) // un punto que gira mientras se busca
-			draw_circle(BOT_W - 18 + 5 * cosf(osGetTime() / 120.0f), 16 + 5 * sinf(osGetTime() / 120.0f), 2.5f, T.accent);
+			draw_circle(BOT_W - 18 + 5 * cosf(osGetTime() / 120.0f), 16 + 5 * sinf(osGetTime() / 120.0f), 2.5f, MU_ACC);
 		text_draw_right(c, BOT_W - (SR.done ? 14 : 30), 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
 		if (!g_dialog.open && (tap(0, 0, 170, VIEW_Y) || (U.buttons && (g_kdown & KEY_B)))) {
 			sr_close();
@@ -9176,7 +9152,7 @@ static void tab_files(void)
 		const char *ord = TI_by_size ? _("Por tamaño") : _("Por nombre");
 		float ow = text_width(ord, TS_SUB) + 20, ox = BOT_W - 10 - ow;
 		draw_rrect(ox, 6, ow, 20, 10, touch_in(ox, 4, ow, 24) ? T.surface2 : T.surface);
-		text_draw_center(ord, ox + ow / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.accent);
+		text_draw_center(ord, ox + ow / 2, 16 - text_lineh(TS_SUB) / 2, TS_SUB, MU_ACC);
 		text_draw_right(c, ox - 8, 16 - text_lineh(TS_SUB) / 2, TS_SUB, T.text3);
 		if (!g_dialog.open && (hdr_hit(ox, 6, ow, 20) || (U.buttons && (g_kdown & KEY_Y) && !TT.open))) {
 			TI_by_size = !TI_by_size;
@@ -9227,7 +9203,7 @@ static void tab_files(void)
 		draw_icon(V.f_grid ? IC_LIST : IC_GRID, gx, ny, 14, T.text2);
 		draw_circle(sx, ny, 12, touch_in(sx - 14, ny - 14, 28, 28) ? T.surface2 : T.surface);
 		draw_icon(IC_SORT, sx, ny, 14, T.text2);
-		draw_circle(nx, ny, 12, np ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+		draw_circle(nx, ny, 12, np ? col_lerp(MU_ACC, T.text, 0.15f) : MU_ACC);
 		draw_icon(IC_PLUS, nx, ny, 13, 0xFFFFFFFF);
 		bool h_find = hdr_hit(lx - 13, ny - 13, 26, 26), h_sort = hdr_hit(sx - 13, ny - 13, 26, 26), h_grid = hdr_hit(gx - 13, ny - 13, 26, 26),
 		     h_new = hdr_hit(nx - 13, ny - 13, 26, 26);
@@ -9336,8 +9312,8 @@ static void tab_files(void)
 	float po = fminf(F.pull, 70) * 0.6f; // lo que baja la lista al tirar
 	if (po > 1) {
 		float a = clampf(F.pull / 40, 0, 1);
-		draw_icon(F.pull >= 40 ? IC_UP : IC_DOWN, BOT_W / 2 - text_width(_("Accesos rápidos"), TS_SUB) / 2 - 12, VIEW_Y + po / 2, 11, col_alpha(T.accent, a));
-		text_draw_center(_("Accesos rápidos"), BOT_W / 2, VIEW_Y + po / 2 - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(T.accent, a));
+		draw_icon(F.pull >= 40 ? IC_UP : IC_DOWN, BOT_W / 2 - text_width(_("Accesos rápidos"), TS_SUB) / 2 - 12, VIEW_Y + po / 2, 11, col_alpha(MU_ACC, a));
+		text_draw_center(_("Accesos rápidos"), BOT_W / 2, VIEW_Y + po / 2 - text_lineh(TS_SUB) / 2, TS_SUB, col_alpha(MU_ACC, a));
 	}
 	for (int i = 0; i < F.nv; i++) {
 		const FView *v = &F.v[i];
@@ -9352,13 +9328,13 @@ static void tab_files(void)
 				                          : !F.nosaves && !strcasecmp(F.path, CHIP_PATH[c]);
 				bool hl = here || (U.buttons && f_on_chips() && F.chip == c) || (inview && touch_in(cx, y + 2, cw, 40));
 				if (hl)
-					draw_rrect(cx + 2, y + 3, cw - 4, 38, 10, here ? col_alpha(T.accent, 0.18f) : T.surface);
-				draw_icon(chip_icon(c), cx + cw / 2, y + 15, 16, here ? T.accent : T.text2);
+					draw_rrect(cx + 2, y + 3, cw - 4, 38, 10, here ? col_alpha(MU_ACC, 0.18f) : T.surface);
+				draw_icon(chip_icon(c), cx + cw / 2, y + 15, 16, here ? MU_ACC : T.text2);
 				// el nombre entero: si no cabe, un poco más pequeño (nunca cortado)
 				float sc = 0.32f, lw = text_width(chip_name(c), sc);
 				if (lw > cw - 4)
 					sc *= (cw - 4) / lw, lw = cw - 4;
-				text_draw(chip_name(c), cx + (cw - lw) / 2, y + 26 + (text_lineh(0.32f) - text_lineh(sc)) / 2, sc, here ? T.accent : T.text3);
+				text_draw(chip_name(c), cx + (cw - lw) / 2, y + 26 + (text_lineh(0.32f) - text_lineh(sc)) / 2, sc, here ? MU_ACC : T.text3);
 				if (inview && tap(cx, y + 2, cw, 40))
 					f_open_chip(c);
 			}
@@ -9373,7 +9349,7 @@ static void tab_files(void)
 			if (pressed || (U.buttons && selected))
 				draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 8, T.surface);
 			static const u32 MKC[6] = {0xFF4444EF, 0xFF1673F9, 0xFF08B3EA, 0xFF5EC522, 0xFFF6823B, 0xFFF755A8};
-			u32 gc = V.f_group == 4 && v->idx < 6 ? MKC[v->idx] : T.accent;
+			u32 gc = V.f_group == 4 && v->idx < 6 ? MKC[v->idx] : MU_ACC;
 			draw_icon(closed ? IC_CHEV_RIGHT : IC_CHEV_DOWN, 18, y + v->h / 2, 11, gc);
 			text_draw(f_grp_name(v->idx), 30, y + (v->h - text_lineh(TS_SUB)) / 2, TS_SUB, gc);
 			char nn[8];
@@ -9433,7 +9409,7 @@ static void tab_files(void)
 		if (grid) { // casilla: icono o miniatura grande y el nombre debajo
 			bool tp = inview && touch_in(v->x, y, v->w, v->h);
 			if (tp || selected)
-				draw_rrect(v->x + 2, y + 2, v->w - 4, v->h - 4, 12, selected ? col_alpha(T.accent, 0.16f) : T.surface);
+				draw_rrect(v->x + 2, y + 2, v->w - 4, v->h - 4, 12, selected ? col_alpha(MU_ACC, 0.16f) : T.surface);
 			float cx = v->x + v->w / 2, cy = y + 30;
 			if (thumb) {
 				float k = fminf(52.0f / thumb->w, 52.0f / thumb->h), tw = thumb->w * k, th = thumb->h * k;
@@ -9446,12 +9422,12 @@ static void tab_files(void)
 				draw_circle(v->x + 10, y + 9, 4, col);
 			if (MS.on) { // casilla para elegir, arriba a la izquierda
 				bool pk = ms_has(e->name);
-				draw_circle(v->x + 13, y + 13, 8, pk ? T.accent : col_alpha(T.bg, 0.8f));
-				draw_ring(v->x + 13, y + 13, 7.5f, 1.5f, pk ? T.accent : T.text3);
+				draw_circle(v->x + 13, y + 13, 8, pk ? MU_ACC : col_alpha(T.bg, 0.8f));
+				draw_ring(v->x + 13, y + 13, 7.5f, 1.5f, pk ? MU_ACC : T.text3);
 				if (pk)
 					draw_icon(IC_CHECK, v->x + 13, y + 13, 10, 0xFFFFFFFF);
 				if (pk)
-					draw_rrect_outline(v->x + 2, y + 2, v->w - 4, v->h - 4, 12, 1.5f, T.accent);
+					draw_rrect_outline(v->x + 2, y + 2, v->w - 4, v->h - 4, 12, 1.5f, MU_ACC);
 			}
 			if (e->sys && V.protect_sys && !MS.on) {
 				draw_circle(cx + 20, cy + 18, 7, T.bg);
@@ -9462,8 +9438,8 @@ static void tab_files(void)
 			text_draw_center_clip(e->name, cx - 6, y + 58, v->w - 22, TS_SUB, e->color ? col : T.text);
 			bool tdots = !MS.on && selected; // ⋮ solo en la casilla marcada
 			if (tdots) {
-				draw_circle(dx, dy, 8, col_alpha(T.accent, 0.3f));
-				draw_icon(IC_DOTS, dx, dy, 11, T.accent);
+				draw_circle(dx, dy, 8, col_alpha(MU_ACC, 0.3f));
+				draw_icon(IC_DOTS, dx, dy, 11, MU_ACC);
 			}
 			if (MS.on && inview && !g_touch.long_fired && tap(v->x, y, v->w, v->h))
 				pick = i;
@@ -9479,7 +9455,7 @@ static void tab_files(void)
 		float mx = BOT_W - 30;
 		bool mp = inview && touch_in(mx - 4, y, 34, v->h);
 		if (pressed || selected)
-			draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 10, selected ? col_alpha(T.accent, 0.14f) : T.surface);
+			draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 10, selected ? col_alpha(MU_ACC, 0.14f) : T.surface);
 		if (e->color) // destacada: una raya de su color a la izquierda, como en la web
 			draw_rrect(6, y + 5, 3, v->h - 10, 1.5f, col);
 		if (thumb) { // la foto o el icono del programa, en pequeño
@@ -9492,9 +9468,9 @@ static void tab_files(void)
 		if (MS.on) { // casilla para elegir, sobre la esquina del icono
 			bool pk = ms_has(e->name);
 			if (pk)
-				draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 10, col_alpha(T.accent, 0.14f));
-			draw_circle(37, y + 28, 7, pk ? T.accent : T.bg);
-			draw_ring(37, y + 28, 6.5f, 1.4f, pk ? T.accent : T.text3);
+				draw_rrect(6, y + 1, BOT_W - 12, v->h - 2, 10, col_alpha(MU_ACC, 0.14f));
+			draw_circle(37, y + 28, 7, pk ? MU_ACC : T.bg);
+			draw_ring(37, y + 28, 6.5f, 1.4f, pk ? MU_ACC : T.text3);
 			if (pk)
 				draw_icon(IC_CHECK, 37, y + 28, 9, 0xFFFFFFFF);
 		} else if (e->sys && V.protect_sys) {
@@ -9517,15 +9493,15 @@ static void tab_files(void)
 		if (F.search) { // la carpeta donde está, en el color de acento, y luego lo de siempre
 			const char *dn = SR.dirs[e->sdir];
 			float dw = fminf(text_width(dn, TS_SUB), tw * 0.65f);
-			text_draw_clip(dn, 48, y + 19, dw, TS_SUB, T.accent);
+			text_draw_clip(dn, 48, y + 19, dw, TS_SUB, MU_ACC);
 			char rest[80];
 			snprintf(rest, sizeof rest, " · %s", sub);
 			text_draw_clip(rest, 48 + dw, y + 19, tw - dw, TS_SUB, T.text3);
 		} else
 			text_draw_clip(sub, 48, y + 19, tw, TS_SUB, T.text3);
 		if (dots) {
-			draw_circle(mx + 12, y + v->h / 2, 11, mp ? T.surface2 : col_alpha(T.accent, 0.3f));
-			draw_icon(IC_DOTS, mx + 12, y + v->h / 2, 14, T.accent);
+			draw_circle(mx + 12, y + v->h / 2, 11, mp ? T.surface2 : col_alpha(MU_ACC, 0.3f));
+			draw_icon(IC_DOTS, mx + 12, y + v->h / 2, 14, MU_ACC);
 		}
 		float rw = dots ? mx - 10 : BOT_W - 12; // donde no hay ⋮, toda la fila abre
 		if (MS.on && inview && !g_touch.long_fired && tap(6, y, BOT_W - 12, v->h))
@@ -9544,7 +9520,7 @@ static void tab_files(void)
 		// acceso rápido a una carpeta que aún no existe: se ofrece crearla, como en la web
 		text_draw_center(_("Esta carpeta aún no existe"), BOT_W / 2, my + 22, TS_BODY, T.text);
 		bool bp = touch_in(BOT_W / 2 - 70, my + 50, 140, 32);
-		draw_rrect(BOT_W / 2 - 70, my + 50, 140, 32, 16, bp ? col_lerp(T.accent, T.text, 0.15f) : T.accent);
+		draw_rrect(BOT_W / 2 - 70, my + 50, 140, 32, 16, bp ? col_lerp(MU_ACC, T.text, 0.15f) : MU_ACC);
 		char t[64];
 		snprintf(t, sizeof t, "%s %s", GLYPH_A, _("Crear carpeta"));
 		text_draw_center(t, BOT_W / 2, my + 50 + (32 - text_lineh(TS_BODY)) / 2, TS_BODY, 0xFFFFFFFF);
