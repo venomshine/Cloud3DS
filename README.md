@@ -7,7 +7,7 @@
 <a href='https://ko-fi.com/W3A028X2KV' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
 
 <p align="center">
-  <img src="docs/inicio.png" width="260" alt="El inicio: cada función es una aplicación">
+  <img src="docs/inicio.png" width="260" alt="El inicio: cada función es una aplicación, con lo que suena, lo último leído y lo que está en marcha abajo">
   <img src="docs/conectar.png" width="260" alt="Conectar: el QR, la dirección, el PIN y la actividad">
   <img src="docs/titulos.png" width="260" alt="Títulos: juegos y aplicaciones instalados y lo que ocupan">
 </p>
